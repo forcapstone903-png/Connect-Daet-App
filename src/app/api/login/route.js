@@ -47,7 +47,7 @@ export async function POST(request) {
       
       let errorMessage = 'Invalid email or password'
       if (authError.message.includes('Email not confirmed')) {
-        errorMessage = 'Please confirm your email address before logging in.'
+        errorMessage = 'Please confirm your email address before logging in. Check your spam folder.'
       } else if (authError.message.includes('Invalid login credentials')) {
         errorMessage = 'Invalid email or password. Please try again.'
       }
@@ -68,60 +68,55 @@ export async function POST(request) {
 
     console.log('✅ User authenticated:', authData.user.id)
 
-    // Get user profile from info_users
+    // Get or create user profile
     let userProfile = null
-    let profileError = null
 
     try {
+      // Try to get existing profile
       const { data, error } = await supabase
         .from('info_users')
         .select('*')
         .eq('id', authData.user.id)
         .single()
 
-      userProfile = data
-      profileError = error
-
-      if (profileError) {
-        console.error('🔴 Profile fetch error:', profileError)
+      if (error) {
+        console.log('📝 Profile not found, creating one...')
         
-        // If profile doesn't exist, create it
-        if (profileError.code === 'PGRST116') {
-          console.log('📝 Creating missing user profile...')
-          
-          const newProfile = {
+        // Create new profile
+        const newProfile = {
+          id: authData.user.id,
+          email: authData.user.email,
+          full_name: authData.user.user_metadata?.full_name || authData.user.email,
+          user_type: authData.user.user_metadata?.user_type || 'tourist',
+          points: 0,
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+
+        const { data: created, error: createError } = await supabase
+          .from('info_users')
+          .insert(newProfile)
+          .select()
+          .single()
+
+        if (createError) {
+          console.error('🔴 Profile creation error:', createError)
+          // Fallback to using auth metadata
+          userProfile = {
             id: authData.user.id,
             email: authData.user.email,
             full_name: authData.user.user_metadata?.full_name || authData.user.email,
             user_type: authData.user.user_metadata?.user_type || 'tourist',
             points: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
           }
-
-          const { data: created, error: createError } = await supabase
-            .from('info_users')
-            .insert(newProfile)
-            .select()
-            .single()
-
-          if (createError) {
-            console.error('🔴 Profile creation error:', createError)
-            // Still allow login, use auth data
-            userProfile = {
-              id: authData.user.id,
-              email: authData.user.email,
-              full_name: authData.user.user_metadata?.full_name || authData.user.email,
-              user_type: authData.user.user_metadata?.user_type || 'tourist',
-              points: 0,
-            }
-          } else {
-            console.log('✅ Created missing profile:', created)
-            userProfile = created
-          }
+        } else {
+          console.log('✅ Created profile:', created)
+          userProfile = created
         }
       } else {
-        console.log('✅ User profile found:', userProfile)
+        console.log('✅ Profile found:', data)
+        userProfile = data
       }
     } catch (error) {
       console.error('🔴 Profile fetch exception:', error)
@@ -142,8 +137,8 @@ export async function POST(request) {
       user: {
         id: authData.user.id,
         email: authData.user.email,
-        full_name: userProfile?.full_name || authData.user.user_metadata?.full_name || authData.user.email,
-        user_type: userProfile?.user_type || authData.user.user_metadata?.user_type || 'tourist',
+        full_name: userProfile?.full_name || authData.user.email,
+        user_type: userProfile?.user_type || 'tourist',
         points: userProfile?.points || 0,
       },
       session: {
@@ -156,7 +151,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('🔴 Login API error:', error)
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false, message: 'Internal server error: ' + error.message },
       { status: 500 }
     )
   }

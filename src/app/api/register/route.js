@@ -11,6 +11,7 @@ export async function POST(request) {
     // Get environment variables
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://connect-daet-app.vercel.app'
     
     if (!supabaseUrl || !supabaseAnonKey) {
       console.error('❌ Missing environment variables')
@@ -53,7 +54,7 @@ export async function POST(request) {
           full_name: full_name || '',
           user_type: user_type || 'tourist',
         },
-        emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL || 'https://connect-daet-app.vercel.app'}/login`,
+        emailRedirectTo: `${appUrl}/login?message=Please check your email to confirm your account.`,
       },
     })
 
@@ -81,67 +82,76 @@ export async function POST(request) {
 
     console.log('✅ User registered in Auth:', authData.user.id)
 
-    // CRITICAL FIX: Create user profile in info_users table
-    // Use upsert to handle any existing data issues
+    // Create user profile in info_users table
     const userData = {
       id: authData.user.id,
       email: authData.user.email,
       full_name: full_name || '',
       user_type: user_type || 'tourist',
       points: 0,
+      status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
 
     console.log('📝 Creating user profile:', userData)
 
+    // Try to insert the user profile
     const { data: profileData, error: profileError } = await supabase
       .from('info_users')
-      .upsert(userData, { onConflict: 'id' })
+      .insert(userData)
       .select()
       .single()
 
     if (profileError) {
       console.error('🔴 Profile creation error:', profileError)
       
-      // Try a different approach - insert without select
-      const { error: insertError } = await supabase
+      // If insert fails, try upsert
+      const { data: upsertData, error: upsertError } = await supabase
         .from('info_users')
-        .insert({
-          id: authData.user.id,
-          email: authData.user.email,
-          full_name: full_name || '',
-          user_type: user_type || 'tourist',
-          points: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
+        .upsert(userData, { onConflict: 'id' })
+        .select()
+        .single()
 
-      if (insertError) {
-        console.error('🔴 Insert fallback error:', insertError)
-        // Still return success since user is created in auth
+      if (upsertError) {
+        console.error('🔴 Upsert fallback error:', upsertError)
+        
+        // Return success anyway since auth user is created
+        return NextResponse.json({ 
+          success: true,
+          message: 'Registration successful but profile creation had issues. Please contact support if you cannot login.',
+          user: {
+            id: authData.user.id,
+            email: authData.user.email,
+            full_name: full_name || '',
+            user_type: user_type || 'tourist',
+          },
+          warning: 'Profile creation had issues'
+        })
       } else {
-        console.log('✅ User profile created with fallback insert')
+        console.log('✅ User profile created with upsert:', upsertData)
       }
     } else {
       console.log('✅ User profile created:', profileData)
     }
 
+    // Return success
     return NextResponse.json({ 
       success: true,
-      message: 'Registration successful',
+      message: 'Registration successful! Please check your email to confirm your account.',
       user: {
         id: authData.user.id,
         email: authData.user.email,
         full_name: full_name || '',
         user_type: user_type || 'tourist',
-      }
+      },
+      requiresConfirmation: true
     })
     
   } catch (error) {
     console.error('🔴 API error:', error)
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false, message: 'Internal server error: ' + error.message },
       { status: 500 }
     )
   }
