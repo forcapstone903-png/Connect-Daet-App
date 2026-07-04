@@ -6,9 +6,7 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
-    "deploy": "wrangler pages deploy .next",
-    "preview": "wrangler dev"
+    "lint": "eslint"
   },
   "dependencies": {
     "@fullcalendar/core": "^6.1.20",
