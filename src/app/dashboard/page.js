@@ -401,7 +401,7 @@ export default function TouristDashboardPage() {
                 {initials}
               </div>
               <h2 className="text-lg font-semibold text-slate-900">{profileName}</h2>
-              <p className="mt-1 text-sm text-slate-500">{profile?.user_type || 'tourist'} • Daet Explorer</p>
+              <p className="mt-1 text-sm text-slate-500">{profile?.user_type || 'tourist'} in Daet Explorer</p>
               <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
                 <MapPin size={16} className="text-teal-500" />
                 <span>Daet, Camarines Norte</span>
@@ -421,7 +421,7 @@ export default function TouristDashboardPage() {
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2">
                 <span>{language === 'en' ? 'Level' : 'Antas'}</span>
-                <span className="font-semibold text-slate-900">{levelInfo.level} · {levelInfo.label}</span>
+                <span className="font-semibold text-slate-900">{levelInfo.level} - {levelInfo.label}</span>
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2">
                 <span>{language === 'en' ? 'Next reward' : 'Susunod na reward'}</span>
@@ -487,7 +487,7 @@ export default function TouristDashboardPage() {
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">{index === 0 ? 'Trending' : 'New favorite'}</p>
                         <p className="mt-1 font-medium text-slate-900">{spot.name}</p>
                       </div>
-                      <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">{spot.rating || 4.7} ?</span>
+                      <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">{spot.rating || 4.7}</span>
                     </div>
                     <p className="mt-2 text-sm text-slate-600">{spot.location}</p>
                   </div>
@@ -708,7 +708,7 @@ export default function TouristDashboardPage() {
                 <p className="text-sm text-slate-500">Tell the community about your favorite place or experience.</p>
               </div>
               <button onClick={() => setShowComposer(false)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100">
-                ?
+                X
               </button>
             </div>
 
