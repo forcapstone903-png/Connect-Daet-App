@@ -1,64 +1,86 @@
-// app/api/upload/route.js
-import { createClient } from '@supabase/supabase-js';
+// components/FileUpload.js
+'use client'
 
-// Initialize Supabase admin client (bypasses RLS)
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY, // You'll need to add this to your env
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
+import { useState } from 'react'
+
+export function FileUpload({ bucket, folder, onUploadComplete }) {
+  const [uploading, setUploading] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const [error, setError] = useState('')
+
+  const handleUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setUploading(true)
+    setError('')
+    setProgress(0)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('bucket', bucket)
+      formData.append('folder', folder || 'uploads')
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Upload failed')
+      }
+
+      console.log('Upload successful:', data.url)
+      onUploadComplete?.(data)
+      
+    } catch (error) {
+      console.error('Upload error:', error)
+      setError(error.message)
+    } finally {
+      setUploading(false)
+      setProgress(100)
     }
   }
-);
 
-export async function POST(request) {
-  try {
-    const formData = await request.formData();
-    const file = formData.get('file');
-    const bucket = formData.get('bucket');
-    const folder = formData.get('folder');
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <input
+          type="file"
+          onChange={handleUpload}
+          disabled={uploading}
+          accept="image/*,.pdf"
+          className="block w-full text-sm text-gray-500
+            file:mr-4 file:py-2 file:px-4
+            file:rounded-full file:border-0
+            file:text-sm file:font-semibold
+            file:bg-yellow-50 file:text-yellow-700
+            hover:file:bg-yellow-100
+            disabled:opacity-50"
+        />
+        {uploading && (
+          <div className="flex items-center gap-2">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-yellow-500 border-t-transparent" />
+            <span className="text-sm text-gray-500">Uploading...</span>
+          </div>
+        )}
+      </div>
 
-    if (!file || !bucket) {
-      return Response.json({ error: 'Missing file or bucket' }, { status: 400 });
-    }
+      {error && (
+        <p className="text-sm text-red-600">{error}</p>
+      )}
 
-    // Create unique filename
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-    const filePath = `${folder}/${fileName}`;
-
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Upload using admin client (bypasses RLS)
-    const { data, error } = await supabaseAdmin.storage
-      .from(bucket)
-      .upload(filePath, buffer, {
-        contentType: file.type,
-        cacheControl: '3600'
-      });
-
-    if (error) {
-      console.error('Upload error:', error);
-      return Response.json({ error: error.message }, { status: 500 });
-    }
-
-    // Get public URL
-    const { data: { publicUrl } } = supabaseAdmin.storage
-      .from(bucket)
-      .getPublicUrl(filePath);
-
-    return Response.json({ 
-      success: true, 
-      url: publicUrl,
-      path: filePath 
-    });
-
-  } catch (error) {
-    console.error('API Error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
-  }
+      {uploading && (
+        <div className="w-full bg-gray-200 rounded-full h-2.5">
+          <div 
+            className="bg-yellow-500 h-2.5 rounded-full transition-all duration-300"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+    </div>
+  )
 }
