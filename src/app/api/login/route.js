@@ -1,180 +1,163 @@
-// app/login/page.js
-'use client'
+import { NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
-export default function LoginPage() {
-  const router = useRouter()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [formData, setFormData] = useState({
-    email: '',
-    password: ''
-  })
+export async function POST(request) {
+  console.log('📝 ====== LOGIN API CALLED ======')
+  
+  try {
+    // Get environment variables
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ Missing environment variables')
+      return NextResponse.json(
+        { success: false, message: 'Supabase configuration is missing' },
+        { status: 500 }
+      )
+    }
 
-  const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
+    // Create Supabase client
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+    // Parse request body
+    const body = await request.json()
+    const { email, password } = body
+    
+    if (!email || !password) {
+      return NextResponse.json(
+        { success: false, message: 'Email and password are required' },
+        { status: 400 }
+      )
+    }
+
+    console.log('📝 Attempting login for:', email)
+
+    // Sign in with password
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email.toLowerCase().trim(),
+      password,
     })
-  }
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    setLoading(true)
-    setError('')
+    if (authError) {
+      console.error('🔴 Auth login error:', authError)
+      
+      let errorMessage = 'Invalid email or password'
+      if (authError.message.includes('Email not confirmed')) {
+        errorMessage = 'Please confirm your email address before logging in.'
+      } else if (authError.message.includes('Invalid login credentials')) {
+        errorMessage = 'Invalid email or password. Please try again.'
+      }
+      
+      return NextResponse.json(
+        { success: false, message: errorMessage },
+        { status: 401 }
+      )
+    }
+
+    if (!authData?.user) {
+      console.error('🔴 No user data returned')
+      return NextResponse.json(
+        { success: false, message: 'Failed to get user data' },
+        { status: 500 }
+      )
+    }
+
+    console.log('✅ User authenticated:', authData.user.id)
+
+    // Get user profile from info_users
+    let userProfile = null
+    let profileError = null
 
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: formData.email,
-          password: formData.password
-        }),
-      })
+      const { data, error } = await supabase
+        .from('info_users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single()
 
-      const data = await response.json()
+      userProfile = data
+      profileError = error
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Login failed')
-      }
+      if (profileError) {
+        console.error('🔴 Profile fetch error:', profileError)
+        
+        // If profile doesn't exist, create it
+        if (profileError.code === 'PGRST116') {
+          console.log('📝 Creating missing user profile...')
+          
+          const newProfile = {
+            id: authData.user.id,
+            email: authData.user.email,
+            full_name: authData.user.user_metadata?.full_name || authData.user.email,
+            user_type: authData.user.user_metadata?.user_type || 'tourist',
+            points: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }
 
-      // Store user session
-      const sessionData = {
-        user_id: data.user.id,
-        user_name: data.user.full_name || data.user.email,
-        user_email: data.user.email,
-        role: data.user.user_type || 'tourist',
-        logged_in: true,
-        login_time: new Date().toISOString(),
-        access_token: data.session?.access_token,
-        refresh_token: data.session?.refresh_token,
-        expires_at: data.session?.expires_at,
-      }
+          const { data: created, error: createError } = await supabase
+            .from('info_users')
+            .insert(newProfile)
+            .select()
+            .single()
 
-      sessionStorage.setItem('user_session', JSON.stringify(sessionData))
-      
-      // Also store in localStorage for persistence
-      localStorage.setItem('user_session', JSON.stringify(sessionData))
-
-      // Redirect based on user type
-      if (data.user.user_type === 'admin') {
-        router.push('/admin/dashboard')
+          if (createError) {
+            console.error('🔴 Profile creation error:', createError)
+            // Still allow login, use auth data
+            userProfile = {
+              id: authData.user.id,
+              email: authData.user.email,
+              full_name: authData.user.user_metadata?.full_name || authData.user.email,
+              user_type: authData.user.user_metadata?.user_type || 'tourist',
+              points: 0,
+            }
+          } else {
+            console.log('✅ Created missing profile:', created)
+            userProfile = created
+          }
+        }
       } else {
-        router.push('/dashboard')
+        console.log('✅ User profile found:', userProfile)
       }
-
     } catch (error) {
-      setError(error.message || 'Login failed. Please try again.')
-    } finally {
-      setLoading(false)
+      console.error('🔴 Profile fetch exception:', error)
+      // Fallback to auth data
+      userProfile = {
+        id: authData.user.id,
+        email: authData.user.email,
+        full_name: authData.user.user_metadata?.full_name || authData.user.email,
+        user_type: authData.user.user_metadata?.user_type || 'tourist',
+        points: 0,
+      }
     }
+
+    // Return success with user data
+    return NextResponse.json({ 
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: authData.user.id,
+        email: authData.user.email,
+        full_name: userProfile?.full_name || authData.user.user_metadata?.full_name || authData.user.email,
+        user_type: userProfile?.user_type || authData.user.user_metadata?.user_type || 'tourist',
+        points: userProfile?.points || 0,
+      },
+      session: {
+        access_token: authData.session?.access_token,
+        refresh_token: authData.session?.refresh_token,
+        expires_at: authData.session?.expires_at,
+      }
+    })
+    
+  } catch (error) {
+    console.error('🔴 Login API error:', error)
+    return NextResponse.json(
+      { success: false, message: 'Internal server error' },
+      { status: 500 }
+    )
   }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
-        <div className="text-center mb-8">
-          <div className="h-16 w-16 bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <h2 className="text-3xl font-bold text-gray-800">Welcome Back</h2>
-          <p className="text-gray-600 mt-2">Sign in to your Daet-Connect account</p>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin}>
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-semibold mb-2">Email Address</label>
-            <input
-              type="email"
-              name="email"
-              required
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-gray-700 text-sm font-semibold mb-2">Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent pr-12"
-                placeholder="Enter your password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M17.94 17.94A10.09 10.09 0 0 0 21 12c-1.5-4.5-5.5-8-9-8a9.963 9.963 0 0 0-6.6 2.44" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="remember"
-                className="h-4 w-4 text-yellow-500 focus:ring-yellow-500 border-gray-300 rounded"
-              />
-              <label htmlFor="remember" className="ml-2 block text-sm text-gray-700">
-                Remember me
-              </label>
-            </div>
-            <Link href="/forgot-password" className="text-sm text-yellow-600 hover:underline">
-              Forgot password?
-            </Link>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-white font-semibold py-2 rounded-lg hover:from-yellow-600 hover:to-yellow-700 transition duration-200 disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-gray-600">
-            Don't have an account?{' '}
-            <Link href="/register" className="text-yellow-600 font-semibold hover:underline">
-              Create one here
-            </Link>
-          </p>
-        </div>
-      </div>
-    </div>
-  )
 }
