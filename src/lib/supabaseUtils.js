@@ -1,5 +1,5 @@
 // lib/supabaseUtils.js
-import { supabase } from './supabaseClient';
+import { supabase } from './supabase';
 
 /**
  * ============================================================================

@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabase';
 
 const USER_TYPES = ['tourist', 'artisan', 'operator'];
 const USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];

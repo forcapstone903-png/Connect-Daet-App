@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/lib/supabase'
 import { ArrowLeft, Award, CheckCircle2, Gift, MessageSquareShare, Sparkles, TrendingUp } from 'lucide-react'
 
 const perks = [

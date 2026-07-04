@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef } from 'react'; // Added useRef to the import
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabase';
 
 // Announcement type configuration
 const ANNOUNCEMENT_TYPES = [
