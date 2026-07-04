@@ -5,7 +5,6 @@ let supabaseInstance = null
 
 /**
  * Get Supabase client instance
- * FIXED: Properly handles Vercel production environment
  */
 export function getSupabase() {
   // Return existing instance if already initialized
@@ -20,18 +19,16 @@ export function getSupabase() {
   console.log('🔍 Initializing Supabase Client:')
   console.log('  - Environment:', process.env.NODE_ENV)
   console.log('  - VERCEL:', process.env.VERCEL || 'false')
-  console.log('  - VERCEL_ENV:', process.env.VERCEL_ENV || 'not set')
   console.log('  - URL exists:', !!supabaseUrl)
   console.log('  - KEY exists:', !!supabaseAnonKey)
 
-  // CRITICAL FIX: In Vercel production, we MUST have these variables
+  // If variables are missing, throw an error
   if (!supabaseUrl || !supabaseAnonKey) {
-    const error = new Error('Supabase environment variables are missing')
-    console.error('❌', error.message)
+    console.error('❌ Supabase environment variables are missing')
     return null
   }
 
-  // Create real Supabase client for ALL environments
+  // Create real Supabase client
   try {
     console.log('✅ Creating real Supabase client...')
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
@@ -60,3 +57,6 @@ export function isSupabaseConfigured() {
   return configured
 }
 
+// IMPORTANT: Export supabase for backward compatibility
+// This creates a singleton instance that all files can import
+export const supabase = getSupabase()
