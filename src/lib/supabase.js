@@ -14,20 +14,29 @@ export function getSupabase() {
     return supabaseInstance
   }
 
-  // Check if we're in a build environment
-  const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || 
-                      process.env.NODE_ENV === 'production' && !process.env.NEXT_PUBLIC_SUPABASE_URL
-
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+  // Log environment status (but only in development or when debugging)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 Supabase Environment Check:')
+    console.log('  - URL:', supabaseUrl ? '✅ Set' : '❌ Missing')
+    console.log('  - Key:', supabaseAnonKey ? '✅ Set' : '❌ Missing')
+  }
+
+  // Check if we're in a build environment (Vercel build)
+  const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || 
+                      process.env.NODE_ENV === 'production' && !supabaseUrl
+
   // During build time OR if variables are missing, return a mock client
-  if (isBuildTime || !supabaseUrl || !supabaseAnonKey) {
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.warn('⚠️ Supabase environment variables are missing. Using mock client.')
-    } else {
-      console.log('🔨 Build time: Using mock Supabase client')
-    }
+  if (isBuildTime) {
+    console.log('🔨 Build time: Using mock Supabase client')
+    return createMockSupabase()
+  }
+
+  // If variables are missing, return mock client
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn('⚠️ Supabase environment variables are missing. Using mock client.')
     return createMockSupabase()
   }
 
@@ -53,8 +62,15 @@ export function getSupabase() {
  * Check if Supabase is properly configured
  */
 export function isSupabaseConfigured() {
-  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && 
+  const configured = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && 
          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
+  
+  // Log the configuration status (only in development)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('🔍 Supabase Configured:', configured)
+  }
+  
+  return configured
 }
 
 /**
