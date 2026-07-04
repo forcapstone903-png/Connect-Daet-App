@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "deploy": "wrangler deploy",
+    "deploy": "wrangler pages deploy .next",
     "preview": "wrangler dev"
   },
   "dependencies": {
