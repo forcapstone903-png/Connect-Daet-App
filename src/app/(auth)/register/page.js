@@ -113,17 +113,19 @@ export default function RegisterPage() {
         throw new Error(data.message || 'Unable to register your account right now')
       }
 
+      // Store user session
       const sessionData = {
         user_id: data.user.id,
-        user_name: data.user.full_name,
+        user_name: data.user.full_name || formData.full_name,
         user_email: data.user.email,
-        role: data.user.user_type,
+        role: data.user.user_type || formData.user_type,
         logged_in: true,
         login_time: new Date().toISOString()
       }
 
       sessionStorage.setItem('user_session', JSON.stringify(sessionData))
 
+      // Redirect based on user type
       if (data.user.user_type === 'admin') {
         router.push('/admin/dashboard')
       } else {
@@ -131,7 +133,7 @@ export default function RegisterPage() {
       }
 
     } catch (error) {
-      setError(error.message)
+      setError(error.message || 'An error occurred during registration')
     } finally {
       setLoading(false)
     }
