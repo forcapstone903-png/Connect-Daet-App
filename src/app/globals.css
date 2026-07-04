@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  color-scheme: light !important;
+}
+
+html, body {
+  color-scheme: light !important;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ── Fix: Force readable text on all form elements ── */
+input,
+select,
+textarea {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+/* Fix native date/time/calendar pickers */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"],
+input[type="month"],
+input[type="week"] {
+  color: #111827 !important;
+  color-scheme: light !important;
+}
+
+/* Fix select dropdown options */
+select option {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+/* ── FullCalendar text visibility fixes (Tailwind v4 reset workaround) ── */
+.fc {
+  color: #111827 !important;
+}
+
+.fc .fc-toolbar-title {
+  color: #111827 !important;
+  opacity: 1 !important;
+}
+
+.fc .fc-col-header-cell-cushion {
+  color: #111827 !important;
+  opacity: 1 !important;
+  text-decoration: none !important;
+}
+
+.fc .fc-daygrid-day-number {
+  color: #111827 !important;
+  opacity: 1 !important;
+  text-decoration: none !important;
+}
+
+.fc .fc-daygrid-day-top {
+  opacity: 1 !important;
+}
+
+/* Dim out-of-month day numbers slightly but still readable */
+.fc .fc-daygrid-day.fc-day-other .fc-daygrid-day-number {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+/* Event text */
+.fc .fc-event-title,
+.fc .fc-event-time {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+/* Borders */
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-color: #e5e7eb !important;
+}
+
+/* Buttons */
+.fc .fc-button {
+  opacity: 1 !important;
+}
