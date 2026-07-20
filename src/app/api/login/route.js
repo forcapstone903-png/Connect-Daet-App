@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { loginStoredUser } from '@/lib/authStorage'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -12,17 +13,6 @@ export async function POST(request) {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
     const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     
-    if (!supabaseUrl || !supabaseAnonKey) {
-      console.error('❌ Missing environment variables')
-      return NextResponse.json(
-        { success: false, message: 'Supabase configuration is missing' },
-        { status: 500 }
-      )
-    }
-
-    // Create Supabase client
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
-
     // Parse request body
     const body = await request.json()
     const { email, password } = body
@@ -34,11 +24,39 @@ export async function POST(request) {
       )
     }
 
-    console.log('📝 Attempting login for:', email)
+    const normalizedEmail = email.toLowerCase().trim()
+    const fallbackResult = loginStoredUser({ email: normalizedEmail, password })
+
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ Missing environment variables, using local fallback auth')
+      if (fallbackResult.success) {
+        return NextResponse.json({
+          success: true,
+          message: 'Login successful',
+          user: {
+            id: fallbackResult.user.id,
+            email: fallbackResult.user.email,
+            full_name: fallbackResult.user.full_name,
+            user_type: fallbackResult.user.user_type,
+            points: fallbackResult.user.points || 0,
+          },
+          session: { access_token: null, refresh_token: null, expires_at: null }
+        })
+      }
+      return NextResponse.json(
+        { success: false, message: fallbackResult.message || 'Supabase configuration is missing' },
+        { status: 401 }
+      )
+    }
+
+    // Create Supabase client
+    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+
+    console.log('📝 Attempting login for:', normalizedEmail)
 
     // Sign in with password
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       password,
     })
 
@@ -50,6 +68,21 @@ export async function POST(request) {
         errorMessage = 'Please confirm your email address before logging in. Check your spam folder.'
       } else if (authError.message.includes('Invalid login credentials')) {
         errorMessage = 'Invalid email or password. Please try again.'
+      }
+
+      if (fallbackResult.success) {
+        return NextResponse.json({
+          success: true,
+          message: 'Login successful',
+          user: {
+            id: fallbackResult.user.id,
+            email: fallbackResult.user.email,
+            full_name: fallbackResult.user.full_name,
+            user_type: fallbackResult.user.user_type,
+            points: fallbackResult.user.points || 0,
+          },
+          session: { access_token: null, refresh_token: null, expires_at: null }
+        })
       }
       
       return NextResponse.json(

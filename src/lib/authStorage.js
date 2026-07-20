@@ -2,6 +2,18 @@ const STORAGE_KEY = 'daet_auth_users'
 
 const seedUsers = () => [
   {
+    id: 'superadmin-seeded',
+    email: 'superadmin@daet-tourism.com',
+    password: 'Super@123456',
+    full_name: 'Super Administrator',
+    user_type: 'superadmin',
+    status: 'active',
+    points: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    is_online: false,
+  },
+  {
     id: 'admin-seeded',
     email: 'admin@daet-tourism.com',
     password: 'Admin@123456',

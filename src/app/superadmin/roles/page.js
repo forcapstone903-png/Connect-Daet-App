@@ -11,9 +11,9 @@ export default function SuperAdminRolesPage() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
-  const [pendingRole, setPendingRole] = useState(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  const [formState, setFormState] = useState({ full_name: '', email: '', password: '', user_type: 'superadmin' });
 
   useEffect(() => {
     const initialize = async () => {
@@ -56,6 +56,36 @@ export default function SuperAdminRolesPage() {
     }
   };
 
+  const createPrivilegedUser = async (event) => {
+    event.preventDefault();
+    setSaving(true);
+    setMessage('');
+    try {
+      const response = await fetch('/api/superadmin/create-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          full_name: formState.full_name,
+          email: formState.email,
+          password: formState.password,
+          user_type: formState.user_type,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'Unable to create account');
+
+      setFormState({ full_name: '', email: '', password: '', user_type: 'superadmin' });
+      setMessage(`Created ${formState.user_type} account for ${formState.email}.`);
+      const { data: refreshed, error } = await supabase.from('info_users').select('id, full_name, email, user_type, status').order('created_at', { ascending: false });
+      if (!error) setUsers((refreshed || []).filter((entry) => entry.user_type === 'admin' || entry.user_type === 'superadmin' || entry.user_type === 'moderator'));
+    } catch (err) {
+      setMessage(err.message || 'Unable to create account');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex min-h-screen items-center justify-center bg-gray-50"><div className="h-12 w-12 animate-spin rounded-full border-b-2 border-blue-600" /></div>;
   }
@@ -69,6 +99,41 @@ export default function SuperAdminRolesPage() {
           <p className="mt-1 text-sm text-gray-500">Assign or refine elevated permissions without cluttering the main admin pages.</p>
         </div>
         {message && <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700">{message}</div>}
+        <form onSubmit={createPrivilegedUser} className="mb-6 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-800">Create Privileged Account</h2>
+              <p className="text-sm text-gray-500">Create an admin, superadmin, or moderator account directly from this page.</p>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Full Name</label>
+              <input required value={formState.full_name} onChange={(e) => setFormState((prev) => ({ ...prev, full_name: e.target.value }))} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="e.g. Juan Dela Cruz" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Role</label>
+              <select value={formState.user_type} onChange={(e) => setFormState((prev) => ({ ...prev, user_type: e.target.value }))} className="w-full rounded-xl border border-gray-200 px-3 py-2">
+                <option value="superadmin">Superadmin</option>
+                <option value="admin">Admin</option>
+                <option value="moderator">Moderator</option>
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Email</label>
+              <input required type="email" value={formState.email} onChange={(e) => setFormState((prev) => ({ ...prev, email: e.target.value }))} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="new-admin@example.com" />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Temporary Password</label>
+              <input required type="password" value={formState.password} onChange={(e) => setFormState((prev) => ({ ...prev, password: e.target.value }))} className="w-full rounded-xl border border-gray-200 px-3 py-2" placeholder="Minimum 6 characters" />
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <button disabled={saving} className="rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'Creating...' : 'Create Account'}
+            </button>
+          </div>
+        </form>
         <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-4 py-3">
             <h2 className="text-lg font-semibold text-gray-800">Privileged Accounts</h2>
@@ -84,10 +149,7 @@ export default function SuperAdminRolesPage() {
                   <span className="rounded-full bg-gray-100 px-3 py-1 text-sm capitalize text-gray-700">{entry.user_type}</span>
                   <select
                     value={entry.user_type}
-                    onChange={(e) => {
-                      setPendingRole({ id: entry.id, role: e.target.value });
-                      updateRole(entry.id, e.target.value);
-                    }}
+                    onChange={(e) => updateRole(entry.id, e.target.value)}
                     className="rounded-full border border-gray-200 px-3 py-2 text-sm"
                   >
                     <option value="admin">Admin</option>
