@@ -1000,6 +1000,7 @@ export default function AdminEventsPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
                 <input
+                  autoFocus
                   type="text"
                   value={eventForm.title}
                   onChange={e => setEventForm(p => ({ ...p, title: e.target.value }))}
