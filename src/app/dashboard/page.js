@@ -84,9 +84,9 @@ export default function TouristDashboardPage() {
           full_name: userProfile.full_name || '',
           bio: userProfile.bio || '',
           address: userProfile.address || '',
-          city: userProfile.city || 'Daet',
-          province: userProfile.province || 'Camarines Norte',
-          country: userProfile.country || 'Philippines',
+          city: userProfile.city || '',
+          province: userProfile.province || '',
+          country: userProfile.country || '',
           profile_image_url: userProfile.profile_image_url || '',
         })
       }
@@ -330,7 +330,11 @@ export default function TouristDashboardPage() {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const profileName = profile?.full_name || user?.user_name || 'Traveler'
+  const profileName = profile?.full_name || user?.user_name || user?.email?.split('@')[0] || ''
+  const profileType = profile?.user_type || user?.user_type || ''
+  const profileLocation = [profileForm.city || profile?.city || '', profileForm.province || profile?.province || '', profileForm.country || profile?.country || '']
+    .filter(Boolean)
+    .join(', ')
   const pointsBalance = profile?.points || 0
   const levelInfo = pointsBalance >= 600
     ? { level: 4, label: 'Local Legend', next: 'Max level reached' }
@@ -425,7 +429,7 @@ export default function TouristDashboardPage() {
               <div className="flex items-center justify-between gap-2">
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">{profileName}</h2>
-                  <p className="mt-1 text-sm text-slate-500">{profile?.user_type || 'tourist'} in Daet Explorer</p>
+                  {profileType ? <p className="mt-1 text-sm text-slate-500">{profileType}</p> : null}
                 </div>
                 <button
                   onClick={() => router.push('/profile/edit')}
@@ -436,7 +440,7 @@ export default function TouristDashboardPage() {
               </div>
               <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
                 <MapPin size={16} className="text-teal-500" />
-                <span>{profileForm.city || 'Daet'}, {profileForm.province || 'Camarines Norte'}</span>
+                <span>{profileLocation}</span>
               </div>
             </div>
           </div>

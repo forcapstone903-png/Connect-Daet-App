@@ -45,9 +45,9 @@ export default function EditProfilePage() {
           full_name: data.full_name || '',
           bio: data.bio || '',
           address: data.address || '',
-          city: data.city || 'Daet',
-          province: data.province || 'Camarines Norte',
-          country: data.country || 'Philippines',
+          city: data.city || '',
+          province: data.province || '',
+          country: data.country || '',
           profile_image_url: data.profile_image_url || '',
         })
       }
@@ -104,7 +104,7 @@ export default function EditProfilePage() {
     setFeedback('')
 
     const payload = {
-      full_name: form.full_name?.trim() || 'Traveler',
+      full_name: form.full_name?.trim() || profile?.full_name || user?.user_name || user?.email?.split('@')[0] || '',
       bio: form.bio?.trim() || '',
       address: form.address?.trim() || '',
       city: form.city?.trim() || '',
@@ -152,8 +152,14 @@ export default function EditProfilePage() {
     )
   }
 
-  const profileName = profile?.full_name || user?.user_name || 'Traveler'
-  const initials = profileName.split(' ').map((word) => word[0]).slice(0, 2).join('').toUpperCase()
+  const profileName = profile?.full_name || user?.user_name || user?.email?.split('@')[0] || ''
+  const profileLocation = [form.city, form.province, form.country].filter(Boolean).join(', ')
+  const initials = profileName
+    .split(' ')
+    .map((word) => word[0])
+    .slice(0, 2)
+    .join('')
+    .toUpperCase()
 
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-6 text-slate-800 sm:px-6 lg:px-8">
@@ -183,7 +189,7 @@ export default function EditProfilePage() {
             </label>
             <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
               <MapPin size={15} className="text-teal-500" />
-              <span>{form.city || 'Daet'}, {form.province || 'Camarines Norte'}</span>
+              <span>{profileLocation}</span>
             </div>
           </div>
 
