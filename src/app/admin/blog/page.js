@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import AdminSidebar from '@/app/components/AdminSidebar';
 import MediaUpload from '@/app/components/MediaUpload';
 
 const BLOG_CATEGORIES = [
@@ -219,31 +220,7 @@ export default function BlogManagement() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Sidebar */}
-      <div className="fixed left-0 top-0 h-full w-64 bg-white border-r border-gray-200 z-20 shadow-sm">
-        <div className="p-5 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 w-10 h-10 rounded-2xl flex items-center justify-center text-white">
-              <span className="text-xl">📝</span>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-800">DAET·TOURISM</h1>
-              <p className="text-xs text-gray-500">Admin Console</p>
-            </div>
-          </div>
-        </div>
-        <nav className="mt-4 px-3">
-          <Link href="/admin/dashboard" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">📊 Dashboard</Link>
-          <Link href="/admin/users" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">👥 Users</Link>
-          <Link href="/admin/events" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">📅 Events</Link>
-          <Link href="/admin/moderation" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">⏳ Moderation</Link>
-          <Link href="/admin/announcement" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">📢 Announcement</Link>
-          <Link href="/admin/tourist-spots" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">🗺️ Tourist Spots</Link>
-          <Link href="/admin/blog" className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700">📝 Blog & News</Link>
-          <Link href="/admin/amenities" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">🏨 Amenities</Link>
-          <Link href="/admin/settings" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50">⚙️ Settings</Link>
-        </nav>
-      </div>
+      <AdminSidebar user={user} roleLabel="Admin Console" />
 
       {/* Main Content */}
       <div className="ml-64 p-6">

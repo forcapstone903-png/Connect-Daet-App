@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import AdminSidebar from '@/app/components/AdminSidebar';
 
 const USER_TYPES = ['tourist', 'artisan', 'operator'];
 const USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];
@@ -533,68 +534,7 @@ export default function ManageUsersPage() {
   return (
     <div className="min-h-screen bg-gray-50">
 
-      {/* Sidebar */}
-      <div className="fixed left-0 top-0 h-full w-64 bg-white border-r border-gray-200 z-20 shadow-sm">
-        <div className="p-5 border-b border-gray-100">
-          <div className="flex items-center gap-3">
-            <div className="bg-blue-600 w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-sm">
-              <span className="text-xl">🗺️</span>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-800 tracking-wide">DAET·TOURISM</h1>
-              <p className="text-xs text-gray-500">Administrator Console</p>
-            </div>
-          </div>
-          <div className="mt-4 pt-2">
-            <p className="text-sm font-medium text-gray-700 flex items-center gap-1">
-              <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-              {adminUser?.user_name || adminUser?.full_name || 'Admin User'}
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">System Administrator</p>
-          </div>
-        </div>
-        <nav className="mt-4 px-3">
-          <Link href="/admin/dashboard" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">📊</span>
-            <span className="font-medium text-gray-700">Dashboard</span>
-          </Link>
-          <Link href="/admin/users" className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-blue-50 text-blue-700 mb-1">
-            <span className="text-xl">👥</span>
-            <span className="font-medium text-blue-700">Manage Users</span>
-          </Link>
-          <Link href="/admin/events" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">📅</span>
-            <span className="font-medium text-gray-700">Events & Activities</span>
-          </Link>
-          <Link href="/admin/moderation" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">⏳</span>
-            <span className="font-medium text-gray-700">Moderation</span>
-          </Link>
-          <Link href="/admin/announcement" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">📢</span>
-            <span className="font-medium text-gray-700">Announcement</span>
-          </Link>
-          <Link href="/admin/tourist-spots" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">🗺️</span>
-            <span className="font-medium text-gray-700">Tourist Spots</span>
-          </Link>
-          <Link href="/admin/blog" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">📝</span>
-            <span className="font-medium text-gray-700">Blog & News</span>
-          </Link>
-          <Link href="/admin/amenities" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">🏨</span>
-            <span className="font-medium text-gray-700">Amenities</span>
-          </Link>
-          <Link href="/admin/settings" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors mb-1">
-            <span className="text-xl">⚙️</span>
-            <span className="font-medium text-gray-700">Settings</span>
-          </Link>
-        </nav>
-        <button onClick={handleLogout} className="absolute bottom-5 left-5 right-5 bg-red-50 hover:bg-red-100 text-red-700 py-2.5 rounded-full transition-all duration-200 flex items-center justify-center gap-2">
-          <span>🚪</span><span>Logout</span>
-        </button>
-      </div>
+      <AdminSidebar user={adminUser} roleLabel="Administrator" onLogout={handleLogout} />
 
       {/* Main Content */}
       <div className="ml-64 p-6">
