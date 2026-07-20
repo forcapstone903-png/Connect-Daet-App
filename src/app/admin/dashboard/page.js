@@ -1575,18 +1575,21 @@ export default function AdminDashboard() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className={`fixed bottom-24 right-5 px-3 py-2 rounded-full text-white text-xs z-40 animate-slide-in shadow-md ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
-          {toastMessage.isError ? '⚠️' : '✅'} {toastMessage.message}
+        <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2">
+          <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm shadow-lg max-w-[90vw] animate-toast-in ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
+            <span className="shrink-0">{toastMessage.isError ? '⚠️' : '✅'}</span>
+            <span className="break-words">{toastMessage.message}</span>
+          </div>
         </div>
       )}
 
       <style jsx global>{`
-        @keyframes slide-in {
-          from { transform: translateX(100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
+        @keyframes toast-in {
+          from { transform: translateY(-12px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
         }
-        .animate-slide-in {
-          animation: slide-in 0.3s ease-out;
+        .animate-toast-in {
+          animation: toast-in 0.25s ease-out;
         }
         .fc-event {
           cursor: grab !important;
