@@ -46,6 +46,7 @@ export default function TouristDashboardPage() {
   })
   const [rewardNotice, setRewardNotice] = useState('')
   const [sharedPostIds, setSharedPostIds] = useState([])
+  const [activeSection, setActiveSection] = useState('explore')
   const [profileForm, setProfileForm] = useState({
     full_name: '',
     bio: '',
@@ -327,7 +328,196 @@ export default function TouristDashboardPage() {
   }
 
   const scrollToSection = (sectionId) => {
-    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setActiveSection(sectionId)
+    const targetId = sectionId === 'explore' ? 'explore-section' : sectionId
+    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const renderSectionContent = () => {
+    if (activeSection === 'feed') {
+      return (
+        <div id="feed" className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">{language === 'en' ? 'Your travel feed' : 'Ang iyong travel feed'}</h3>
+              <p className="text-sm text-slate-500">{language === 'en' ? 'Recent community posts and your own stories' : 'Mga kamakailang post ng komunidad at ang iyong sariling kwento'}</p>
+            </div>
+            <button onClick={() => setShowComposer(true)} className="text-sm font-medium text-teal-600">{language === 'en' ? 'Create post' : 'Gumawa ng post'}</button>
+          </div>
+
+          <div className="space-y-3">
+            {posts.length > 0 ? posts.map((post) => (
+              <div key={post.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-teal-500 to-blue-600 text-sm font-semibold text-white">
+                      {initials}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-900">{profileName}</p>
+                      <p className="text-sm text-slate-500">Shared a local experience</p>
+                    </div>
+                  </div>
+                  <span className="text-sm text-slate-500">{new Date(post.created_at).toLocaleDateString()}</span>
+                </div>
+                <p className="text-sm leading-6 text-slate-700">{language === 'fil' ? translateText(post.content) : post.content}</p>
+                <div className="mt-3 flex items-center gap-4 text-sm text-slate-500">
+                  <button onClick={() => handleLikePost(post.id, post.likes || 0)} className={`flex items-center gap-1 ${likedPostIds.includes(post.id) ? 'text-rose-500' : 'hover:text-teal-600'}`}>
+                    <Heart size={15} fill={likedPostIds.includes(post.id) ? 'currentColor' : 'none'} /> {post.likes || 0} likes
+                  </button>
+                  <button onClick={() => handleSharePost(post.id)} className={`flex items-center gap-1 ${sharedPostIds.includes(post.id) ? 'text-teal-600' : 'hover:text-teal-600'}`}>
+                    <MessageSquare size={15} /> {sharedPostIds.includes(post.id) ? (language === 'en' ? 'Shared' : 'Naibahagi') : (language === 'en' ? 'Share' : 'Ibahagi')}
+                  </button>
+                </div>
+              </div>
+            )) : (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                No travel stories yet. Start sharing your favorite spots and experiences.
+              </div>
+            )}
+          </div>
+        </div>
+      )
+    }
+
+    if (activeSection === 'events') {
+      return (
+        <div id="events" className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-3 flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Upcoming events</h3>
+              <p className="text-sm text-slate-500">Events and gatherings happening soon</p>
+            </div>
+            <Calendar size={16} className="text-teal-500" />
+          </div>
+          <div className="space-y-3">
+            {events.map((event) => (
+              <div key={event.id} className="rounded-2xl bg-slate-50 p-3">
+                <p className="font-medium text-slate-900">{event.title}</p>
+                <p className="mt-1 text-sm text-slate-500">{event.location}</p>
+                <div className="mt-2 flex items-center justify-between text-sm text-slate-500">
+                  <span>{new Date(event.start_date).toLocaleDateString()}</span>
+                  <span className="rounded-full bg-teal-100 px-2 py-1 text-xs font-medium text-teal-700">{event.category}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <>
+        <div id="explore-section" className="rounded-3xl border border-slate-200 bg-linear-to-r from-teal-600 to-blue-700 p-5 text-white shadow-sm">
+          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="mb-2 text-sm font-medium uppercase tracking-[0.2em] text-teal-100">{language === 'en' ? 'Welcome back' : 'Maligayang pagbabalik'}</p>
+              <h2 className="text-2xl font-semibold">{language === 'en' ? 'Discover your next favorite place in Daet' : 'Tuklasin ang susunod mong paboritong lugar sa Daet'}</h2>
+              <p className="mt-2 max-w-xl text-sm text-teal-50">
+                {language === 'en'
+                  ? 'Stay updated on local events, hidden gems, and community stories tailored for your travel plan.'
+                  : 'Manatiling updated sa mga lokal na kaganapan, lihim na pook, at kwento ng komunidad na angkop sa iyong plano sa paglalakbay.'}
+              </p>
+            </div>
+            <button onClick={() => setShowComposer(true)} className="rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/30">
+              {language === 'en' ? 'Share an experience' : 'Ibahagi ang karanasan'}
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-slate-900">{language === 'en' ? "What's hot" : 'Ano ang uso'}</h3>
+                <p className="text-sm text-slate-500">{language === 'en' ? 'Trending spots and experiences right now' : 'Mga uso na lugar at karanasan ngayon'}</p>
+              </div>
+              <TrendingUp size={16} className="text-rose-500" />
+            </div>
+            <div className="space-y-3">
+              {spots.slice(0, 2).map((spot, index) => (
+                <div key={spot.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">{index === 0 ? 'Trending' : 'New favorite'}</p>
+                      <p className="mt-1 font-medium text-slate-900">{spot.name}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">{spot.rating || 4.7}</span>
+                  </div>
+                  <p className="mt-2 text-sm text-slate-600">{spot.location}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-slate-900">{language === 'en' ? "What's new" : 'Ano ang bago'}</h3>
+                <p className="text-sm text-slate-500">{language === 'en' ? 'Fresh updates, stories, and events' : 'Mga bagong update, kwento, at kaganapan'}</p>
+              </div>
+              <Sparkles size={16} className="text-blue-500" />
+            </div>
+            <div className="space-y-3">
+              {announcements.slice(0, 2).map((announcement) => (
+                <div key={announcement.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="font-medium text-slate-900">{announcement.title}</p>
+                  <p className="mt-1 text-sm text-slate-600">{announcement.message?.slice(0, 80)}...</p>
+                </div>
+              ))}
+              {events[0] && (
+                <div className="rounded-2xl border border-dashed border-teal-200 bg-teal-50 p-3">
+                  <p className="font-medium text-slate-900">{events[0].title}</p>
+                  <p className="mt-1 text-sm text-slate-600">{new Date(events[0].start_date).toLocaleDateString()}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">{language === 'en' ? 'Recommended for you' : 'Inirerekomenda para sa iyo'}</h3>
+              <p className="text-sm text-slate-500">{language === 'en' ? 'Popular spots nearby and trending this week' : 'Mga sikat na lugar sa paligid at uso ngayong linggo'}</p>
+            </div>
+            <button className="text-sm font-medium text-teal-600">{language === 'en' ? 'View all' : 'Tingnan lahat'}</button>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {spots.map((spot) => (
+              <div key={spot.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                <div className="h-32 bg-linear-to-br from-teal-400 to-blue-500" />
+                <div className="p-4">
+                  <div className="mb-2 flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="font-semibold text-slate-900">{spot.name}</h4>
+                      <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
+                        <MapPin size={14} className="text-teal-500" /> {spot.location}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleBookmark(spot.id)}
+                      className={`rounded-full p-2 shadow-sm ${bookmarkedSpotIds.includes(spot.id) ? 'bg-teal-600 text-white' : 'bg-white text-slate-500'}`}
+                    >
+                      <Bookmark size={15} />
+                    </button>
+                  </div>
+                  <p className="mb-3 text-sm text-slate-600">{spot.description?.slice(0, 110)}...</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1 text-sm text-amber-500">
+                      <Star size={15} fill="currentColor" />
+                      <span className="font-medium text-slate-700">{spot.rating || 4.7}</span>
+                    </div>
+                    <button className="text-sm font-medium text-teal-600">{language === 'en' ? 'Open details' : 'Buksan ang detalye'}</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </>
+    )
   }
 
   const profileName = profile?.full_name || user?.user_name || user?.email?.split('@')[0] || ''
@@ -469,11 +659,11 @@ export default function TouristDashboardPage() {
           <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="mb-3 font-semibold text-slate-900">{language === 'en' ? 'Quick Actions' : 'Mga Madaling Hakbang'}</h3>
             <div className="space-y-2">
-              <button className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
+              <button onClick={() => scrollToSection('explore')} className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
                 <span>{language === 'en' ? 'Explore Spots' : 'Tuklasin ang mga Pook'}</span>
                 <Sparkles size={16} className="text-teal-500" />
               </button>
-              <button className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
+              <button onClick={() => scrollToSection('events')} className="flex w-full items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100">
                 <span>{language === 'en' ? 'My Bookings' : 'Aking Bookings'}</span>
                 <Calendar size={16} className="text-blue-500" />
               </button>
@@ -489,156 +679,7 @@ export default function TouristDashboardPage() {
         </aside>
 
         <section className="space-y-4">
-          <div className="rounded-3xl border border-slate-200 bg-linear-to-r from-teal-600 to-blue-700 p-5 text-white shadow-sm">
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div>
-                <p className="mb-2 text-sm font-medium uppercase tracking-[0.2em] text-teal-100">{language === 'en' ? 'Welcome back' : 'Maligayang pagbabalik'}</p>
-                <h2 className="text-2xl font-semibold">{language === 'en' ? 'Discover your next favorite place in Daet' : 'Tuklasin ang susunod mong paboritong lugar sa Daet'}</h2>
-                <p className="mt-2 max-w-xl text-sm text-teal-50">
-                  {language === 'en'
-                    ? 'Stay updated on local events, hidden gems, and community stories tailored for your travel plan.'
-                    : 'Manatiling updated sa mga lokal na kaganapan, lihim na pook, at kwento ng komunidad na angkop sa iyong plano sa paglalakbay.'}
-                </p>
-              </div>
-              <button onClick={() => setShowComposer(true)} className="rounded-full bg-white/20 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/30">
-                {language === 'en' ? 'Share an experience' : 'Ibahagi ang karanasan'}
-              </button>
-            </div>
-          </div>
-
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-900">{language === 'en' ? "What's hot" : 'Ano ang uso'}</h3>
-                  <p className="text-sm text-slate-500">{language === 'en' ? 'Trending spots and experiences right now' : 'Mga uso na lugar at karanasan ngayon'}</p>
-                </div>
-                <TrendingUp size={16} className="text-rose-500" />
-              </div>
-              <div className="space-y-3">
-                {spots.slice(0, 2).map((spot, index) => (
-                  <div key={spot.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">{index === 0 ? 'Trending' : 'New favorite'}</p>
-                        <p className="mt-1 font-medium text-slate-900">{spot.name}</p>
-                      </div>
-                      <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">{spot.rating || 4.7}</span>
-                    </div>
-                    <p className="mt-2 text-sm text-slate-600">{spot.location}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-900">{language === 'en' ? "What's new" : 'Ano ang bago'}</h3>
-                  <p className="text-sm text-slate-500">{language === 'en' ? 'Fresh updates, stories, and events' : 'Mga bagong update, kwento, at kaganapan'}</p>
-                </div>
-                <Sparkles size={16} className="text-blue-500" />
-              </div>
-              <div className="space-y-3">
-                {announcements.slice(0, 2).map((announcement) => (
-                  <div key={announcement.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="font-medium text-slate-900">{announcement.title}</p>
-                    <p className="mt-1 text-sm text-slate-600">{announcement.message?.slice(0, 80)}...</p>
-                  </div>
-                ))}
-                {events[0] && (
-                  <div className="rounded-2xl border border-dashed border-teal-200 bg-teal-50 p-3">
-                    <p className="font-medium text-slate-900">{events[0].title}</p>
-                    <p className="mt-1 text-sm text-slate-600">{new Date(events[0].start_date).toLocaleDateString()}</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-slate-900">{language === 'en' ? 'Recommended for you' : 'Inirerekomenda para sa iyo'}</h3>
-                <p className="text-sm text-slate-500">{language === 'en' ? 'Popular spots nearby and trending this week' : 'Mga sikat na lugar sa paligid at uso ngayong linggo'}</p>
-              </div>
-              <button className="text-sm font-medium text-teal-600">{language === 'en' ? 'View all' : 'Tingnan lahat'}</button>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              {spots.map((spot) => (
-                <div key={spot.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                  <div className="h-32 bg-linear-to-br from-teal-400 to-blue-500" />
-                  <div className="p-4">
-                    <div className="mb-2 flex items-start justify-between gap-3">
-                      <div>
-                        <h4 className="font-semibold text-slate-900">{spot.name}</h4>
-                        <p className="mt-1 flex items-center gap-1 text-sm text-slate-500">
-                          <MapPin size={14} className="text-teal-500" /> {spot.location}
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => handleBookmark(spot.id)}
-                        className={`rounded-full p-2 shadow-sm ${bookmarkedSpotIds.includes(spot.id) ? 'bg-teal-600 text-white' : 'bg-white text-slate-500'}`}
-                      >
-                        <Bookmark size={15} />
-                      </button>
-                    </div>
-                    <p className="mb-3 text-sm text-slate-600">{spot.description?.slice(0, 110)}...</p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 text-sm text-amber-500">
-                        <Star size={15} fill="currentColor" />
-                        <span className="font-medium text-slate-700">{spot.rating || 4.7}</span>
-                      </div>
-                      <button className="text-sm font-medium text-teal-600">{language === 'en' ? 'Open details' : 'Buksan ang detalye'}</button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div id="feed" className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="font-semibold text-slate-900">{language === 'en' ? 'Your travel feed' : 'Ang iyong travel feed'}</h3>
-                <p className="text-sm text-slate-500">{language === 'en' ? 'Recent community posts and your own stories' : 'Mga kamakailang post ng komunidad at ang iyong sariling kwento'}</p>
-              </div>
-              <button onClick={() => setShowComposer(true)} className="text-sm font-medium text-teal-600">{language === 'en' ? 'Create post' : 'Gumawa ng post'}</button>
-            </div>
-
-            <div className="space-y-3">
-              {posts.length > 0 ? posts.map((post) => (
-                <div key={post.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-teal-500 to-blue-600 text-sm font-semibold text-white">
-                        {initials}
-                      </div>
-                      <div>
-                        <p className="font-semibold text-slate-900">{profileName}</p>
-                        <p className="text-sm text-slate-500">Shared a local experience</p>
-                      </div>
-                    </div>
-                    <span className="text-sm text-slate-500">{new Date(post.created_at).toLocaleDateString()}</span>
-                  </div>
-                  <p className="text-sm leading-6 text-slate-700">{language === 'fil' ? translateText(post.content) : post.content}</p>
-                  <div className="mt-3 flex items-center gap-4 text-sm text-slate-500">
-                    <button onClick={() => handleLikePost(post.id, post.likes || 0)} className={`flex items-center gap-1 ${likedPostIds.includes(post.id) ? 'text-rose-500' : 'hover:text-teal-600'}`}>
-                      <Heart size={15} fill={likedPostIds.includes(post.id) ? 'currentColor' : 'none'} /> {post.likes || 0} likes
-                    </button>
-                    <button onClick={() => handleSharePost(post.id)} className={`flex items-center gap-1 ${sharedPostIds.includes(post.id) ? 'text-teal-600' : 'hover:text-teal-600'}`}>
-                      <MessageSquare size={15} /> {sharedPostIds.includes(post.id) ? (language === 'en' ? 'Shared' : 'Naibahagi') : (language === 'en' ? 'Share' : 'Ibahagi')}
-                    </button>
-                  </div>
-                </div>
-              )) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                  No travel stories yet. Start sharing your favorite spots and experiences.
-                </div>
-              )}
-            </div>
-          </div>
+          {renderSectionContent()}
         </section>
 
         <aside className="space-y-4">
