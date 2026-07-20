@@ -10,6 +10,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/components/MediaUpload';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { hasAdminAccess } from '@/lib/adminRoles';
 
 // Weather API configuration
 const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
@@ -724,7 +725,7 @@ export default function AdminDashboard() {
       const session = sessionStorage.getItem('user_session');
       if (!session) { router.push('/login'); return; }
       const userData = JSON.parse(session);
-      if (userData.role !== 'admin') { router.push('/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
       setUser(userData);
       await fetchDashboardData();
       setLoading(false);

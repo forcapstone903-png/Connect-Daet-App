@@ -71,7 +71,9 @@ export default function LoginPage() {
       }
 
       // Redirect based on user type
-      if (user.user_type === 'admin') {
+      if (user.user_type === 'superadmin') {
+        router.push('/superadmin/dashboard')
+      } else if (user.user_type === 'admin') {
         router.push('/admin/dashboard')
       } else {
         router.push('/dashboard')

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { hasAdminAccess } from '@/lib/adminRoles';
 
 export default function AdminSettings() {
   const router = useRouter();
@@ -156,7 +157,7 @@ export default function AdminSettings() {
         return;
       }
       const userData = JSON.parse(session);
-      if (userData.role !== 'admin') {
+      if (!hasAdminAccess(userData.role)) {
         router.push('/dashboard');
         return;
       }

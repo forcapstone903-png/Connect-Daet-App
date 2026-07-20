@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { hasAdminAccess } from '@/lib/adminRoles';
 
 const USER_TYPES = ['tourist', 'artisan', 'operator'];
 const USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];
@@ -63,7 +64,7 @@ export default function ManageUsersPage() {
       const session = sessionStorage.getItem('user_session');
       if (!session) { router.push('/login'); return; }
       const userData = JSON.parse(session);
-      if (userData.role !== 'admin') { router.push('/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
       setAdminUser(userData);
       await fetchUsers();
       setLoading(false);

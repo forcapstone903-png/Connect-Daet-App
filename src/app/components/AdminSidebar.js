@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 
-const navItems = [
+const defaultNavItems = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
   { href: '/admin/users', label: 'Manage Users', icon: '👥' },
   { href: '/admin/events', label: 'Events & Activities', icon: '📅' },
@@ -15,9 +15,17 @@ const navItems = [
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ]
 
+const superAdminNavItems = [
+  { href: '/superadmin/dashboard', label: 'Superadmin Home', icon: '🛡️' },
+  { href: '/superadmin/roles', label: 'Role Management', icon: '🔐' },
+  ...defaultNavItems,
+]
+
 export default function AdminSidebar({ user, roleLabel = 'System Administrator', onLogout }) {
   const pathname = usePathname()
   const router = useRouter()
+  const role = (user?.role || user?.user_type || '').toString().trim().toLowerCase()
+  const navItems = role === 'superadmin' ? superAdminNavItems : defaultNavItems
 
   const isActive = (href) => pathname === href || pathname.startsWith(`${href}/`)
 
@@ -48,6 +56,9 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
             {user?.full_name || user?.user_name || user?.email || 'Admin User'}
           </p>
           <p className="mt-0.5 text-xs text-gray-500">{roleLabel}</p>
+          {role === 'superadmin' && (
+            <p className="mt-1 inline-flex w-fit items-center rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-purple-700">Superadmin</p>
+          )}
         </div>
       </div>
 

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { hasAdminAccess } from '@/lib/adminRoles';
 import MediaUpload from '@/app/components/MediaUpload';
 
 const BLOG_CATEGORIES = [
@@ -199,7 +200,7 @@ export default function BlogManagement() {
         return;
       }
       const userData = JSON.parse(session);
-      if (userData.role !== 'admin') {
+      if (!hasAdminAccess(userData.role)) {
         router.push('/dashboard');
         return;
       }

@@ -229,7 +229,7 @@ export default function AmenitiesManagement() {
         return;
       }
       const userData = JSON.parse(session);
-      if (userData.role !== 'admin') {
+      if (!hasAdminAccess(userData.role)) {
         router.push('/dashboard');
         return;
       }

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import FullCalendar from '@fullcalendar/react';
+import { hasAdminAccess } from '@/lib/adminRoles';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -547,7 +548,7 @@ export default function AdminEventsPage() {
       const session = sessionStorage.getItem('user_session');
       if (!session) { router.push('/login'); return; }
       const userData = JSON.parse(session);
-      if (userData.role !== 'admin') { router.push('/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
       setUser(userData);
       await fetchEvents();
       setLoading(false);
