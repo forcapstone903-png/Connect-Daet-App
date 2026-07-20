@@ -46,6 +46,18 @@ export default function TouristDashboardPage() {
   })
   const [rewardNotice, setRewardNotice] = useState('')
   const [sharedPostIds, setSharedPostIds] = useState([])
+  const [isEditingProfile, setIsEditingProfile] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [profileFeedback, setProfileFeedback] = useState('')
+  const [profileForm, setProfileForm] = useState({
+    full_name: '',
+    bio: '',
+    address: '',
+    city: '',
+    province: '',
+    country: '',
+    profile_image_url: '',
+  })
 
   useEffect(() => {
     const loadDashboard = async () => {
@@ -71,6 +83,15 @@ export default function TouristDashboardPage() {
 
       if (userProfile) {
         setProfile(userProfile)
+        setProfileForm({
+          full_name: userProfile.full_name || '',
+          bio: userProfile.bio || '',
+          address: userProfile.address || '',
+          city: userProfile.city || 'Daet',
+          province: userProfile.province || 'Camarines Norte',
+          country: userProfile.country || 'Philippines',
+          profile_image_url: userProfile.profile_image_url || '',
+        })
       }
 
       await awardDailyLogin(parsedSession.user_id, userProfile)
@@ -312,6 +333,94 @@ export default function TouristDashboardPage() {
     document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  const handleProfileFieldChange = (event) => {
+    const { name, value } = event.target
+    setProfileForm((prev) => ({ ...prev, [name]: value }))
+  }
+
+  const handleProfileSave = async () => {
+    const sessionData = sessionStorage.getItem('user_session')
+    if (!sessionData) return
+
+    const parsedSession = JSON.parse(sessionData)
+    if (!parsedSession.user_id) return
+
+    setSavingProfile(true)
+    setProfileFeedback('')
+
+    const payload = {
+      full_name: profileForm.full_name?.trim() || profile?.full_name || 'Traveler',
+      bio: profileForm.bio?.trim() || '',
+      address: profileForm.address?.trim() || '',
+      city: profileForm.city?.trim() || '',
+      province: profileForm.province?.trim() || '',
+      country: profileForm.country?.trim() || '',
+      profile_image_url: profileForm.profile_image_url?.trim() || '',
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data, error } = await supabase
+      .from('info_users')
+      .update(payload)
+      .eq('id', parsedSession.user_id)
+      .select('*')
+      .single()
+
+    if (error) {
+      setProfileFeedback('Could not save the profile right now.')
+      setSavingProfile(false)
+      return
+    }
+
+    setProfile(data)
+    setProfileForm({
+      full_name: data.full_name || '',
+      bio: data.bio || '',
+      address: data.address || '',
+      city: data.city || '',
+      province: data.province || '',
+      country: data.country || '',
+      profile_image_url: data.profile_image_url || '',
+    })
+    setIsEditingProfile(false)
+    setProfileFeedback('Profile updated successfully.')
+    setSavingProfile(false)
+  }
+
+  const handleProfileImageUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const sessionData = sessionStorage.getItem('user_session')
+    if (!sessionData) return
+
+    const parsedSession = JSON.parse(sessionData)
+    if (!parsedSession.user_id) return
+
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('bucket', 'avatars')
+    formData.append('folder', `profiles/${parsedSession.user_id}`)
+
+    try {
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error || 'Image upload failed')
+      }
+
+      setProfileForm((prev) => ({ ...prev, profile_image_url: data.url }))
+      setProfileFeedback('Photo attached. Save the profile to keep it.')
+    } catch (error) {
+      console.error('Profile image upload failed:', error)
+      setProfileFeedback(error.message || 'Profile image upload failed.')
+    }
+  }
+
   const profileName = profile?.full_name || user?.user_name || 'Traveler'
   const pointsBalance = profile?.points || 0
   const levelInfo = pointsBalance >= 600
@@ -397,15 +506,115 @@ export default function TouristDashboardPage() {
           <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
             <div className="h-20 bg-linear-to-r from-teal-500 to-blue-600" />
             <div className="px-4 pb-4">
-              <div className="-mt-8 mb-3 flex h-16 w-16 items-center justify-center rounded-2xl border-4 border-white bg-linear-to-br from-teal-500 to-blue-600 text-lg font-semibold text-white">
-                {initials}
+              <div className="-mt-8 mb-3 flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border-4 border-white bg-linear-to-br from-teal-500 to-blue-600 text-lg font-semibold text-white">
+                {profile?.profile_image_url || profileForm.profile_image_url ? (
+                  <img src={profile?.profile_image_url || profileForm.profile_image_url} alt={profileName} className="h-full w-full object-cover" />
+                ) : (
+                  initials
+                )}
               </div>
-              <h2 className="text-lg font-semibold text-slate-900">{profileName}</h2>
-              <p className="mt-1 text-sm text-slate-500">{profile?.user_type || 'tourist'} in Daet Explorer</p>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">{profileName}</h2>
+                  <p className="mt-1 text-sm text-slate-500">{profile?.user_type || 'tourist'} in Daet Explorer</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setProfileFeedback('')
+                    setIsEditingProfile((prev) => !prev)
+                  }}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
+                >
+                  {isEditingProfile ? 'Close' : 'Edit profile'}
+                </button>
+              </div>
               <div className="mt-3 flex items-center gap-2 text-sm text-slate-600">
                 <MapPin size={16} className="text-teal-500" />
-                <span>Daet, Camarines Norte</span>
+                <span>{profileForm.city || 'Daet'}, {profileForm.province || 'Camarines Norte'}</span>
               </div>
+              {profileFeedback ? (
+                <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">{profileFeedback}</p>
+              ) : null}
+              {isEditingProfile ? (
+                <div className="mt-4 space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Full name
+                    <input
+                      type="text"
+                      name="full_name"
+                      value={profileForm.full_name}
+                      onChange={handleProfileFieldChange}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Bio
+                    <textarea
+                      name="bio"
+                      rows={3}
+                      value={profileForm.bio}
+                      onChange={handleProfileFieldChange}
+                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500"
+                    />
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Address
+                      <input
+                        type="text"
+                        name="address"
+                        value={profileForm.address}
+                        onChange={handleProfileFieldChange}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      City
+                      <input
+                        type="text"
+                        name="city"
+                        value={profileForm.city}
+                        onChange={handleProfileFieldChange}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Province
+                      <input
+                        type="text"
+                        name="province"
+                        value={profileForm.province}
+                        onChange={handleProfileFieldChange}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500"
+                      />
+                    </label>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                      Country
+                      <input
+                        type="text"
+                        name="country"
+                        value={profileForm.country}
+                        onChange={handleProfileFieldChange}
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-teal-500"
+                      />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="flex cursor-pointer items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100">
+                      <Camera size={14} />
+                      <span>Upload photo</span>
+                      <input type="file" accept="image/*" onChange={handleProfileImageUpload} className="hidden" />
+                    </label>
+                    <button
+                      onClick={handleProfileSave}
+                      disabled={savingProfile}
+                      className="rounded-full bg-teal-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-teal-300"
+                    >
+                      {savingProfile ? 'Saving...' : 'Save'}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 
