@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
+import { buildInfoUserRecord } from '@/lib/infoUserData'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -27,9 +28,10 @@ export async function POST(request) {
     // Parse request body
     const body = await request.json()
     const { full_name, email, password, user_type } = body
+    const normalizedEmail = email?.toLowerCase().trim()
     
     // Validate input
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return NextResponse.json(
         { success: false, message: 'Email and password are required' },
         { status: 400 }
@@ -43,11 +45,29 @@ export async function POST(request) {
       )
     }
 
-    console.log('📝 Attempting to register user:', email)
+    // Check if this email already exists in the app profile table
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from('info_users')
+      .select('id, email')
+      .eq('email', normalizedEmail)
+      .maybeSingle()
+
+    if (existingProfileError) {
+      console.error('🔴 Error checking existing profile:', existingProfileError)
+    }
+
+    if (existingProfile) {
+      return NextResponse.json(
+        { success: false, message: 'An account with this email already exists. Please log in or reset your password.' },
+        { status: 409 }
+      )
+    }
+
+    console.log('📝 Attempting to register user:', normalizedEmail)
 
     // Register user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: email.toLowerCase().trim(),
+      email: normalizedEmail,
       password,
       options: {
         data: {
@@ -62,13 +82,17 @@ export async function POST(request) {
       console.error('🔴 Auth registration error:', authError)
       
       let errorMessage = authError.message
-      if (authError.message.includes('User already registered')) {
-        errorMessage = 'This email is already registered. Please login instead.'
+      const lowerMessage = authError.message?.toLowerCase() || ''
+
+      if (lowerMessage.includes('already registered') || lowerMessage.includes('email already')) {
+        errorMessage = 'This email is already registered. Please log in or reset your password.'
+      } else if (lowerMessage.includes('invalid api key') || lowerMessage.includes('jwt')) {
+        errorMessage = 'Supabase authentication is misconfigured. Please contact support.'
       }
       
       return NextResponse.json(
         { success: false, message: errorMessage },
-        { status: 400 }
+        { status: authError.status === 409 ? 409 : 400 }
       )
     }
 
@@ -83,16 +107,12 @@ export async function POST(request) {
     console.log('✅ User registered in Auth:', authData.user.id)
 
     // Create user profile in info_users table
-    const userData = {
+    const userData = buildInfoUserRecord({
       id: authData.user.id,
-      email: authData.user.email,
-      full_name: full_name || '',
-      user_type: user_type || 'tourist',
-      points: 0,
-      status: 'active',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }
+      email: normalizedEmail,
+      fullName: full_name,
+      userType: user_type,
+    })
 
     console.log('📝 Creating user profile:', userData)
 
@@ -122,7 +142,7 @@ export async function POST(request) {
           message: 'Registration successful but profile creation had issues. Please contact support if you cannot login.',
           user: {
             id: authData.user.id,
-            email: authData.user.email,
+            email: normalizedEmail,
             full_name: full_name || '',
             user_type: user_type || 'tourist',
           },
@@ -141,7 +161,7 @@ export async function POST(request) {
       message: 'Registration successful! Please check your email to confirm your account.',
       user: {
         id: authData.user.id,
-        email: authData.user.email,
+        email: normalizedEmail,
         full_name: full_name || '',
         user_type: user_type || 'tourist',
       },
