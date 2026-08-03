@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { loginStoredUser } from '@/lib/authStorage'
+import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -10,8 +11,7 @@ export async function POST(request) {
   
   try {
     // Get environment variables
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const { url: supabaseUrl, key: supabaseAuthKey } = getSupabaseAuthConfig()
     
     // Parse request body
     const body = await request.json()
@@ -27,7 +27,7 @@ export async function POST(request) {
     const normalizedEmail = email.toLowerCase().trim()
     const fallbackResult = loginStoredUser({ email: normalizedEmail, password })
 
-    if (!supabaseUrl || !supabaseAnonKey) {
+    if (!supabaseUrl || !supabaseAuthKey) {
       console.error('❌ Missing environment variables, using local fallback auth')
       if (fallbackResult.success) {
         return NextResponse.json({
@@ -50,7 +50,7 @@ export async function POST(request) {
     }
 
     // Create Supabase client
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = createClient(supabaseUrl, supabaseAuthKey)
 
     console.log('📝 Attempting login for:', normalizedEmail)
 
@@ -103,6 +103,9 @@ export async function POST(request) {
 
     // Get or create user profile
     let userProfile = null
+    const metadataRole = String(authData.user.user_metadata?.user_type || 'tourist').trim().toLowerCase()
+    const normalizedRole = ['admin', 'moderator', 'tourist', 'business'].includes(metadataRole) ? metadataRole : 'tourist'
+    const dbUserType = normalizedRole
 
     try {
       // Try to get existing profile
@@ -120,7 +123,7 @@ export async function POST(request) {
           id: authData.user.id,
           email: authData.user.email,
           full_name: authData.user.user_metadata?.full_name || authData.user.email,
-          user_type: authData.user.user_metadata?.user_type || 'tourist',
+          user_type: dbUserType || 'tourist',
           points: 0,
           status: 'active',
           created_at: new Date().toISOString(),
@@ -140,7 +143,7 @@ export async function POST(request) {
             id: authData.user.id,
             email: authData.user.email,
             full_name: authData.user.user_metadata?.full_name || authData.user.email,
-            user_type: authData.user.user_metadata?.user_type || 'tourist',
+            user_type: dbUserType || 'tourist',
             points: 0,
           }
         } else {
@@ -158,7 +161,7 @@ export async function POST(request) {
         id: authData.user.id,
         email: authData.user.email,
         full_name: authData.user.user_metadata?.full_name || authData.user.email,
-        user_type: authData.user.user_metadata?.user_type || 'tourist',
+        user_type: dbUserType || 'tourist',
         points: 0,
       }
     }
@@ -171,7 +174,7 @@ export async function POST(request) {
         id: authData.user.id,
         email: authData.user.email,
         full_name: userProfile?.full_name || authData.user.email,
-        user_type: userProfile?.user_type || 'tourist',
+        user_type: userProfile?.user_type || normalizedRole || 'tourist',
         points: userProfile?.points || 0,
       },
       session: {

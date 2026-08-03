@@ -1,4 +1,3 @@
-export const SUPERADMIN_ROLE = 'superadmin'
 export const ADMIN_ROLE = 'admin'
 
 export const normalizeRole = (role) => {
@@ -6,20 +5,12 @@ export const normalizeRole = (role) => {
   return role.trim().toLowerCase()
 }
 
-export const hasAdminAccess = (role) => {
-  const normalized = normalizeRole(role)
-  return normalized === ADMIN_ROLE || normalized === SUPERADMIN_ROLE
-}
-
-export const hasSuperAdminAccess = (role) => normalizeRole(role) === SUPERADMIN_ROLE
+export const hasAdminAccess = (role) => normalizeRole(role) === ADMIN_ROLE
 
 export const getAdminRoleLabel = (role) => {
   const normalized = normalizeRole(role)
-  if (normalized === SUPERADMIN_ROLE) return 'Super Administrator'
   if (normalized === ADMIN_ROLE) return 'Administrator'
   return 'Admin Access'
 }
 
-export const getAdminHomePath = (role) => {
-  return hasSuperAdminAccess(role) ? '/superadmin/dashboard' : '/admin/dashboard'
-}
+export const getAdminHomePath = () => '/admin/dashboard'

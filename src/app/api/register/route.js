@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,11 +10,10 @@ export async function POST(request) {
   
   try {
     // Get environment variables
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const { url: supabaseUrl, key: supabaseAuthKey } = getSupabaseAuthConfig()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://connect-daet-app.vercel.app'
     
-    if (!supabaseUrl || !supabaseAnonKey) {
+    if (!supabaseUrl || !supabaseAuthKey) {
       console.error('❌ Missing environment variables')
       return NextResponse.json(
         { success: false, message: 'Supabase configuration is missing' },
@@ -22,7 +22,7 @@ export async function POST(request) {
     }
 
     // Create Supabase client
-    const supabase = createClient(supabaseUrl, supabaseAnonKey)
+    const supabase = createClient(supabaseUrl, supabaseAuthKey)
 
     // Parse request body
     const body = await request.json()
