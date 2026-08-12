@@ -12,8 +12,8 @@ const defaultNavItems = [
   { href: '/admin/tourist-spots', label: 'Tourist Spots', icon: '🗺️' },
   { href: '/admin/blog', label: 'Blog & News', icon: '📝' },
   { href: '/admin/amenities', label: 'Amenities', icon: '🏨' },
-  { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
   { href: '/admin/forum', label: 'Forum', icon: '💬' },
+  { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
 ]
 
 export default function AdminSidebar({ user, roleLabel = 'System Administrator', onLogout }) {
