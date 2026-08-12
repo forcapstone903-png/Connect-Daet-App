@@ -85,6 +85,46 @@ export async function POST(request) {
         })
       }
       
+      // --- DB fallback: check `info_users` table for plaintext password match ---
+      // NOTE: This is a temporary compatibility fallback for seeded data that
+      // exists only in the app table (e.g. migrations/sample_data.sql). Storing
+      // plaintext passwords is insecure — migrate these users into Supabase
+      // Auth (or hash passwords) for production.
+      try {
+        const { data: dbUser, error: dbErr } = await supabase
+          .from('info_users')
+          .select('id, email, full_name, user_type, password, status, points')
+          .eq('email', normalizedEmail)
+          .maybeSingle()
+
+        if (!dbErr && dbUser) {
+          if (dbUser.status !== 'active') {
+            return NextResponse.json({ success: false, message: `Your account is ${dbUser.status}. Please contact support.` }, { status: 401 })
+          }
+
+          if (String(dbUser.password || '').trim() === String(password || '').trim()) {
+            // Update last login
+            await supabase.from('info_users').update({ last_login: new Date().toISOString(), is_online: true }).eq('id', dbUser.id)
+
+            return NextResponse.json({
+              success: true,
+              message: 'Login successful (db fallback)',
+              user: {
+                id: dbUser.id,
+                email: dbUser.email,
+                full_name: dbUser.full_name || dbUser.email,
+                user_type: dbUser.user_type || 'tourist',
+                points: dbUser.points || 0,
+              },
+              session: { access_token: null, refresh_token: null, expires_at: null },
+              warning: 'Authenticated via info_users fallback. Consider migrating users to Supabase Auth.'
+            })
+          }
+        }
+      } catch (e) {
+        console.error('🔴 DB fallback error:', e)
+      }
+      
       return NextResponse.json(
         { success: false, message: errorMessage },
         { status: 401 }
