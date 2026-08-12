@@ -27,7 +27,7 @@ export default function WelcomePage() {
           Welcome to Daet Connect
         </h1>
         <p className="text-white/70 text-sm mt-1 text-center">
-          Your gateway to Daet City
+          Your gateway to Daet, Camarines Norte
         </p>
       </div>
 

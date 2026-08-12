@@ -10,15 +10,20 @@ export async function POST(request) {
   console.log('📝 ====== REGISTRATION API CALLED ======')
   
   try {
-    // Log raw request for debugging
+    // Parse JSON body safely
+    let body = null
     try {
       const rawText = await request.text()
       console.log('📝 Raw request body:', rawText)
-      // Recreate a fresh Request from the raw text so downstream code can parse it
-      request = new Request(request.url, { method: 'POST', headers: request.headers, body: rawText })
+      body = rawText ? JSON.parse(rawText) : {}
     } catch (e) {
-      console.log('📝 Could not read raw request body:', e.message)
+      console.error('📝 Failed to parse request body:', e.message)
+      return NextResponse.json(
+        { success: false, message: 'Invalid request body' },
+        { status: 400 }
+      )
     }
+
     // Get environment variables
     const { url: supabaseUrl, key: supabaseAuthKey } = getSupabaseAuthConfig()
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://connect-daet-app.vercel.app'
@@ -34,8 +39,6 @@ export async function POST(request) {
     // Create Supabase client
     const supabase = createClient(supabaseUrl, supabaseAuthKey)
 
-    // Parse request body
-    const body = await request.json()
     const { full_name, email, password, user_type } = body
     const normalizedEmail = email?.toLowerCase().trim()
     console.log('📝 Parsed body:', { full_name, email: normalizedEmail, user_type })

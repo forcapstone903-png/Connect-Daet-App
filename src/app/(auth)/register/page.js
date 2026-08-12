@@ -99,10 +99,16 @@ export default function RegisterPage() {
         }),
       })
 
-      const data = await response.json()
+      const text = await response.text()
+      let data = null
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch (e) {
+        throw new Error(`Server returned ${response.status}: ${text || response.statusText}`)
+      }
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Unable to register your account right now')
+        throw new Error(data.message || `Unable to register your account right now (${response.status})`)
       }
 
       // Show success message
