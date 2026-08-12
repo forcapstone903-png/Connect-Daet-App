@@ -32,6 +32,7 @@ export default function TouristDashboardPage() {
   const [posts, setPosts] = useState([])
   const [announcements, setAnnouncements] = useState([])
   const [bookmarkedSpotIds, setBookmarkedSpotIds] = useState([])
+  const [bookmarkedSpot, setBookmarkedSpot] = useState(null)
   const [likedPostIds, setLikedPostIds] = useState([])
   const [showComposer, setShowComposer] = useState(false)
   const [postDraft, setPostDraft] = useState('')
@@ -100,6 +101,7 @@ export default function TouristDashboardPage() {
         fetchPosts(parsedSession.user_id),
         fetchAnnouncements(),
         fetchBookmarks(parsedSession.user_id),
+        fetchBookmarkedSpot(parsedSession.user_id),
       ])
 
       setLoading(false)
@@ -257,6 +259,21 @@ export default function TouristDashboardPage() {
       .eq('booking_type', 'spot')
 
     setBookmarkedSpotIds((data || []).map((item) => item.spot_id))
+  }
+
+  const fetchBookmarkedSpot = async (userId) => {
+    const { data } = await supabase
+      .from('info_bookings')
+      .select('spot:spot_id(*)')
+      .eq('user_id', userId)
+      .eq('booking_type', 'spot')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (data?.spot) {
+      setBookmarkedSpot(data.spot)
+    }
   }
 
   const handleBookmark = async (spotId) => {
@@ -483,6 +500,20 @@ export default function TouristDashboardPage() {
             </div>
             <button className="text-sm font-medium text-teal-600">{language === 'en' ? 'View all' : 'Tingnan lahat'}</button>
           </div>
+
+          {bookmarkedSpot ? (
+            <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-teal-600">{language === 'en' ? 'Your saved spot' : 'Ang iyong na-save na pook'}</p>
+                  <h4 className="mt-2 text-lg font-semibold text-slate-900">{bookmarkedSpot.name}</h4>
+                  <p className="mt-1 text-sm text-slate-500">{bookmarkedSpot.location}</p>
+                </div>
+                <span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-600">{bookmarkedSpot.rating || 4.7}</span>
+              </div>
+              <p className="mt-3 text-sm text-slate-600">{bookmarkedSpot.description?.slice(0, 130) || (language === 'en' ? 'No description available yet.' : 'Walang paglalarawan.')}</p>
+            </div>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2">
             {spots.map((spot) => (
