@@ -99,7 +99,9 @@ export default function RegisterPage() {
         }),
       })
 
+      console.log('Register response status:', response.status, response.statusText)
       const text = await response.text()
+      console.log('Register response text:', text)
       let data = null
       try {
         data = text ? JSON.parse(text) : {}

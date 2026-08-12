@@ -6,8 +6,13 @@ import { buildInfoUserRecord } from '@/lib/infoUserData'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+export async function GET() {
+  return NextResponse.json({ success: true, message: 'Register API is reachable' })
+}
+
 export async function POST(request) {
   console.log('📝 ====== REGISTRATION API CALLED ======')
+  console.log('📝 Request method:', request.method)
   
   try {
     // Parse JSON body safely
@@ -36,8 +41,10 @@ export async function POST(request) {
       )
     }
 
-    // Create Supabase client
+    // Create Supabase client for auth operations
     const supabase = createClient(supabaseUrl, supabaseAuthKey)
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+    const adminSupabase = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
     const { full_name, email, password, user_type } = body
     const normalizedEmail = email?.toLowerCase().trim()
@@ -77,6 +84,14 @@ export async function POST(request) {
     }
 
     console.log('📝 Attempting to register user:', normalizedEmail)
+
+    if (!adminSupabase) {
+      console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY for profile insertion')
+      return NextResponse.json(
+        { success: false, message: 'Server is not configured to create user profiles. Please contact support.' },
+        { status: 500 }
+      )
+    }
 
     // Register user with Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -120,18 +135,19 @@ export async function POST(request) {
 
     console.log('✅ User registered in Auth:', authData.user.id)
 
-    // Create user profile in info_users table
+    // Create user profile in info_users table using service role client
     const userData = buildInfoUserRecord({
       id: authData.user.id,
       email: normalizedEmail,
       fullName: full_name,
       userType: user_type,
+      password,
     })
 
-    console.log('📝 Creating user profile:', userData)
+    console.log('📝 Creating user profile via admin client:', userData)
 
     // Try to insert the user profile
-    const { data: profileData, error: profileError } = await supabase
+    const { data: profileData, error: profileError } = await adminSupabase
       .from('info_users')
       .insert(userData)
       .select()
@@ -141,8 +157,8 @@ export async function POST(request) {
     if (profileError) {
       console.error('🔴 Profile creation error:', profileError)
       
-      // If insert fails, try upsert
-      const { data: upsertData, error: upsertError } = await supabase
+      // If insert fails, try upsert with admin client
+      const { data: upsertData, error: upsertError } = await adminSupabase
         .from('info_users')
         .upsert(userData, { onConflict: 'id' })
         .select()
