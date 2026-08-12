@@ -42,7 +42,11 @@ CREATE TABLE IF NOT EXISTS public.info_users (
   search_vector tsvector GENERATED ALWAYS AS (
     to_tsvector('english', COALESCE(email, '') || ' ' || COALESCE(full_name, ''))
   ) STORED
+  );
 );
+  -- ============================================================================ 
+  -- 1. FORUM TABLES (to be added)
+
 
 CREATE INDEX idx_info_users_email ON public.info_users(email);
 CREATE INDEX idx_info_users_user_type ON public.info_users(user_type);

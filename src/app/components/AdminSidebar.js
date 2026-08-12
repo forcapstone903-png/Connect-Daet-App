@@ -13,6 +13,7 @@ const defaultNavItems = [
   { href: '/admin/blog', label: 'Blog & News', icon: '📝' },
   { href: '/admin/amenities', label: 'Amenities', icon: '🏨' },
   { href: '/admin/settings', label: 'Settings', icon: '⚙️' },
+  { href: '/admin/forum', label: 'Forum', icon: '💬' },
 ]
 
 export default function AdminSidebar({ user, roleLabel = 'System Administrator', onLogout }) {
