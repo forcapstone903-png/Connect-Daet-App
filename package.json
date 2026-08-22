@@ -29,6 +29,8 @@
     "babel-plugin-react-compiler": "1.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "qrdev": "^1.1.1",
+    "supabase": "^2.114.0",
     "tailwindcss": "^4"
   }
 }

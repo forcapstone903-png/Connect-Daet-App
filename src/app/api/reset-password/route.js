@@ -1,6 +1,8 @@
 // app/api/reset-password/route.js
 import { NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase'
+import { maskEmail } from '@/lib/safeLogging'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,7 +57,7 @@ export async function POST(request) {
       )
     }
 
-    console.log('🔄 Resetting password for:', email)
+    console.log('🔄 Resetting password for:', maskEmail(email))
 
     // Find user with valid reset token
     const { data: user, error: userError } = await supabase
@@ -89,11 +91,13 @@ export async function POST(request) {
       )
     }
 
+    const hashedPassword = await bcrypt.hash(newPassword, 12)
+
     // Update password and clear reset token
     const { error: updateError } = await supabase
       .from('info_users')
       .update({
-        password: newPassword,
+        password: hashedPassword,
         reset_token: null,
         reset_token_expires: null,
         updated_at: new Date().toISOString()
@@ -111,7 +115,7 @@ export async function POST(request) {
       )
     }
 
-    console.log('✅ Password reset successfully for:', email)
+    console.log('✅ Password reset successfully for:', maskEmail(email))
 
     return NextResponse.json(
       { 

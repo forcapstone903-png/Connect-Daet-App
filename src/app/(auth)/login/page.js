@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import { ArrowRight, Eye, EyeOff, MapPin, ShieldCheck, Sparkles } from 'lucide-react'
+import { setAuthCookie } from '@/lib/authCookies'
+import { supabase } from '@/lib/supabase'
+import logoImage from '../../assets/images/logo.png'
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -13,17 +18,30 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
 
   useEffect(() => {
-    const remembered = localStorage.getItem('remembered_email')
-    if (remembered) {
-      setFormData(prev => ({ ...prev, email: remembered }))
-    }
+    const timeoutId = window.setTimeout(() => {
+      const messageFromQuery = searchParams.get('message') || ''
+      if (messageFromQuery) {
+        setMessage(messageFromQuery)
+      } else {
+        const rememberSessionRaw = localStorage.getItem('daet_remember_me_session')
+        if (rememberSessionRaw) {
+          try {
+            const rememberSession = JSON.parse(rememberSessionRaw)
+            if (rememberSession?.expiresAt && Number(rememberSession.expiresAt) > Date.now()) {
+              setMessage('Welcome back! Your session is still active.')
+            }
+          } catch (error) {
+            console.error('Failed to parse remembered session:', error)
+          }
+        }
+      }
 
-    const urlParams = new URLSearchParams(window.location.search)
-    const messageFromQuery = urlParams.get('message')
-    if (messageFromQuery) {
-      setMessage(messageFromQuery)
-    }
-  }, [])
+      const remembered = localStorage.getItem('remembered_email') || ''
+      setFormData({ email: remembered, password: '' })
+    }, 0)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [searchParams])
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value })
@@ -58,25 +76,46 @@ export default function LoginPage() {
         user_email: user.email,
         role: user.user_type,
         logged_in: true,
-        login_time: new Date().toISOString()
+        login_time: new Date().toISOString(),
+      }
+
+      if (data.session?.access_token && data.session?.refresh_token) {
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        })
+
+        if (sessionError) {
+          console.warn('Supabase session sync warning:', sessionError)
+        }
       }
 
       sessionStorage.setItem('user_session', JSON.stringify(sessionData))
+      setAuthCookie(sessionData, 1)
 
       const rememberCheckbox = document.getElementById('remember')
+      const rememberMeKey = 'daet_remember_me_session'
+      const rememberSession = {
+        userId: user.id,
+        email: user.email,
+        userName: user.full_name,
+        token: `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      }
+
       if (rememberCheckbox && rememberCheckbox.checked) {
+        localStorage.setItem(rememberMeKey, JSON.stringify(rememberSession))
         localStorage.setItem('remembered_email', formData.email)
       } else {
+        localStorage.removeItem(rememberMeKey)
         localStorage.removeItem('remembered_email')
       }
 
-      // Redirect based on user type
       if (user.user_type === 'admin') {
         router.push('/admin/dashboard')
       } else {
-        router.push('/dashboard')
+        router.push('/user/dashboard')
       }
-
     } catch (err) {
       setError(err.message)
     } finally {
@@ -85,105 +124,195 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
-      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
-        <div className="text-center mb-8">
-          <div className="h-16 w-16 bg-gradient-to-r from-yellow-500 to-yellow-600 rounded-full flex items-center justify-center mx-auto mb-4">
-            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-            </svg>
-          </div>
-          <h2 className="text-3xl font-bold text-gray-800">Welcome Back!</h2>
-          <p className="text-gray-600 mt-2">Sign in to your Daet-Connect account</p>
-        </div>
+    <>
+      <style>{`
+        @keyframes authFadeSlide {
+          0% {
+            opacity: 0;
+            transform: translateY(14px) scale(0.98);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+      `}</style>
 
-        {message && (
-          <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded-lg text-sm">
-            {message}
-          </div>
-        )}
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleLogin}>
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-semibold mb-2">Email Address</label>
-            <input
-              type="email"
-              name="email"
-              required
-              value={formData.email}
-              onChange={handleChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent"
-              placeholder="you@example.com"
+      <div className="min-h-screen w-full bg-slate-100">
+        <div className="grid min-h-screen w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
+          <div className="relative hidden overflow-hidden lg:block">
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage:
+                  "url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80')",
+              }}
             />
-          </div>
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 via-sky-900/75 to-emerald-900/70" />
 
-          <div className="mb-4">
-            <label className="block text-gray-700 text-sm font-semibold mb-2">Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:border-transparent pr-12"
-                placeholder="Enter your password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M17.94 17.94A10.09 10.09 0 0 0 21 12c-1.5-4.5-5.5-8-9-8a9.963 9.963 0 0 0-6.6 2.44" strokeLinecap="round" strokeLinejoin="round" />
-                    <path d="M1 1l22 22" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" strokeLinecap="round" strokeLinejoin="round" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
-              </button>
+            <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14 text-white">
+              <div className="flex items-center gap-3">
+                <img src={logoImage.src || logoImage} alt="Daet logo" className="h-14 w-14 rounded-2xl border border-white/20 bg-white/10 p-1" />
+                <div>
+                  <p className="text-sm font-bold tracking-[0.25em] text-white/85">DAET</p>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-sky-100">Camarines Norte</p>
+                </div>
+              </div>
+
+              <div className="max-w-lg xl:max-w-xl">
+                <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-sky-100">
+                  <Sparkles size={12} />
+                  Welcome back
+                </div>
+
+                <h1 className="text-4xl font-black leading-tight xl:text-5xl">Plan your next Daet getaway.</h1>
+                <p className="mt-4 text-base text-sky-50/90 xl:text-lg">
+                  Continue exploring surf-ready shores, local stories, and unforgettable travel experiences across Daet, Camarines Norte.
+                </p>
+
+                <div className="mt-8 space-y-4 xl:mt-10">
+                  {[
+                    'Discover beaches and local stories',
+                    'Keep track of tourist spots and blogs',
+                    'Manage your travel community engagement',
+                  ].map((item) => (
+                    <div key={item} className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur-sm xl:px-5 xl:py-4">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-200">
+                        <MapPin size={14} />
+                      </span>
+                      <span className="text-sm font-medium text-slate-100 xl:text-base">{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="text-sm text-sky-100/80 xl:text-base">Travel better. Explore local. Stay connected.</div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-6">
-            <label className="flex items-center cursor-pointer">
-              <input type="checkbox" id="remember" className="mr-2 w-4 h-4" />
-              <span className="text-sm text-gray-600">Remember me</span>
-            </label>
-            <Link href="/forgot-password" className="text-sm text-yellow-600 hover:underline">
-              Forgot password?
-            </Link>
+          <div className="flex min-h-screen items-center justify-center px-3 py-6 sm:px-5 lg:px-8 xl:px-12">
+            <div
+              className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:p-8 xl:p-10"
+              style={{ animationFillMode: 'forwards' }}
+            >
+              <div className="mb-8 text-center">
+                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 ring-4 ring-sky-100">
+                  <img src={logoImage.src || logoImage} alt="Daet logo" className="h-12 w-12 object-contain" />
+                </div>
+                <p className="text-xs font-bold uppercase tracking-[0.28em] text-sky-700">Daet Connect</p>
+                <h2 className="mt-3 text-3xl font-black text-slate-900">Welcome back</h2>
+                <p className="mt-2 text-sm text-slate-600">Sign in to continue your local travel journey.</p>
+              </div>
+
+              {message && (
+                <div suppressHydrationWarning className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <span suppressHydrationWarning>{message}</span>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                  <div className="flex items-start gap-2">
+                    <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                    <span>{error}</span>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600" />
+                  <span>For security, your account must be verified before you can sign in.</span>
+                </div>
+              </div>
+
+              <form onSubmit={handleLogin} className="space-y-5">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
+                  <input
+                    suppressHydrationWarning
+                    type="email"
+                    name="email"
+                    required
+                    value={formData.email}
+                    onChange={handleChange}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    placeholder="you@example.com"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      required
+                      value={formData.password}
+                      onChange={handleChange}
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                      placeholder="Enter your password"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-3 flex items-center text-slate-500 transition hover:text-slate-700"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-3 pt-1">
+                  <label className="flex items-center gap-2 text-sm text-slate-600">
+                    <input type="checkbox" id="remember" className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                    Remember me
+                  </label>
+
+                  <Link href="/forgot-password" className="text-sm font-medium text-sky-700 transition hover:text-sky-800">
+                    Forgot password?
+                  </Link>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 via-sky-600 to-emerald-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-sky-500/25 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {loading ? 'Signing in...' : 'Sign in'}
+                  <ArrowRight size={16} />
+                </button>
+              </form>
+
+              <div className="mt-6 space-y-2 text-center text-sm text-slate-600">
+                <div>
+                  Don't have an account?{' '}
+                  <Link href="/register" className="font-semibold text-sky-700 transition hover:text-sky-800">
+                    Sign up here
+                  </Link>
+                </div>
+                <div>
+                  <Link href="/welcome" className="font-semibold text-slate-700 transition hover:text-slate-900">
+                    ← Back to welcome page
+                  </Link>
+                </div>
+              </div>
+            </div>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-white font-semibold py-2 rounded-lg hover:from-yellow-600 hover:to-yellow-700 transition duration-200 disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center">
-          <p className="text-gray-600">
-            Don't have an account?{' '}
-            <Link href="/register" className="text-yellow-600 font-semibold hover:underline">
-              Create one now
-            </Link>
-          </p>
         </div>
       </div>
-    </div>
+    </>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   )
 }

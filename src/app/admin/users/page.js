@@ -1,25 +1,27 @@
 // app/admin/users/page.js
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 
-const USER_TYPES = ['tourist', 'artisan', 'operator'];
-const USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];
-
-// Post statuses for moderation
-const POST_STATUSES = ['pending', 'approved', 'rejected', 'flagged'];
+// Lookup lists (populated from DB where available)
+// Defaults provided as fallbacks
+const DEFAULT_USER_TYPES = ['tourist', 'artisan', 'operator'];
+const DEFAULT_USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];
+const DEFAULT_POST_STATUSES = ['pending', 'approved', 'rejected', 'flagged'];
 
 export default function ManageUsersPage() {
   const router = useRouter();
   const [adminUser, setAdminUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
-  const [filteredUsers, setFilteredUsers] = useState([]);
+  const [userTypes, setUserTypes] = useState(DEFAULT_USER_TYPES);
+  const [userStatuses, setUserStatuses] = useState(DEFAULT_USER_STATUSES);
+  const [postStatuses, setPostStatuses] = useState(DEFAULT_POST_STATUSES);
   const [stats, setStats] = useState({ total: 0, tourists: 0, artisans: 0, operators: 0, active: 0, suspended: 0, pending: 0 });
 
   // Filters
@@ -58,33 +60,10 @@ export default function ManageUsersPage() {
   const [pointsAdjust, setPointsAdjust] = useState({ amount: '', reason: '', mode: 'add' });
   const [toastMessage, setToastMessage] = useState(null);
 
-  // ─── Auth check ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
-      if (!session) { router.push('/login'); return; }
-      const userData = JSON.parse(session);
-      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
-      setAdminUser(userData);
-      await fetchUsers();
-      setLoading(false);
-    };
-    checkAuth();
+  const showToast = useCallback((message, isError = false) => {
+    setToastMessage({ message, isError });
+    setTimeout(() => setToastMessage(null), 3000);
   }, []);
-
-  // ─── Fetch ─────────────────────────────────────────────────────────────────
-  const fetchUsers = async () => {
-    try {
-      const response = await fetch('/api/admin/users');
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load users');
-      const users = (data.users || []).filter((user) => user.user_type !== 'admin');
-      setUsers(users);
-      computeStats(users);
-    } catch (err) {
-      showToast('Failed to load users: ' + err.message, true);
-    }
-  };
 
   const computeStats = (data) => {
     setStats({
@@ -97,6 +76,59 @@ export default function ManageUsersPage() {
       pending: data.filter(u => u.status === 'pending').length,
     });
   };
+
+  // ─── Fetch ─────────────────────────────────────────────────────────────────
+  const fetchUsers = useCallback(async () => {
+    try {
+      const response = await fetch('/api/admin/users');
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load users');
+      const users = (data.users || []).filter((user) => user.user_type !== 'admin');
+      setUsers(users);
+      computeStats(users);
+    } catch (err) {
+      showToast('Failed to load users: ' + err.message, true);
+    }
+  }, [showToast]);
+
+  // ─── Auth check ───────────────────────────────────────────────────────────
+  useEffect(() => {
+    const checkAuth = async () => {
+      const session = sessionStorage.getItem('user_session');
+      if (!session) { router.push('/login'); return; }
+      const userData = JSON.parse(session);
+      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
+      setAdminUser(userData);
+      await fetchUsers();
+      setLoading(false);
+    };
+    checkAuth();
+  }, [fetchUsers, router]);
+
+  // Populate lookup lists from DB where possible
+  useEffect(() => {
+    const fetchLookups = async () => {
+      try {
+        const [{ data: typesData }, { data: statusesData }, { data: postsData }] = await Promise.all([
+          supabase.from('info_users').select('user_type'),
+          supabase.from('info_users').select('status'),
+          supabase.from('info_user_posts').select('status')
+        ]);
+
+        const types = Array.from(new Set((typesData || []).map(r => r.user_type).filter(Boolean)));
+        if (types.length) setUserTypes(types);
+
+        const statuses = Array.from(new Set((statusesData || []).map(r => r.status).filter(Boolean)));
+        if (statuses.length) setUserStatuses(statuses);
+
+        const postStats = Array.from(new Set((postsData || []).map(r => r.status).filter(Boolean)));
+        if (postStats.length) setPostStatuses(postStats);
+      } catch (e) {
+        console.error('Error loading user lookups:', e);
+      }
+    };
+    fetchLookups();
+  }, []);
 
   // ─── Fetch User Activity Data ─────────────────────────────────────────────
   const fetchUserPosts = async (userId) => {
@@ -304,8 +336,7 @@ export default function ManageUsersPage() {
     }
   };
 
-  // ─── Filter + Sort ─────────────────────────────────────────────────────────
-  useEffect(() => {
+  const filteredUsers = useMemo(() => {
     let result = [...users];
 
     if (searchQuery.trim()) {
@@ -326,18 +357,11 @@ export default function ManageUsersPage() {
       default: result.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
     }
 
-    setFilteredUsers(result);
-    setCurrentPage(1);
+    return result;
   }, [users, searchQuery, filterType, filterStatus, sortBy]);
 
   const paginatedUsers = filteredUsers.slice((currentPage - 1) * USERS_PER_PAGE, currentPage * USERS_PER_PAGE);
   const totalPages = Math.ceil(filteredUsers.length / USERS_PER_PAGE);
-
-  // ─── Toast ─────────────────────────────────────────────────────────────────
-  const showToast = (message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
-  };
 
   // ─── Modal helpers ─────────────────────────────────────────────────────────
   const openCreateModal = () => {
@@ -464,6 +488,34 @@ export default function ManageUsersPage() {
     }
   };
 
+  const exportUsersToCSV = () => {
+    const rows = [
+      ['Name', 'Email', 'Type', 'Status', 'Points', 'Joined', 'Last Login'],
+      ...filteredUsers.map((user) => [
+        user.full_name || '',
+        user.email || '',
+        user.user_type || '',
+        user.status || '',
+        String(user.points || 0),
+        user.created_at || '',
+        user.last_login || '',
+      ])
+    ];
+
+    const csvContent = rows
+      .map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `daet_users_export_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast('User export downloaded.');
+  };
+
   const handleLogout = async () => {
     sessionStorage.removeItem('user_session');
     await supabase.auth.signOut();
@@ -538,7 +590,7 @@ export default function ManageUsersPage() {
       <AdminSidebar user={adminUser} roleLabel="Administrator" onLogout={handleLogout} />
 
       {/* Main Content */}
-      <div className="ml-64 p-6">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
@@ -546,25 +598,32 @@ export default function ManageUsersPage() {
             <h1 className="text-2xl font-bold text-gray-800">Manage Users</h1>
             <p className="text-gray-500 text-sm mt-1">View, create, and manage all registered users and their content</p>
           </div>
-          <button
-            onClick={openCreateModal}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full flex items-center gap-2 shadow-sm transition-all duration-200"
-          >
-            <span>➕</span>
-            <span className="text-sm font-medium">Add New User</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={exportUsersToCSV}
+              className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2.5 rounded-full flex items-center gap-2 shadow-sm transition-all duration-200"
+            >
+              <span className="text-sm font-medium">Export CSV</span>
+            </button>
+            <button
+              onClick={openCreateModal}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full flex items-center gap-2 shadow-sm transition-all duration-200"
+            >
+              <span className="text-sm font-medium">Add New User</span>
+            </button>
+          </div>
         </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
           {[
-            { label: 'Total Users', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50', icon: '👥' },
-            { label: 'Tourists', value: stats.tourists, color: 'text-blue-500', bg: 'bg-blue-50', icon: '🧳' },
-            { label: 'Artisans', value: stats.artisans, color: 'text-yellow-600', bg: 'bg-yellow-50', icon: '🎨' },
-            { label: 'Operators', value: stats.operators, color: 'text-purple-600', bg: 'bg-purple-50', icon: '🏢' },
-            { label: 'Active', value: stats.active, color: 'text-green-600', bg: 'bg-green-50', icon: '✅' },
-            { label: 'Suspended', value: stats.suspended, color: 'text-red-600', bg: 'bg-red-50', icon: '🚫' },
-            { label: 'Pending', value: stats.pending, color: 'text-yellow-600', bg: 'bg-yellow-50', icon: '⏳' },
+            { label: 'Total Users', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50', icon: 'users' },
+            { label: 'Tourists', value: stats.tourists, color: 'text-blue-500', bg: 'bg-blue-50', icon: 'profile' },
+            { label: 'Artisans', value: stats.artisans, color: 'text-yellow-600', bg: 'bg-yellow-50', icon: 'edit' },
+            { label: 'Operators', value: stats.operators, color: 'text-purple-600', bg: 'bg-purple-50', icon: 'users' },
+            { label: 'Active', value: stats.active, color: 'text-green-600', bg: 'bg-green-50', icon: 'check' },
+            { label: 'Suspended', value: stats.suspended, color: 'text-red-600', bg: 'bg-red-50', icon: 'delete' },
+            { label: 'Pending', value: stats.pending, color: 'text-yellow-600', bg: 'bg-yellow-50', icon: 'arrow' },
           ].map((s, i) => (
             <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3">
               <div className={`${s.bg} w-8 h-8 rounded-xl flex items-center justify-center text-sm mb-2`}>{s.icon}</div>
@@ -578,43 +637,54 @@ export default function ManageUsersPage() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-4">
           <div className="flex flex-wrap gap-3 items-center">
             <div className="relative flex-1 min-w-[200px]">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
               <input
                 type="text"
                 placeholder="Search by name or email..."
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-800 placeholder-gray-400"
               />
             </div>
 
             <select
               value={filterType}
-              onChange={e => setFilterType(e.target.value)}
+              onChange={e => {
+                setFilterType(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-3 py-2 border border-gray-200 rounded-2xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="all">All Types</option>
-              {USER_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+              {userTypes.map(t => <option key={t} value={t}>{String(t).charAt(0).toUpperCase() + String(t).slice(1)}</option>)}
             </select>
 
             <select
               value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
+              onChange={e => {
+                setFilterStatus(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-3 py-2 border border-gray-200 rounded-2xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="all">All Statuses</option>
-              {USER_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+              {userStatuses.map(s => <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>)}
             </select>
 
             <select
               value={sortBy}
-              onChange={e => setSortBy(e.target.value)}
+              onChange={e => {
+                setSortBy(e.target.value);
+                setCurrentPage(1);
+              }}
               className="px-3 py-2 border border-gray-200 rounded-2xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="created_at_desc">Newest First</option>
               <option value="created_at_asc">Oldest First</option>
-              <option value="name_asc">Name A→Z</option>
-              <option value="name_desc">Name Z→A</option>
+              <option value="name_asc">Name A-Z</option>
+              <option value="name_desc">Name Z-A</option>
               <option value="points_desc">Most Points</option>
             </select>
 
@@ -643,7 +713,7 @@ export default function ManageUsersPage() {
                 {paginatedUsers.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="text-center py-12 text-gray-400">
-                      <span className="text-4xl block mb-2">👤</span>
+                      <Icon name="profile" className="w-10 h-10 block mb-2" />
                       <p className="text-sm">No users found matching your filters.</p>
                     </td>
                   </tr>
@@ -706,7 +776,7 @@ export default function ManageUsersPage() {
                             onClick={() => openEditModal(u)}
                             title="Edit User"
                             className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm"
-                          >✏️</button>
+                          ><Icon name="edit" className="w-4 h-4" /></button>
                           <button
                             onClick={() => openDeleteModal(u)}
                             title="Delete User"
@@ -756,7 +826,7 @@ export default function ManageUsersPage() {
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
                 className="px-3 py-1.5 text-xs border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >Next →</button>
+              >Next <Icon name="arrow" className="inline-block w-4 h-4 ml-2" /></button>
             </div>
           </div>
         )}
@@ -781,8 +851,8 @@ export default function ManageUsersPage() {
 
             <div className="flex border-b border-gray-200 px-5 flex-shrink-0">
               {[
-                { id: 'posts', label: 'Posts', icon: '📝', count: userPosts.length },
-                { id: 'feedback', label: 'Feedback', icon: '💬', count: userFeedback.length },
+                { id: 'posts', label: 'Posts', icon: 'edit', count: userPosts.length },
+                { id: 'feedback', label: 'Feedback', icon: 'feedback', count: userFeedback.length },
                 { id: 'ratings', label: 'Ratings', icon: '⭐', count: userRatings.filter(r => r.rating).length }
               ].map(tab => (
                 <button
@@ -815,7 +885,7 @@ export default function ManageUsersPage() {
                     <div className="space-y-4">
                       {userPosts.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
-                          <span className="text-4xl block mb-2">📝</span>
+                          <Icon name="edit" className="w-10 h-10 block mb-2" />
                           <p className="text-sm">No posts from this user.</p>
                         </div>
                       ) : (
@@ -847,9 +917,9 @@ export default function ManageUsersPage() {
                             <p className="text-sm text-gray-600 mt-2 line-clamp-3">{post.content}</p>
                             <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
                               <span>❤️ {post.likes || 0} likes</span>
-                              <span>💬 {post.comments_count || 0} comments</span>
-                              <span>📅 {formatDateTime(post.created_at)}</span>
-                              {post.location && <span>📍 {post.location}</span>}
+                              <span><Icon name="feedback" className="w-4 h-4 inline-block mr-1" />{post.comments_count || 0} comments</span>
+                              <span><Icon name="events" className="w-4 h-4 inline-block mr-1" />{formatDateTime(post.created_at)}</span>
+                              {post.location && <span><Icon name="attractions" className="w-4 h-4 inline-block mr-1" />{post.location}</span>}
                             </div>
                             {post.moderation_notes && (
                               <div className="mt-2 p-2 bg-gray-50 rounded-lg text-xs text-gray-500">
@@ -866,7 +936,7 @@ export default function ManageUsersPage() {
                     <div className="space-y-4">
                       {userFeedback.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
-                          <span className="text-4xl block mb-2">💬</span>
+                          <Icon name="feedback" className="w-10 h-10 block mb-2" />
                           <p className="text-sm">No feedback from this user.</p>
                         </div>
                       ) : (
@@ -893,7 +963,7 @@ export default function ManageUsersPage() {
                             {fb.comment && (
                               <p className="text-sm text-gray-600 mt-2">{fb.comment}</p>
                             )}
-                            <p className="text-xs text-gray-400 mt-2">📅 {formatDateTime(fb.created_at)}</p>
+                            <p className="text-xs text-gray-400 mt-2"><Icon name="events" className="w-3 h-3 inline-block mr-1" />{formatDateTime(fb.created_at)}</p>
                           </div>
                         ))
                       )}
@@ -931,7 +1001,7 @@ export default function ManageUsersPage() {
                             {rating.comment && (
                               <p className="text-sm text-gray-600 mt-2">{rating.comment}</p>
                             )}
-                            <p className="text-xs text-gray-400 mt-2">📅 {formatDateTime(rating.created_at)}</p>
+                            <p className="text-xs text-gray-400 mt-2"><Icon name="events" className="w-3 h-3 inline-block mr-1" />{formatDateTime(rating.created_at)}</p>
                           </div>
                         ))
                       )}
@@ -993,7 +1063,7 @@ export default function ManageUsersPage() {
                 disabled={saving}
                 className="flex-1 px-4 py-2 bg-green-500 text-white rounded-full text-sm hover:bg-green-600 disabled:opacity-50"
               >
-                ✅ Approve
+                <Icon name="check" className="w-4 h-4 inline-block mr-1" /> Approve
               </button>
               <button
                 onClick={() => moderatePost('rejected')}
@@ -1013,7 +1083,7 @@ export default function ManageUsersPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center gap-3 mb-5">
               <div className="bg-blue-100 p-3 rounded-2xl">
-                <span className="text-2xl">{selectedUser ? '✏️' : '➕'}</span>
+                <span className="text-2xl">{selectedUser ? <Icon name="edit" className="w-6 h-6" /> : <Icon name="plus" className="w-6 h-6" />}</span>
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-800">{selectedUser ? 'Edit User' : 'Add New User'}</h3>
@@ -1067,7 +1137,7 @@ export default function ManageUsersPage() {
                     onChange={e => setUserForm(p => ({ ...p, user_type: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white"
                   >
-                    {USER_TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                    {userTypes.map(t => <option key={t} value={t}>{String(t).charAt(0).toUpperCase() + String(t).slice(1)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1077,7 +1147,7 @@ export default function ManageUsersPage() {
                     onChange={e => setUserForm(p => ({ ...p, status: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white"
                   >
-                    {USER_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                    {userStatuses.map(s => <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>)}
                   </select>
                 </div>
               </div>
@@ -1148,11 +1218,11 @@ export default function ManageUsersPage() {
                 <button
                   onClick={() => setPointsAdjust(p => ({ ...p, mode: 'add' }))}
                   className={`flex-1 py-2 text-sm font-medium transition-colors ${pointsAdjust.mode === 'add' ? 'bg-green-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                >➕ Add Points</button>
+                >Add Points</button>
                 <button
                   onClick={() => setPointsAdjust(p => ({ ...p, mode: 'deduct' }))}
                   className={`flex-1 py-2 text-sm font-medium transition-colors ${pointsAdjust.mode === 'deduct' ? 'bg-red-500 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
-                >➖ Deduct Points</button>
+                >Deduct Points</button>
               </div>
 
               <div>
@@ -1208,7 +1278,7 @@ export default function ManageUsersPage() {
       {/* Toast */}
       {toastMessage && (
         <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded-full text-white text-sm z-50 shadow-lg animate-slide-in ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
-          {toastMessage.isError ? '⚠️' : '✅'} {toastMessage.message}
+          <span className="inline-block mr-2">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span> {toastMessage.message}
         </div>
       )}
 

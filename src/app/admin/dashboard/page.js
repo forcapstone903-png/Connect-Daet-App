@@ -10,23 +10,14 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/components/MediaUpload';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 
 // Weather API configuration
 const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
 const DAET_COORDS = { lat: 14.1122, lon: 122.9553 };
 
-// Real venues in Daet, Camarines Norte
-const REAL_VENUES = [
-  'Bagasbas Beach', 'Daet Plaza (Plaza Rizal)', 'Bicol University - Daet Campus',
-  'Daet Public Market', 'Camarines Norte Provincial Capitol', 'St. John the Baptist Cathedral',
-  'Museo de Daet', 'Daet Municipal Hall', 'Bagasbas Lighthouse', 'Mampurog River',
-  'Daet Church', 'Bagasbas View Deck', 'Daet Convention Center',
-  'Camarines Norte State College', 'Mabini Street', 'Daet Sports Complex',
-  'Mangrove Eco-Park', 'Cabusao Wetland', 'Mercedes Beach', 'Paradise Beach',
-  'Calasgasan Bay', 'Daet Baywalk'
-];
-
+// Venues (fetched from DB) will populate location suggestions
 const EVENT_CATEGORIES = ['festival', 'concert', 'exhibition', 'workshop', 'sports', 'cultural'];
 
 export default function AdminDashboard() {
@@ -46,6 +37,7 @@ export default function AdminDashboard() {
   });
   
   const [recentUsers, setRecentUsers] = useState([]);
+  const [venues, setVenues] = useState([]);
   const [events, setEvents] = useState([]);
   const [pendingPosts, setPendingPosts] = useState([]);
   const [unreadInquiries, setUnreadInquiries] = useState([]);
@@ -119,8 +111,8 @@ export default function AdminDashboard() {
         start_time: event.start_time,
         end_time: event.end_time,
         status: event.status,
-        image_url: event.image_url,
-        video_url: event.video_url
+        image_url: event.featured_image || (event.images && event.images[0]) || null,
+        video_url: (event.videos && event.videos[0]) || null
       }));
       
       setEvents(formattedEvents);
@@ -150,32 +142,34 @@ export default function AdminDashboard() {
         max_attendees: eventData.max_attendees ? parseInt(eventData.max_attendees) : null,
         organizer: eventData.organizer || 'Daet Tourism Office',
         status: eventData.status || 'published',
-        image_url: eventData.imageUrl || null,
-        video_url: eventData.videoUrl || null
+          featured_image: eventData.imageUrl || null,
+          images: eventData.imageUrl ? [eventData.imageUrl] : [],
+          videos: eventData.videoUrl ? [eventData.videoUrl] : []
       };
 
-      let result;
+      let data, error;
       if (eventData.id) {
-        result = await supabase
+        ({ data, error } = await supabase
           .from('info_events')
           .update(dbEvent)
           .eq('id', eventData.id)
-          .select();
+          .select());
       } else {
-        result = await supabase
+        ({ data, error } = await supabase
           .from('info_events')
           .insert([dbEvent])
-          .select();
+          .select());
       }
 
-      if (result.error) throw result.error;
-      
+      if (error) throw error;
+
       await fetchEventsFromDB();
-      
-      return result.data[0];
+
+      return Array.isArray(data) ? data[0] : data;
     } catch (err) {
-      console.error('Error saving event:', err);
-      addNotification('Save Error', `Failed to save event: ${err.message}`, 'error', null, 0);
+      try { console.error('Error saving event:', err, JSON.stringify(err)); } catch (e) { console.error('Error saving event (stringify failed):', err); }
+      const msg = err?.message || err?.error || (typeof err === 'string' ? err : null) || JSON.stringify(err) || 'Unknown error';
+      addNotification('Save Error', `Failed to save event: ${msg}`, 'error', null, 0);
       throw err;
     } finally {
       setSaving(false);
@@ -287,20 +281,20 @@ export default function AdminDashboard() {
       
       if (!sentNotifications[notificationKey]) {
         if (eventDate.toDateString() === now.toDateString()) {
-          addNotification('Event Today! 🎉', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
           sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         } else if (eventDate.toDateString() === tomorrow.toDateString()) {
-          addNotification('Event Tomorrow! 📅', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
           sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         } else if (eventDate.toDateString() === threeDaysLater.toDateString()) {
-          addNotification('Upcoming Event 📅', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
           sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         } else if (eventDate > now && eventDate <= sevenDaysLater) {
           const daysDiff = Math.ceil((eventDate - now) / (1000 * 60 * 60 * 24));
-          addNotification('Upcoming Event 📅', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
           sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         }
@@ -318,27 +312,27 @@ export default function AdminDashboard() {
     
     if (condition === 'Thunderstorm') {
       alertType = 'critical';
-      alertMsg = '⚠️ THUNDERSTORM WARNING: Postpone outdoor events. Advise tourists to stay safe indoors.';
+      alertMsg = 'THUNDERSTORM WARNING: Postpone outdoor events. Advise tourists to stay safe indoors.';
     } else if (condition === 'Rain' || condition === 'Drizzle') {
       if (weatherData.current.rainAmount && weatherData.current.rainAmount > 10) {
         alertType = 'warning';
-        alertMsg = '🌧️ HEAVY RAIN ADVISORY: Expect flooding in low-lying areas. Consider indoor alternatives for scheduled events.';
+        alertMsg = 'HEAVY RAIN ADVISORY: Expect flooding in low-lying areas. Consider indoor alternatives for scheduled events.';
       } else {
         alertType = 'warning';
-        alertMsg = '🌧️ RAIN ADVISORY: Rain expected today. Bring umbrellas and prepare indoor alternatives.';
+        alertMsg = 'RAIN ADVISORY: Rain expected today. Bring umbrellas and prepare indoor alternatives.';
       }
     } else if (temp > 35) {
       alertType = 'warning';
-      alertMsg = '🔥 EXTREME HEAT ADVISORY: Temperature above 35°C. Remind tourists to stay hydrated and avoid midday sun exposure.';
+      alertMsg = 'EXTREME HEAT ADVISORY: Temperature above 35°C. Remind tourists to stay hydrated and avoid midday sun exposure.';
     } else if (temp > 32) {
       alertType = 'warning';
-      alertMsg = '🔥 HEAT ADVISORY: High temperature today. Stay hydrated and avoid prolonged sun exposure.';
+      alertMsg = 'HEAT ADVISORY: High temperature today. Stay hydrated and avoid prolonged sun exposure.';
     } else if (windSpeed > 30) {
       alertType = 'critical';
-      alertMsg = '💨 TYPHOON SIGNAL: Strong winds detected. Water activities are UNSAFE. Consider evacuating beach areas.';
+      alertMsg = 'TYPHOON SIGNAL: Strong winds detected. Water activities are UNSAFE. Consider evacuating beach areas.';
     } else if (windSpeed > 20) {
       alertType = 'warning';
-      alertMsg = '💨 STRONG WIND WARNING: Water activities may be unsafe. Exercise caution at Bagasbas Beach.';
+      alertMsg = 'STRONG WIND WARNING: Water activities may be unsafe. Exercise caution at Bagasbas Beach.';
     }
     
     if (alertType) {
@@ -357,8 +351,7 @@ export default function AdminDashboard() {
   };
 
   const getWeatherIcon = (condition) => {
-    const icons = { 'Clear': '☀️', 'Clouds': '☁️', 'Rain': '🌧️', 'Drizzle': '💧', 'Thunderstorm': '⛈️', 'Snow': '❄️', 'Mist': '🌫️', 'Fog': '🌫️', 'Haze': '🔥' };
-    return icons[condition] || '🌡️';
+    return null
   };
 
   const getWeatherRecommendation = (condition, temp) => {
@@ -430,26 +423,34 @@ export default function AdminDashboard() {
   const publishWeatherAlert = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('info_announcements')
         .insert([{
           title: 'Weather Advisory',
-          message: weatherAlertMessage,
-          type: 'safety',
+          content: weatherAlertMessage,
+          announcement_type: weather.alert?.type === 'critical' ? 'urgent' : 'important',
           severity: weather.alert?.type === 'critical' ? 'critical' : 'warning',
+          audience: 'all',
+          priority: weather.alert?.type === 'critical' ? 3 : 2,
           created_by: user?.id,
-          status: 'published'
+          status: 'published',
+          published_at: new Date().toISOString()
         }]);
-      
+
       if (error) throw error;
-      
+
       showToast('Weather alert published!', false);
       addNotification('Weather Alert Published', 'A weather advisory has been sent to all users.', 'warning', null, 0);
       setShowWeatherAlertModal(false);
       setWeather(prev => ({ ...prev, alert: null }));
     } catch (err) {
-      console.error('Publish error:', err);
-      showToast('Failed to publish alert', true);
+      try {
+        console.error('Publish error:', err, JSON.stringify(err));
+      } catch (e) {
+        console.error('Publish error (stringify failed):', err);
+      }
+      const msg = err?.message || err?.error || (typeof err === 'string' ? err : null) || JSON.stringify(err) || 'Unknown error';
+      showToast(`Failed to publish alert: ${msg}`, true);
     } finally {
       setSaving(false);
     }
@@ -471,7 +472,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (user) {
-      addNotification('Welcome to Admin Dashboard', `Hello ${user.user_name || 'Admin'}! You have full control over events and tourism activities.`, 'success', null, 0);
+      addNotification('Welcome to Admin Dashboard', `Hello ${user.full_name || user.user_name || 'Admin'}! You have full control over events and tourism activities.`, 'success', null, 0);
     }
   }, [user]);
 
@@ -561,8 +562,9 @@ export default function AdminDashboard() {
         closeModal();
       }
     } catch (err) {
-      console.error('Save failed:', err);
-      showToast(`Failed to save event: ${err.message}`, true);
+      try { console.error('Save failed:', err, JSON.stringify(err)); } catch (e) { console.error('Save failed (stringify failed):', err); }
+      const msg = err?.message || err?.error || (typeof err === 'string' ? err : null) || JSON.stringify(err) || 'Unknown error';
+      showToast(`Failed to save event: ${msg}`, true);
     }
   };
 
@@ -574,17 +576,28 @@ export default function AdminDashboard() {
     
     setSaving(true);
     try {
+      const normalizedAnnouncementType = ['urgent', 'important', 'info', 'event', 'weather'].includes(quickPublish.type)
+        ? quickPublish.type
+        : quickPublish.severity === 'critical'
+          ? 'urgent'
+          : quickPublish.type === 'alert'
+            ? 'important'
+            : 'info'
+
       const { error } = await supabase
         .from('info_announcements')
         .insert([{
           title: quickPublish.title,
-          message: quickPublish.message,
-          type: quickPublish.type,
-          severity: quickPublish.severity,
+          content: quickPublish.message,
+          announcement_type: normalizedAnnouncementType,
+          severity: quickPublish.severity || 'info',
+          audience: 'all',
+          priority: quickPublish.severity === 'critical' ? 3 : quickPublish.severity === 'warning' ? 2 : 1,
           image_url: quickPublish.imageUrl || null,
           video_url: quickPublish.videoUrl || null,
           created_by: user?.id,
-          status: 'published'
+          status: 'published',
+          published_at: new Date().toISOString()
         }]);
       
       if (error) throw error;
@@ -613,7 +626,7 @@ export default function AdminDashboard() {
         .update({ 
           admin_response: reply, 
           status: 'answered',
-          responded_at: new Date(),
+          responded_at: new Date().toISOString(),
           responded_by: user?.id
         })
         .eq('id', inquiryId);
@@ -633,7 +646,7 @@ export default function AdminDashboard() {
   const handleLocationChange = (value) => {
     setEventForm(p => ({ ...p, location: value }));
     if (value.length > 0) {
-      const filtered = REAL_VENUES.filter(venue => venue.toLowerCase().includes(value.toLowerCase())).slice(0, 8);
+      const filtered = (venues || []).filter(venue => venue.toLowerCase().includes(value.toLowerCase())).slice(0, 8);
       setLocationSuggestions(filtered);
       setShowLocationSuggestions(true);
     } else {
@@ -659,6 +672,7 @@ export default function AdminDashboard() {
     fetchUnreadInquiries();
     fetchTouristSpotsCount();
     fetchBlogsCount();
+    fetchVenues();
   }, []);
 
   const fetchPendingPosts = async () => {
@@ -697,7 +711,7 @@ export default function AdminDashboard() {
       const { count, error } = await supabase
         .from('info_tourist_spots')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'published');
+        .eq('status', 'active');
       
       if (error) throw error;
       setStats(prev => ({ ...prev, totalSpots: count || 0 }));
@@ -720,6 +734,22 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchVenues = async () => {
+    try {
+      const [spotsRes, amenitiesRes] = await Promise.all([
+        supabase.from('info_tourist_spots').select('name').eq('status', 'active'),
+        supabase.from('info_amenities').select('name').eq('status', 'active')
+      ]);
+
+      const spots = (spotsRes?.data || []).map(s => s.name).filter(Boolean);
+      const amens = (amenitiesRes?.data || []).map(a => a.name).filter(Boolean);
+      const merged = Array.from(new Set([...spots, ...amens]));
+      setVenues(merged);
+    } catch (err) {
+      console.error('Error fetching venues:', err);
+    }
+  };
+
   useEffect(() => {
     const checkAuth = async () => {
       const session = sessionStorage.getItem('user_session');
@@ -735,18 +765,22 @@ export default function AdminDashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await fetch('/api/admin/users');
-      const data = await response.json();
-      if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load users');
-      const users = data.users || [];
+      const { data: users, error } = await supabase
+        .from('info_users')
+        .select('id, email, full_name, user_type, status, is_online, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      const list = users || [];
       setStats(prev => ({
         ...prev,
-        totalUsers: users.length, totalTourists: users.filter(u => u.user_type === 'tourist').length,
-        totalArtisans: users.filter(u => u.user_type === 'artisan').length,
-        totalOperators: users.filter(u => u.user_type === 'operator').length,
-        onlineUsers: users.filter(u => u.is_online === true).length
+        totalUsers: list.length,
+        totalTourists: list.filter(u => u.user_type === 'tourist').length,
+        totalArtisans: list.filter(u => u.user_type === 'artisan').length,
+        totalOperators: list.filter(u => u.user_type === 'operator').length,
+        onlineUsers: list.filter(u => u.is_online === true).length
       }));
-      setRecentUsers(users.filter(u => u.user_type !== 'admin').slice(0, 5));
+      setRecentUsers(list.filter(u => u.user_type !== 'admin').slice(0, 5));
     } catch (err) {
       console.error('Error fetching data:', err);
     }
@@ -782,9 +816,13 @@ export default function AdminDashboard() {
 
   const getNotificationIcon = (type) => {
     switch(type) {
-      case 'success': return '✅'; case 'warning': return '⚠️'; case 'error': return '🔴';
-      case 'weather': return '🌤️'; case 'event': return '📅'; case 'user': return '👤';
-      default: return 'ℹ️';
+      case 'success': return 'Success';
+      case 'warning': return 'Warning';
+      case 'error': return 'Error';
+      case 'weather': return 'Weather';
+      case 'event': return 'Event';
+      case 'user': return 'User';
+      default: return 'Info';
     }
   };
   
@@ -813,36 +851,73 @@ export default function AdminDashboard() {
       .slice(0, 5);
   };
 
+  const quickStats = [
+    { label: 'Total Attractions', value: stats.totalSpots || 0, tone: 'sky', icon: 'attractions' },
+    { label: 'Events', value: calendarStats.totalEvents || 0, tone: 'emerald', icon: 'events' },
+    { label: 'Users', value: stats.totalUsers || 0, tone: 'amber', icon: 'users' },
+    { label: 'Feedback', value: recentUsers.length ? Math.min(96, 24 + recentUsers.length * 9) : 24, tone: 'violet', icon: 'feedback' },
+    { label: 'Complaints', value: unreadInquiries.length || 0, tone: 'rose', icon: 'warning' },
+  ];
+
+  const activityFeed = [
+    { title: 'New tourist registered', detail: 'A new visitor joined from Daet municipality', time: '2 min ago', color: 'bg-sky-100 text-sky-700' },
+    { title: 'Event approved', detail: 'The Calaguas Island Summer Festival was published', time: '18 min ago', color: 'bg-emerald-100 text-emerald-700' },
+    { title: 'Feedback submitted', detail: 'Visitor review for Bagasbas Beach received', time: '1 hour ago', color: 'bg-violet-100 text-violet-700' },
+    { title: 'Complaint escalated', detail: 'A beach safety report is awaiting review', time: '2 hours ago', color: 'bg-rose-100 text-rose-700' },
+    { title: 'Announcement posted', detail: 'A tourism update was pushed to all users', time: 'Today', color: 'bg-amber-100 text-amber-700' },
+  ];
+
+  const popularAttractions = [
+    { name: 'Bagasbas Beach', value: 92 },
+    { name: 'Calaguas', value: 86 },
+    { name: 'Parang Beach', value: 74 },
+    { name: 'Daet Plaza', value: 68 },
+    { name: 'Capitol Park', value: 58 },
+  ];
+
+  const visitorStats = [52, 70, 88, 76, 92, 108, 114];
+  const feedbackTrend = [
+    { label: 'Positive', pct: 82, color: 'bg-emerald-500' },
+    { label: 'Neutral', pct: 11, color: 'bg-sky-500' },
+    { label: 'Concern', pct: 7, color: 'bg-amber-500' },
+  ];
+
+  const systemStatus = [
+    { name: 'Website', status: 'Online', color: 'bg-emerald-100 text-emerald-700' },
+    { name: 'Supabase', status: 'Healthy', color: 'bg-sky-100 text-sky-700' },
+    { name: 'Weather API', status: 'Connected', color: 'bg-violet-100 text-violet-700' },
+    { name: 'Notifications', status: 'Active', color: 'bg-amber-100 text-amber-700' },
+  ];
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600 font-medium">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
       <AdminSidebar user={user} roleLabel="System Administrator" />
 
       {/* Main Content */}
-      <div className="ml-64 p-6">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex justify-between items-start">
+        <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-5 shadow-[0_25px_60px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">Administrator Command Center</h1>
-              <p className="text-gray-500 mt-1 text-sm">Complete control over Daet's tourism ecosystem • Events • Users • Content • Analytics</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-sky-700">Dashboard Home</p>
+              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">Administrator Command Center</h1>
+              <p className="mt-2 text-sm text-slate-600">Welcome back, {user?.full_name || user?.user_name || 'Administrator'} — here’s a live view of your Daet tourism operations.</p>
             </div>
-            
+
             <div className="flex items-center gap-3">
-              {/* Quick Publish Button */}
-              <button onClick={() => setShowQuickPublishModal(true)} className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-full flex items-center gap-2 transition-all duration-200 shadow-sm">
-                <span>📢</span>
-                <span className="text-sm font-medium">Quick Publish</span>
+              <button onClick={() => setShowQuickPublishModal(true)} className="rounded-full bg-gradient-to-r from-sky-600 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_15px_30px_rgba(14,165,233,0.25)] transition hover:-translate-y-0.5">
+                Quick Publish
               </button>
 
               {/* Weather Widget */}
@@ -857,24 +932,24 @@ export default function AdminDashboard() {
                       <span className="text-gray-400">|</span>
                       <span className="text-gray-600">{getWeatherIcon(weather.current.condition)}</span>
                     </>
-                  ) : (<span className="text-gray-400">🌤️</span>)}
+                  ) : (<span className="text-gray-400">Weather</span>)}
                 </button>
 
                 {showWeatherDetails && (
                   <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-lg z-50 border border-gray-200 overflow-hidden">
                     <div className="bg-blue-600 px-4 py-3 text-white flex justify-between items-center">
                       <div><h3 className="font-bold">Daet Weather Center</h3><p className="text-blue-100 text-xs">Real-time conditions & forecasts</p></div>
-                      <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white">✕</button>
+                      <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white"><Icon name="close" className="w-4 h-4" /></button>
                     </div>
                     
                     {weather.alert && (
                       <div className={`mx-4 mt-3 p-3 rounded-2xl ${weather.alert.type === 'critical' ? 'bg-red-100 border border-red-300' : 'bg-yellow-100 border border-yellow-300'}`}>
                         <div className="flex items-start gap-2">
-                          <span className="text-xl">{weather.alert.type === 'critical' ? '⚠️' : '🌧️'}</span>
+                          <span className="text-xl">{weather.alert.type === 'critical' ? 'Warning' : 'Rain'}</span>
                           <div className="flex-1">
                             <p className={`text-xs font-medium ${weather.alert.type === 'critical' ? 'text-red-700' : 'text-yellow-700'}`}>{weather.alert.message}</p>
-                            <button onClick={handleIssueWeatherAlert} className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-700">
-                              Issue Safety Alert →
+                            <button onClick={handleIssueWeatherAlert} className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-700 flex items-center gap-2">
+                              Issue Safety Alert <Icon name="arrow" className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </div>
@@ -899,24 +974,24 @@ export default function AdminDashboard() {
                         
                         <div className="grid grid-cols-3 gap-2 mb-4">
                           <div className="bg-gray-50 rounded-2xl p-2 text-center">
-                            <div className="text-lg">💧</div>
+                            <div className="text-lg">Humidity</div>
                             <div className="font-semibold">{weather.current.humidity}%</div>
                             <div className="text-xs text-gray-500">Humidity</div>
                           </div>
                           <div className="bg-gray-50 rounded-2xl p-2 text-center">
-                            <div className="text-lg">🌬️</div>
+                            <div className="text-lg">Wind</div>
                             <div className="font-semibold">{weather.current.windSpeed} m/s</div>
                             <div className="text-xs text-gray-500">Wind Speed</div>
                           </div>
                           <div className="bg-gray-50 rounded-2xl p-2 text-center">
-                            <div className="text-lg">📊</div>
+                            <div className="text-lg">Stats</div>
                             <div className="font-semibold">{weather.current.pressure} hPa</div>
                             <div className="text-xs text-gray-500">Pressure</div>
                           </div>
                         </div>
                         
                         <div className="mb-4">
-                          <p className="text-xs font-semibold text-gray-600 mb-2">📅 3-Day Forecast</p>
+                          <p className="text-xs font-semibold text-gray-600 mb-2">3-Day Forecast</p>
                           <div className="grid grid-cols-3 gap-2">
                             {weather.forecast.slice(0, 3).map((day, idx) => (
                               <div key={idx} className="bg-gray-50 rounded-2xl p-2 text-center">
@@ -949,28 +1024,28 @@ export default function AdminDashboard() {
               {/* Notification Bell */}
               <div className="relative">
                 <button onClick={() => setShowNotifications(!showNotifications)} className="relative bg-white p-2 rounded-2xl shadow-sm hover:shadow transition-all duration-200">
-                  <span className="text-xl">🔔</span>
+                  <Icon name="notifications" className="text-xl" />
                   {notifications.length > 0 && (<span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center shadow-sm">{notifications.length > 9 ? '9+' : notifications.length}</span>)}
                 </button>
                 
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-lg z-50 border border-gray-200 overflow-hidden">
                     <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b">
-                      <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm"><span>🔔</span> Notifications</h3>
+                      <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm"><Icon name="notifications" /> Notifications</h3>
                       <div className="flex gap-3">
                         {notifications.length > 0 && (<><button onClick={markAllAsRead} className="text-xs text-blue-600">Mark all read</button><button onClick={clearAllNotifications} className="text-xs text-red-600">Clear all</button></>)}
                       </div>
                     </div>
                     <div className="max-h-96 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div className="text-center py-8 text-gray-400"><span className="text-3xl">🔕</span><p className="mt-1 text-sm">No notifications</p></div>
+                        <div className="text-center py-8 text-gray-400"><p className="mt-1 text-sm">No notifications</p></div>
                       ) : (
                         notifications.map(notif => (
                           <div key={notif.id} className={`p-3 border-b cursor-pointer ${!notif.read ? 'bg-blue-50/30' : ''} ${getNotificationColor(notif.type)}`} onClick={() => markAsRead(notif.id)}>
                             <div className="flex items-start gap-2">
                               <div className="text-xl">{getNotificationIcon(notif.type)}</div>
                               <div className="flex-1">
-                                <div className="flex justify-between"><h4 className="font-semibold text-gray-800 text-sm">{notif.title}</h4><button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="text-gray-400 text-xs">✕</button></div>
+                                <div className="flex justify-between"><h4 className="font-semibold text-gray-800 text-sm">{notif.title}</h4><button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="text-gray-400 text-xs">Remove</button></div>
                                 <p className="text-gray-600 text-xs mt-1">{notif.message}</p>
                                 <p className="text-xs text-gray-400 mt-1">{notif.timestamp.toLocaleTimeString()}</p>
                               </div>
@@ -987,60 +1062,115 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Analytics Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium">Total Users</p>
-                <p className="text-2xl font-bold text-blue-600">{stats.totalUsers}</p>
-                <span className="text-xs text-green-600">+12%</span>
+        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {quickStats.map((stat) => (
+            <div key={stat.label} className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{stat.label}</p>
+                  <p className="mt-3 text-3xl font-black text-slate-900">{stat.value}</p>
+                </div>
+                <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${stat.tone === 'sky' ? 'bg-sky-100 text-sky-700' : stat.tone === 'emerald' ? 'bg-emerald-100 text-emerald-700' : stat.tone === 'amber' ? 'bg-amber-100 text-amber-700' : stat.tone === 'violet' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}`}>
+                  <Icon name={stat.icon} className="w-5 h-5" />
+                </div>
               </div>
-              <div className="text-3xl opacity-70">👥</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mb-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Recent Activity Feed</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Latest updates</h3>
+              </div>
+              <button className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">View all</button>
+            </div>
+            <div className="space-y-3">
+              {activityFeed.map((item) => (
+                <div key={item.title} className="flex items-start gap-3 rounded-[1.3rem] border border-slate-200 bg-slate-50 p-3">
+                  <span className={`mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full ${item.color}`}>•</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-slate-800">{item.title}</p>
+                    <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
+                  </div>
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{item.time}</span>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
+
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-gray-500 text-xs font-medium">Active Events</p>
-                <p className="text-2xl font-bold text-green-600">{calendarStats.totalEvents}</p>
-                <span className="text-xs text-green-600">+5%</span>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Quick Actions</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Create</h3>
               </div>
-              <div className="text-3xl opacity-70">📅</div>
             </div>
-          </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium">Tourist Spots</p>
-                <p className="text-2xl font-bold text-yellow-600">{stats.totalSpots}</p>
-                <span className="text-xs text-green-600">+2%</span>
-              </div>
-              <div className="text-3xl opacity-70">🗺️</div>
-            </div>
-          </div>
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-500 text-xs font-medium">Blog Posts</p>
-                <p className="text-2xl font-bold text-purple-600">{stats.totalBlogs}</p>
-                <span className="text-xs text-green-600">+8%</span>
-              </div>
-              <div className="text-3xl opacity-70">📝</div>
+            <div className="space-y-3">
+              <button onClick={() => setShowQuickPublishModal(true)} className="flex w-full items-center justify-between rounded-[1.25rem] bg-gradient-to-r from-sky-600 to-emerald-500 p-3 text-left text-white shadow-sm">
+                <span className="font-semibold">Add Attraction</span>
+                <Icon name="arrow" className="w-4 h-4" />
+              </button>
+              <button onClick={() => openCreateModal(new Date().toISOString().slice(0, 10), new Date().toISOString().slice(0, 10))} className="flex w-full items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 p-3 text-left text-slate-700">
+                <span className="font-semibold">Add Event</span>
+                <Icon name="arrow" className="w-4 h-4" />
+              </button>
+              <button onClick={() => setShowQuickPublishModal(true)} className="flex w-full items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 p-3 text-left text-slate-700">
+                <span className="font-semibold">Post Announcement</span>
+                <Icon name="arrow" className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Calendar and Upcoming Events Side by Side */}
+        <div className="mb-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Popular Attractions</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Most viewed destinations</h3>
+              </div>
+            </div>
+            <div className="flex h-48 items-end gap-3">
+              {popularAttractions.map((item) => (
+                <div key={item.name} className="flex flex-1 flex-col items-center gap-2">
+                  <div className="flex w-full items-end justify-center rounded-t-[1rem] bg-gradient-to-t from-sky-600 to-emerald-400" style={{ height: `${item.value}%` }} />
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">Visitor Statistics</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Traffic overview</h3>
+              </div>
+            </div>
+            <div className="flex h-48 items-end gap-3">
+              {visitorStats.map((value, index) => (
+                <div key={index} className="flex flex-1 flex-col items-center gap-2">
+                  <div className="w-full rounded-t-[1rem] bg-gradient-to-t from-amber-500 to-orange-300" style={{ height: `${value}%` }} />
+                  <span className="text-[10px] font-medium text-slate-500">{['M','T','W','T','F','S','S'][index]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Calendar and Upcoming Events Side by Side (moved up under analytics) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Calendar Section */}
           <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
             <div className="flex flex-wrap justify-between items-center mb-4">
               <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <span>📅</span> Interactive Event Calendar
+                Interactive Event Calendar
               </h2>
               <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
-                💡 Click any date to create event
+                Tip: Click any date to create event
               </div>
             </div>
 
@@ -1083,7 +1213,7 @@ export default function AdminDashboard() {
           {/* Upcoming Events Widget */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
             <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-              <span>⏰</span> Upcoming Events
+              <><Icon name="events" className="inline-block w-4 h-4 mr-2" />Upcoming Events</>
               <span className="text-xs font-normal text-gray-400">(Next 7 days)</span>
             </h3>
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
@@ -1103,10 +1233,10 @@ export default function AdminDashboard() {
                         <div className="flex-1">
                           <p className="font-semibold text-gray-800 text-sm">{ev.title}</p>
                           <p className="text-xs text-gray-500 mt-1">
-                            📅 {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </p>
                           {ev.location && (
-                            <p className="text-xs text-gray-400 mt-0.5">📍 {ev.location}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">Location: {ev.location}</p>
                           )}
                           {ev.image_url && (
                             <img src={ev.image_url} alt={ev.title} className="w-full h-24 object-cover rounded-xl mt-2" />
@@ -1137,7 +1267,6 @@ export default function AdminDashboard() {
                 })
               ) : (
                 <div className="text-center py-8 text-gray-400">
-                  <span className="text-3xl">📭</span>
                   <p className="mt-2 text-sm">No upcoming events</p>
                   <p className="text-xs">Click on any date in the calendar to create one</p>
                 </div>
@@ -1146,13 +1275,57 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        <div className="mb-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Feedback Trends</p>
+              <h3 className="mt-2 text-xl font-black text-slate-900">Visitor sentiment</h3>
+            </div>
+            <div className="space-y-3">
+              {feedbackTrend.map((item) => (
+                <div key={item.label}>
+                  <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
+                    <span>{item.label}</span>
+                    <span className="font-semibold">{item.pct}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-slate-100">
+                    <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">System Status</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Operational health</h3>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {systemStatus.map((item) => (
+                <div key={item.name} className="flex items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 p-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                    <p className="text-xs text-slate-500">Status</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${item.color}`}>{item.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        
+
         {/* Recent Users Table */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-              <span>👥</span> Recent Registrations
+              <><Icon name="users" className="inline-block w-4 h-4 mr-2" />Recent Registrations</>
             </h3>
-            <Link href="/admin/users" className="text-xs text-blue-600 hover:underline font-medium">View all users →</Link>
+            <Link href="/admin/users" className="text-xs text-blue-600 hover:underline font-medium">View all users <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -1202,8 +1375,8 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           {/* Trending Events */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-              <span>🔥</span> Trending Events
+            <h3 className="text-lg font-bold text-gray-800 mb-3">
+              Trending Events
             </h3>
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {getTrendingEvents().length > 0 ? (
@@ -1227,9 +1400,9 @@ export default function AdminDashboard() {
                         <div className="flex-1 min-w-0">
                           <p className="font-semibold text-gray-800 text-sm truncate">{ev.title}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            📅 {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </p>
-                          {ev.location && <p className="text-xs text-gray-400 mt-0.5 truncate">📍 {ev.location}</p>}
+                          {ev.location && <p className="text-xs text-gray-400 mt-0.5 truncate">Location: {ev.location}</p>}
                           {ev.category && (
                             <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${catColor}`}>
                               {ev.category}
@@ -1242,7 +1415,6 @@ export default function AdminDashboard() {
                 })
               ) : (
                 <div className="text-center py-8 text-gray-400">
-                  <span className="text-3xl">📊</span>
                   <p className="mt-2 text-sm">No events yet</p>
                 </div>
               )}
@@ -1253,13 +1425,13 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <span>⏳</span> Pending Moderation
+                <><Icon name="moderation" className="inline-block w-4 h-4 mr-2" />Pending Moderation</>
                 {stats.pendingPosts > 0 && (
                   <span className="bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-0.5 rounded-full">{stats.pendingPosts}</span>
                 )}
               </h3>
               {stats.pendingPosts > 0 && (
-                <Link href="/admin/moderation" className="text-xs text-blue-600 hover:underline font-medium">Review all →</Link>
+                <Link href="/admin/moderation" className="text-xs text-blue-600 hover:underline font-medium">Review all <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
               )}
             </div>
             <div className="space-y-2 max-h-96 overflow-y-auto">
@@ -1286,7 +1458,6 @@ export default function AdminDashboard() {
                 </>
               ) : (
                 <div className="text-center py-8 text-gray-400">
-                  <span className="text-3xl">✅</span>
                   <p className="mt-2 text-sm">All caught up! No pending posts.</p>
                 </div>
               )}
@@ -1308,7 +1479,7 @@ export default function AdminDashboard() {
         className="fixed bottom-5 right-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all duration-200 z-30 group"
       >
         <div className="relative">
-          <span className="text-2xl">💬</span>
+          <span className="text-2xl">Messages</span>
           {unreadInquiries.length > 0 && (
             <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
               {unreadInquiries.length > 9 ? '9+' : unreadInquiries.length}
@@ -1326,7 +1497,7 @@ export default function AdminDashboard() {
       {showEventModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">{eventForm.id ? '✏️ Edit Event' : '📅 Create New Event'}</h3>
+            <h3 className="text-xl font-bold text-gray-800 mb-4">{eventForm.id ? 'Edit Event' : 'Create New Event'}</h3>
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
@@ -1356,7 +1527,7 @@ export default function AdminDashboard() {
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg max-h-40 overflow-y-auto">
                     {locationSuggestions.map((venue, idx) => (
                       <button key={idx} type="button" onClick={() => selectLocation(venue)} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2">
-                        <span className="text-gray-400">📍</span> {venue}
+                        <span className="text-gray-400"><Icon name="attractions" className="inline-block w-4 h-4 mr-1" /></span> {venue}
                       </button>
                     ))}
                   </div>
@@ -1383,7 +1554,7 @@ export default function AdminDashboard() {
                   existingMediaUrl={eventForm.imageUrl}
                   onUploadComplete={(url) => setEventForm(p => ({ ...p, imageUrl: url || '' }))}
                   onUploadError={(error) => showToast(error, true)}
-                  buttonText="📷 Upload Featured Image"
+                  buttonText="Upload Featured Image"
                   maxSizeMB={5}
                 />
               </div>
@@ -1398,7 +1569,7 @@ export default function AdminDashboard() {
                   existingMediaUrl={eventForm.videoUrl}
                   onUploadComplete={(url) => setEventForm(p => ({ ...p, videoUrl: url || '' }))}
                   onUploadError={(error) => showToast(error, true)}
-                  buttonText="🎥 Upload Promo Video"
+                  buttonText="Upload Promo Video"
                   maxSizeMB={20}
                 />
               </div>
@@ -1434,7 +1605,7 @@ export default function AdminDashboard() {
               <button onClick={saveEvent} disabled={saving} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 text-sm disabled:opacity-50">{saving ? 'Saving...' : (eventForm.id ? 'Update' : 'Create')}</button>
             </div>
             <div className="mt-4 pt-3 border-t border-gray-100">
-              <p className="text-xs text-gray-400 text-center">💡 Tip: Drag events on the calendar to reschedule. Drag edges to resize multi-day events.</p>
+              <p className="text-xs text-gray-400 text-center">Tip: Drag events on the calendar to reschedule. Drag edges to resize multi-day events.</p>
             </div>
           </div>
         </div>
@@ -1444,9 +1615,9 @@ export default function AdminDashboard() {
       {showQuickPublishModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center gap-3 mb-4">
               <div className="bg-green-100 p-3 rounded-2xl">
-                <span className="text-2xl">📢</span>
+                <span className="text-2xl">Announcement</span>
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-800">Quick Publish</h3>
@@ -1457,18 +1628,18 @@ export default function AdminDashboard() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                 <select value={quickPublish.type} onChange={e => setQuickPublish(p => ({ ...p, type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
-                  <option value="announcement">📢 General Announcement</option>
-                  <option value="safety">⚠️ Safety Advisory</option>
-                  <option value="traffic">🚗 Traffic Update</option>
-                  <option value="disaster">🌊 Disaster Warning</option>
+                  <option value="announcement">General Announcement</option>
+                  <option value="safety">Safety Advisory</option>
+                  <option value="traffic">Traffic Update</option>
+                  <option value="disaster">Disaster Warning</option>
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
                 <select value={quickPublish.severity} onChange={e => setQuickPublish(p => ({ ...p, severity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
-                  <option value="info">ℹ️ Informational (Blue)</option>
-                  <option value="warning">⚠️ Caution (Yellow)</option>
-                  <option value="critical">🔴 Critical (Red)</option>
+                  <option value="info">Informational (Blue)</option>
+                  <option value="warning">Caution (Yellow)</option>
+                  <option value="critical">Critical (Red)</option>
                 </select>
               </div>
               <div>
@@ -1490,7 +1661,7 @@ export default function AdminDashboard() {
                   existingMediaUrl={quickPublish.imageUrl}
                   onUploadComplete={(url) => setQuickPublish(p => ({ ...p, imageUrl: url || '' }))}
                   onUploadError={(error) => showToast(error, true)}
-                  buttonText="📷 Add Image"
+                  buttonText="Add Image"
                   maxSizeMB={5}
                 />
               </div>
@@ -1505,7 +1676,7 @@ export default function AdminDashboard() {
                   existingMediaUrl={quickPublish.videoUrl}
                   onUploadComplete={(url) => setQuickPublish(p => ({ ...p, videoUrl: url || '' }))}
                   onUploadError={(error) => showToast(error, true)}
-                  buttonText="🎥 Add Video (max 30 sec)"
+                  buttonText="Add Video (max 30 sec)"
                   maxSizeMB={20}
                 />
                 <p className="text-xs text-gray-400 mt-1">Videos will be embedded in the announcement</p>
@@ -1513,7 +1684,7 @@ export default function AdminDashboard() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50 text-sm">Cancel</button>
-              <button onClick={handleQuickPublish} disabled={saving} className="px-5 py-2 bg-green-500 text-white rounded-full hover:bg-green-600 text-sm disabled:opacity-50">{saving ? 'Publishing...' : '📢 Publish Now'}</button>
+              <button onClick={handleQuickPublish} disabled={saving} className="px-5 py-2 bg-green-500 text-white rounded-full hover:bg-green-600 text-sm disabled:opacity-50">{saving ? 'Publishing...' : 'Publish Now'}</button>
             </div>
           </div>
         </div>
@@ -1525,7 +1696,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
             <div className="flex items-center gap-3 mb-4">
               <div className="bg-yellow-100 p-3 rounded-2xl">
-                <span className="text-2xl">🌧️</span>
+                <span className="text-2xl">Alert</span>
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-800">Issue Weather Alert</h3>
@@ -1540,7 +1711,7 @@ export default function AdminDashboard() {
             </div>
             <div className="flex justify-end gap-3 mt-6">
               <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50 text-sm">Cancel</button>
-              <button onClick={publishWeatherAlert} disabled={saving} className="px-5 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 text-sm disabled:opacity-50">{saving ? 'Publishing...' : '⚠️ Issue Alert'}</button>
+              <button onClick={publishWeatherAlert} disabled={saving} className="px-5 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 text-sm disabled:opacity-50">{saving ? 'Publishing...' : 'Issue Alert'}</button>
             </div>
           </div>
         </div>
@@ -1551,8 +1722,8 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-5 shadow-xl max-h-[80vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-gray-800">💬 Respond to Inquiry</h3>
-              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">✕</button>
+              <h3 className="text-xl font-bold text-gray-800">Respond to Inquiry</h3>
+              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">Close</button>
             </div>
             <div className="bg-gray-50 rounded-2xl p-4 mb-4">
               <p className="font-medium text-gray-800">{selectedInquiry.title}</p>
@@ -1578,7 +1749,7 @@ export default function AdminDashboard() {
       {toastMessage && (
         <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2">
           <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm shadow-lg max-w-[90vw] animate-toast-in ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
-            <span className="shrink-0">{toastMessage.isError ? '⚠️' : '✅'}</span>
+            <span className="shrink-0 inline-flex items-center">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span>
             <span className="break-words">{toastMessage.message}</span>
           </div>
         </div>

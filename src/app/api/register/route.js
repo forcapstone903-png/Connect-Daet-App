@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import bcrypt from 'bcryptjs'
 import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 import { buildInfoUserRecord } from '@/lib/infoUserData'
+import { isDuplicateEmailError } from '@/lib/authFlow'
+import { maskEmail, sanitizeRegistrationBodyForLog } from '@/lib/safeLogging'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -19,7 +22,7 @@ export async function POST(request) {
     let body = null
     try {
       const rawText = await request.text()
-      console.log('📝 Raw request body:', rawText)
+      console.log('📝 Raw request body received:', rawText ? '[BODY RECEIVED]' : '[EMPTY BODY]')
       body = rawText ? JSON.parse(rawText) : {}
     } catch (e) {
       console.error('📝 Failed to parse request body:', e.message)
@@ -46,14 +49,15 @@ export async function POST(request) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
     const adminSupabase = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
-    const { full_name, email, password, user_type } = body
+    const { full_name, email, password, user_type, mobile_number } = body
     const normalizedEmail = email?.toLowerCase().trim()
-    console.log('📝 Parsed body:', { full_name, email: normalizedEmail, user_type })
+    const normalizedMobile = String(mobile_number || '').trim().replace(/\s+/g, '')
+    console.log('📝 Parsed body:', sanitizeRegistrationBodyForLog(body))
     
     // Validate input
-    if (!normalizedEmail || !password) {
+    if (!full_name || !normalizedEmail || !password || !normalizedMobile) {
       return NextResponse.json(
-        { success: false, message: 'Email and password are required' },
+        { success: false, message: 'Full name, email, mobile number, and password are required' },
         { status: 400 }
       )
     }
@@ -61,6 +65,13 @@ export async function POST(request) {
     if (password.length < 6) {
       return NextResponse.json(
         { success: false, message: 'Password must be at least 6 characters long' },
+        { status: 400 }
+      )
+    }
+
+    if (normalizedMobile.length < 7) {
+      return NextResponse.json(
+        { success: false, message: 'Please enter a valid mobile number' },
         { status: 400 }
       )
     }
@@ -83,7 +94,15 @@ export async function POST(request) {
       )
     }
 
-    console.log('📝 Attempting to register user:', normalizedEmail)
+    const { data: existingSupabaseUser, error: existingAuthError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
+    if (!existingAuthError && existingSupabaseUser?.users?.some((user) => user.email?.toLowerCase() === normalizedEmail)) {
+      return NextResponse.json(
+        { success: false, message: 'This email is already registered. Please log in or reset your password.' },
+        { status: 409 }
+      )
+    }
+
+    console.log('📝 Attempting to register user:', maskEmail(normalizedEmail))
 
     if (!adminSupabase) {
       console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY for profile insertion')
@@ -101,8 +120,9 @@ export async function POST(request) {
         data: {
           full_name: full_name || '',
           user_type: user_type || 'tourist',
+          mobile_number: normalizedMobile,
         },
-        emailRedirectTo: `${appUrl}/login?message=Please check your email to confirm your account.`,
+        emailRedirectTo: `${appUrl}/confirm`,
       },
     })
 
@@ -113,7 +133,7 @@ export async function POST(request) {
       let errorMessage = authError.message
       const lowerMessage = authError.message?.toLowerCase() || ''
 
-      if (lowerMessage.includes('already registered') || lowerMessage.includes('email already')) {
+      if (isDuplicateEmailError(authError.message)) {
         errorMessage = 'This email is already registered. Please log in or reset your password.'
       } else if (lowerMessage.includes('invalid api key') || lowerMessage.includes('jwt')) {
         errorMessage = 'Supabase authentication is misconfigured. Please contact support.'
@@ -136,15 +156,17 @@ export async function POST(request) {
     console.log('✅ User registered in Auth:', authData.user.id)
 
     // Create user profile in info_users table using service role client
+    const hashedPassword = await bcrypt.hash(password, 12)
     const userData = buildInfoUserRecord({
       id: authData.user.id,
       email: normalizedEmail,
       fullName: full_name,
       userType: user_type,
-      password,
+      password: hashedPassword,
+      mobileNumber: normalizedMobile,
     })
 
-    console.log('📝 Creating user profile via admin client:', userData)
+    console.log('📝 Creating user profile via admin client for user id:', userData?.id)
 
     // Try to insert the user profile
     const { data: profileData, error: profileError } = await adminSupabase
@@ -180,10 +202,10 @@ export async function POST(request) {
           warning: 'Profile creation had issues'
         })
       } else {
-        console.log('✅ User profile created with upsert:', upsertData)
+        console.log('✅ User profile created with upsert for user id:', upsertData?.id)
       }
     } else {
-      console.log('✅ User profile created:', profileData)
+      console.log('✅ User profile created for user id:', profileData?.id)
     }
 
     // Return success

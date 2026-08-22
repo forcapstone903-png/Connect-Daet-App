@@ -4,6 +4,7 @@ export function buildInfoUserRecord({
   fullName,
   userType,
   password,
+  mobileNumber,
   points = 0,
   status = 'active',
 }) {
@@ -11,6 +12,7 @@ export function buildInfoUserRecord({
     id,
     email: email?.toLowerCase().trim(),
     full_name: fullName || '',
+    phone_number: mobileNumber ? String(mobileNumber).trim() : null,
     user_type: userType || 'tourist',
     points,
     status,

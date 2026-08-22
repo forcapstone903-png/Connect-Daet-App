@@ -1,12 +1,22 @@
 // app/admin/moderation/page.js
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
+
+const createModerationId = () => `${new Date().getTime()}-${Math.random().toString(16).slice(2)}`;
+
+const isUrgentInquiry = (inquiry) => {
+  if (!inquiry?.created_at) return false;
+  const cutoff = new Date();
+  cutoff.setTime(cutoff.getTime() - 2 * 24 * 60 * 60 * 1000);
+  return new Date(inquiry.created_at) < cutoff;
+};
 
 export default function AdminModerationPage() {
   const router = useRouter();
@@ -48,33 +58,96 @@ export default function AdminModerationPage() {
   const [autoFlagKeywords, setAutoFlagKeywords] = useState(['spam', 'scam', 'offensive', 'inappropriate', 'xxx', 'adult']);
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState([]);
+  const [blockedUsers, setBlockedUsers] = useState([]);
+  const [moderationLog, setModerationLog] = useState([]);
+  const [reportQueue, setReportQueue] = useState([]);
 
-  // Fetch moderation data
-  useEffect(() => {
-    const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
-      if (!session) {
-        router.push('/login');
-        return;
-      }
-      const userData = JSON.parse(session);
-      if (!hasAdminAccess(userData.role)) {
-        router.push('/dashboard');
-        return;
-      }
-      setUser(userData);
-      await fetchModerationData();
-      setLoading(false);
-    };
-    checkAuth();
-  }, []);
-
-  const showToast = (message, isError = false) => {
+  const showToast = useCallback((message, isError = false) => {
     setToastMessage({ message, isError });
     setTimeout(() => setToastMessage(null), 3000);
+  }, []);
+
+  const loadModerationState = useCallback(() => {
+    const savedBlocks = JSON.parse(localStorage.getItem('moderation_blocked_users') || '[]');
+    const savedLog = JSON.parse(localStorage.getItem('moderation_log') || '[]');
+    const savedReports = JSON.parse(localStorage.getItem('moderation_reports') || '[]');
+    setBlockedUsers(savedBlocks);
+    setModerationLog(savedLog);
+    setReportQueue(savedReports);
+  }, []);
+
+  const appendModerationLog = (actor, action, details, targetType = 'content') => {
+    const entry = {
+      id: createModerationId(),
+      actor: actor || 'System',
+      action,
+      targetType,
+      details,
+      created_at: new Date().toISOString(),
+    };
+
+    setModerationLog(prev => {
+      const next = [entry, ...prev].slice(0, 25);
+      localStorage.setItem('moderation_log', JSON.stringify(next));
+      return next;
+    });
   };
 
-  const fetchModerationData = async () => {
+  const containsProhibitedWords = useCallback((text = '') => {
+    const normalized = text.toLowerCase();
+    return autoFlagKeywords.some((keyword) => normalized.includes(keyword.toLowerCase()));
+  }, [autoFlagKeywords]);
+
+  const blockUser = async (userId, reason = 'Content violation') => {
+    if (!userId) return;
+    const nextBlocked = [
+      { userId, reason, blockedAt: new Date().toISOString() },
+      ...blockedUsers,
+    ].filter((item, index, arr) => arr.findIndex((entry) => entry.userId === item.userId) === index);
+
+    setBlockedUsers(nextBlocked);
+    localStorage.setItem('moderation_blocked_users', JSON.stringify(nextBlocked));
+    appendModerationLog(user?.full_name || 'Admin', 'Block User', `${reason}`, 'user');
+    showToast('User has been blocked from posting.');
+  };
+
+  const unblockUser = async (userId) => {
+    const nextBlocked = blockedUsers.filter((item) => item.userId !== userId);
+    setBlockedUsers(nextBlocked);
+    localStorage.setItem('moderation_blocked_users', JSON.stringify(nextBlocked));
+    appendModerationLog(user?.full_name || 'Admin', 'Unblock User', `User restored to active posting status`, 'user');
+    showToast('User has been unblocked.');
+  };
+
+  const resolveReport = async (reportId) => {
+    const nextReports = reportQueue.filter((report) => report.id !== reportId);
+    setReportQueue(nextReports);
+    localStorage.setItem('moderation_reports', JSON.stringify(nextReports));
+    appendModerationLog(user?.full_name || 'Admin', 'Resolve Report', `Report ${reportId} marked as resolved`, 'report');
+    showToast('Report marked as resolved.');
+  };
+
+  const calculateAvgResponseTime = (answeredInquiries) => {
+    if (!answeredInquiries.length) return null;
+    let totalMinutes = 0;
+    let count = 0;
+    answeredInquiries.forEach(inquiry => {
+      if (inquiry.created_at && inquiry.responded_at) {
+        const created = new Date(inquiry.created_at);
+        const responded = new Date(inquiry.responded_at);
+        const diffMinutes = (responded - created) / (1000 * 60);
+        totalMinutes += diffMinutes;
+        count++;
+      }
+    });
+    if (count === 0) return null;
+    const avgMinutes = Math.round(totalMinutes / count);
+    if (avgMinutes < 60) return `${avgMinutes} minutes`;
+    if (avgMinutes < 1440) return `${Math.round(avgMinutes / 60)} hours`;
+    return `${Math.round(avgMinutes / 1440)} days`;
+  };
+
+  const fetchModerationData = useCallback(async () => {
     try {
       // Fetch pending posts
       const { data: pending, error: pendingErr } = await supabase
@@ -169,32 +242,44 @@ export default function AdminModerationPage() {
         inProgressInquiries: inProgress?.length || 0,
         avgResponseTime: calculateAvgResponseTime(answered || [])
       });
+
+      const incomingReports = (flagged || []).map((post, index) => ({
+        id: post.id || `report-${index}`,
+        title: post.title || 'Flagged content',
+        reason: containsProhibitedWords(post.content || '') ? 'Prohibited content keyword flagged' : 'Manual review request',
+        reporter: post.user?.full_name || post.user?.email || 'System',
+        created_at: post.created_at,
+        status: 'open',
+      }));
+      setReportQueue(incomingReports);
+      localStorage.setItem('moderation_reports', JSON.stringify(incomingReports));
       
     } catch (err) {
       console.error('Error fetching moderation data:', err);
       showToast('Failed to load moderation data', true);
     }
-  };
+  }, [containsProhibitedWords, showToast]);
 
-  const calculateAvgResponseTime = (answeredInquiries) => {
-    if (!answeredInquiries.length) return null;
-    let totalMinutes = 0;
-    let count = 0;
-    answeredInquiries.forEach(inquiry => {
-      if (inquiry.created_at && inquiry.responded_at) {
-        const created = new Date(inquiry.created_at);
-        const responded = new Date(inquiry.responded_at);
-        const diffMinutes = (responded - created) / (1000 * 60);
-        totalMinutes += diffMinutes;
-        count++;
+  // Fetch moderation data
+  useEffect(() => {
+    const checkAuth = async () => {
+      const session = sessionStorage.getItem('user_session');
+      if (!session) {
+        router.push('/login');
+        return;
       }
-    });
-    if (count === 0) return null;
-    const avgMinutes = Math.round(totalMinutes / count);
-    if (avgMinutes < 60) return `${avgMinutes} minutes`;
-    if (avgMinutes < 1440) return `${Math.round(avgMinutes / 60)} hours`;
-    return `${Math.round(avgMinutes / 1440)} days`;
-  };
+      const userData = JSON.parse(session);
+      if (!hasAdminAccess(userData.role)) {
+        router.push('/dashboard');
+        return;
+      }
+      setUser(userData);
+      loadModerationState();
+      await fetchModerationData();
+      setLoading(false);
+    };
+    checkAuth();
+  }, [fetchModerationData, loadModerationState, router]);
 
   // Approve a post
   const handleApprovePost = async (post) => {
@@ -214,6 +299,7 @@ export default function AdminModerationPage() {
       
       // Award points to user for approved post
       await awardPointsToUser(post.user_id, 10, 'post_approved');
+      appendModerationLog(user?.full_name || 'Admin', 'Approve Content', `Approved content for ${post.user?.full_name || 'user'}`, 'content');
       
       showToast(`Post "${post.title}" approved! User earned 10 points.`, false);
       await fetchModerationData();
@@ -254,6 +340,10 @@ export default function AdminModerationPage() {
         `Your post "${postToReject.title}" was not approved. Reason: ${rejectionReason}`,
         'warning'
       );
+
+      appendModerationLog(user?.full_name || 'Admin', 'Reject Content', `Rejected content with reason: ${rejectionReason}`, 'content');
+
+      appendModerationLog(user?.full_name || 'Admin', 'Reject Content', `Rejected content with reason: ${rejectionReason}`, 'content');
       
       showToast(`Post "${postToReject.title}" rejected`, false);
       setShowRejectionModal(false);
@@ -284,6 +374,7 @@ export default function AdminModerationPage() {
       
       if (error) throw error;
       
+      appendModerationLog(user?.full_name || 'Admin', 'Flag Content', `Flagged post for review: ${post.title}`, 'content');
       showToast(`Post flagged for review`, false);
       await fetchModerationData();
     } catch (err) {
@@ -531,13 +622,13 @@ export default function AdminModerationPage() {
 
   const getPostTypeIcon = (type) => {
     const icons = {
-      'general': '📝',
-      'review': '⭐',
-      'question': '❓',
-      'tip': '💡',
-      'photo_share': '📸'
+      'general': 'note',
+      'review': 'star',
+      'question': 'question',
+      'tip': 'idea',
+      'photo_share': 'photo'
     };
-    return icons[type] || '📄';
+    return icons[type] || 'file';
   };
 
   const getUrgencyColor = (inquiry) => {
@@ -566,7 +657,7 @@ export default function AdminModerationPage() {
       <AdminSidebar user={user} roleLabel="Content Moderator" />
 
       {/* Main Content */}
-      <div className="ml-64 p-6">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
         {/* Header */}
         <div className="mb-6">
           <div className="flex justify-between items-start">
@@ -611,7 +702,7 @@ export default function AdminModerationPage() {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              📝 Post Moderation
+              Post Moderation
               {stats.pendingCount > 0 && (
                 <span className="ml-2 bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">
                   {stats.pendingCount}
@@ -626,7 +717,7 @@ export default function AdminModerationPage() {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              💬 Inquiry Forum
+              Inquiry Forum
               {stats.openInquiries > 0 && (
                 <span className="ml-2 bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">
                   {stats.openInquiries}
@@ -651,7 +742,7 @@ export default function AdminModerationPage() {
                     disabled={processing || selectedPosts.length === 0}
                     className="px-4 py-2 bg-green-600 text-white rounded-full text-sm hover:bg-green-700 disabled:opacity-50"
                   >
-                    ✅ Approve Selected
+                    Approve Selected
                   </button>
                   <button
                     onClick={() => {
@@ -689,7 +780,7 @@ export default function AdminModerationPage() {
                     onClick={() => setBulkSelectMode(true)}
                     className="px-4 py-1.5 border border-blue-600 text-blue-600 rounded-full text-sm hover:bg-blue-50"
                   >
-                    📌 Bulk Approve Mode
+                    Bulk Approve Mode
                   </button>
                 )}
               </div>
@@ -698,8 +789,8 @@ export default function AdminModerationPage() {
             {/* Pending Posts Queue */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-200 bg-gray-50">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <span>⏳</span> Pending Approval
+                  <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                  Pending Approval
                   <span className="text-sm font-normal text-gray-500">({getFilteredPosts(pendingPosts).length} items)</span>
                 </h2>
               </div>
@@ -749,8 +840,8 @@ export default function AdminModerationPage() {
                           {post.images && post.images.length > 0 && (
                             <div className="flex gap-2 mb-3">
                               {post.images.slice(0, 3).map((img, idx) => (
-                                <div key={idx} className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">
-                                  📷
+                                <div key={idx} className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-sm text-gray-600">
+                                  Image
                                 </div>
                               ))}
                               {post.images.length > 3 && (
@@ -766,7 +857,7 @@ export default function AdminModerationPage() {
                               disabled={processing}
                               className="px-3 py-1.5 bg-green-600 text-white rounded-full text-xs hover:bg-green-700 disabled:opacity-50 flex items-center gap-1"
                             >
-                              ✅ Approve
+                              Approve
                             </button>
                             <button
                               onClick={() => {
@@ -776,7 +867,7 @@ export default function AdminModerationPage() {
                               disabled={processing}
                               className="px-3 py-1.5 bg-red-600 text-white rounded-full text-xs hover:bg-red-700 disabled:opacity-50 flex items-center gap-1"
                             >
-                              ❌ Reject
+                              Reject
                             </button>
                             <button
                               onClick={() => {
@@ -785,7 +876,7 @@ export default function AdminModerationPage() {
                               }}
                               className="px-3 py-1.5 border border-gray-300 rounded-full text-xs hover:bg-gray-50"
                             >
-                              👁️ View Details
+                              View Details
                             </button>
                           </div>
                         </div>
@@ -794,7 +885,7 @@ export default function AdminModerationPage() {
                   ))
                 ) : (
                   <div className="p-8 text-center">
-                    <div className="text-5xl mb-3">✅</div>
+                    <div className="text-5xl mb-3">Success</div>
                     <p className="text-gray-500">No pending posts to review</p>
                     <p className="text-sm text-gray-400">All user content has been moderated</p>
                   </div>
@@ -806,8 +897,8 @@ export default function AdminModerationPage() {
             {flaggedPosts.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden">
                 <div className="px-5 py-4 border-b border-red-200 bg-red-50">
-                  <h2 className="text-lg font-semibold text-red-800 flex items-center gap-2">
-                    <span>🚩</span> Flagged for Review
+                    <h2 className="text-lg font-semibold text-red-800 flex items-center gap-2">
+                    Flagged for Review
                     <span className="text-sm font-normal text-red-600">({flaggedPosts.length} items)</span>
                   </h2>
                 </div>
@@ -868,16 +959,14 @@ export default function AdminModerationPage() {
             {approvedPosts.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-200 bg-gray-50">
-                  <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                    <span>📋</span> Recently Approved (Last 30 Days)
-                  </h2>
+                  <h2 className="text-lg font-semibold text-gray-800">Recently Approved (Last 30 Days)</h2>
                 </div>
                 <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
                   {approvedPosts.slice(0, 10).map((post) => (
                     <div key={post.id} className="p-3 hover:bg-gray-50">
                       <div className="flex items-center gap-3">
                         <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-sm">
-                          ✅
+                          Approved
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-800 text-sm truncate">{post.title}</p>
@@ -916,11 +1005,11 @@ export default function AdminModerationPage() {
                   className="px-3 py-1.5 border border-gray-300 rounded-full text-sm"
                 >
                   <option value="all">All Categories</option>
-                  <option value="accommodation">🏨 Accommodation</option>
-                  <option value="transport">🚗 Transport</option>
-                  <option value="events">📅 Events</option>
-                  <option value="safety">⚠️ Safety</option>
-                  <option value="general">📝 General</option>
+                  <option value="accommodation">Accommodation</option>
+                  <option value="transport">Transport</option>
+                  <option value="events">Events</option>
+                  <option value="safety">Safety</option>
+                  <option value="general">General</option>
                 </select>
               </div>
             </div>
@@ -928,10 +1017,7 @@ export default function AdminModerationPage() {
             {/* Open Inquiries (Urgent) */}
             <div className="bg-white rounded-2xl shadow-sm border border-orange-200 overflow-hidden">
               <div className="px-5 py-4 border-b border-orange-200 bg-orange-50">
-                <h2 className="text-lg font-semibold text-orange-800 flex items-center gap-2">
-                  <span>🆕</span> Open Inquiries - Awaiting Response
-                  <span className="text-sm font-normal text-orange-600">({getFilteredInquiries(openInquiries).length})</span>
-                </h2>
+                  <h2 className="text-lg font-semibold text-orange-800">Open Inquiries - Awaiting Response <span className="text-sm font-normal text-orange-600">({getFilteredInquiries(openInquiries).length})</span></h2>
                 <p className="text-xs text-orange-600 mt-1">Response required within 48 hours</p>
               </div>
               
@@ -951,8 +1037,8 @@ export default function AdminModerationPage() {
                             {inquiry.category && (
                               <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full">{inquiry.category}</span>
                             )}
-                            {new Date(inquiry.created_at) < new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) && (
-                              <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full">⚠️ Urgent</span>
+                            {isUrgentInquiry(inquiry) && (
+                              <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full">Urgent</span>
                             )}
                           </div>
                           <h3 className="font-semibold text-gray-800 mb-1">{inquiry.title}</h3>
@@ -964,9 +1050,9 @@ export default function AdminModerationPage() {
                                 setReplyText('');
                                 setShowInquiryModal(true);
                               }}
-                              className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs hover:bg-blue-700"
+                              className="px-3 py-1.5 bg-blue-600 text-white rounded-full text-xs hover:bg-blue-700 flex items-center gap-2"
                             >
-                              💬 Reply Now
+                              Reply Now <Icon name="arrow" className="w-3.5 h-3.5" />
                             </button>
                             <button
                               onClick={() => {
@@ -976,7 +1062,7 @@ export default function AdminModerationPage() {
                               }}
                               className="px-3 py-1.5 border border-gray-300 rounded-full text-xs hover:bg-gray-50"
                             >
-                              📝 Add Internal Note
+                              Add Internal Note
                             </button>
                             <button
                               onClick={() => handleCloseInquiry(inquiry)}
@@ -991,7 +1077,7 @@ export default function AdminModerationPage() {
                   ))
                 ) : (
                   <div className="p-8 text-center">
-                    <div className="text-5xl mb-3">📭</div>
+                    <div className="text-5xl mb-3">Inbox</div>
                     <p className="text-gray-500">No open inquiries</p>
                     <p className="text-sm text-gray-400">All questions have been answered</p>
                   </div>
@@ -1003,17 +1089,14 @@ export default function AdminModerationPage() {
             {inProgressInquiries.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border border-blue-200 overflow-hidden">
                 <div className="px-5 py-4 border-b border-blue-200 bg-blue-50">
-                  <h2 className="text-lg font-semibold text-blue-800 flex items-center gap-2">
-                    <span>🔄</span> In Progress
-                    <span className="text-sm font-normal text-blue-600">({inProgressInquiries.length})</span>
-                  </h2>
+                  <h2 className="text-lg font-semibold text-blue-800">In Progress <span className="text-sm font-normal text-blue-600">({inProgressInquiries.length})</span></h2>
                 </div>
                 <div className="divide-y divide-gray-100">
                   {inProgressInquiries.slice(0, 10).map((inquiry) => (
                     <div key={inquiry.id} className="p-4 hover:bg-gray-50">
                       <div className="flex items-start gap-4">
                         <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-lg flex-shrink-0">
-                          💬
+                          Message
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -1044,16 +1127,14 @@ export default function AdminModerationPage() {
             {answeredInquiries.length > 0 && (
               <div className="bg-white rounded-2xl shadow-sm border border-green-200 overflow-hidden">
                 <div className="px-5 py-4 border-b border-green-200 bg-green-50">
-                  <h2 className="text-lg font-semibold text-green-800 flex items-center gap-2">
-                    <span>✅</span> Recently Answered
-                  </h2>
+                  <h2 className="text-lg font-semibold text-green-800">Recently Answered</h2>
                 </div>
                 <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
                   {answeredInquiries.slice(0, 10).map((inquiry) => (
                     <div key={inquiry.id} className="p-4 hover:bg-gray-50">
                       <div className="flex items-start gap-3">
                         <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center text-sm">
-                          ✅
+                          Answered
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-gray-800 text-sm">{inquiry.title}</p>
@@ -1087,8 +1168,8 @@ export default function AdminModerationPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-5 shadow-xl max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-gray-800">📄 Post Details</h3>
-              <button onClick={() => { setShowPostModal(false); setSelectedPost(null); }} className="text-gray-400 hover:text-gray-600">✕</button>
+                <h3 className="text-xl font-bold text-gray-800">Post Details</h3>
+              <button onClick={() => { setShowPostModal(false); setSelectedPost(null); }} className="text-gray-400 hover:text-gray-600">Close</button>
             </div>
             
             <div className="space-y-4">
@@ -1118,7 +1199,7 @@ export default function AdminModerationPage() {
                   <div className="flex gap-2 flex-wrap">
                     {selectedPost.images.map((img, idx) => (
                       <div key={idx} className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center text-2xl">
-                        📷
+                        Image
                       </div>
                     ))}
                   </div>
@@ -1166,8 +1247,8 @@ export default function AdminModerationPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-5 shadow-xl max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-bold text-gray-800">💬 Reply to Inquiry</h3>
-              <button onClick={() => { setShowInquiryModal(false); setSelectedInquiry(null); }} className="text-gray-400 hover:text-gray-600">✕</button>
+              <h3 className="text-xl font-bold text-gray-800">Reply to Inquiry</h3>
+              <button onClick={() => { setShowInquiryModal(false); setSelectedInquiry(null); }} className="text-gray-400 hover:text-gray-600">Close</button>
             </div>
             
             <div className="bg-gray-50 rounded-2xl p-4 mb-4">
@@ -1213,7 +1294,7 @@ export default function AdminModerationPage() {
             </div>
             
             <p className="text-xs text-gray-400 text-center mt-4">
-              💡 Your response will be marked as "Official Response" on the public inquiry page
+              Tip: Your response will be marked as &quot;Official Response&quot; on the public inquiry page
             </p>
           </div>
         </div>
@@ -1225,7 +1306,7 @@ export default function AdminModerationPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
             <div className="flex items-center gap-3 mb-4">
               <div className="bg-red-100 p-3 rounded-2xl">
-                <span className="text-2xl">❌</span>
+                <span className="text-2xl">Reject</span>
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-800">Reject Post</h3>
@@ -1242,7 +1323,7 @@ export default function AdminModerationPage() {
                 className="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-red-500"
                 placeholder="Explain why this post was not approved..."
               />
-              <p className="text-xs text-gray-400 mt-2">This reason will be sent to the user as a notification.</p>
+                <p className="text-xs text-gray-400 mt-2">This reason will be sent to the user as a notification.</p>
             </div>
             
             <div className="flex gap-3 mt-5">
@@ -1269,8 +1350,8 @@ export default function AdminModerationPage() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
             <div className="flex items-center gap-3 mb-4">
-              <div className="bg-gray-100 p-3 rounded-2xl">
-                <span className="text-2xl">📝</span>
+                <div className="bg-gray-100 p-3 rounded-2xl">
+                <span className="text-2xl">Note</span>
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-800">Add Internal Note</h3>
@@ -1313,7 +1394,8 @@ export default function AdminModerationPage() {
         <div className={`fixed bottom-5 right-5 px-4 py-2 rounded-full text-white text-sm z-50 animate-slide-in shadow-lg ${
           toastMessage.isError ? 'bg-red-600' : 'bg-green-500'
         }`}>
-          {toastMessage.isError ? '⚠️' : '✅'} {toastMessage.message}
+          <span className="inline-block align-middle mr-2">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span>
+          <span className="align-middle">{toastMessage.message}</span>
         </div>
       )}
 

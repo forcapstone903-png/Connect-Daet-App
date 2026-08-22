@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --admin-sidebar-width: 18rem;
   color-scheme: light !important;
 }
 
@@ -24,10 +25,29 @@ html, body {
   }
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(14, 165, 233, 0.2);
 }
 
 /* ── Fix: Force readable text on all form elements ── */
@@ -37,6 +57,15 @@ textarea {
   color: #111827 !important;
   background-color: #ffffff !important;
   opacity: 1 !important;
+}
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-textfield-decoration-container {
+  display: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
 }
 
 input::placeholder,

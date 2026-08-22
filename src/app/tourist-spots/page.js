@@ -1,118 +1,293 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import {
+  ChevronRight,
+  Clock,
+  Compass,
+  Heart,
+  MapPin,
+  Search,
+  Star,
+} from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { ArrowLeft, MapPin, Star } from 'lucide-react'
+
+const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
+
+function getImageUrl(value, fallback) {
+  if (Array.isArray(value) && value.length > 0) return value[0]
+  if (typeof value === 'string' && value.trim()) return value
+  if (value?.gallery_images?.length) return value.gallery_images[0]
+  return fallback
+}
 
 export default function TouristSpotsPage() {
-  const router = useRouter()
   const [spots, setSpots] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [category, setCategory] = useState('all')
+  const [favorites, setFavorites] = useState(new Set())
 
   useEffect(() => {
-    const loadSpots = async () => {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('info_tourist_spots')
-        .select('*')
-        .eq('status', 'published')
-        .order('rating', { ascending: false })
-        .order('created_at', { ascending: false })
+    let ignore = false
 
-      if (error) {
-        setError(error.message)
-        setSpots([])
-      } else {
-        setSpots(data || [])
+    const loadSpots = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('info_tourist_spots')
+          .select('*')
+          .eq('status', 'active')
+          .order('rating', { ascending: false })
+
+        if (!ignore) {
+          if (error) {
+            console.error('Error loading tourist spots:', error)
+            setSpots([])
+          } else {
+            setSpots(data || [])
+          }
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('Tourist spots fetch failed:', error)
+        if (!ignore) setLoading(false)
       }
-      setLoading(false)
     }
 
     loadSpots()
+
+    return () => {
+      ignore = true
+    }
   }, [])
 
+  const categories = useMemo(() => {
+    const set = new Set(spots.filter((s) => s.category).map((s) => s.category))
+    return ['all', ...set]
+  }, [spots])
+
+  const filteredSpots = useMemo(() => {
+    let result = spots
+
+    if (category !== 'all') {
+      result = result.filter((s) => (s.category || '').toLowerCase() === category.toLowerCase())
+    }
+
+    if (search.trim()) {
+      const query = search.toLowerCase()
+      result = result.filter((s) => {
+        const haystack = [s.name, s.location, s.category, s.description].filter(Boolean).join(' ').toLowerCase()
+        return haystack.includes(query)
+      })
+    }
+
+    return result
+  }, [spots, category, search])
+
+  const toggleFavorite = (spotId) => {
+    setFavorites((prev) => {
+      const next = new Set(prev)
+      if (next.has(spotId)) {
+        next.delete(spotId)
+      } else {
+        next.add(spotId)
+      }
+      return next
+    })
+  }
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-teal-600">Tourist spots</p>
-            <h1 className="mt-2 text-3xl font-semibold text-slate-900">Explore all public tourist spots</h1>
-            <p className="mt-3 max-w-2xl text-sm text-slate-600">Browse every published tourist spot in one place, with location, rating, and short descriptions.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push('/dashboard')}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            <ArrowLeft size={16} />
-            Back to dashboard
-          </button>
-        </div>
+    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+        {/* Header */}
+        <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/welcome" className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md shadow-cyan-500/25">
+                D
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>
+                <p className="text-base font-bold text-slate-800">Connect</p>
+              </div>
+            </Link>
 
-        <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-slate-900">All tourist spots</h2>
-              <p className="mt-2 text-sm text-slate-500">Click any spot card to learn more and plan your next visit.</p>
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-slate-50 px-4 py-2 text-sm text-slate-600">
-              <MapPin size={16} className="text-teal-500" />
-              {spots.length} spots available
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {loading ? (
-            Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="animate-pulse rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="mb-4 h-44 rounded-3xl bg-slate-200" />
-                <div className="h-4 w-3/4 rounded-full bg-slate-200" />
-                <div className="mt-3 h-3 w-1/2 rounded-full bg-slate-200" />
-                <div className="mt-5 space-y-3">
-                  <div className="h-3 rounded-full bg-slate-200" />
-                  <div className="h-3 rounded-full bg-slate-200" />
+            <label className="hidden flex-1 items-center justify-center lg:flex">
+              <div className="w-full max-w-xl rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
+                <div className="flex items-center gap-2">
+                  <Search className="h-4 w-4" />
+                  <input
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    placeholder="Search destinations..."
+                    className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                  />
                 </div>
               </div>
-            ))
-          ) : error ? (
-            <div className="col-span-full rounded-3xl border border-red-200 bg-red-50 p-6 text-red-700">
-              <p className="font-semibold">Unable to load tourist spots</p>
-              <p className="mt-2 text-sm">{error}</p>
+            </label>
+
+            <Link
+              href="/welcome"
+              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              ← Back
+            </Link>
+          </div>
+
+          <div className="mt-3 lg:hidden">
+            <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
+              <Search className="h-4 w-4" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search destinations..."
+                className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+              />
+            </label>
+          </div>
+        </header>
+
+        {/* Hero */}
+        <div className="mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white">
+          <div className="relative h-40 bg-gradient-to-r from-emerald-600 via-teal-500 to-sky-600 sm:h-48">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_30%),linear-gradient(135deg,_rgba(2,6,23,0.1),_rgba(15,23,42,0.45))]" />
+            <div className="relative flex h-full flex-col justify-between p-5 sm:p-6">
+              <div>
+                <h1 className="text-2xl font-bold text-white sm:text-4xl">Explore Daet</h1>
+                <p className="mt-2 text-sm text-cyan-50/90 sm:text-base">
+                  Discover beaches, landmarks, and hidden gems across Camarines Norte
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-50">
+                  <Compass className="h-3.5 w-3.5" />
+                  {filteredSpots.length} destinations
+                </span>
+              </div>
             </div>
-          ) : spots.length === 0 ? (
-            <div className="col-span-full rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-700">
-              No tourist spot entries are available yet.
-            </div>
-          ) : (
-            spots.map((spot) => (
-              <div key={spot.id} className="group overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:border-teal-300">
-                <div className="h-52 bg-linear-to-br from-teal-400 to-blue-500" />
-                <div className="p-5">
-                  <div className="mb-3 flex items-center justify-between gap-2">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{spot.name}</h3>
-                      <p className="mt-1 text-sm text-slate-500">{spot.location}</p>
+          </div>
+        </div>
+
+        {/* Category Filters */}
+        {categories.length > 1 && (
+          <div className="mb-6 flex flex-wrap gap-2">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                onClick={() => setCategory(cat)}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                  category === cat
+                    ? 'bg-sky-600 text-white shadow-sm'
+                    : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-700'
+                }`}
+              >
+                {cat === 'all' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Results Grid */}
+        {loading ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((item) => (
+              <div key={item} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-3">
+                <div className="h-44 rounded-xl bg-slate-200" />
+                <div className="mt-3 h-4 w-2/3 rounded bg-slate-200" />
+                <div className="mt-2 h-3 w-1/2 rounded bg-slate-200" />
+              </div>
+            ))}
+          </div>
+        ) : filteredSpots.length > 0 ? (
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {filteredSpots.map((spot) => (
+              <Link
+                key={spot.id}
+                href={`/tourist-spots/${spot.id}`}
+                className="group rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
+              >
+                {/* Image */}
+                <div className="relative overflow-hidden rounded-xl">
+                  <img
+                    src={getImageUrl(spot.featured_image || spot.images, defaultSpotImage)}
+                    alt={spot.name}
+                    className="h-44 w-full object-cover transition group-hover:scale-105"
+                    loading="lazy"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      toggleFavorite(spot.id)
+                    }}
+                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white"
+                    aria-label="Toggle favorite"
+                  >
+                    <Heart className={`h-4 w-4 ${favorites.has(spot.id) ? 'fill-current' : ''}`} />
+                  </button>
+                  <div className="absolute left-2 top-2 rounded-lg bg-slate-900/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
+                    {spot.category || 'Destination'}
+                  </div>
+                  {spot.featured && (
+                    <div className="absolute right-2 bottom-2 rounded-lg bg-amber-500/90 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
+                      Featured
                     </div>
-                    <div className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                      <Star size={14} className="text-amber-500" />
-                      {spot.rating || '—'}
+                  )}
+                </div>
+
+                {/* Info */}
+                <div className="mt-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="line-clamp-2 text-sm font-bold text-slate-800">{spot.name}</h3>
+                    <div className="flex items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 flex-shrink-0">
+                      <Star className="h-3 w-3 fill-current" />
+                      {Number(spot.rating || 0).toFixed(1)}
                     </div>
                   </div>
-                  <p className="text-sm leading-6 text-slate-600">{spot.description?.slice(0, 140) || 'No description available.'}</p>
-                  <div className="mt-5 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                    <span className="rounded-full bg-slate-50 px-3 py-2">{spot.category || 'General'}</span>
-                    <span className="rounded-full bg-slate-50 px-3 py-2">{spot.status || 'Published'}</span>
+
+                  <div className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+                    <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="line-clamp-1">{spot.location || 'Daet, Camarines Norte'}</span>
+                  </div>
+
+                  {spot.description && (
+                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-600">{spot.description}</p>
+                  )}
+
+                  {spot.opening_hours && (
+                    <div className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+                      <Clock className="h-3.5 w-3.5 flex-shrink-0" />
+                      <span className="line-clamp-1">{spot.opening_hours}</span>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex items-center gap-1 text-xs font-semibold text-sky-600">
+                    View Details <ChevronRight className="h-3 w-3" />
                   </div>
                 </div>
-              </div>
-            ))
-          )}
-        </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
+            <Compass className="mx-auto mb-3 h-10 w-10 text-slate-400" />
+            <p className="text-sm text-slate-500">No destinations found</p>
+            <p className="mt-1 text-xs text-slate-400">Try adjusting your search or filters</p>
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('')
+                setCategory('all')
+              }}
+              className="mt-3 text-xs font-semibold text-sky-600 hover:underline"
+            >
+              Clear filters
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+    </main>
   )
 }
