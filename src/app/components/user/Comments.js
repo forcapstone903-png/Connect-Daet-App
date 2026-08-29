@@ -1,9 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CornerDownRight, MessageSquare, Pin, SortDesc } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Check, Copy, CornerDownRight, EllipsisVertical, MessageSquare, Pencil, Pin, SortDesc, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Reactions from './Reactions'
+import CommentText from '@/app/components/CommentText'
+import { getErrorMessage } from '@/lib/errorMessage'
 
 const GIFS = ['🎉', '👍', '👏', '🔥', '💯', '😍', '🤣', '🙌']
 const STICKERS = ['😀', '😂', '😍', '😎', '🤔', '😢', '😡', '🥳', '🤝', '❤️']
@@ -26,6 +28,99 @@ function getInitials(name = '') {
   return (name || 'U').split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase() || '').join('') || 'U'
 }
 
+const COMMENT_PREVIEW_LENGTH = 160
+const VISIBLE_COMMENTS_LIMIT = 3
+const REPLY_COLLAPSE_LIMIT = 2
+
+// Per-comment "..." dropdown with Edit/Delete (owner), Reply and Copy text.
+function CommentMoreMenu({ onReply, copyText, canEdit, onEdit, onPin, canPin, isPinned, canDelete, onDelete }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const menuRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  const runAndClose = (fn) => {
+    setOpen(false)
+    if (fn) fn()
+  }
+
+  const handleCopy = async () => {
+    setOpen(false)
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(copyText || '')
+      } else {
+        // Fallback for older / non-secure contexts
+        const textarea = document.createElement('textarea')
+        textarea.value = copyText || ''
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error('Failed to copy comment:', err)
+    }
+  }
+
+  const itemClass = 'flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900'
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+        aria-label="More comment options"
+        aria-expanded={open}
+      >
+        <EllipsisVertical className="h-4 w-4" />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
+          <button type="button" className={itemClass} onClick={() => runAndClose(onReply)}>
+            <CornerDownRight className="h-3.5 w-3.5" /> Reply
+          </button>
+          {canEdit && (
+            <button type="button" className={itemClass} onClick={() => runAndClose(onEdit)}>
+              <Pencil className="h-3.5 w-3.5" /> Edit
+            </button>
+          )}
+          <button type="button" className={itemClass} onClick={handleCopy}>
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? 'Copied!' : 'Copy text'}
+          </button>
+          {canPin && (
+            <button type="button" className={itemClass} onClick={() => runAndClose(onPin)}>
+              <Pin className="h-3.5 w-3.5" /> {isPinned ? 'Unpin' : 'Pin'}
+            </button>
+          )}
+          {canDelete && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-semibold text-red-600 transition hover:bg-red-50"
+              onClick={() => runAndClose(onDelete)}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Comments({ contentType, contentId, userId, onPinChange, sortBy = 'relevant' }) {
   const [comments, setComments] = useState([])
   const [replyTo, setReplyTo] = useState(null)
@@ -36,9 +131,15 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
   const [showStickerPicker, setShowStickerPicker] = useState(false)
   const [selectedGif, setSelectedGif] = useState(null)
   const [selectedSticker, setSelectedSticker] = useState(null)
+  const [showAllComments, setShowAllComments] = useState(false)
+  const [editingCommentId, setEditingCommentId] = useState(null)
+  const [editBody, setEditBody] = useState('')
+  const [expandedReplies, setExpandedReplies] = useState({})
+  const contentKeyRef = useRef(null)
 
   const loadComments = useCallback(async () => {
     if (!contentId) return
+    const contentKey = `${contentType}:${contentId}`
     try {
       const { data, error } = await supabase
         .from('content_comments')
@@ -48,10 +149,17 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
         .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: true })
 
-      if (error) throw error
+      if (error) throw new Error(getErrorMessage(error))
+
+      // Reset the "show all" expand state whenever this component is
+      // pointed at a different content item.
+      if (contentKeyRef.current !== contentKey) {
+        contentKeyRef.current = contentKey
+        setShowAllComments(false)
+      }
       setComments(data || [])
     } catch (err) {
-      console.error('Failed to load comments:', err)
+      console.error('Failed to load comments:', getErrorMessage(err), err)
     }
   }, [contentType, contentId])
 
@@ -106,17 +214,19 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
         relevance_score: 0,
         status: 'active',
       })
-      if (error) throw error
+      if (error) throw new Error(getErrorMessage(error))
       setBody('')
       setReplyTo(null)
       setSelectedGif(null)
       setSelectedSticker(null)
       setShowGifPicker(false)
       setShowStickerPicker(false)
+      setShowAllComments(true)
       await loadComments()
     } catch (err) {
-      console.error('Failed to post comment:', err)
-      alert('Failed to post comment. Please try again.')
+      const message = getErrorMessage(err)
+      console.error('Failed to post comment:', message, err)
+      alert(`Failed to post your comment.\n\n${message}`)
     } finally {
       setSubmitting(false)
     }
@@ -128,7 +238,7 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
       .update({ is_pinned: shouldPin })
       .eq('id', commentId)
     if (error) {
-      console.error('Failed to pin comment:', error)
+      console.error('Failed to pin comment:', getErrorMessage(error), error)
       alert('Only the content owner can pin comments.')
       return
     }
@@ -136,9 +246,62 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
     await loadComments()
   }
 
+  const handleDelete = async (commentId) => {
+    if (!window.confirm('Delete this comment permanently?')) return
+    try {
+      const { error } = await supabase.from('content_comments').delete().eq('id', commentId)
+      if (error) throw new Error(getErrorMessage(error))
+      if (editingCommentId === commentId) {
+        setEditingCommentId(null)
+        setEditBody('')
+      }
+      await loadComments()
+    } catch (err) {
+      console.error('Failed to delete comment:', getErrorMessage(err), err)
+      alert('Failed to delete comment. Please try again.')
+    }
+  }
+
+  const startEditComment = (comment) => {
+    setEditingCommentId(comment.id)
+    setEditBody(comment.body || '')
+    setReplyTo(null)
+  }
+
+  const cancelEdit = () => {
+    setEditingCommentId(null)
+    setEditBody('')
+  }
+
+  const handleEditComment = async (commentId) => {
+    const nextBody = editBody.trim()
+    if (!nextBody) return
+    try {
+      const { error } = await supabase
+        .from('content_comments')
+        .update({ body: nextBody })
+        .eq('id', commentId)
+      if (error) throw new Error(getErrorMessage(error))
+      setEditingCommentId(null)
+      setEditBody('')
+      await loadComments()
+    } catch (err) {
+      console.error('Failed to edit comment:', getErrorMessage(err), err)
+      alert(`Failed to edit comment.\n\n${getErrorMessage(err)}`)
+    }
+  }
+
+  const toggleReplies = (commentId) => {
+    setExpandedReplies((prev) => ({ ...prev, [commentId]: !prev[commentId] }))
+  }
+
   const renderComment = (comment, depth = 0) => {
     const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
     const isOwner = userId === comment.user_id
+    const isEdited =
+      comment.updated_at && comment.created_at &&
+      new Date(comment.updated_at).getTime() - new Date(comment.created_at).getTime() > 1000
+    const isEditing = editingCommentId === comment.id
 
     return (
       <div key={comment.id} className={`${depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''}`}>
@@ -163,34 +326,79 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
                 <div>
                   <span className="text-sm font-bold text-slate-900">{authorName}</span>
                   <span className="ml-2 text-xs text-slate-500">{formatRelativeTime(comment.created_at)}</span>
+                  {isEdited && <span className="ml-1 text-[10px] font-medium text-slate-400">· Edited</span>}
                 </div>
-                {isOwner && (
-                  <button
-                    type="button"
-                    onClick={() => handlePin(comment.id, !comment.is_pinned)}
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
-                      comment.is_pinned ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                    }`}
-                  >
-                    {comment.is_pinned ? 'Unpin' : 'Pin'}
-                  </button>
-                )}
+                <div className="flex items-center gap-1">
+                  {isOwner && (
+                    <button
+                      type="button"
+                      onClick={() => handlePin(comment.id, !comment.is_pinned)}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold transition ${
+                        comment.is_pinned ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                      }`}
+                    >
+                      {comment.is_pinned ? 'Unpin' : 'Pin'}
+                    </button>
+                  )}
+                  <CommentMoreMenu
+                    onReply={() => setReplyTo(replyTo === comment.id ? null : comment.id)}
+                    copyText={comment.body}
+                    canEdit={isOwner}
+                    onEdit={() => startEditComment(comment)}
+                    canPin={isOwner}
+                    isPinned={comment.is_pinned}
+                    onPin={() => handlePin(comment.id, !comment.is_pinned)}
+                    canDelete={isOwner}
+                    onDelete={() => handleDelete(comment.id)}
+                  />
+                </div>
               </div>
 
-              {comment.gif_url && <img src={comment.gif_url} alt="GIF" className="mt-2 max-h-40 rounded-xl object-cover" />}
-              {comment.sticker_url && <span className="mt-1 block text-3xl">{comment.sticker_url}</span>}
-              <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{comment.body}</p>
+              {isEditing ? (
+                <div className="mt-2">
+                  <textarea
+                    value={editBody}
+                    onChange={(e) => setEditBody(e.target.value)}
+                    rows={2}
+                    autoFocus
+                    className="w-full rounded-xl border border-sky-300 bg-white px-3 py-2 text-sm outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-200"
+                  />
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEditComment(comment.id)}
+                      disabled={!editBody.trim()}
+                      className="inline-flex items-center gap-1 rounded-full bg-sky-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelEdit}
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-300"
+                    >
+                      <X className="h-3.5 w-3.5" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {comment.gif_url && <img src={comment.gif_url} alt="GIF" className="mt-2 max-h-40 rounded-xl object-cover" />}
+                  {comment.sticker_url && <span className="mt-1 block text-3xl">{comment.sticker_url}</span>}
+                  <CommentText text={comment.body} />
 
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <Reactions contentType="comment" contentId={comment.id} userId={userId} compact />
-                <button
-                  type="button"
-                  onClick={() => setReplyTo(replyTo === comment.id ? null : comment.id)}
-                  className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
-                >
-                  <CornerDownRight className="h-3 w-3" /> Reply
-                </button>
-              </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <Reactions contentType="comment" contentId={comment.id} userId={userId} compact />
+                    <button
+                      type="button"
+                      onClick={() => setReplyTo(replyTo === comment.id ? null : comment.id)}
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-200"
+                    >
+                      <CornerDownRight className="h-3 w-3" /> Reply
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -220,7 +428,37 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
 
         {comment.children?.length > 0 && (
           <div className="mt-3">
-            {comment.children.map((child) => renderComment(child, depth + 1))}
+            {(() => {
+              const children = comment.children
+              const repliesExpanded = !!expandedReplies[comment.id]
+              const totalReplies = children.length
+              const isCollapsed = totalReplies > REPLY_COLLAPSE_LIMIT && !repliesExpanded
+              const visibleChildren = isCollapsed ? children.slice(0, REPLY_COLLAPSE_LIMIT) : children
+              return (
+                <>
+                  {visibleChildren.map((child) => renderComment(child, depth + 1))}
+                  {isCollapsed && (
+                    <button
+                      type="button"
+                      onClick={() => toggleReplies(comment.id)}
+                      className="mt-1 flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
+                    >
+                      <CornerDownRight className="h-3 w-3" />
+                      View {totalReplies - REPLY_COLLAPSE_LIMIT} more {totalReplies - REPLY_COLLAPSE_LIMIT === 1 ? 'reply' : 'replies'}
+                    </button>
+                  )}
+                  {repliesExpanded && (
+                    <button
+                      type="button"
+                      onClick={() => toggleReplies(comment.id)}
+                      className="mt-1 flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200"
+                    >
+                      Show fewer replies
+                    </button>
+                  )}
+                </>
+              )
+            })()}
           </div>
         )}
       </div>
@@ -327,13 +565,28 @@ export default function Comments({ contentType, contentId, userId, onPinChange, 
       {/* Comment list */}
       {threads.length > 0 ? (
         <div className="space-y-3">
-          {threads.map((comment) => renderComment(comment))}
+          {(showAllComments ? threads : threads.slice(0, VISIBLE_COMMENTS_LIMIT)).map((comment) => renderComment(comment))}
         </div>
       ) : (
         <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
           <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />
           <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
         </div>
+      )}
+
+      {/* See more / Show less for the comment list */}
+      {threads.length > VISIBLE_COMMENTS_LIMIT && (
+        <button
+          type="button"
+          onClick={() => setShowAllComments((v) => !v)}
+          className="mt-3 flex w-full items-center justify-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-2 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
+        >
+          {showAllComments ? (
+            <>Show less</>
+          ) : (
+            <>See more comments ({threads.length - VISIBLE_COMMENTS_LIMIT})</>
+          )}
+        </button>
       )}
     </div>
   )
