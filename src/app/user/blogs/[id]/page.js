@@ -6,26 +6,20 @@ import { useParams } from 'next/navigation'
 import {
   ArrowLeft,
   Bookmark,
-  Check,
-  Clock,
-  Eye,
-  Flag,
   Heart,
-  Mail,
   MessageSquare,
-  Pencil,
-  Pin,
-  Send,
   Share2,
+  Flag,
+  Clock,
+  User,
+  Eye,
+  Send,
+  Mail,
   ShieldCheck,
   Star,
-  Trash2,
-  User,
-  X,
+  Pin,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import CommentText from '@/app/components/CommentText'
-import { getAuthCookieFromDocument } from '@/lib/authCookies'
 
 const STORAGE_KEYS = {
   readHistory: 'daet_blog_read_history',
@@ -34,8 +28,6 @@ const STORAGE_KEYS = {
   offlineReads: 'daet_blog_offline_reads',
   shareCounts: 'daet_blog_share_counts',
 }
-
-const REPLY_COLLAPSE_LIMIT = 2
 
 function readLocalStorage(key, fallback) {
   if (typeof window === 'undefined') return fallback
@@ -120,10 +112,6 @@ export default function BlogDetailPage() {
   const [userBadges, setUserBadges] = useState([])
   const [shareCount, setShareCount] = useState(0)
   const [moderationPending, setModerationPending] = useState(0)
-  const [showAllComments, setShowAllComments] = useState(false)
-  const [editingCommentId, setEditingCommentId] = useState(null)
-  const [editBody, setEditBody] = useState('')
-  const [expandedReplies, setExpandedReplies] = useState({})
 
   useEffect(() => {
     let ignore = false
@@ -132,19 +120,11 @@ export default function BlogDetailPage() {
       try {
         const sessionResult = await supabase.auth.getSession()
         const session = sessionResult?.data?.session
-        const cookieSession = getAuthCookieFromDocument()
-        // Fall back to the custom auth cookie so this page still knows who the
-        // logged-in user is even if the Supabase session wasn't restored.
-        const activeUserId = session?.user?.id || cookieSession?.user_id || cookieSession?.id || null
         if (session) {
           const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
-        } else if (cookieSession?.user_name) {
-          setUserName(String(cookieSession.user_name).split(' ')[0] || 'Guest')
-        }
-        setUserId(activeUserId)
+          setUserId(session.user.id)
 
-        if (session) {
           const { data: userData } = await supabase
             .from('info_users')
             .select('reputation')
@@ -390,103 +370,6 @@ export default function BlogDetailPage() {
     }
   }
 
-  const findComment = (id) => {
-    for (const c of comments) {
-      if (c.id === id) return { comment: c, parentId: null }
-      const reply = (c.replies || []).find((r) => r.id === id)
-      if (reply) return { comment: reply, parentId: c.id }
-    }
-    return { comment: null, parentId: null }
-  }
-
-  const startEditComment = (comment) => {
-    setEditingCommentId(comment.id)
-    setEditBody(comment.content || '')
-    setReplyMap((prev) => {
-      const next = { ...prev }
-      delete next[comment.id]
-      return next
-    })
-  }
-
-  const cancelEditComment = () => {
-    setEditingCommentId(null)
-    setEditBody('')
-  }
-
-  const handleEditComment = async (commentId) => {
-    const nextContent = editBody.trim()
-    if (!nextContent) return
-    const { comment: target } = findComment(commentId)
-    if (!target) return
-    try {
-      if (target.local) {
-        const localReplies = readLocalStorage(STORAGE_KEYS.localReplies, {})
-        const blogLocalReplies = localReplies[blogId] || {}
-        const updated = (blogLocalReplies[target.parent_id] || []).map((r) =>
-          r.id === commentId ? { ...r, content: nextContent } : r
-        )
-        writeLocalStorage(STORAGE_KEYS.localReplies, {
-          ...localReplies,
-          [blogId]: { ...blogLocalReplies, [target.parent_id]: updated },
-        })
-      } else {
-        const { error } = await supabase.from('info_comments').update({ content: nextContent }).eq('id', commentId)
-        if (error) throw error
-      }
-
-      setComments((prev) =>
-        prev.map((c) => {
-          if (c.id === commentId) return { ...c, content: nextContent }
-          return { ...c, replies: (c.replies || []).map((r) => (r.id === commentId ? { ...r, content: nextContent } : r)) }
-        })
-      )
-      setEditingCommentId(null)
-      setEditBody('')
-    } catch (error) {
-      console.error('Error editing comment:', error)
-      alert('Failed to edit comment. Please try again.')
-    }
-  }
-
-  const handleDeleteComment = async (commentId) => {
-    const { comment: target, parentId } = findComment(commentId)
-    if (!target) return
-    if (!window.confirm('Delete this comment permanently?')) return
-    try {
-      if (target.local) {
-        const localReplies = readLocalStorage(STORAGE_KEYS.localReplies, {})
-        const blogLocalReplies = localReplies[blogId] || {}
-        const updated = (blogLocalReplies[parentId] || []).filter((r) => r.id !== commentId)
-        writeLocalStorage(STORAGE_KEYS.localReplies, {
-          ...localReplies,
-          [blogId]: { ...blogLocalReplies, [parentId]: updated },
-        })
-      } else {
-        const { error } = await supabase.from('info_comments').delete().eq('id', commentId)
-        if (error) throw error
-        if (!parentId) {
-          const nextCount = Math.max(0, (blog.comments_count || 0) - 1)
-          await supabase.from('info_blogs').update({ comments_count: nextCount }).eq('id', blogId)
-          setBlog((prev) => ({ ...prev, comments_count: nextCount }))
-        }
-      }
-
-      setComments((prev) =>
-        prev
-          .filter((c) => c.id !== commentId)
-          .map((c) => ({ ...c, replies: (c.replies || []).filter((r) => r.id !== commentId) }))
-      )
-      if (editingCommentId === commentId) {
-        setEditingCommentId(null)
-        setEditBody('')
-      }
-    } catch (error) {
-      console.error('Error deleting comment:', error)
-      alert('Failed to delete comment. Please try again.')
-    }
-  }
-
   const handleShare = async (platform) => {
     const url = typeof window !== 'undefined' ? window.location.href : ''
     const title = blog?.title || 'Check out this article'
@@ -519,11 +402,7 @@ export default function BlogDetailPage() {
     setShowShareMenu(false)
   }
 
-  const renderComment = (comment, isReply = false) => {
-    const isOwner = userId && comment.user_id === userId
-    const isEditing = editingCommentId === comment.id
-
-    return (
+  const renderComment = (comment, isReply = false) => (
     <div
       key={comment.id}
       className={`rounded-[20px] border p-4 ${
@@ -551,36 +430,7 @@ export default function BlogDetailPage() {
         </div>
       </div>
 
-      {isEditing ? (
-        <div className="mt-2">
-          <textarea
-            value={editBody}
-            onChange={(event) => setEditBody(event.target.value)}
-            rows={3}
-            autoFocus
-            className="w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-200"
-          />
-          <div className="mt-2 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleEditComment(comment.id)}
-              disabled={!editBody.trim()}
-              className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-            >
-              <Check className="h-3.5 w-3.5" /> Save
-            </button>
-            <button
-              type="button"
-              onClick={cancelEditComment}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-300"
-            >
-              <X className="h-3.5 w-3.5" /> Cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <CommentText text={comment.content} className="mt-2" />
-      )}
+      <p className="mt-2 text-sm text-slate-700">{comment.content}</p>
 
       <div className="mt-3 flex items-center gap-3 text-xs">
         <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
@@ -597,25 +447,6 @@ export default function BlogDetailPage() {
         >
           Reply
         </button>
-
-        {isOwner && (
-          <>
-            <button
-              type="button"
-              onClick={() => startEditComment(comment)}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100"
-            >
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </button>
-            <button
-              type="button"
-              onClick={() => handleDeleteComment(comment.id)}
-              className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete
-            </button>
-          </>
-        )}
 
         <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
           <Flag className="h-3.5 w-3.5" />
@@ -647,41 +478,11 @@ export default function BlogDetailPage() {
 
       {(comment.replies || []).length > 0 && (
         <div className="mt-4 space-y-3">
-          {(() => {
-            const children = comment.replies || []
-            const repliesExpanded = !!expandedReplies[comment.id]
-            const totalReplies = children.length
-            const isCollapsed = totalReplies > REPLY_COLLAPSE_LIMIT && !repliesExpanded
-            const visibleChildren = isCollapsed ? children.slice(0, REPLY_COLLAPSE_LIMIT) : children
-            return (
-              <>
-                {visibleChildren.map((reply) => renderComment(reply, true))}
-                {isCollapsed && (
-                  <button
-                    type="button"
-                    onClick={() => setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }))}
-                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-right text-xs font-semibold text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
-                  >
-                    View {totalReplies - REPLY_COLLAPSE_LIMIT} more {totalReplies - REPLY_COLLAPSE_LIMIT === 1 ? 'reply' : 'replies'}
-                  </button>
-                )}
-                {repliesExpanded && (
-                  <button
-                    type="button"
-                    onClick={() => setExpandedReplies((prev) => ({ ...prev, [comment.id]: false }))}
-                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-right text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
-                  >
-                    Show fewer replies
-                  </button>
-                )}
-              </>
-            )
-          })()}
+          {(comment.replies || []).map((reply) => renderComment(reply, true))}
         </div>
       )}
     </div>
-    )
-  }
+  )
 
   if (loading) {
     return (
@@ -868,23 +669,13 @@ export default function BlogDetailPage() {
 
           {comments.length > 0 ? (
             <div className="space-y-4">
-              {(showAllComments ? comments : comments.slice(0, 3)).map((comment) => renderComment(comment))}
+              {comments.map((comment) => renderComment(comment))}
             </div>
           ) : (
             <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
               <MessageSquare className="mx-auto mb-3 h-8 w-8 text-slate-400" />
               <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
             </div>
-          )}
-
-          {comments.length > 3 && (
-            <button
-              type="button"
-              onClick={() => setShowAllComments((v) => !v)}
-              className="mt-4 flex w-full items-center justify-center rounded-full border border-slate-200 bg-slate-50 py-2 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
-            >
-              {showAllComments ? 'Show less' : `See more comments (${comments.length - 3})`}
-            </button>
           )}
         </section>
 

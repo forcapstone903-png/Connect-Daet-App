@@ -6,24 +6,18 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   Bookmark,
-  Check,
   Clock,
   Eye,
   Heart,
   Mail,
   MessageSquare,
-  Pencil,
   Pin,
   Send,
   Share2,
   ShieldCheck,
   Star,
-  Trash2,
-  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import CommentText from '@/app/components/CommentText'
-import { getAuthCookieFromDocument } from '@/lib/authCookies'
 
 const STORAGE_KEYS = {
   shareCounts: 'daet_blog_share_counts',
@@ -92,9 +86,6 @@ export default function PublicBlogDetailPage() {
   const [submittingComment, setSubmittingComment] = useState(false)
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [shareCount, setShareCount] = useState(0)
-  const [showAllComments, setShowAllComments] = useState(false)
-  const [editingCommentId, setEditingCommentId] = useState(null)
-  const [editBody, setEditBody] = useState('')
 
   useEffect(() => {
     let ignore = false
@@ -103,17 +94,11 @@ export default function PublicBlogDetailPage() {
       try {
         const sessionResult = await supabase.auth.getSession()
         const session = sessionResult?.data?.session
-        const cookieSession = getAuthCookieFromDocument()
-        // Fall back to the custom auth cookie so this page still knows who the
-        // logged-in user is even if the Supabase session wasn't restored.
-        const activeUserId = session?.user?.id || cookieSession?.user_id || cookieSession?.id || null
         if (session) {
           const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
-        } else if (cookieSession?.user_name) {
-          setUserName(String(cookieSession.user_name).split(' ')[0] || 'Guest')
+          setUserId(session.user.id)
         }
-        setUserId(activeUserId)
 
         if (!blogId) return
 
@@ -264,50 +249,6 @@ export default function PublicBlogDetailPage() {
       alert('An error occurred. Please try again.')
     } finally {
       setSubmittingComment(false)
-    }
-  }
-
-  const startEditComment = (comment) => {
-    setEditingCommentId(comment.id)
-    setEditBody(comment.content || '')
-  }
-
-  const cancelEditComment = () => {
-    setEditingCommentId(null)
-    setEditBody('')
-  }
-
-  const handleEditComment = async (commentId) => {
-    const nextContent = editBody.trim()
-    if (!nextContent) return
-    try {
-      const { error } = await supabase.from('info_comments').update({ content: nextContent }).eq('id', commentId)
-      if (error) throw error
-      setComments((prev) => prev.map((c) => (c.id === commentId ? { ...c, content: nextContent } : c)))
-      setEditingCommentId(null)
-      setEditBody('')
-    } catch (error) {
-      console.error('Error editing comment:', error)
-      alert('Failed to edit comment. Please try again.')
-    }
-  }
-
-  const handleDeleteComment = async (commentId) => {
-    if (!window.confirm('Delete this comment permanently?')) return
-    try {
-      const { error } = await supabase.from('info_comments').delete().eq('id', commentId)
-      if (error) throw error
-      setComments((prev) => prev.filter((c) => c.id !== commentId))
-      if (editingCommentId === commentId) {
-        setEditingCommentId(null)
-        setEditBody('')
-      }
-      const nextCommentCount = Math.max(0, (blog.comments_count || 0) - 1)
-      await supabase.from('info_blogs').update({ comments_count: nextCommentCount }).eq('id', blogId)
-      setBlog((prev) => ({ ...prev, comments_count: nextCommentCount }))
-    } catch (error) {
-      console.error('Error deleting comment:', error)
-      alert('Failed to delete comment. Please try again.')
     }
   }
 
@@ -508,10 +449,7 @@ export default function PublicBlogDetailPage() {
 
           {comments.length > 0 ? (
             <div className="space-y-4">
-              {(showAllComments ? comments : comments.slice(0, 3)).map((comment) => {
-                const isOwner = userId && comment.user_id === userId
-                const isEditing = editingCommentId === comment.id
-                return (
+              {comments.map((comment) => (
                 <div key={comment.id} className="rounded-[20px] border border-slate-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -528,81 +466,21 @@ export default function PublicBlogDetailPage() {
                       </div>
                     </div>
                   </div>
-
-                  {isEditing ? (
-                    <div className="mt-2">
-                      <textarea
-                        value={editBody}
-                        onChange={(event) => setEditBody(event.target.value)}
-                        rows={3}
-                        autoFocus
-                        className="w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-200"
-                      />
-                      <div className="mt-2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleEditComment(comment.id)}
-                          disabled={!editBody.trim()}
-                          className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-                        >
-                          <Check className="h-3.5 w-3.5" /> Save
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cancelEditComment}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-300"
-                        >
-                          <X className="h-3.5 w-3.5" /> Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <CommentText text={comment.content} className="mt-2" />
-                  )}
-
-                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
+                  <p className="mt-2 text-sm text-slate-700">{comment.content}</p>
+                  <div className="mt-3 flex items-center gap-3 text-xs">
                     <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
                       <Heart className="h-3.5 w-3.5" />
                       <span className="font-semibold">{comment.likes || 0}</span>
                     </button>
-                    {isOwner && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => startEditComment(comment)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100"
-                        >
-                          <Pencil className="h-3.5 w-3.5" /> Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteComment(comment.id)}
-                          className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2 py-1 text-red-600 hover:bg-red-100"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" /> Delete
-                        </button>
-                      </>
-                    )}
                   </div>
                 </div>
-                )
-              })}
+              ))}
             </div>
           ) : (
             <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
               <MessageSquare className="mx-auto mb-3 h-8 w-8 text-slate-400" />
               <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
             </div>
-          )}
-
-          {comments.length > 3 && (
-            <button
-              type="button"
-              onClick={() => setShowAllComments((v) => !v)}
-              className="mt-4 flex w-full items-center justify-center rounded-full border border-slate-200 bg-slate-50 py-2 text-xs font-semibold text-sky-600 transition hover:bg-sky-50 hover:text-sky-700"
-            >
-              {showAllComments ? 'Show less' : `See more comments (${comments.length - 3})`}
-            </button>
           )}
         </section>
 

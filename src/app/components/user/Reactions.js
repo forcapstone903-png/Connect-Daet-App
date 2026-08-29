@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Heart, Laugh, Meh, Smile, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getErrorMessage } from '@/lib/errorMessage'
 
 const REACTION_TYPES = [
   { type: 'like', label: 'Like', icon: ThumbsUp, color: 'text-sky-600', bg: 'bg-sky-50', emoji: '👍' },
@@ -57,7 +56,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       setReactionCounts(counts)
       setUserReaction(userResult.data?.reaction_type || null)
     } catch (err) {
-      console.error('Failed to load reactions:', getErrorMessage(err), err)
+      console.error('Failed to load reactions:', err)
     }
   }, [contentType, contentId, userId])
 
@@ -97,7 +96,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
           .eq('user_id', userId)
           .eq('content_type', contentType)
           .eq('content_id', contentId)
-        if (error) throw new Error(getErrorMessage(error))
+        if (error) throw error
         setUserReaction(null)
         setReactionCounts((prev) => {
           const next = { ...prev }
@@ -113,7 +112,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
             { user_id: userId, content_type: contentType, content_id: contentId, reaction_type: reactionType },
             { onConflict: 'user_id,content_type,content_id' }
           )
-        if (error) throw new Error(getErrorMessage(error))
+        if (error) throw error
 
         setUserReaction(reactionType)
         setReactionCounts((prev) => {
@@ -129,10 +128,8 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       if (onReact) onReact(reactionType, userReaction === reactionType ? null : reactionType)
       setShowPicker(false)
     } catch (err) {
-      // Log a readable message instead of a bare {} so issues are diagnosable.
-      const message = getErrorMessage(err)
-      console.error('Reaction error:', message, err)
-      alert(`Failed to react. Please try again.\n\n${message}`)
+      console.error('Reaction error:', err)
+      alert('Failed to react. Please try again.')
     } finally {
       setLoading(false)
     }
