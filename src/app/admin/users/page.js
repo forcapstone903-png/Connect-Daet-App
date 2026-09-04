@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession, clearAuthCookie } from '@/lib/authCookies';
 
 // Lookup lists (populated from DB where available)
 // Defaults provided as fallbacks
@@ -94,7 +95,7 @@ export default function ManageUsersPage() {
   // ─── Auth check ───────────────────────────────────────────────────────────
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) { router.push('/login'); return; }
       const userData = JSON.parse(session);
       if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
@@ -518,6 +519,7 @@ export default function ManageUsersPage() {
 
   const handleLogout = async () => {
     sessionStorage.removeItem('user_session');
+    clearAuthCookie();
     await supabase.auth.signOut();
     router.push('/login');
   };

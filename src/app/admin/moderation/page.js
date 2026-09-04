@@ -7,7 +7,8 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 
 const createModerationId = () => `${new Date().getTime()}-${Math.random().toString(16).slice(2)}`;
 
@@ -154,7 +155,7 @@ export default function AdminModerationPage() {
         .from('info_user_posts')
         .select(`
           *,
-          user:user_id (full_name, email, avatar_url)
+          user:user_id (full_name, email, profile_image_url)
         `)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
@@ -167,7 +168,7 @@ export default function AdminModerationPage() {
         .from('info_user_posts')
         .select(`
           *,
-          user:user_id (full_name, email, avatar_url)
+          user:user_id (full_name, email, profile_image_url)
         `)
         .eq('status', 'flagged')
         .order('created_at', { ascending: false });
@@ -183,7 +184,7 @@ export default function AdminModerationPage() {
         .from('info_user_posts')
         .select(`
           *,
-          user:user_id (full_name, email, avatar_url)
+          user:user_id (full_name, email, profile_image_url)
         `)
         .eq('status', 'approved')
         .gte('created_at', thirtyDaysAgo.toISOString())
@@ -198,7 +199,7 @@ export default function AdminModerationPage() {
         .from('info_inquiries')
         .select(`
           *,
-          user:user_id (full_name, email, avatar_url)
+          user:user_id (full_name, email, profile_image_url)
         `)
         .eq('status', 'open')
         .order('created_at', { ascending: false });
@@ -211,7 +212,7 @@ export default function AdminModerationPage() {
         .from('info_inquiries')
         .select(`
           *,
-          user:user_id (full_name, email, avatar_url)
+          user:user_id (full_name, email, profile_image_url)
         `)
         .eq('status', 'in_progress')
         .order('updated_at', { ascending: false });
@@ -224,7 +225,7 @@ export default function AdminModerationPage() {
         .from('info_inquiries')
         .select(`
           *,
-          user:user_id (full_name, email, avatar_url)
+          user:user_id (full_name, email, profile_image_url)
         `)
         .eq('status', 'answered')
         .gte('created_at', thirtyDaysAgo.toISOString())
@@ -263,7 +264,7 @@ export default function AdminModerationPage() {
   // Fetch moderation data
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         router.push('/login');
         return;

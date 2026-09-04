@@ -17,12 +17,13 @@ import {
 } from 'lucide-react'
 import MediaUpload from '@/app/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
+import { getStoredSession } from '@/lib/authCookies'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
 
   try {
-    const raw = window.sessionStorage.getItem('user_session')
+    const raw = getStoredSession()
     return raw ? JSON.parse(raw) : null
   } catch {
     return null

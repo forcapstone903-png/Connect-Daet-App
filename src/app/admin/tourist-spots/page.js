@@ -5,9 +5,11 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { supabase } from '@/lib/supabase';
 import ConfirmationModal from '@/app/components/ConfirmationModal';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/components/MediaUpload';
 
 const DEFAULT_SPOT_CATEGORIES = [
@@ -455,7 +457,7 @@ export default function TouristSpotsManagement() {
     let isActive = true;
 
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         setLoading(false);
         router.push('/login');

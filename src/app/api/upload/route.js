@@ -16,8 +16,16 @@ export async function POST(request) {
       return NextResponse.json({ error: 'No file was provided.' }, { status: 400 })
     }
 
-    if (!supabaseUrl || (!supabaseAnonKey && !supabaseServiceRoleKey)) {
-      return NextResponse.json({ error: 'Supabase storage is not configured.' }, { status: 500 })
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return NextResponse.json({
+        error: 'Supabase storage is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to your environment.',
+      }, { status: 500 })
+    }
+
+    if (!supabaseServiceRoleKey) {
+      return NextResponse.json({
+        error: 'Missing SUPABASE_SERVICE_ROLE_KEY. Uploads require a service-role key in the server environment.',
+      }, { status: 500 })
     }
 
     const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`

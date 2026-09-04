@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ArrowRight, MapPin, Sparkles, Plane, Newspaper, Menu, X, Star, Calendar, MessageCircle, Heart, Clock, Lock, ThumbsUp, Bookmark, Reply } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getStoredSessionObject } from '@/lib/authCookies'
 import logoImage from '../assets/images/logo.png'
 import bagasbasImage from '../assets/images/bagasbasbeach.webp'
 import morgaImage from '../assets/images/morga.jpg'
@@ -96,13 +97,15 @@ export default function WelcomePage() {
     checkUser()
   }, [])
 
-  // Check session and redirect if logged in
+  // Check session and redirect to the correct dashboard if already logged in.
+  // Uses the persistent cookie so newly-opened tabs (with an empty per-tab
+  // sessionStorage) don't bounce between routes and cause the flicker/glitch.
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) router.push('/dashboard')
+    const cookieSession = getStoredSessionObject()
+    if (cookieSession && cookieSession.logged_in) {
+      const role = String(cookieSession.role || '').trim().toLowerCase()
+      router.push(role === 'admin' ? '/admin/dashboard' : '/user/dashboard')
     }
-    checkSession()
   }, [router])
 
   useEffect(() => {
@@ -635,13 +638,13 @@ export default function WelcomePage() {
 
                     <div className="p-3 sm:p-5">
                       <div className="mb-1.5 flex items-start justify-between gap-2">
-                        <h3 className="text-sm font-bold text-slate-900 line-clamp-2 sm:text-lg">{spot.name}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 sm:text-lg">{spot.name}</h3>
                         <span className="inline-block rounded-full bg-amber-100 px-1.5 py-0.5 text-[8px] font-semibold text-amber-700 flex-shrink-0 sm:px-2 sm:py-1 sm:text-xs">
                           ★ {Number(spot.rating || 0).toFixed(1)}
                         </span>
                       </div>
                       <p className="text-xs font-medium text-sky-700 sm:text-sm">{spot.location}</p>
-                      <p className="mt-2 text-xs leading-5 text-slate-600 line-clamp-2 sm:text-sm sm:leading-6">{spot.description}</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-600 sm:text-sm sm:leading-6">{spot.description}</p>
                       {spot.visit_count > 0 && (
                         <p className="mt-1.5 text-[10px] text-slate-400 flex items-center gap-1">
                           <Clock size={12} />
@@ -727,12 +730,12 @@ export default function WelcomePage() {
                       </div>
                     </div>
                     <h3 
-                      className="text-base font-bold text-slate-900 line-clamp-2 sm:text-xl cursor-pointer hover:text-amber-700 transition"
+                      className="text-base font-bold text-slate-900 sm:text-xl cursor-pointer hover:text-amber-700 transition"
                       onClick={() => handleBlogClick(blog.id)}
                     >
                       {blog.title}
                     </h3>
-                    <p className="mt-2 text-xs leading-5 text-slate-600 line-clamp-2 sm:text-sm sm:leading-6">{blog.excerpt}</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-600 sm:text-sm sm:leading-6">{blog.excerpt}</p>
                     <div className="mt-3 flex items-center justify-between">
                       <button
                         onClick={() => handleBlogClick(blog.id)}
@@ -798,12 +801,12 @@ export default function WelcomePage() {
                       <span>{formatTimeAgo(thread.last_activity_at || thread.created_at)}</span>
                     </div>
                     <h3 
-                      className="text-base font-bold text-white line-clamp-2 sm:text-xl cursor-pointer hover:text-emerald-300 transition"
+                      className="text-base font-bold text-white sm:text-xl cursor-pointer hover:text-emerald-300 transition"
                       onClick={() => handleForumClick(thread.id)}
                     >
                       {thread.title}
                     </h3>
-                    <p className="mt-2 line-clamp-2 text-xs leading-5 text-slate-300 sm:text-sm sm:leading-6">{thread.content}</p>
+                    <p className="mt-2 text-xs leading-5 text-slate-300 sm:text-sm sm:leading-6">{thread.content}</p>
                     <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-slate-300 sm:mt-4 sm:pt-4 sm:text-sm">
                       <span className="flex items-center gap-1.5">
                         <MessageCircle size={12} className="sm:size-14" />

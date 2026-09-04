@@ -180,7 +180,7 @@ function SearchContent() {
           <h1 className="text-2xl font-black text-slate-900">
             {query.trim() ? (
               <>
-                Results for <span className="text-sky-600">"{query.trim()}"</span>
+                Results for <span className="text-sky-600">&quot;{query.trim()}&quot;</span>
               </>
             ) : (
               'Search'
@@ -259,14 +259,14 @@ function SearchContent() {
                         className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
                       />
                       <div className="min-w-0">
-                        <h3 className="line-clamp-1 text-sm font-bold text-slate-900 group-hover:text-sky-700">{spot.name}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{spot.name}</h3>
                         {spot.location && (
-                          <p className="mt-1 line-clamp-1 text-xs text-slate-500 flex items-center gap-1">
+                          <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
                             <MapPin className="h-3 w-3 flex-shrink-0" />
                             {spot.location}
                           </p>
                         )}
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-600">{spot.description}</p>
+                        <p className="mt-1 text-xs text-slate-600">{spot.description}</p>
                       </div>
                     </Link>
                   ))}
@@ -300,10 +300,10 @@ function SearchContent() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <h3 className="line-clamp-1 text-sm font-bold text-slate-900 group-hover:text-sky-700">{event.title}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{event.title}</h3>
                         <p className="mt-1 text-xs text-slate-500">{formatDate(event.start_date)}</p>
                         {event.location && (
-                          <p className="mt-1 line-clamp-1 text-xs text-slate-500 flex items-center gap-1">
+                          <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
                             <MapPin className="h-3 w-3 flex-shrink-0" />
                             {event.location}
                           </p>
@@ -335,8 +335,8 @@ function SearchContent() {
                         className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
                       />
                       <div className="min-w-0">
-                        <h3 className="line-clamp-1 text-sm font-bold text-slate-900 group-hover:text-sky-700">{blog.title}</h3>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-600">{blog.excerpt}</p>
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{blog.title}</h3>
+                        <p className="mt-1 text-xs text-slate-600">{blog.excerpt}</p>
                         <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-sky-600">
                           {blog.category || 'Blog'}
                         </p>
@@ -361,8 +361,8 @@ function SearchContent() {
                       href={`/forum/${thread.id}`}
                       className="group block rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md hover:border-sky-200"
                     >
-                      <h3 className="line-clamp-1 text-sm font-bold text-slate-900 group-hover:text-sky-700">{thread.title}</h3>
-                      <p className="mt-1 line-clamp-2 text-xs text-slate-600">{thread.content}</p>
+                      <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{thread.title}</h3>
+                      <p className="mt-1 text-xs text-slate-600">{thread.content}</p>
                       <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
                         <span>{formatDate(thread.last_activity_at || thread.created_at)}</span>
                         <span className="flex items-center gap-1">

@@ -25,10 +25,6 @@ const mappings = [
   { folder: 'src/app/admin/notifications/history', redirect: '/admin/notifications?tab=history' },
   { folder: 'src/app/admin/notifications/scheduled', redirect: '/admin/notifications?tab=scheduled' },
   { folder: 'src/app/admin/notifications/send', redirect: '/admin/notifications?tab=send' },
-  { folder: 'src/app/admin/settings/email', redirect: '/admin/settings?tab=email' },
-  { folder: 'src/app/admin/settings/general', redirect: '/admin/settings?tab=general' },
-  { folder: 'src/app/admin/settings/maintenance', redirect: '/admin/settings?tab=maintenance' },
-  { folder: 'src/app/admin/settings/security', redirect: '/admin/settings?tab=security' },
 ];
 
 for (const { folder, redirect } of mappings) {

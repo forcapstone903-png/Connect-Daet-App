@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import RatingsReviews from '@/app/components/user/RatingsReviews'
+import { trackUserActivity } from '@/lib/trackActivity'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 
@@ -144,6 +145,16 @@ export default function TouristSpotDetailPage() {
       }
 
       setIsSaved(!isSaved)
+      if (!isSaved && session?.user?.id) {
+        trackUserActivity({
+          userId: session.user.id,
+          activityType: 'save_content',
+          entityType: 'tourist_spot',
+          entityId: spotId,
+          description: `Saved ${spot?.name || 'destination'}`,
+          metadata: { contentTitle: spot?.name || 'Destination' },
+        })
+      }
     } catch (error) {
       console.error('Error saving spot:', error)
     }
@@ -170,6 +181,17 @@ export default function TouristSpotDetailPage() {
       if (shareUrls[platform]) {
         window.open(shareUrls[platform], '_blank')
       }
+    }
+
+    if (userId && (platform !== 'copy' && platform !== 'email')) {
+      trackUserActivity({
+        userId,
+        activityType: 'share_content',
+        entityType: 'tourist_spot',
+        entityId: spotId,
+        description: `Shared ${spot?.name || 'destination'}`,
+        metadata: { contentTitle: spot?.name || 'Destination', platform },
+      })
     }
 
     setShowShareMenu(false)

@@ -1,0 +1,643 @@
+
+> connect-daet-app@0.1.0 dev
+> next dev --webpack
+
+▲ Next.js 16.2.10 (webpack)
+- Local:         http://localhost:3000
+- Network:       http://192.168.28.1:3000
+- Environments: .env.local
+✓ Ready in 907ms
+
+○ Compiling /user/dashboard ...
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 9.7s (next.js: 9.0s, proxy.ts: 267ms, application-code: 439ms)
+ GET /user/dashboard 200 in 186ms (next.js: 16ms, proxy.ts: 50ms, application-code: 121ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 430ms (next.js: 151ms, proxy.ts: 12ms, application-code: 266ms)
+⨯ ./src/app/user/dashboard/page.js
+Error:   x Expected '</', got '}'
+     ,-[C:\Users\Jerwin\connect-daet-app\src\app\user\dashboard\page.js:667:1]
+ 664 |               </div>
+ 665 |             </div>
+ 666 |           </div>
+ 667 |         )}
+     :          ^
+ 668 | 
+ 669 |         <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)] xl:grid-cols-[260px_minmax(0,1fr)_300px]">
+ 669 |           {/* Left Sidebar - Desktop only */}
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/user/dashboard/page.js
+⚠ Fast Refresh had to perform a full reload. Read more: https://nextjs.org/docs/messages/fast-refresh-reload
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 440ms (next.js: 193ms, proxy.ts: 10ms, application-code: 237ms)
+ GET /user/dashboard 200 in 252ms (next.js: 14ms, proxy.ts: 39ms, application-code: 199ms)
+ GET /user/events 200 in 2.6s (next.js: 2.4s, proxy.ts: 18ms, application-code: 128ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 694ms (next.js: 38ms, proxy.ts: 23ms, application-code: 633ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 1065ms (next.js: 316ms, proxy.ts: 38ms, application-code: 711ms)
+ GET /user/events 200 in 431ms (next.js: 279ms, proxy.ts: 25ms, application-code: 127ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/events 200 in 554ms (next.js: 10ms, proxy.ts: 18ms, application-code: 527ms)
+ GET /user/dashboard 200 in 212ms (next.js: 39ms, proxy.ts: 20ms, application-code: 154ms)
+ GET /user/forums 200 in 3.4s (next.js: 3.2s, proxy.ts: 21ms, application-code: 150ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 729ms (next.js: 49ms, proxy.ts: 34ms, application-code: 645ms)
+ GET /user/blogs/new 200 in 1922ms (next.js: 1782ms, proxy.ts: 18ms, application-code: 122ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /user/blogs 200 in 3.0s (next.js: 2.9s, proxy.ts: 24ms, application-code: 122ms)
+ GET /user/blogs/d2222222-2222-4222-8222-222222222222 200 in 3.5s (next.js: 3.4s, proxy.ts: 24ms, application-code: 132ms)
+ GET /user/blogs 200 in 102ms (next.js: 33ms, proxy.ts: 18ms, application-code: 50ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 637ms (next.js: 40ms, proxy.ts: 19ms, application-code: 578ms)
+ GET /user/dashboard 200 in 125ms (next.js: 8ms, proxy.ts: 18ms, application-code: 100ms)
+[browser] Reaction error: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_notifications'"[39m,
+  message: [32m"Could not find the table 'public.content_reactions' in the schema cache"[39m
+} 
+    at handleReact (src\app\components\user\Reactions.js:131:15)
+  129 |       setShowPicker(false)
+  130 |     } catch (err) {
+> 131 |       console.error('Reaction error:', err)
+      |               ^
+  132 |       alert('Failed to react. Please try again.')
+  133 |     } finally {
+  134 |       setLoading(false) (src\app\components\user\Reactions.js:131:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+○ Compiling /user/profile ...
+ GET /user/profile 200 in 3.9s (next.js: 3.7s, proxy.ts: 24ms, application-code: 162ms)
+ GET /user/profile 200 in 97ms (next.js: 7ms, proxy.ts: 30ms, application-code: 60ms)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+ GET /user/dashboard 200 in 149ms (next.js: 49ms, proxy.ts: 25ms, application-code: 75ms)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Reaction error: Could not find the table 'public.content_reactions' in the schema cache {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_notifications'"[39m,
+  message: [32m"Could not find the table 'public.content_reactions' in the schema cache"[39m
+} 
+    at handleReact (src\app\components\user\Reactions.js:142:15)
+  140 |     } catch (err) {
+  141 |       // Log a readable message instead of a bare {} so issues are diagnosable.
+> 142 |       console.error('Reaction error:', getErrorMessage(err), err)
+      |               ^
+  143 |       alert(`Failed to react. Please try again.\n\n${getErrorMessage(err)}`)
+  144 |     } finally {
+  145 |       setLoading(false) (src\app\components\user\Reactions.js:142:15)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 1097ms (next.js: 342ms, proxy.ts: 21ms, application-code: 734ms)
+[browser] Reaction error: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_notifications'"[39m,
+  message: [32m"Could not find the table 'public.content_reactions' in the schema cache"[39m
+} 
+    at handleReact (src\app\components\user\Reactions.js:131:15)
+  129 |       setShowPicker(false)
+  130 |     } catch (err) {
+> 131 |       console.error('Reaction error:', err)
+      |               ^
+  132 |       alert('Failed to react. Please try again.')
+  133 |     } finally {
+  134 |       setLoading(false) (src\app\components\user\Reactions.js:131:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Failed to post comment: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at handleSubmit (src\app\components\user\Comments.js:118:15)
+  116 |       await loadComments()
+  117 |     } catch (err) {
+> 118 |       console.error('Failed to post comment:', err)
+      |               ^
+  119 |       alert('Failed to post comment. Please try again.')
+  120 |     } finally {
+  121 |       setSubmitting(false) (src\app\components\user\Comments.js:118:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:64:15)
+  62 |       setComments(data || [])
+  63 |     } catch (err) {
+> 64 |       console.error('Failed to load comments:', err)
+     |               ^
+  65 |     }
+  66 |   }, [contentType, contentId])
+  67 | (src\app\components\user\Comments.js:64:15)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 1126ms (next.js: 354ms, proxy.ts: 18ms, application-code: 754ms)
+[browser] Reaction error: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_notifications'"[39m,
+  message: [32m"Could not find the table 'public.content_reactions' in the schema cache"[39m
+} 
+    at handleReact (src\app\components\user\Reactions.js:131:15)
+  129 |       setShowPicker(false)
+  130 |     } catch (err) {
+> 131 |       console.error('Reaction error:', err)
+      |               ^
+  132 |       alert('Failed to react. Please try again.')
+  133 |     } finally {
+  134 |       setLoading(false) (src\app\components\user\Reactions.js:131:15)
+[browser] Reaction error: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_notifications'"[39m,
+  message: [32m"Could not find the table 'public.content_reactions' in the schema cache"[39m
+} 
+    at handleReact (src\app\components\user\Reactions.js:131:15)
+  129 |       setShowPicker(false)
+  130 |     } catch (err) {
+> 131 |       console.error('Reaction error:', err)
+      |               ^
+  132 |       alert('Failed to react. Please try again.')
+  133 |     } finally {
+  134 |       setLoading(false) (src\app\components\user\Reactions.js:131:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Failed to load comments: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at Comments.useCallback[loadComments] (src\app\components\user\Comments.js:54:15)
+  52 |       setComments(data || [])
+  53 |     } catch (err) {
+> 54 |       console.error('Failed to load comments:', err)
+     |               ^
+  55 |     }
+  56 |   }, [contentType, contentId])
+  57 | (src\app\components\user\Comments.js:54:15)
+[browser] Failed to post comment: {
+  code: [32m'PGRST205'[39m,
+  details: [1mnull[22m,
+  hint: [32m"Perhaps you meant the table 'public.info_comments'"[39m,
+  message: [32m"Could not find the table 'public.content_comments' in the schema cache"[39m
+} 
+    at handleSubmit (src\app\components\user\Comments.js:118:15)
+  116 |       await loadComments()
+  117 |     } catch (err) {
+> 118 |       console.error('Failed to post comment:', err)
+      |               ^
+  119 |       alert('Failed to post comment. Please try again.')
+  120 |     } finally {
+  121 |       setSubmitting(false) (src\app\components\user\Comments.js:118:15)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 1068ms (next.js: 333ms, proxy.ts: 21ms, application-code: 714ms)
+ GET /user/blogs/d1111111-1111-4111-8111-111111111111 200 in 189ms (next.js: 105ms, proxy.ts: 16ms, application-code: 68ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 457ms (next.js: 124ms, proxy.ts: 13ms, application-code: 320ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 393ms (next.js: 109ms, proxy.ts: 8ms, application-code: 276ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 387ms (next.js: 116ms, proxy.ts: 12ms, application-code: 260ms)
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] Uncaught Error: Element type is invalid: expected a string (for built-in components) or a class/function (for composite components) but got: undefined. You likely forgot to export your component from the file it's defined in, or you might have mixed up default and named imports.
+
+Check the render method of `CommentMoreMenu`.
+    at CommentMoreMenu (src\app\components\user\Comments.js:107:9)
+    at renderComment (src\app\components\user\Comments.js:302:19)
+    at eval (src\app\components\user\Comments.js:464:37)
+    at Array.map (<anonymous>)
+    at Comments (src\app\components\user\Comments.js:464:20)
+    at eval (src\app\user\dashboard\page.js:756:25)
+    at Array.map (<anonymous>)
+    at UserDashboardPage (src\app\user\dashboard\page.js:697:31)
+  105 |         aria-expanded={open}
+  106 |       >
+> 107 |         <EllipsisVertical className="h-4 w-4" />
+      |         ^
+  108 |       </button>
+  109 |
+  110 |       {open && (
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 1138ms (next.js: 336ms, proxy.ts: 39ms, application-code: 763ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 676ms (next.js: 223ms, proxy.ts: 11ms, application-code: 442ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 904ms (next.js: 185ms, proxy.ts: 59ms, application-code: 660ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 212ms (next.js: 59ms, proxy.ts: 7ms, application-code: 146ms)
+ GET /user/dashboard 200 in 65ms (next.js: 4ms, proxy.ts: 11ms, application-code: 51ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 234ms (next.js: 77ms, proxy.ts: 7ms, application-code: 150ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 268ms (next.js: 62ms, proxy.ts: 15ms, application-code: 191ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 248ms (next.js: 59ms, proxy.ts: 7ms, application-code: 182ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /blog/d1111111-1111-4111-8111-111111111111 200 in 2.7s (next.js: 2.4s, application-code: 230ms)
+ GET /user/dashboard 200 in 138ms (next.js: 23ms, proxy.ts: 10ms, application-code: 105ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 452ms (next.js: 124ms, proxy.ts: 11ms, application-code: 317ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 274ms (next.js: 73ms, proxy.ts: 12ms, application-code: 190ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 358ms (next.js: 129ms, proxy.ts: 29ms, application-code: 201ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 246ms (next.js: 63ms, proxy.ts: 15ms, application-code: 167ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 249ms (next.js: 85ms, proxy.ts: 10ms, application-code: 153ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 215ms (next.js: 59ms, proxy.ts: 12ms, application-code: 144ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 213ms (next.js: 70ms, proxy.ts: 7ms, application-code: 136ms)
+⨯ ./src/app/user/blogs/[id]/page.js
+Error:   x Expected '}', got '<eof>'
+     ,-[C:\Users\Jerwin\connect-daet-app\src\app\user\blogs\[id]\page.js:876:4]
+ 874 |     </main>
+ 875 |   )
+ 876 | }
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/user/blogs/[id]/page.js
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /blog/d1111111-1111-4111-8111-111111111111 200 in 1028ms (next.js: 820ms, application-code: 208ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /login?message=Please+sign+in+to+continue. 200 in 1604ms (next.js: 1391ms, proxy.ts: 5ms, application-code: 208ms)
+[browser] ./src/app/user/blogs/[id]/page.js
+Error:   x Expected '}', got '<eof>'
+     ,-[C:\Users\Jerwin\connect-daet-app\src\app\user\blogs\[id]\page.js:876:4]
+ 874 |     </main>
+ 875 |   )
+ 876 | }
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/user/blogs/[id]/page.js 
+[browser] ./src/app/user/blogs/[id]/page.js
+Error:   x Expected '}', got '<eof>'
+     ,-[C:\Users\Jerwin\connect-daet-app\src\app\user\blogs\[id]\page.js:876:4]
+ 874 |     </main>
+ 875 |   )
+ 876 | }
+     `----
+
+Caused by:
+    Syntax Error
+
+Import trace for requested module:
+./src/app/user/blogs/[id]/page.js 
+ GET /user/dashboard 200 in 454ms (next.js: -1142073µs, proxy.ts: 1377ms, application-code: 219ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 490ms (next.js: 127ms, proxy.ts: 7ms, application-code: 356ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 314ms (next.js: 95ms, proxy.ts: 14ms, application-code: 205ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 243ms (next.js: 95ms, proxy.ts: 9ms, application-code: 138ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/blogs/d1111111-1111-4111-8111-111111111111 200 in 251ms (next.js: 85ms, proxy.ts: 9ms, application-code: 157ms)
+🔍 Initializing Supabase Client:
+  - Environment: development
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+✅ Creating real Supabase client...
+✅ Supabase client created successfully
+ GET /user/dashboard 200 in 362ms (next.js: 107ms, proxy.ts: 7ms, application-code: 247ms)
+ GET /user/blogs/d1111111-1111-4111-8111-111111111111 200 in 67ms (next.js: 27ms, proxy.ts: 5ms, application-code: 36ms)
+[browser] ./src/app/components/CommentText.js
+Error: ENOENT: no such file or directory, open 'C:\Users\Jerwin\connect-daet-app\src\app\components\CommentText.js'
+
+Import trace for requested module:
+./src/app/components/CommentText.js
+./src/app/user/blogs/[id]/page.js 
+[browser] ./src/lib/errorMessage.js
+Error: ENOENT: no such file or directory, open 'C:\Users\Jerwin\connect-daet-app\src\lib\errorMessage.js'
+
+Import trace for requested module:
+./src/lib/errorMessage.js
+./src/app/components/user/Reactions.js
+./src/app/components/user/SocialActionBar.js
+./src/app/user/dashboard/page.js 
+ GET /user/dashboard 200 in 76ms (next.js: 3ms, proxy.ts: 10ms, application-code: 62ms)
+[?25h

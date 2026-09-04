@@ -71,6 +71,12 @@ export default function UserEventsPage() {
     return result
   }, [events, categoryFilter, search])
 
+  const getMediaUrl = (value, fallback = null) => {
+    if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
+    if (typeof value === 'string' && value.trim()) return value
+    return fallback
+  }
+
   const formatDate = (dateStr) => {
     if (!dateStr) return 'TBA'
     return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -175,19 +181,28 @@ export default function UserEventsPage() {
           </div>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {filteredEvents.map((event) => (
+            {filteredEvents.map((event) => {
+              const firstImage = getMediaUrl(event.featured_image || event.images)
+              const firstVideo = getMediaUrl(event.videos || event.video_url)
+              const primaryMedia = firstVideo || firstImage
+
+              return (
               <Link
                 key={event.id}
                 href={`/user/events/${event.id}`}
                 className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md"
               >
-                {event.featured_image ? (
+                {primaryMedia ? (
                   <div className="relative h-40 w-full overflow-hidden">
-                    <img
-                      src={event.featured_image}
-                      alt={event.title}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                    />
+                    {firstVideo ? (
+                      <video src={firstVideo} className="h-full w-full object-cover transition duration-300 group-hover:scale-105" preload="metadata" controls />
+                    ) : (
+                      <img
+                        src={firstImage}
+                        alt={event.title}
+                        className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      />
+                    )}
                     {event.is_free && (
                       <span className="absolute left-3 top-3 rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-sm">
                         Free
@@ -226,7 +241,8 @@ export default function UserEventsPage() {
                   </div>
                 </div>
               </Link>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

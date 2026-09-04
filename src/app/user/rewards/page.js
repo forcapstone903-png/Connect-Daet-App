@@ -15,13 +15,14 @@ import {
   Zap,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getStoredSession } from '@/lib/authCookies'
 import { getDailyStreak, getLevelFromPoints, getLevelProgress, getRewardBadges } from '@/lib/gamification'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
 
   try {
-    const raw = window.sessionStorage.getItem('user_session')
+    const raw = getStoredSession()
     return raw ? JSON.parse(raw) : null
   } catch {
     return null

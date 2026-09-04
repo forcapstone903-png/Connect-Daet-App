@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession, clearAuthCookie } from '@/lib/authCookies';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -114,7 +115,7 @@ export default function AnalyticsAndReportsPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         router.push('/login');
         return;
@@ -164,6 +165,7 @@ export default function AnalyticsAndReportsPage() {
 
   const handleLogout = async () => {
     sessionStorage.removeItem('user_session');
+    clearAuthCookie();
     await supabase.auth.signOut();
     router.push('/login');
   };

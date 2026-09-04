@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, FileText, Save } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import MediaUpload from '@/app/components/MediaUpload'
+import { trackUserActivity } from '@/lib/trackActivity'
 
 const categories = [
   { value: 'travel_guides', label: 'Travel Guides' },
@@ -94,9 +96,24 @@ export default function CreateBlogPage() {
         comments_count: 0,
       }
 
-      const { error } = await supabase.from('info_blogs').insert([payload])
+      const { data, error } = await supabase.from('info_blogs').insert([payload]).select('id')
 
       if (error) throw error
+
+      const createdBlogId = data?.[0]?.id || null
+      if (createdBlogId) {
+        trackUserActivity({
+          userId: session.user.id,
+          activityType: 'new_post',
+          entityType: 'blog',
+          entityId: createdBlogId,
+          description: `Published a new blog post: ${form.title.trim()}`,
+          metadata: {
+            contentTitle: form.title.trim(),
+            ownerUserId: session.user.id,
+          },
+        })
+      }
 
       setSuccess(true)
       setTimeout(() => {
@@ -217,15 +234,30 @@ export default function CreateBlogPage() {
                   </select>
                 </label>
 
-                <label className="md:col-span-2">
-                  <span className="mb-2 block text-sm font-semibold text-slate-700">Featured image URL</span>
-                  <input
-                    value={form.featured_image}
-                    onChange={(event) => updateField('featured_image', event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-sky-300 focus:bg-white"
-                    placeholder="https://example.com/image.jpg"
-                  />
-                </label>
+                <div className="md:col-span-2">
+                  <span className="mb-2 block text-sm font-semibold text-slate-700">Featured image</span>
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <MediaUpload
+                      bucket="blogs"
+                      folder="images"
+                      mediaType="image"
+                      existingMediaUrl={form.featured_image}
+                      onUploadComplete={(url) => updateField('featured_image', url || '')}
+                      onUploadError={(error) => alert(error)}
+                      buttonText="Upload image"
+                      maxSizeMB={5}
+                    />
+                    <div>
+                      <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500">Or paste an image URL</label>
+                      <input
+                        value={form.featured_image}
+                        onChange={(event) => updateField('featured_image', event.target.value)}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-300"
+                        placeholder="https://example.com/image.jpg"
+                      />
+                    </div>
+                  </div>
+                </div>
 
                 <label className="md:col-span-2">
                   <span className="mb-2 block text-sm font-semibold text-slate-700">Tags</span>

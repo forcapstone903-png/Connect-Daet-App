@@ -1,9 +1,10 @@
 // app/admin/dashboard/page.js
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -11,7 +12,8 @@ import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/components/MediaUpload';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess, canAccessAdminDashboard } from '@/lib/adminRoles'
+import { getStoredSession, clearAuthCookie, getStoredSessionObject } from '@/lib/authCookies';
 
 // Weather API configuration
 const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
@@ -19,6 +21,65 @@ const DAET_COORDS = { lat: 14.1122, lon: 122.9553 };
 
 // Venues (fetched from DB) will populate location suggestions
 const EVENT_CATEGORIES = ['festival', 'concert', 'exhibition', 'workshop', 'sports', 'cultural'];
+
+// ---------------------------------------------------------------------------
+// Notification persistence (client-side dashboard notification bell)
+// ---------------------------------------------------------------------------
+// Notifications are kept in localStorage so they survive a page refresh, and
+// so that "Clear all" stays cleared even after reloading the page.
+const NOTIFICATIONS_STORAGE_KEY = 'admin_dashboard_notifications';
+const WELCOME_NOTIFICATION_SHOWN_KEY = 'admin_dashboard_welcome_shown';
+const SENT_EVENT_NOTIFICATIONS_KEY = 'sent_event_notifications';
+const SENT_WEATHER_ALERTS_KEY = 'sent_weather_alerts';
+const ERROR_COOLDOWNS_KEY = 'admin_dashboard_error_cooldowns';
+const MAX_NOTIFICATIONS = 20;
+
+const loadStoredNotifications = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((n) => ({ ...n, timestamp: n.timestamp ? new Date(n.timestamp) : new Date() }))
+      .slice(0, MAX_NOTIFICATIONS);
+  } catch (e) {
+    return [];
+  }
+};
+
+const loadSentCache = (key) => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+const saveSentCache = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // ignore storage write errors
+  }
+};
+
+// Rate-limit recurring error notifications so they do not repopulate the
+// notification bell on every page refresh.
+const markErrorNotified = (key, cooldownMs = 10 * 60 * 1000) => {
+  if (typeof window === 'undefined') return true;
+  try {
+    const cooldowns = JSON.parse(localStorage.getItem(ERROR_COOLDOWNS_KEY) || '{}');
+    const lastNotified = cooldowns[key] ? new Date(cooldowns[key]).getTime() : 0;
+    if (Date.now() - lastNotified < cooldownMs) return true;
+    cooldowns[key] = new Date().toISOString();
+    localStorage.setItem(ERROR_COOLDOWNS_KEY, JSON.stringify(cooldowns));
+    return false;
+  } catch (e) {
+    return false;
+  }
+};
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -41,7 +102,7 @@ export default function AdminDashboard() {
   const [events, setEvents] = useState([]);
   const [pendingPosts, setPendingPosts] = useState([]);
   const [unreadInquiries, setUnreadInquiries] = useState([]);
-  const [calendarStats, setCalendarStats] = useState({ upcomingEvents: 0, totalEvents: 0, totalActivities: 0 });
+  const [activityFeed, setActivityFeed] = useState([]);
   
   // Modal States
   const [showEventModal, setShowEventModal] = useState(false);
@@ -63,7 +124,7 @@ export default function AdminDashboard() {
   
   const [toastMessage, setToastMessage] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [notifications, setNotifications] = useState([]);
+  const [notifications, setNotifications] = useState(() => loadStoredNotifications());
   const [showNotifications, setShowNotifications] = useState(false);
   const [showWeatherDetails, setShowWeatherDetails] = useState(false);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
@@ -120,7 +181,9 @@ export default function AdminDashboard() {
       return formattedEvents;
     } catch (err) {
       console.error('Error fetching events:', err);
-      addNotification('Database Error', `Failed to load events: ${err.message}`, 'error', null, 0);
+      if (!markErrorNotified('fetch_events_error')) {
+        addNotification('Database Error', `Failed to load events: ${err.message}`, 'error', null, 0);
+      }
       return [];
     }
   };
@@ -230,8 +293,6 @@ export default function AdminDashboard() {
   };
 
   const generateNotificationId = () => Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-  
-  const MAX_NOTIFICATIONS = 20;
 
   const addNotification = (title, message, type = 'info', link = null, duration = 0) => {
     const newNotification = {
@@ -256,7 +317,12 @@ export default function AdminDashboard() {
   const clearAllNotifications = () => {
     setNotifications([]);
     setShowNotifications(false);
-    addNotification('Notifications Cleared', 'All notifications have been cleared', 'info', null, 0);
+    try {
+      localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+    } catch (e) {
+      // ignore storage errors
+    }
+    showToast('All notifications have been cleared', false);
   };
   
   const removeNotification = (id) => {
@@ -271,35 +337,34 @@ export default function AdminDashboard() {
     threeDaysLater.setDate(now.getDate() + 3);
     const sevenDaysLater = new Date(now);
     sevenDaysLater.setDate(now.getDate() + 7);
-    
+
+    const sentNotifications = loadSentCache(SENT_EVENT_NOTIFICATIONS_KEY);
+
     events.forEach(event => {
       if (event.status !== 'published') return;
       const eventDate = new Date(event.start);
       const eventTitle = event.title;
-      const sentNotifications = JSON.parse(sessionStorage.getItem('sent_event_notifications') || '{}');
       const notificationKey = `${event.id}_${eventDate.toDateString()}`;
-      
+
       if (!sentNotifications[notificationKey]) {
         if (eventDate.toDateString() === now.toDateString()) {
           addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
-          sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         } else if (eventDate.toDateString() === tomorrow.toDateString()) {
           addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
-          sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         } else if (eventDate.toDateString() === threeDaysLater.toDateString()) {
           addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
-          sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         } else if (eventDate > now && eventDate <= sevenDaysLater) {
           const daysDiff = Math.ceil((eventDate - now) / (1000 * 60 * 60 * 24));
           addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', null, 0);
           sentNotifications[notificationKey] = true;
-          sessionStorage.setItem('sent_event_notifications', JSON.stringify(sentNotifications));
         }
       }
     });
+
+    saveSentCache(SENT_EVENT_NOTIFICATIONS_KEY, sentNotifications);
   };
 
   const checkWeatherNotifications = (weatherData) => {
@@ -338,12 +403,12 @@ export default function AdminDashboard() {
     if (alertType) {
       setWeather(prev => ({ ...prev, alert: { type: alertType, message: alertMsg } }));
       
-      const sentAlerts = JSON.parse(sessionStorage.getItem('sent_weather_alerts') || '{}');
+      const sentAlerts = loadSentCache(SENT_WEATHER_ALERTS_KEY);
       const todayKey = new Date().toDateString();
       if (!sentAlerts[todayKey + '_weather']) {
         addNotification('Weather Alert', alertMsg, alertType === 'critical' ? 'error' : 'warning', null, 0);
         sentAlerts[todayKey + '_weather'] = true;
-        sessionStorage.setItem('sent_weather_alerts', JSON.stringify(sentAlerts));
+        saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
       }
     } else {
       setWeather(prev => ({ ...prev, alert: null }));
@@ -408,7 +473,9 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error('Weather fetch error:', err);
       setWeather(prev => ({ ...prev, error: 'Unable to fetch weather data', loading: false }));
-      addNotification('Weather Service Error', 'Failed to fetch weather data.', 'error', null, 0);
+      if (!markErrorNotified('weather_fetch_error')) {
+        addNotification('Weather Service Error', 'Failed to fetch weather data.', 'error', null, 0);
+      }
     }
   };
 
@@ -457,37 +524,84 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    fetchWeather();
-    const interval = setInterval(fetchWeather, 30 * 60 * 1000);
-    return () => clearInterval(interval);
+    let active = true;
+    const loadWeather = async () => {
+      if (!active) return;
+      await fetchWeather();
+    };
+
+    void loadWeather();
+    const interval = setInterval(() => {
+      void loadWeather();
+    }, 30 * 60 * 1000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
   }, []);
 
   useEffect(() => {
-    if (events.length > 0) {
+    if (events.length === 0) return undefined;
+
+    let active = true;
+    const runChecks = () => {
+      if (!active) return;
       checkUpcomingEvents();
-      const eventCheckInterval = setInterval(checkUpcomingEvents, 60 * 60 * 1000);
-      return () => clearInterval(eventCheckInterval);
-    }
+    };
+
+    runChecks();
+    const eventCheckInterval = setInterval(runChecks, 60 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(eventCheckInterval);
+    };
   }, [events]);
 
+  // Show the welcome notification only once per admin so it does not come
+  // back on every page refresh after the user clears their notifications.
   useEffect(() => {
     if (user) {
-      addNotification('Welcome to Admin Dashboard', `Hello ${user.full_name || user.user_name || 'Admin'}! You have full control over events and tourism activities.`, 'success', null, 0);
+      const userId = user.id || user.user_id || user.sub || user.email || 'admin';
+      try {
+        const welcomeKey = `${WELCOME_NOTIFICATION_SHOWN_KEY}_${userId}`;
+        if (!localStorage.getItem(welcomeKey)) {
+          addNotification('Welcome to Admin Dashboard', `Hello ${user.full_name || user.user_name || 'Admin'}! You have full control over events and tourism activities.`, 'success', null, 0);
+          localStorage.setItem(welcomeKey, '1');
+        }
+      } catch (e) {
+        // ignore storage errors
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  // Persist the notification list whenever it changes so cleared / unread
+  // state is preserved across page refreshes.
+  useEffect(() => {
+    try {
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
+    } catch (e) {
+      // ignore storage errors
+    }
+  }, [notifications]);
 
   const showToast = (message, isError = false) => {
     setToastMessage({ message, isError });
     setTimeout(() => setToastMessage(null), 2500);
   };
 
-  const updateCalendarStats = (eventsList) => {
+  const calendarStats = useMemo(() => {
     const now = new Date(); now.setHours(0, 0, 0, 0);
     const thirtyDaysLater = new Date(now); thirtyDaysLater.setDate(now.getDate() + 30);
-    const upcoming = eventsList.filter(ev => new Date(ev.start) >= now && new Date(ev.start) <= thirtyDaysLater && ev.status === 'published').length;
-    const activities = eventsList.filter(ev => (ev.category === 'workshop' || ev.category === 'exhibition') && ev.status === 'published').length;
-    setCalendarStats({ upcomingEvents: upcoming, totalEvents: eventsList.filter(ev => ev.status === 'published').length, totalActivities: activities });
-  };
+    const upcoming = events.filter(ev => new Date(ev.start) >= now && new Date(ev.start) <= thirtyDaysLater && ev.status === 'published').length;
+    const activities = events.filter(ev => (ev.category === 'workshop' || ev.category === 'exhibition') && ev.status === 'published').length;
+    return { upcomingEvents: upcoming, totalEvents: events.filter(ev => ev.status === 'published').length, totalActivities: activities };
+  }, [events]);
+
+  useEffect(() => {
+    eventsRef.current = events;
+  }, [events]);
 
   const openCreateModal = (startStr, endStr) => {
     setSelectedDate(startStr);
@@ -661,20 +775,6 @@ export default function AdminDashboard() {
     setShowLocationSuggestions(false);
   };
 
-  useEffect(() => {
-    eventsRef.current = events;
-    updateCalendarStats(events);
-  }, [events]);
-
-  useEffect(() => {
-    fetchEventsFromDB();
-    fetchPendingPosts();
-    fetchUnreadInquiries();
-    fetchTouristSpotsCount();
-    fetchBlogsCount();
-    fetchVenues();
-  }, []);
-
   const fetchPendingPosts = async () => {
     try {
       const { data, error } = await supabase
@@ -750,25 +850,24 @@ export default function AdminDashboard() {
     }
   };
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
-      if (!session) { router.push('/login'); return; }
-      const userData = JSON.parse(session);
-      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
-      setUser(userData);
-      await fetchDashboardData();
-      setLoading(false);
-    };
-    checkAuth();
-  }, []);
-
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (adminUserId = user?.id) => {
     try {
-      const { data: users, error } = await supabase
-        .from('info_users')
-        .select('id, email, full_name, user_type, status, is_online, created_at')
-        .order('created_at', { ascending: false });
+      const [usersResult, notificationsResult] = await Promise.all([
+        supabase
+          .from('info_users')
+          .select('id, email, full_name, user_type, status, is_online, created_at')
+          .order('created_at', { ascending: false }),
+        adminUserId
+          ? supabase
+              .from('info_notifications')
+              .select('*')
+              .eq('user_id', adminUserId)
+              .order('created_at', { ascending: false })
+              .limit(10)
+          : Promise.resolve({ data: [] })
+      ]);
+
+      const { data: users, error } = usersResult;
 
       if (error) throw error;
       const list = users || [];
@@ -781,14 +880,129 @@ export default function AdminDashboard() {
         onlineUsers: list.filter(u => u.is_online === true).length
       }));
       setRecentUsers(list.filter(u => u.user_type !== 'admin').slice(0, 5));
+
+      if (!notificationsResult.error && Array.isArray(notificationsResult.data)) {
+        setNotifications(
+          notificationsResult.data
+            .map((notification) => ({
+              id: notification.id,
+              title: notification.title,
+              message: notification.message,
+              type: notification.type || 'info',
+              read: Boolean(notification.is_read),
+              timestamp: new Date(notification.created_at || Date.now()),
+            }))
+            .slice(0, MAX_NOTIFICATIONS)
+        );
+      }
     } catch (err) {
       console.error('Error fetching data:', err);
     }
   };
 
+  function formatActivityTime(value) {
+    if (!value) return 'Just now';
+    const diffMs = Date.now() - new Date(value).getTime();
+    const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+    if (diffMinutes < 1) return 'Now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  async function fetchRecentActivity() {
+    try {
+      const { data, error } = await supabase
+        .from('user_activity_log')
+        .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)')
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (error) throw error;
+
+      const normalized = (data || []).map((item) => {
+        const actorName = item.info_users?.full_name || item.info_users?.email?.split('@')[0] || 'A user';
+        const typeLabel = item.activity_type || 'activity';
+        const contentTitle = item.metadata?.contentTitle || item.entity_type || 'content';
+        const colorMap = {
+          comment: 'bg-sky-100 text-sky-700',
+          react_content: 'bg-violet-100 text-violet-700',
+          share_content: 'bg-emerald-100 text-emerald-700',
+          save_content: 'bg-amber-100 text-amber-700',
+        };
+
+        return {
+          id: item.id || `${item.user_id || 'user'}-${item.created_at || Date.now()}-${typeLabel}`,
+          title: `${actorName} ${typeLabel === 'comment' ? 'commented' : typeLabel === 'react_content' ? 'reacted' : typeLabel === 'share_content' ? 'shared' : typeLabel === 'save_content' ? 'saved' : 'interacted'}`,
+          detail: item.description || `${actorName} interacted with ${contentTitle}.`,
+          time: formatActivityTime(item.created_at),
+          color: colorMap[typeLabel] || 'bg-slate-100 text-slate-700',
+        };
+      });
+
+      setActivityFeed(normalized.length > 0 ? normalized : [
+        { id: 'no-recent-activity', title: 'No recent activity', detail: 'User engagement will appear here as actions happen.', time: 'Now', color: 'bg-slate-100 text-slate-700' },
+      ]);
+    } catch (err) {
+      console.error('Error fetching recent activity:', err);
+      setActivityFeed([{ id: 'recent-activity-unavailable', title: 'Recent activity unavailable', detail: 'The activity stream could not be loaded.', time: 'Now', color: 'bg-slate-100 text-slate-700' }]);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    const checkAuth = async () => {
+      const session = getStoredSession();
+      if (!session) {
+        if (active) router.push('/login');
+        return;
+      }
+
+      let userData = null;
+      try {
+        userData = JSON.parse(session);
+      } catch (error) {
+        if (active) router.push('/login');
+        return;
+      }
+
+      const sessionUser = getStoredSessionObject() || userData;
+      if (!canAccessAdminDashboard(sessionUser)) {
+        if (active) router.push('/dashboard');
+        return;
+      }
+
+      if (active) setUser(sessionUser);
+
+      const loadDashboardData = async () => {
+        if (!active) return;
+        await fetchEventsFromDB();
+        await fetchPendingPosts();
+        await fetchUnreadInquiries();
+        await fetchTouristSpotsCount();
+        await fetchBlogsCount();
+        await fetchVenues();
+        await fetchRecentActivity();
+        await fetchDashboardData(sessionUser.id);
+      };
+
+      await loadDashboardData();
+      if (active) setLoading(false);
+    };
+
+    void checkAuth();
+    return () => {
+      active = false;
+    };
+  }, [router]);
+
   const handleLogout = async () => {
     addNotification('Logged Out', 'You have been logged out successfully.', 'info', null, 0);
     sessionStorage.removeItem('user_session');
+    clearAuthCookie();
     await supabase.auth.signOut();
     router.push('/login');
   };
@@ -857,14 +1071,6 @@ export default function AdminDashboard() {
     { label: 'Users', value: stats.totalUsers || 0, tone: 'amber', icon: 'users' },
     { label: 'Feedback', value: recentUsers.length ? Math.min(96, 24 + recentUsers.length * 9) : 24, tone: 'violet', icon: 'feedback' },
     { label: 'Complaints', value: unreadInquiries.length || 0, tone: 'rose', icon: 'warning' },
-  ];
-
-  const activityFeed = [
-    { title: 'New tourist registered', detail: 'A new visitor joined from Daet municipality', time: '2 min ago', color: 'bg-sky-100 text-sky-700' },
-    { title: 'Event approved', detail: 'The Calaguas Island Summer Festival was published', time: '18 min ago', color: 'bg-emerald-100 text-emerald-700' },
-    { title: 'Feedback submitted', detail: 'Visitor review for Bagasbas Beach received', time: '1 hour ago', color: 'bg-violet-100 text-violet-700' },
-    { title: 'Complaint escalated', detail: 'A beach safety report is awaiting review', time: '2 hours ago', color: 'bg-rose-100 text-rose-700' },
-    { title: 'Announcement posted', detail: 'A tourism update was pushed to all users', time: 'Today', color: 'bg-amber-100 text-amber-700' },
   ];
 
   const popularAttractions = [
@@ -1089,7 +1295,7 @@ export default function AdminDashboard() {
             </div>
             <div className="space-y-3">
               {activityFeed.map((item) => (
-                <div key={item.title} className="flex items-start gap-3 rounded-[1.3rem] border border-slate-200 bg-slate-50 p-3">
+                <div key={item.id || `${item.title}-${item.time}`} className="flex items-start gap-3 rounded-[1.3rem] border border-slate-200 bg-slate-50 p-3">
                   <span className={`mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full ${item.color}`}>•</span>
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-slate-800">{item.title}</p>
@@ -1466,20 +1672,13 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Floating Message Envelope for Inquiries */}
+      {/* Floating Message Envelope for Inquiries - opens a separate page */}
       <button 
-        onClick={() => {
-          if (unreadInquiries.length > 0) {
-            setSelectedInquiry(unreadInquiries[0]);
-            setShowInquiryModal(true);
-          } else {
-            showToast('No unread inquiries at this time', false);
-          }
-        }}
+        onClick={() => router.push('/admin/feedback')}
         className="fixed bottom-5 right-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all duration-200 z-30 group"
       >
         <div className="relative">
-          <span className="text-2xl">Messages</span>
+          <MessageSquare className="h-7 w-7" />
           {unreadInquiries.length > 0 && (
             <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
               {unreadInquiries.length > 9 ? '9+' : unreadInquiries.length}
@@ -1489,7 +1688,7 @@ export default function AdminDashboard() {
         <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
           {unreadInquiries.length > 0 
             ? `${unreadInquiries.length} unread ${unreadInquiries.length === 1 ? 'inquiry' : 'inquiries'}`
-            : 'No unread inquiries'}
+            : 'View inquiries'}
         </span>
       </button>
 

@@ -375,6 +375,22 @@ export default function UserDashboardPage() {
     }
 
     const loadDashboard = async () => {
+      const fetchCommentCounts = async (items) => {
+        const counts = {}
+        await Promise.all(
+          (items || []).map(async (item) => {
+            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'
+            const { count } = await supabase
+              .from('content_comments')
+              .select('id', { count: 'exact', head: true })
+              .eq('content_type', contentType)
+              .eq('content_id', item.id)
+            counts[`${item.type}-${item.id}`] = count || 0
+          })
+        )
+        if (isMounted) setCommentCounts(counts)
+      }
+
       try {
         const cachedDashboard = getDashboardCache(userId)
         if (cachedDashboard) {
@@ -385,6 +401,7 @@ export default function UserDashboardPage() {
           setFeed(cachedDashboard.feed || [])
           setLoading(false)
           void loadDashboardStats(userId)
+          void fetchCommentCounts(cachedDashboard.feed || [])
           return
         }
 
@@ -400,7 +417,7 @@ export default function UserDashboardPage() {
             .limit(6),
           supabase
             .from(TABLES.ANNOUNCEMENTS)
-            .select('id, title, announcement_type, published_at')
+            .select('id, title, announcement_type, published_at, image_url, video_url, content')
             .eq('status', 'published')
             .order('published_at', { ascending: false })
             .limit(4),
@@ -413,7 +430,7 @@ export default function UserDashboardPage() {
               .limit(6),
             supabase
               .from(TABLES.EVENTS)
-              .select('id, title, category, start_date, location')
+              .select('id, title, description, category, start_date, location, featured_image, images, videos')
               .eq('status', 'published')
               .order('start_date', { ascending: true })
               .limit(6),
@@ -472,6 +489,7 @@ export default function UserDashboardPage() {
         setLoading(false)
 
         void loadDashboardStats(userId)
+        void fetchCommentCounts(mixedFeed)
       } catch (err) {
         if (!isMounted) return
         console.error('Dashboard load error:', err)
@@ -541,7 +559,7 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="min-h-screen w-full max-w-full overflow-x-clip bg-[#f3f5f9] text-slate-900">
       <MobileNav />
       {/* Toast Notification */}
       {toastMessage && (
@@ -550,16 +568,16 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+      <div className="mx-auto w-full max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         {/* Header */}
-        <header className="sticky top-3 z-30 mb-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white/90 shadow-sm backdrop-blur md:rounded-[28px]">
+        <header className="sticky top-3 z-30 mb-5 w-full overflow-hidden rounded-[24px] border border-slate-200 bg-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm md:rounded-[28px]">
           <div className="px-3 py-3 sm:px-4 md:px-6">
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+              <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md">
                   D
                 </div>
-                <div className="hidden sm:block">
+                <div className="hidden min-w-0 sm:block">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Home</p>
                   <p className="text-sm font-bold text-slate-800">CONNECT Daet</p>
                 </div>
@@ -599,7 +617,7 @@ export default function UserDashboardPage() {
 
             {/* Mobile search */}
             <div className="mt-3 lg:hidden">
-              <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
+              <label className="flex w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
                 <Search className="h-4 w-4" />
                 <input
                   value={search}
@@ -696,71 +714,95 @@ export default function UserDashboardPage() {
               <div className="space-y-4">
                 {filteredFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
-                  const activeReaction = reactions[itemKey] || null
                   const isSaved = savedItems.has(itemKey)
+                  const eventMediaUrl = item.type === 'event'
+                    ? getImageUrl(item.featured_image || item.images || item.videos, null)
+                    : null
+                  const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
+
                   return (
-                  <div
-                    key={itemKey}
-                    className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
-                  >
-                    <Link href={item.href} className="block">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600">
-                              {item.type}
-                            </span>
-                            {item.category && <span className="text-xs text-slate-500">{item.category}</span>}
+                    <article
+                      key={itemKey}
+                      className="feed-card w-full max-w-full overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)] sm:p-4"
+                    >
+                      <div className="feed-post-body">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex min-w-0 flex-1 items-start gap-3">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-blue-600 text-sm font-bold text-white shadow-sm">
+                              {item.type === 'event' ? 'E' : item.type === 'forum' ? 'F' : 'B'}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
+                                  {item.type}
+                                </span>
+                                {item.category && <span className="text-[11px] font-medium text-slate-500">{item.category}</span>}
+                              </div>
+                              <h3 className="mt-2 text-base font-bold leading-6 text-slate-900 sm:text-lg">{item.title}</h3>
+                              {(item.excerpt || item.description) && (
+                                <p className="mt-1 text-sm leading-6 text-slate-600">{item.excerpt || item.description}</p>
+                              )}
+                              <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
+                                {item.location && <span className="inline-flex items-center gap-1">{item.location}</span>}
+                                {item.start_date && <span>{formatDate(item.start_date)}</span>}
+                                {item.reply_count !== undefined && <span>{item.reply_count} replies</span>}
+                                {item.view_count && <span>{item.view_count} views</span>}
+                              </div>
+                            </div>
                           </div>
-                          <h3 className="mt-2 truncate text-base font-bold text-slate-900">{item.title}</h3>
-                          {(item.excerpt || item.description) && (
-                            <p className="mt-1 line-clamp-2 text-sm text-slate-600">{item.excerpt || item.description}</p>
-                          )}
-                          <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                            {item.location && <span>{item.location}</span>}
-                            {item.start_date && <span>{formatDate(item.start_date)}</span>}
-                            {item.reply_count !== undefined && <span>{item.reply_count} replies</span>}
-                            {item.view_count && <span>{item.view_count} views</span>}
-                          </div>
+                          <Link href={item.href} aria-label={`Open ${item.title}`} className="shrink-0 text-slate-400 transition hover:text-slate-600">
+                            <ChevronRight className="h-5 w-5" />
+                          </Link>
                         </div>
-                        <ChevronRight className="h-5 w-5 flex-shrink-0 text-slate-400" />
+
+                        {item.type === 'event' && (eventMediaUrl || eventVideoUrl) && (
+                          <div className="feed-media mt-3">
+                            {eventVideoUrl ? (
+                              <video src={eventVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />
+                            ) : (
+                              <img src={eventMediaUrl} alt={item.title} className="aspect-[16/9] w-full object-cover" />
+                            )}
+                          </div>
+                        )}
+
+                        <div className="feed-actions mt-3">
+                          <SocialActionBar
+                            contentType={item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'}
+                            contentId={item.id}
+                            userId={userId}
+                            commentCount={commentCounts[`${item.type}-${item.id}`] || 0}
+                            onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)}
+                          />
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <button
+                            type="button"
+                            onClick={(e) => handleBookmark(e, item)}
+                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                              isSaved ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />
+                            {isSaved ? 'Saved' : 'Save'}
+                          </button>
+
+                          <Link href={item.href} className="text-xs font-semibold text-sky-600 hover:text-sky-700">
+                            View details
+                          </Link>
+                        </div>
+
+                        {openComments === itemKey && (
+                          <div className="mt-3">
+                            <Comments
+                              contentType={item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'}
+                              contentId={item.id}
+                              userId={userId}
+                            />
+                          </div>
+                        )}
                       </div>
-                    </Link>
-
-                    {/* Social Engagement Actions */}
-                    <SocialActionBar
-                      contentType={item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'}
-                      contentId={item.id}
-                      userId={userId}
-                      commentCount={commentCounts[`${item.type}-${item.id}`] || 0}
-                      onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)}
-                    />
-
-                    {/* Save button */}
-                    <div className="mt-1">
-                      <button
-                        type="button"
-                        onClick={(e) => handleBookmark(e, item)}
-                        className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                          isSaved ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />
-                        {isSaved ? 'Saved' : 'Save'}
-                      </button>
-                    </div>
-
-                    {/* Comments section */}
-                    {openComments === itemKey && (
-                      <div className="mt-3">
-                        <Comments
-                          contentType={item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'}
-                          contentId={item.id}
-                          userId={userId}
-                        />
-                      </div>
-                    )}
-                  </div>
+                    </article>
                   )
                 })}
               </div>
@@ -829,13 +871,30 @@ export default function UserDashboardPage() {
 
               <div className="space-y-3">
                 {announcements.length > 0 ? (
-                  announcements.map((ann) => (
-                    <Link key={ann.id} href={`/user/announcements/${ann.id}`} className="block rounded-[14px] border border-slate-200 bg-slate-50 p-3 transition hover:border-slate-300">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{normalizeAnnouncementRecord(ann).type || 'News'}</p>
-                      <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-800">{ann.title}</p>
-                      <p className="mt-1 text-xs text-slate-500">{formatDate(ann.published_at || ann.created_at)}</p>
-                    </Link>
-                  ))
+                  announcements.map((ann) => {
+                    const announcement = normalizeAnnouncementRecord(ann)
+                    const mediaUrl = announcement.image_url || announcement.video_url
+
+                    return (
+                      <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-[14px] border border-slate-200 bg-slate-50 p-3 transition hover:border-slate-300">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{announcement.type || 'News'}</p>
+                        <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-800">{announcement.title}</p>
+                        {announcement.content && (
+                          <p className="mt-1 line-clamp-2 text-xs text-slate-600">{announcement.content}</p>
+                        )}
+                        {mediaUrl && (
+                          <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                            {announcement.video_url ? (
+                              <video src={announcement.video_url} controls className="h-28 w-full object-cover" preload="metadata" />
+                            ) : (
+                              <img src={announcement.image_url} alt={announcement.title} className="h-28 w-full object-cover" />
+                            )}
+                          </div>
+                        )}
+                        <p className="mt-2 text-xs text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p>
+                      </Link>
+                    )
+                  })
                 ) : (
                   <p className="text-sm text-slate-500">No updates yet</p>
                 )}

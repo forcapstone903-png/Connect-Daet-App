@@ -4,12 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Bell, BellRing, CheckCheck, ChevronRight, Clock3, Filter, Search, ShieldAlert, Sparkles, Volume2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getStoredSession } from '@/lib/authCookies'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
 
   try {
-    const raw = window.sessionStorage.getItem('user_session')
+    const raw = getStoredSession()
     return raw ? JSON.parse(raw) : null
   } catch {
     return null
@@ -48,38 +49,34 @@ function formatDate(dateValue) {
 }
 
 export default function UserNotificationsPage() {
-  const [session, setSession] = useState(null)
+  const [session] = useState(() => readStoredSession())
   const [notifications, setNotifications] = useState([])
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [priority, setPriority] = useState('all')
   const [soundEnabled, setSoundEnabled] = useState(true)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !!readStoredSession())
 
   const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
 
   useEffect(() => {
-    const currentSession = readStoredSession()
-    setSession(currentSession)
-
-    if (!currentSession) {
-      setLoading(false)
+    if (!session) {
       return
     }
 
     const loadNotifications = async () => {
       try {
-        const { data, error } = await supabase
-          .from('info_notifications')
-          .select('*')
-          .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(50)
+        const response = await fetch('/api/notifications', { method: 'GET', credentials: 'same-origin' })
+        const result = await response.json()
 
-        if (error) throw error
-        setNotifications(data || [])
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to load notifications')
+        }
+
+        setNotifications(result.notifications || [])
       } catch (error) {
         console.error('Notifications fetch failed:', error)
+        setNotifications([])
       } finally {
         setLoading(false)
       }
@@ -103,8 +100,18 @@ export default function UserNotificationsPage() {
     if (!id) return
 
     try {
-      const { error } = await supabase.from('info_notifications').update({ is_read: true, updated_at: new Date().toISOString() }).eq('id', id)
-      if (error) throw error
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to mark notification as read')
+      }
+
       setNotifications((previous) => previous.map((item) => item.id === id ? { ...item, is_read: true } : item))
     } catch (error) {
       console.error('Update read state failed:', error)
@@ -115,8 +122,18 @@ export default function UserNotificationsPage() {
     if (!userId) return
 
     try {
-      const { error } = await supabase.from('info_notifications').update({ is_read: true, updated_at: new Date().toISOString() }).eq('user_id', userId)
-      if (error) throw error
+      const response = await fetch('/api/notifications', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markAllRead: true }),
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to mark notifications as read')
+      }
+
       setNotifications((previous) => previous.map((item) => ({ ...item, is_read: true })))
     } catch (error) {
       console.error('Mark all notifications read failed:', error)

@@ -27,9 +27,13 @@ html, body {
 
 html {
   scroll-behavior: smooth;
+  width: 100%;
+  max-width: 100%;
 }
 
 body {
+  width: 100%;
+  max-width: 100%;
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
@@ -44,6 +48,54 @@ img {
 
 * {
   box-sizing: border-box;
+}
+
+.feed-card,
+.feed-card * {
+  min-width: 0;
+}
+
+.feed-card {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.feed-media {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 1rem;
+  background: #f8fafc;
+}
+
+.feed-media img,
+.feed-media video,
+.feed-media iframe,
+.feed-media canvas,
+.feed-media svg {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  object-fit: cover;
+  border-radius: inherit;
+}
+
+.feed-post-body,
+.feed-post-body * {
+  max-width: 100%;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.feed-actions {
+  width: 100%;
+  max-width: 100%;
+}
+
+.feed-actions > * {
+  flex-shrink: 0;
 }
 
 ::selection {
@@ -138,4 +190,159 @@ select option {
 /* Buttons */
 .fc .fc-button {
   opacity: 1 !important;
+}
+
+/* ══════════════════════════════════════════════════════════
+   Global Mobile-Responsive Optimizations
+   Targets all pages: smartphones, tablets, and desktop
+   ══════════════════════════════════════════════════════════ */
+
+/* 1. Prevent horizontal scrolling / content overflow everywhere */
+html,
+body,
+main,
+#__next {
+  overflow-x: clip;
+  max-width: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body > main,
+body > main > * {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
+}
+
+/* 2. Responsive media and rich content — never wider than the screen */
+img,
+video,
+iframe,
+canvas,
+svg {
+  height: auto;
+  max-width: 100%;
+}
+
+/* Tables fit their container and scroll on small screens */
+.table-responsive {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+table {
+  max-width: 100%;
+}
+
+/* 3. Word-wrap long URLs/code so they don't force overflow */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+a,
+li,
+span,
+td,
+th {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+/* 4. Comfortable touch targets on mobile (buttons, icons, links) */
+@media (max-width: 767px) {
+  button,
+  a,
+  [role="button"],
+  input,
+  select,
+  textarea,
+  .fc .fc-button {
+    touch-action: manipulation;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* prevents iOS auto-zoom when focusing inputs */
+  }
+}
+
+/* 5. Remove the iOS tap highlight for a cleaner mobile feel */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 6. Smooth, readable type on small screens */
+@media (max-width: 425px) {
+  body {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+}
+
+/* 7. Prevent mobile long-press context menus on interactive UI where unwanted */
+a[href],
+button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 8. Keep fixed bottom navs clear of content and safe-area notch */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  [class*="fixed"][class*="bottom-0"] {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* 9. Responsive FullCalendar on small screens (used in dashboards) */
+@media (max-width: 767px) {
+  .fc .fc-toolbar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+  .fc .fc-toolbar-title {
+    font-size: 1rem !important;
+  }
+  .fc .fc-toolbar-chunk {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 640px) {
+  html,
+  body,
+  main,
+  #__next {
+    overflow-x: clip;
+  }
+
+  body > main {
+    min-width: 0;
+  }
+
+  [class*="mx-auto"][class*="max-w-"] {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  [class*="rounded-"] {
+    min-width: 0;
+  }
 }

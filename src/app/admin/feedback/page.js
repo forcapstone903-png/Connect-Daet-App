@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession, clearAuthCookie } from '@/lib/authCookies';
 
 const DEFAULT_STATUSES = ['open', 'in_progress', 'answered', 'closed', 'cancelled'];
 const DEFAULT_CATEGORIES = ['general', 'booking', 'safety', 'feedback', 'report', 'other'];
@@ -47,7 +48,7 @@ export default function FeedbackAndComplaintPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         router.push('/login');
         return;
@@ -190,6 +191,7 @@ export default function FeedbackAndComplaintPage() {
 
   const handleLogout = async () => {
     sessionStorage.removeItem('user_session');
+    clearAuthCookie();
     await supabase.auth.signOut();
     router.push('/login');
   };
@@ -255,7 +257,7 @@ export default function FeedbackAndComplaintPage() {
               className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
             >
               <option value="all">All statuses</option>
-              {STATUSES.map((status) => (
+              {statuses.map((status) => (
                 <option key={status} value={status}>{status.replace('_', ' ')}</option>
               ))}
             </select>
@@ -265,7 +267,7 @@ export default function FeedbackAndComplaintPage() {
               className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
             >
               <option value="all">All categories</option>
-              {CATEGORIES.map((category) => (
+              {categories.map((category) => (
                 <option key={category} value={category}>{category}</option>
               ))}
             </select>
@@ -310,7 +312,7 @@ export default function FeedbackAndComplaintPage() {
                           onChange={(e) => updateStatus(item.id, e.target.value)}
                           className="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium capitalize text-slate-700 focus:outline-none focus:ring-2 focus:ring-violet-500"
                         >
-                          {STATUSES.map((status) => (
+                          {statuses.map((status) => (
                             <option key={status} value={status}>{status.replace('_', ' ')}</option>
                           ))}
                         </select>

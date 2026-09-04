@@ -94,12 +94,20 @@ export default function MediaUpload({
 
       clearInterval(progressInterval);
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Upload failed');
+      const responseText = await response.text();
+      let payload = {};
+
+      try {
+        payload = responseText ? JSON.parse(responseText) : {};
+      } catch {
+        payload = { error: responseText || `Upload failed (${response.status})` };
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `Upload failed (${response.status})`);
+      }
+
+      const data = payload;
 
       if (data.success) {
         setMediaPreview(data.url);

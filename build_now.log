@@ -1,0 +1,176 @@
+﻿
+> connect-daet-app@0.1.0 build
+> next build
+
+Γû▓ Next.js 16.2.10 (Turbopack)
+- Environments: .env.local
+
+  Creating an optimized production build ...
+Γ£ô Compiled successfully in 10.4s
+  Running TypeScript ...
+  Finished TypeScript in 178ms ...
+  Collecting page data using 17 workers ...
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+  Generating static pages using 17 workers (0/84) ...
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+≡ƒöì Initializing Supabase Client:
+  - Environment: production
+  - VERCEL: false
+  - URL exists: true
+  - KEY exists: true
+Γ£à Creating real Supabase client...
+Γ£à Supabase client created successfully
+  Generating static pages using 17 workers (21/84) 
+  Generating static pages using 17 workers (42/84) 
+  Generating static pages using 17 workers (63/84) 
+Γ£ô Generating static pages using 17 workers (84/84) in 843ms
+  Finalizing page optimization ...
+
+Route (app)
+Γöî Γùï /
+Γö£ Γùï /_not-found
+Γö£ Γùï /access-denied
+Γö£ Γùï /admin
+Γö£ Γùï /admin/account
+Γö£ Γùï /admin/account/2fa
+Γö£ Γùï /admin/account/password
+Γö£ Γùï /admin/account/profile
+Γö£ Γùï /admin/account/sessions
+Γö£ Γùï /admin/amenities
+Γö£ Γùï /admin/analytics
+Γö£ Γùï /admin/analytics/content
+Γö£ Γùï /admin/analytics/engagement
+Γö£ Γùï /admin/analytics/reports
+Γö£ Γùï /admin/analytics/visitors
+Γö£ Γùï /admin/announcement
+Γö£ Γùï /admin/announcement-settings
+Γö£ Γùï /admin/blog
+Γö£ Γùï /admin/community
+Γö£ Γùï /admin/community/feedback
+Γö£ Γùï /admin/community/forum
+Γö£ Γùï /admin/community/moderation
+Γö£ Γùï /admin/community/users
+Γö£ Γùï /admin/content
+Γö£ Γùï /admin/content/amenities
+Γö£ Γùï /admin/content/attractions
+Γö£ Γùï /admin/content/blogs
+Γö£ Γùï /admin/content/events
+Γö£ Γùï /admin/dashboard
+Γö£ Γùï /admin/data
+Γö£ Γùï /admin/data-management
+Γö£ Γùï /admin/data/backups
+Γö£ Γùï /admin/data/import-export
+Γö£ Γùï /admin/data/media
+Γö£ Γùï /admin/data/retention
+Γö£ Γùï /admin/events
+Γö£ Γùï /admin/feedback
+Γö£ Γùï /admin/file-management
+Γö£ Γùï /admin/forum
+Γö£ Γùï /admin/messaging
+Γö£ Γùï /admin/moderation
+Γö£ Γùï /admin/notifications
+Γö£ Γùï /admin/notifications/history
+Γö£ Γùï /admin/notifications/scheduled
+Γö£ Γùï /admin/notifications/send
+Γö£ Γùï /admin/profile
+Γö£ Γùï /admin/settings
+Γö£ Γùï /admin/settings/email
+Γö£ Γùï /admin/settings/general
+Γö£ Γùï /admin/settings/maintenance
+Γö£ Γùï /admin/settings/security
+Γö£ Γùï /admin/tourist-spots
+Γö£ Γùï /admin/users
+Γö£ ╞Æ /api/admin/forum
+Γö£ ╞Æ /api/admin/forum/[id]
+Γö£ ╞Æ /api/admin/tourist-spots
+Γö£ ╞Æ /api/admin/tourist-spots/[id]
+Γö£ ╞Æ /api/admin/users
+Γö£ ╞Æ /api/auth/confirm-email
+Γö£ ╞Æ /api/debug-env
+Γö£ ╞Æ /api/forgot-password
+Γö£ ╞Æ /api/login
+Γö£ ╞Æ /api/logout
+Γö£ ╞Æ /api/register
+Γö£ ╞Æ /api/reset-password
+Γö£ ╞Æ /api/test-supabase
+Γö£ ╞Æ /api/upload
+Γö£ ╞Æ /blog/[id]
+Γö£ ╞Æ /callback
+Γö£ Γùï /confirm
+Γö£ Γùï /dashboard
+Γö£ ╞Æ /events/[id]
+Γö£ Γùï /forgot-password
+Γö£ ╞Æ /forum/[id]
+Γö£ Γùï /login
+Γö£ Γùï /manifest.webmanifest
+Γö£ Γùï /register
+Γö£ Γùï /reset-password
+Γö£ Γùï /search
+Γö£ Γùï /tourist-spots
+Γö£ ╞Æ /tourist-spots/[id]
+Γö£ Γùï /user
+Γö£ Γùï /user/amenities
+Γö£ ╞Æ /user/amenities/[id]
+Γö£ Γùï /user/announcements
+Γö£ ╞Æ /user/announcements/[id]
+Γö£ Γùï /user/blogs
+Γö£ ╞Æ /user/blogs/[id]
+Γö£ Γùï /user/blogs/new
+Γö£ Γùï /user/dashboard
+Γö£ Γùï /user/events
+Γö£ ╞Æ /user/events/[id]
+Γö£ Γùï /user/feedback
+Γö£ Γùï /user/forums
+Γö£ ╞Æ /user/forums/[id]
+Γö£ Γùï /user/notifications
+Γö£ Γùï /user/profile
+Γö£ Γùï /user/rewards
+Γö£ Γùï /user/saved
+Γöö Γùï /welcome
+
+
+╞Æ Proxy (Middleware)
+
+Γùï  (Static)   prerendered as static content
+╞Æ  (Dynamic)  server-rendered on demand
+

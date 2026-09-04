@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 import ConfirmationModal from '@/app/components/ConfirmationModal';
 import MediaUpload from '@/app/components/MediaUpload';
 
@@ -147,7 +148,7 @@ export default function AdminAnnouncementPage() {
     let isActive = true;
 
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         router.push('/login');
         return;

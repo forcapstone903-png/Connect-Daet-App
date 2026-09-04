@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/components/MediaUpload';
+import { trackUserActivity } from '@/lib/trackActivity';
 
 const BLOG_CATEGORIES = [
   { value: 'news', label: 'News', color: 'bg-blue-100 text-blue-700' },
@@ -148,6 +150,7 @@ export default function BlogManagement() {
       };
 
       let result;
+      let savedBlogId = editingBlog?.id || null;
       if (editingBlog) {
         result = await supabase
           .from('info_blogs')
@@ -156,10 +159,26 @@ export default function BlogManagement() {
       } else {
         result = await supabase
           .from('info_blogs')
-          .insert([{ ...blogData, created_by: user?.id }]);
+          .insert([{ ...blogData, created_by: user?.id }])
+          .select('id');
+        savedBlogId = result.data?.[0]?.id || null;
       }
 
       if (result.error) throw result.error;
+
+      if (!editingBlog && savedBlogId && user?.id) {
+        trackUserActivity({
+          userId: user.id,
+          activityType: 'new_post',
+          entityType: 'blog',
+          entityId: savedBlogId,
+          description: `Published a new blog post: ${blogForm.title.trim()}`,
+          metadata: {
+            contentTitle: blogForm.title.trim(),
+            ownerUserId: user.id,
+          },
+        });
+      }
 
       showToast(editingBlog ? 'Blog updated successfully.' : 'Blog published successfully.');
       await fetchBlogs();
@@ -305,7 +324,7 @@ export default function BlogManagement() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         router.push('/login');
         return;

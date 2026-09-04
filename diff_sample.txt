@@ -1,0 +1,43 @@
+﻿diff --git a/src/app/admin/account/page.js b/src/app/admin/account/page.js
+index 55304d6..d041ca1 100644
+--- a/src/app/admin/account/page.js
++++ b/src/app/admin/account/page.js
+@@ -5,13 +5,14 @@ import Link from 'next/link'
+ import AdminSidebar from '@/app/components/AdminSidebar'
+ import { Icon } from '@/app/components/Icon'
+ import { hasAdminAccess } from '@/lib/adminRoles'
++import { getStoredSession } from '@/lib/authCookies'
+ 
+ export default function AccountHubOverview() {
+   const [user, setUser] = useState(null)
+   const [loading, setLoading] = useState(true)
+ 
+   useEffect(() => {
+-    const session = sessionStorage.getItem('user_session')
++    const session = getStoredSession()
+     if (!session) {
+       window.location.href = '/login'
+       return
+diff --git a/src/app/admin/announcement/page.js b/src/app/admin/announcement/page.js
+index 9ba4e56..266a4f2 100644
+--- a/src/app/admin/announcement/page.js
++++ b/src/app/admin/announcement/page.js
+@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation';
+ import { supabase } from '@/lib/supabase';
+ import AdminSidebar from '@/app/components/AdminSidebar';
+ import { Icon } from '@/app/components/Icon';
+-import { hasAdminAccess } from '@/lib/adminRoles';
++import { hasAdminAccess } from '@/lib/adminRoles'
++import { getStoredSession } from '@/lib/authCookies';
+ import ConfirmationModal from '@/app/components/ConfirmationModal';
+ import MediaUpload from '@/app/components/MediaUpload';
+ 
+@@ -147,7 +148,7 @@ export default function AdminAnnouncementPage() {
+     let isActive = true;
+ 
+     const checkAuth = async () => {
+-      const session = sessionStorage.getItem('user_session');
++      const session = getStoredSession();
+       if (!session) {
+         router.push('/login');
+         return;

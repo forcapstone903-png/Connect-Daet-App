@@ -1,43 +1,81 @@
 import { NextResponse } from 'next/server'
 import publicRoutes from './lib/publicRoutes'
 
+const AUTH_COOKIE = 'daet_auth_session'
+
+// Routes that already-authenticated users should never sit on. Sitting on these
+// was the source of the flicker/glitch: pages like /welcome pushed an authed
+// user to /dashboard (or an admin page to /login) while the destination page
+// immediately bounced back because per-tab sessionStorage was empty on a fresh
+// tab, producing very fast repeated redirects/reloads.
+const AUTHD_ONLY_EXIT = new Set([
+  '/',
+  '/welcome',
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/reset-password',
+])
+
 export function proxy(request) {
   const { pathname } = request.nextUrl
 
-  if (publicRoutes.isPublicPathname(pathname) || pathname.startsWith('/_next') || pathname.startsWith('/api') || pathname.includes('.')) {
+  // Parse the persistent auth cookie once.
+  let session = null
+  const cookieValue = request.cookies.get(AUTH_COOKIE)?.value
+  if (cookieValue) {
+    try {
+      session = JSON.parse(decodeURIComponent(cookieValue))
+    } catch (error) {
+      session = null
+    }
+  }
+
+  const loggedIn = Boolean(session && session.logged_in === true)
+  const role = String(session?.role || '').trim().toLowerCase()
+  const isAdmin = loggedIn && role === 'admin'
+
+  // Logged-in users go straight to their dashboard instead of a landing/auth page.
+  if (loggedIn && AUTHD_ONLY_EXIT.has(pathname)) {
+    return NextResponse.redirect(
+      new URL(isAdmin ? '/admin/dashboard' : '/user/dashboard', request.url)
+    )
+  }
+
+  // Public routes pass through.
+  if (
+    publicRoutes.isPublicPathname(pathname) ||
+    pathname.startsWith('/_next') ||
+    pathname.startsWith('/api') ||
+    pathname.includes('.')
+  ) {
     return NextResponse.next()
   }
 
-  const authCookie = request.cookies.get('daet_auth_session')?.value
-  if (!authCookie) {
+  // Everything else requires a valid session cookie.
+  if (!loggedIn) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('message', 'Please sign in to continue.')
     return NextResponse.redirect(loginUrl)
   }
 
-  try {
-    const session = JSON.parse(decodeURIComponent(authCookie))
-    const role = String(session.role || '').toLowerCase()
-    const loggedIn = Boolean(session.logged_in)
-
-    if (!loggedIn) {
-      const loginUrl = new URL('/login', request.url)
-      loginUrl.searchParams.set('message', 'Your session is invalid. Please sign in again.')
-      return NextResponse.redirect(loginUrl)
-    }
-
-    if (pathname.startsWith('/admin') && role !== 'admin') {
-      return NextResponse.redirect(new URL('/access-denied?reason=admin', request.url))
-    }
-  } catch (error) {
-    const loginUrl = new URL('/login', request.url)
-    loginUrl.searchParams.set('message', 'Your session is invalid. Please sign in again.')
-    return NextResponse.redirect(loginUrl)
+  if (pathname.startsWith('/admin') && !isAdmin) {
+    return NextResponse.redirect(new URL('/access-denied?reason=admin', request.url))
   }
 
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/dashboard/:path*', '/welcome/:path*', '/welcome', '/user/:path*', '/user'],
+  matcher: [
+    '/admin/:path*',
+    '/dashboard/:path*',
+    '/user/:path*',
+    '/',
+    '/welcome',
+    '/login',
+    '/register',
+    '/forgot-password',
+    '/reset-password',
+  ],
 }

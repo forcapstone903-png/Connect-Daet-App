@@ -128,8 +128,14 @@ export default function AnnouncementDetailPage() {
               )}
             </div>
 
-            {announcement.image_url && (
-              <img src={announcement.image_url} alt={announcement.title} className="mt-5 h-56 w-full rounded-2xl object-cover" />
+            {(announcement.image_url || announcement.video_url) && (
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                {announcement.video_url ? (
+                  <video src={announcement.video_url} controls className="h-56 w-full object-cover" preload="metadata" />
+                ) : (
+                  <img src={announcement.image_url} alt={announcement.title} className="h-56 w-full object-cover" />
+                )}
+              </div>
             )}
 
             <p className="mt-5 whitespace-pre-line text-sm leading-relaxed text-slate-700 md:text-base">{announcement.content}</p>

@@ -25,6 +25,7 @@ import {
 import MediaUpload from '@/app/components/MediaUpload'
 import MobileNav from '@/app/components/user/MobileNav'
 import { supabase } from '@/lib/supabase'
+import { getStoredSession } from '@/lib/authCookies'
 
 const STORAGE_KEYS = {
   profilePreferences: 'daet_user_profile_preferences',
@@ -34,7 +35,7 @@ function readStoredSession() {
   if (typeof window === 'undefined') return null
 
   try {
-    const raw = window.sessionStorage.getItem('user_session')
+    const raw = getStoredSession()
     return raw ? JSON.parse(raw) : null
   } catch {
     return null

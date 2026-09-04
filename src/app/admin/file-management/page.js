@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import AdminSidebar from '@/app/components/AdminSidebar';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 
 const STORAGE_KEY = 'daet_file_library';
 
@@ -12,7 +13,7 @@ const readStoredSession = () => {
   if (typeof window === 'undefined') return null;
 
   try {
-    const session = sessionStorage.getItem('user_session');
+    const session = getStoredSession();
     return session ? JSON.parse(session) : null;
   } catch {
     return null;

@@ -8,7 +8,8 @@ import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
 import FullCalendar from '@fullcalendar/react';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -225,7 +226,9 @@ export default function AdminEventsPage() {
     if (!start_date) { showToast('Please select a start date', true); return; }
     if (!category) { showToast('Please select a category', true); return; }
     
-    if (!user || !user.id) {
+    // Session stores the id as user_id; fall back to .id for safety
+    const adminId = user?.user_id || user?.id;
+    if (!adminId) {
       showToast('Unable to save: missing admin user session', true);
       return;
     }
@@ -253,7 +256,7 @@ export default function AdminEventsPage() {
         recurrence: eventForm.recurrence || null,
         tags: (eventForm.tags && eventForm.tags.length > 0) ? eventForm.tags : null,
         featured: !!eventForm.featured,
-        created_by: user?.id
+        created_by: adminId
       };
 
       let data, error;
@@ -816,9 +819,11 @@ export default function AdminEventsPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) { router.push('/login'); return; }
       const userData = JSON.parse(session);
+      // Normalize session: login stores the user id as user_id, but the page expects .id
+      if (!userData.id && userData.user_id) userData.id = userData.user_id;
       if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
       setUser(userData);
       await fetchEvents();

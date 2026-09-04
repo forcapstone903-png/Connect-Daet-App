@@ -128,8 +128,14 @@ export default function UserAnnouncementsPage() {
                     <span className="shrink-0 text-xs text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</span>
                   </div>
                   <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-700">{announcement.content}</p>
-                  {announcement.image_url && (
-                    <img src={announcement.image_url} alt={announcement.title} className="mt-4 h-48 w-full rounded-xl object-cover" />
+                  {(announcement.image_url || announcement.video_url) && (
+                    <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                      {announcement.video_url ? (
+                        <video src={announcement.video_url} controls className="h-48 w-full object-cover" preload="metadata" />
+                      ) : (
+                        <img src={announcement.image_url} alt={announcement.title} className="h-48 w-full object-cover" />
+                      )}
+                    </div>
                   )}
                 </div>
               )

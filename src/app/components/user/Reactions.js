@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Heart, Laugh, Meh, Smile, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { trackUserActivity } from '@/lib/trackActivity'
 
 const REACTION_TYPES = [
   { type: 'like', label: 'Like', icon: ThumbsUp, color: 'text-sky-600', bg: 'bg-sky-50', emoji: '👍' },
@@ -22,7 +23,7 @@ const REACTION_ICON_MAP = {
   angry: ThumbsUp,
 }
 
-export default function Reactions({ contentType, contentId, userId, onReact, compact = false }) {
+export default function Reactions({ contentType, contentId, userId, onReact, compact = false, label, contentTitle = '' }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -61,7 +62,10 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   }, [contentType, contentId, userId])
 
   useEffect(() => {
-    loadReactions()
+    const timer = setTimeout(() => {
+      void loadReactions()
+    }, 0)
+    return () => clearTimeout(timer)
   }, [loadReactions])
 
   useEffect(() => {
@@ -126,6 +130,19 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       }
 
       if (onReact) onReact(reactionType, userReaction === reactionType ? null : reactionType)
+      if (userId && userReaction !== reactionType) {
+        trackUserActivity({
+          userId,
+          activityType: 'react_content',
+          entityType: contentType,
+          entityId: contentId,
+          description: `Reacted to ${contentTitle || contentType}`,
+          metadata: {
+            contentTitle: contentTitle || contentType,
+            recipientUserId: null,
+          },
+        })
+      }
       setShowPicker(false)
     } catch (err) {
       console.error('Reaction error:', err)
@@ -159,10 +176,15 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
           ) : (
             <>
               <ThumbsUp className="h-3.5 w-3.5" />
-              {!compact && 'React'}
+              {!compact && (label || 'React')}
             </>
           )}
-          {totalCount > 0 && <span className="font-bold">{totalCount}</span>}
+
+          {compact && label ? (
+            <span className="font-bold">{totalCount} {label}</span>
+          ) : (
+            totalCount > 0 && <span className="font-bold">{totalCount}</span>
+          )}
         </button>
 
         {/* Reaction picker popover */}

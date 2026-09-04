@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
@@ -68,11 +68,11 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/settings', label: 'Overview', iconName: 'settings' },
-      { href: '/admin/settings?tab=general', label: 'General', iconName: 'settings' },
-      { href: '/admin/settings?tab=email', label: 'Email & Notifications', iconName: 'settings' },
-      { href: '/admin/settings?tab=security', label: 'Security', iconName: 'settings' },
-      { href: '/admin/settings?tab=maintenance', label: 'Maintenance Mode', iconName: 'settings' },
+      { href: '/admin/settings', label: 'Overview', iconName: 'settings', exact: true },
+      { href: '/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
+      { href: '/admin/settings/email', label: 'Email & Notifications', iconName: 'settings', exact: true },
+      { href: '/admin/settings/security', label: 'Security', iconName: 'settings', exact: true },
+      { href: '/admin/settings/maintenance', label: 'Maintenance Mode', iconName: 'settings', exact: true },
     ],
   },
   {
@@ -132,7 +132,12 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
+  const filteredNavigation = navigationHubs.filter((hub) =>
+    hub.requiredRoles.includes(userRole)
+  )
+
   const isActive = (href) => pathname === href || pathname.startsWith(`${href}/`)
+  const isItemActive = (item) => (item.exact ? pathname === item.href : isActive(item.href))
 
   const toggleItem = (id) => {
     setExpandedItems((prev) => ({
@@ -140,20 +145,6 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
       [id]: !prev[id],
     }))
   }
-
-  // Ensure hub containing the current pathname stays open (stick behavior)
-  useEffect(() => {
-    setExpandedItems((prev) => {
-      const next = { ...prev }
-      filteredNavigation.forEach((hub) => {
-        if (hub.items && hub.items.some((item) => pathname && pathname.startsWith(item.href))) {
-          next[hub.id] = true
-        }
-      })
-      return next
-    })
-    // only run when pathname changes
-  }, [pathname])
 
   const handleLogoutClick = () => {
     setShowLogoutConfirm(true)
@@ -169,11 +160,6 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
     }
     router.push('/login')
   }
-
-  // Filter navigation based on role
-  const filteredNavigation = navigationHubs.filter((hub) =>
-    hub.requiredRoles.includes(userRole)
-  )
 
   const sidebarWidth = isCollapsed ? 'w-20' : 'w-72'
 
@@ -297,7 +283,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
             {!isCollapsed && expandedItems[hub.id] && hub.items && (
               <div className="ml-9 mt-1 space-y-0.5 border-l-2 border-slate-200/60 pl-3 py-1">
                 {hub.items.map((item) => {
-                  const active = isActive(item.href)
+                  const active = isItemActive(item)
                   return (
                       <Link
                         key={item.href}

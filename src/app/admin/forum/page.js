@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '@/app/components/AdminSidebar';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
 
 const FORUM_CATEGORIES = [
@@ -183,7 +184,7 @@ export default function AdminForumPage() {
 
   useEffect(() => {
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) return window.location.assign('/login');
       const sessionUser = JSON.parse(session);
       if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/dashboard');

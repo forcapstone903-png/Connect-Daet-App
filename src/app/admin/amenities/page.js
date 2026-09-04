@@ -6,9 +6,61 @@ import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { supabase } from '@/lib/supabase';
 import MediaUpload from '@/app/components/MediaUpload';
-import { hasAdminAccess } from '@/lib/adminRoles';
+import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies';
 
 // Lookup lists (populated from DB where possible)
+
+// Amenity type master list. Used by the filter dropdown, the create/edit form,
+// and getTypeDisplay() for badge colors. Kept in sync with the types used in
+// seed data / docs (accommodation, resort, hotel, cafe, restaurant, transport,
+// shop, service, facility, ...). Unknown types still render via the fallback
+// in getTypeDisplay().
+const AMENITY_TYPES = [
+  { value: 'accommodation', label: 'Accommodation', color: 'bg-blue-100 text-blue-700' },
+  { value: 'resort', label: 'Resort', color: 'bg-cyan-100 text-cyan-700' },
+  { value: 'hotel', label: 'Hotel', color: 'bg-indigo-100 text-indigo-700' },
+  { value: 'inn', label: 'Inn', color: 'bg-sky-100 text-sky-700' },
+  { value: 'cafe', label: 'Cafe', color: 'bg-amber-100 text-amber-700' },
+  { value: 'restaurant', label: 'Restaurant', color: 'bg-orange-100 text-orange-700' },
+  { value: 'transport', label: 'Transport', color: 'bg-emerald-100 text-emerald-700' },
+  { value: 'shop', label: 'Shop', color: 'bg-pink-100 text-pink-700' },
+  { value: 'service', label: 'Service', color: 'bg-violet-100 text-violet-700' },
+  { value: 'facility', label: 'Facility', color: 'bg-slate-200 text-slate-700' },
+];
+
+// Amenity status master list. Used by the status filter dropdown and the
+// create/edit form. Mirrors the values in getStatusBadge() and the DB lookup.
+const STATUS_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'temporarily_closed', label: 'Temporarily Closed' },
+];
+
+// Amenity sort options (matches the switch in filteredAmenities).
+const SORT_OPTIONS = [
+  { value: 'created_at_desc', label: 'Newest first' },
+  { value: 'name_asc', label: 'Name A–Z' },
+  { value: 'views_desc', label: 'Most viewed' },
+  { value: 'saves_desc', label: 'Most saved' },
+  { value: 'featured_first', label: 'Featured first' },
+];
+
+// Common amenity features used by the Features picker in the create/edit form.
+// These are string values that map to entries in info_amenities.amenities[].
+const AMENITY_FEATURES = [
+  'Parking',
+  'WiFi',
+  'Free WiFi',
+  'Restrooms',
+  'Beach Access',
+  'Coffee',
+  'Breakfast',
+  'Pool',
+  'Air Conditioning',
+  'Family Friendly',
+  'Pet Friendly',
+];
 
 const normalizeAmenity = (amenity) => ({
   ...amenity,
@@ -61,10 +113,14 @@ export default function AmenitiesManagement() {
     featured: false,
   });
 
-  const showToast = (message, isError = false) => {
+  // Stable callback: showToast must not change identity every render, otherwise
+  // fetchAmenities (which depends on it) gets a new identity each render, which
+  // makes the auth useEffect re-run on every render, which calls setState again,
+  // producing "Maximum update depth exceeded".
+  const showToast = useCallback((message, isError = false) => {
     setToastMessage({ message, isError });
     setTimeout(() => setToastMessage(null), 3000);
-  };
+  }, []);
 
   useEffect(() => {
     const fetchLookups = async () => {
@@ -376,7 +432,7 @@ export default function AmenitiesManagement() {
     let isActive = true;
 
     const checkAuth = async () => {
-      const session = sessionStorage.getItem('user_session');
+      const session = getStoredSession();
       if (!session) {
         setLoading(false);
         router.push('/login');

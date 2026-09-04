@@ -5,13 +5,14 @@ import Link from 'next/link'
 import AdminSidebar from '@/app/components/AdminSidebar'
 import { Icon } from '@/app/components/Icon'
 import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStoredSession } from '@/lib/authCookies'
 
 export default function ContentHubOverview() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const session = sessionStorage.getItem('user_session')
+    const session = getStoredSession()
     if (!session) {
       window.location.href = '/login'
       return

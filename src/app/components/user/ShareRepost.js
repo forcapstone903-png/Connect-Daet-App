@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Link2, Mail, MessageCircle, Repeat2, Send, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { trackUserActivity } from '@/lib/trackActivity'
 
 export default function ShareRepost({ contentType, contentId, userId, onShared }) {
   const [showMenu, setShowMenu] = useState(false)
@@ -56,7 +57,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared }
     } else if (platform === 'twitter') {
       window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${title} ${url}`)}`, '_blank')
     } else if (platform === 'email') {
-      window.location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(url)}`
+      window.open(`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(url)}`, '_blank')
     }
 
     await trackShare(platform)
@@ -91,6 +92,15 @@ export default function ShareRepost({ contentType, contentId, userId, onShared }
           content_id: contentId,
           share_type: platform === 'repost' ? 'repost' : 'external',
           platform,
+        })
+
+        trackUserActivity({
+          userId,
+          activityType: 'share_content',
+          entityType: contentType,
+          entityId: contentId,
+          description: `Shared ${contentType}`,
+          metadata: { contentTitle: document.title || contentType, platform },
         })
       }
 

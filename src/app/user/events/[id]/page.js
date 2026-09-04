@@ -16,6 +16,25 @@ export default function EventDetailPage() {
   const [event, setEvent] = useState(null)
   const [error, setError] = useState(null)
 
+  async function fetchEvent() {
+    try {
+      const { data, error } = await supabase
+        .from('info_events')
+        .select('*')
+        .eq('id', eventId)
+        .eq('status', 'published')
+        .single()
+
+      if (error) throw error
+      setEvent(data)
+    } catch (err) {
+      console.error('Error loading event:', err)
+      setError('Event not found or unavailable')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -42,23 +61,10 @@ export default function EventDetailPage() {
     checkAuth()
   }, [router, eventId])
 
-  const fetchEvent = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('info_events')
-        .select('*')
-        .eq('id', eventId)
-        .eq('status', 'published')
-        .single()
-
-      if (error) throw error
-      setEvent(data)
-    } catch (err) {
-      console.error('Error loading event:', err)
-      setError('Event not found or unavailable')
-    } finally {
-      setLoading(false)
-    }
+  const getMediaUrl = (value, fallback = null) => {
+    if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
+    if (typeof value === 'string' && value.trim()) return value
+    return fallback
   }
 
   const formatDate = (dateStr) => {
@@ -107,6 +113,10 @@ export default function EventDetailPage() {
     )
   }
 
+  const firstImage = getMediaUrl(event.featured_image || event.images)
+  const firstVideo = getMediaUrl(event.videos || event.video_url)
+  const primaryMedia = firstVideo || firstImage
+
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[900px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
@@ -116,9 +126,13 @@ export default function EventDetailPage() {
         </Link>
 
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          {event.featured_image ? (
+          {primaryMedia ? (
             <div className="relative h-64 w-full md:h-80">
-              <img src={event.featured_image} alt={event.title} className="h-full w-full object-cover" />
+              {firstVideo ? (
+                <video src={firstVideo} className="h-full w-full object-cover" controls preload="metadata" />
+              ) : (
+                <img src={firstImage} alt={event.title} className="h-full w-full object-cover" />
+              )}
               {event.is_free && (
                 <span className="absolute left-4 top-4 rounded-full bg-emerald-500 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-sm">
                   Free
