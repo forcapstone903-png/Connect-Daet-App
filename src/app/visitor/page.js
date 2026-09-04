@@ -333,7 +333,7 @@ export default function VisitorPage() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] pb-20 text-slate-900 md:pb-0">
+    <main className="min-h-screen overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg animate-in slide-in-from-top-2">
@@ -1228,22 +1228,6 @@ export default function VisitorPage() {
         </div>
       </footer>
 
-      <nav aria-label="Mobile visitor navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
-          {[
-            ['#discover', 'Discover', Sparkles],
-            ['#spots', 'Spots', MapPin],
-            ['#events', 'Events', Calendar],
-            ['#blogs', 'Stories', Newspaper],
-            ['#community', 'Forums', MessageCircle],
-          ].map(([href, label, Icon]) => (
-            <a key={href} href={href} onClick={() => setActiveSection(href.slice(1))} className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-semibold text-slate-500 transition active:bg-slate-100 active:text-sky-700">
-              <Icon className="h-4 w-4" />
-              <span>{label}</span>
-            </a>
-          ))}
-        </div>
-      </nav>
     </main>
   )
 }
