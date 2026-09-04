@@ -333,7 +333,7 @@ export default function VisitorPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
+    <main className="min-h-screen overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] pb-20 text-slate-900 md:pb-0">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg animate-in slide-in-from-top-2">
@@ -398,9 +398,9 @@ export default function VisitorPage() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(14,165,233,0.35),_transparent_35%),linear-gradient(90deg,rgba(15,23,42,0.82)_0%,rgba(8,47,73,0.78)_42%,rgba(6,78,59,0.7)_100%)]" />
         <div className="absolute inset-0 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:44px_44px]" />
 
-        <div className="relative mx-auto max-w-[1440px] px-3 pb-16 pt-3 sm:px-6 lg:px-8 xl:px-10">
+        <div className="relative mx-auto max-w-[1440px] px-3 pb-10 pt-2 sm:px-6 sm:pb-16 sm:pt-3 lg:px-8 xl:px-10">
           {/* Header */}
-          <header className="sticky top-2 z-40 mb-6 rounded-full border border-white/20 bg-white/10 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] backdrop-blur-xl sm:mb-10 sm:px-6 sm:py-2.5">
+          <header className="relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 bg-white/10 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] backdrop-blur-xl sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5">
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 p-1 shadow-lg shadow-sky-900/20 ring-1 ring-white/20 sm:h-11 sm:w-11">
@@ -444,7 +444,7 @@ export default function VisitorPage() {
                   onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
                   aria-expanded={mobileMenuOpen}
                   aria-label="Toggle navigation menu"
-                  className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-200 md:hidden ${
+                  className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 md:hidden ${
                     mobileMenuOpen
                       ? 'border-white/40 bg-white text-slate-900 shadow-lg'
                       : 'border-white/20 bg-white/10 text-white hover:bg-white/15'
@@ -456,7 +456,7 @@ export default function VisitorPage() {
             </div>
 
             {mobileMenuOpen && (
-              <div className="mt-2 overflow-hidden rounded-2xl border border-white/15 bg-slate-950/40 shadow-[0_18px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl md:hidden">
+              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] overflow-hidden rounded-2xl border border-white/15 bg-slate-950/75 shadow-[0_18px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl md:hidden">
                 <nav className="flex flex-col gap-0.5 p-2">
                   {navigationItems.map((item) => (
                     <a
@@ -501,13 +501,13 @@ export default function VisitorPage() {
 
           {/* Hero Content */}
           <div className="grid gap-5 lg:grid-cols-[1.18fr_0.82fr] lg:items-end lg:gap-10 xl:gap-12">
-            <div className="py-2 sm:py-6 lg:py-10">
+            <div className="py-1 sm:py-6 lg:py-10">
               <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[7px] font-semibold uppercase tracking-[0.26em] text-sky-100 backdrop-blur-sm sm:px-3 sm:py-1.5 sm:text-[10px]">
                 <Sparkles size={10} className="sm:size-3" />
                 A local field guide to Daet
               </span>
 
-              <h1 className="mt-2 text-2xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl xl:text-6xl">
+              <h1 className="mt-2 max-w-[19rem] text-[2rem] font-black leading-[1.05] tracking-[-0.04em] text-white sm:max-w-none sm:text-4xl lg:text-5xl xl:text-6xl">
                 Take the long way through Daet.
               </h1>
 
@@ -515,25 +515,23 @@ export default function VisitorPage() {
                 Start with the shoreline, stay for the stories, and let local voices shape the rest of your day in Camarines Norte.
               </p>
 
-              <div className="mt-4 flex flex-col gap-2 sm:mt-6 sm:flex-row sm:gap-3">
-                <Link href="/register" className="rounded-full bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-500 px-5 py-2.5 text-center text-xs font-bold text-slate-900 shadow-[0_18px_40px_rgba(251,191,36,0.35)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_rgba(251,191,36,0.45)] sm:px-6 sm:py-3 sm:text-sm">
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:mt-6 sm:flex sm:gap-3">
+                <Link href="/register" className="rounded-full bg-gradient-to-r from-yellow-400 via-amber-400 to-orange-500 px-3 py-3 text-center text-xs font-bold text-slate-900 shadow-[0_18px_40px_rgba(251,191,36,0.35)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_20px_50px_rgba(251,191,36,0.45)] sm:px-6 sm:py-3 sm:text-sm">
                   Create account
                 </Link>
-                <Link href="/login" className="rounded-full border border-white/35 bg-white/5 px-5 py-2.5 text-center text-xs font-semibold text-white backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/10 sm:px-6 sm:py-3 sm:text-sm">
+                <Link href="/login" className="rounded-full border border-white/35 bg-white/5 px-3 py-3 text-center text-xs font-semibold text-white backdrop-blur-sm transition duration-300 hover:-translate-y-0.5 hover:bg-white/10 sm:px-6 sm:py-3 sm:text-sm">
                   Explore now
                 </Link>
               </div>
 
               {/* Mobile Stats - Horizontal Scroll */}
-              <div className="mt-5 -mx-3 overflow-x-auto scrollbar-hide sm:mx-0 sm:grid sm:gap-4 sm:grid-cols-3">
-                <div className="flex gap-2.5 px-3 sm:contents">
+              <div className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-3 sm:gap-4">
                   {heroStats.map((item) => (
-                    <div key={item.label} className="flex-shrink-0 w-20 rounded-xl border border-white/15 bg-white/10 p-2.5 backdrop-blur-sm transition duration-300 hover:bg-white/15 sm:w-auto sm:rounded-2xl sm:p-4">
-                      <p className="text-base font-black text-white sm:text-2xl">{item.value}</p>
-                      <p className="mt-0.5 text-[7px] font-semibold uppercase tracking-[0.22em] text-sky-100 sm:text-[10px]">{item.label}</p>
+                    <div key={item.label} className="min-w-0 rounded-2xl border border-white/15 bg-white/10 p-2.5 backdrop-blur-sm transition duration-300 hover:bg-white/15 sm:p-4">
+                      <p className="text-lg font-black leading-none text-white sm:text-2xl">{item.value}</p>
+                      <p className="mt-1 line-clamp-2 text-[8px] font-semibold uppercase leading-3 tracking-[0.14em] text-sky-100 sm:text-[10px] sm:leading-normal sm:tracking-[0.22em]">{item.label}</p>
                     </div>
                   ))}
-                </div>
               </div>
 
               <style>{`
@@ -548,10 +546,10 @@ export default function VisitorPage() {
                     <Calendar size={14} className="sm:size-5" />
                     Featured Events
                   </h2>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 sm:gap-3">
+                  <div className="-mx-3 flex snap-x snap-mandatory gap-2 overflow-x-auto overscroll-x-contain px-3 scrollbar-hide sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-3 sm:overflow-visible sm:px-0 lg:grid-cols-3">
                     {featuredEvents.map((ev) => (
-                      <Link key={ev.id} href={`/events/${ev.id}`} className="block rounded-xl bg-white/15 p-3 text-white border border-white/10 backdrop-blur-sm hover:bg-white/20 transition sm:rounded-2xl sm:p-4">
-                        <p className="font-semibold text-sm sm:text-base line-clamp-1">{ev.title}</p>
+                      <Link key={ev.id} href={`/events/${ev.id}`} className="block w-[min(78vw,18rem)] flex-shrink-0 snap-start rounded-2xl bg-white/15 p-3.5 text-white border border-white/10 backdrop-blur-sm hover:bg-white/20 transition sm:w-auto sm:rounded-2xl sm:p-4">
+                        <p className="line-clamp-2 min-h-10 text-sm font-semibold sm:text-base">{ev.title}</p>
                         <p className="text-[10px] text-white/70 mt-0.5 sm:text-xs">{formatDate(ev.start_date || ev.start)}</p>
                         {ev.location && (
                           <p className="text-[10px] text-white/50 mt-0.5 line-clamp-1">{ev.location}</p>
@@ -672,14 +670,15 @@ export default function VisitorPage() {
             <p className="max-w-md text-sm leading-6 text-slate-600">A little sun, a little history, a good meal, and a conversation that makes you want to come back.</p>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="-mx-4 mt-6 overflow-x-auto overscroll-x-contain scrollbar-hide snap-x snap-mandatory px-4 sm:mx-0 sm:grid sm:gap-3 sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4">
+            <div className="flex gap-3 sm:contents">
             {[
               { title: 'Coast', text: 'Follow the breeze to surf, sunsets, and open water.', image: bagasbasImage.src || bagasbasImage, href: '/tourist-spots', tone: 'from-sky-950/80' },
               { title: 'Character', text: 'Find landmarks and stories that give the town its shape.', image: morgaImage.src || morgaImage, href: '/tourist-spots', tone: 'from-amber-950/80' },
               { title: 'Taste', text: 'Make room for local tables, cafés, and the next good stop.', image: ElevatedTownPlazaImage.src || ElevatedTownPlazaImage, href: '/tourist-spots', tone: 'from-orange-950/80' },
               { title: 'People', text: 'Ask the community what is worth seeing after the guidebook ends.', image: Daet.src || Daet, href: '#community', tone: 'from-emerald-950/80' },
             ].map((path) => (
-              <Link key={path.title} href={path.href} className="group relative min-h-[220px] overflow-hidden rounded-[24px] border border-slate-200 bg-slate-900 shadow-sm">
+              <Link key={path.title} href={path.href} className="group relative min-h-[220px] w-[min(82vw,20rem)] flex-shrink-0 snap-start overflow-hidden rounded-[24px] border border-slate-200 bg-slate-900 shadow-sm sm:w-auto">
                 <img src={path.image} alt={path.title} className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
                 <div className={`absolute inset-0 bg-gradient-to-t ${path.tone} via-slate-950/20 to-transparent`} />
                 <div className="relative flex min-h-[220px] flex-col justify-end p-5 text-white">
@@ -690,6 +689,7 @@ export default function VisitorPage() {
                 </div>
               </Link>
             ))}
+            </div>
           </div>
 
           <div className="mt-6 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
@@ -698,10 +698,12 @@ export default function VisitorPage() {
                 <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-800">Today in Daet</p><h3 className="mt-1 text-xl font-black text-slate-900">What is moving locally</h3></div>
                 <Calendar className="h-5 w-5 text-orange-700" />
               </div>
-              <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                <Link href={featuredEvents[0] ? `/events/${featuredEvents[0].id}` : '#spots'} className="rounded-2xl bg-white/75 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Events</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{featuredEvents[0]?.title || 'Find the next local event'}</span></Link>
-                <Link href={trendingBlogs[0] ? `/blog/${trendingBlogs[0].id}` : '#blogs'} className="rounded-2xl bg-white/75 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Latest story</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{trendingBlogs[0]?.title || 'Read the latest travel story'}</span></Link>
-                <Link href={forumThreads[0] ? `/forum/${forumThreads[0].id}` : '#community'} className="rounded-2xl bg-white/75 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Local pulse</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{forumThreads[0]?.title || 'See what travelers are asking'}</span></Link>
+              <div className="-mx-5 mt-4 overflow-x-auto overscroll-x-contain scrollbar-hide snap-x snap-mandatory px-5 sm:mx-0 sm:grid sm:gap-2 sm:grid-cols-3 sm:overflow-visible sm:px-0">
+                <div className="flex gap-2 sm:contents">
+                  <Link href={featuredEvents[0] ? `/events/${featuredEvents[0].id}` : '#spots'} className="w-[min(72vw,15rem)] flex-shrink-0 snap-start rounded-2xl bg-white/75 p-3 transition hover:bg-white sm:w-auto"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Events</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{featuredEvents[0]?.title || 'Find the next local event'}</span></Link>
+                  <Link href={trendingBlogs[0] ? `/blog/${trendingBlogs[0].id}` : '#blogs'} className="w-[min(72vw,15rem)] flex-shrink-0 snap-start rounded-2xl bg-white/75 p-3 transition hover:bg-white sm:w-auto"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Latest story</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{trendingBlogs[0]?.title || 'Read the latest travel story'}</span></Link>
+                  <Link href={forumThreads[0] ? `/forum/${forumThreads[0].id}` : '#community'} className="w-[min(72vw,15rem)] flex-shrink-0 snap-start rounded-2xl bg-white/75 p-3 transition hover:bg-white sm:w-auto"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Local pulse</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{forumThreads[0]?.title || 'See what travelers are asking'}</span></Link>
+                </div>
               </div>
             </div>
             <div className="flex flex-col justify-between rounded-[24px] bg-slate-950 p-5 text-white sm:p-6">
@@ -732,12 +734,12 @@ export default function VisitorPage() {
                   <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Next month"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:gap-2">
+              <div className="mt-5 grid grid-cols-7 gap-0.5 text-center text-[9px] font-bold uppercase tracking-wide text-slate-400 sm:gap-2 sm:text-[10px]">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day} className="py-2">{day}</span>)}
                 {calendarDays.map((day, index) => {
                   const dayEvents = eventsForDay(day)
-                  return <div key={day ? day.toISOString() : `blank-${index}`} className={`min-h-14 rounded-xl border p-1 text-left sm:min-h-16 ${day ? 'border-slate-100 bg-slate-50' : 'border-transparent bg-transparent'}`}>
-                    {day && <><span className="text-xs font-bold text-slate-700">{day.getDate()}</span><div className="mt-1 space-y-1">{dayEvents.slice(0, 2).map((event) => <Link key={event.id} href={`/events/${event.id}`} className="block truncate rounded bg-sky-100 px-1 py-0.5 text-[9px] font-bold text-sky-800 hover:bg-sky-200">{event.title}</Link>)}</div></>}
+                  return <div key={day ? day.toISOString() : `blank-${index}`} className={`min-h-12 rounded-lg border p-0.5 text-left sm:min-h-16 sm:rounded-xl sm:p-1 ${day ? 'border-slate-100 bg-slate-50' : 'border-transparent bg-transparent'}`}>
+                    {day && <><span className="text-[10px] font-bold text-slate-700 sm:text-xs">{day.getDate()}</span><div className="mt-1 space-y-1">{dayEvents.slice(0, 2).map((event) => <Link key={event.id} href={`/events/${event.id}`} className="block truncate rounded bg-sky-100 px-0.5 py-0.5 text-[8px] font-bold text-sky-800 hover:bg-sky-200 sm:px-1 sm:text-[9px]">{event.title}</Link>)}</div></>}
                   </div>
                 })}
               </div>
@@ -806,7 +808,7 @@ export default function VisitorPage() {
 
           {/* Loading State */}
           {loading ? (
-            <div className="-mx-4 overflow-x-auto scrollbar-hide px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
+            <div className="-mx-4 overflow-x-auto overscroll-x-contain scrollbar-hide snap-x snap-mandatory px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
               <div className="flex gap-3 sm:contents">
                 {[1, 2, 3].map((item) => (
                   <div key={item} className="flex-shrink-0 w-64 sm:w-auto animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 sm:rounded-3xl">
@@ -831,7 +833,7 @@ export default function VisitorPage() {
                   <article 
                     key={spot.id} 
                     onClick={() => handleSpotClick(spot.id)}
-                    className="flex-shrink-0 w-64 sm:w-auto group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)] sm:rounded-3xl cursor-pointer"
+                    className="flex-shrink-0 w-[min(82vw,20rem)] snap-start sm:w-auto group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)] sm:rounded-3xl cursor-pointer"
                   >
                     <div className="relative h-40 overflow-hidden sm:h-52 lg:h-56 touch-manipulation">
                       <img
@@ -887,7 +889,7 @@ export default function VisitorPage() {
         </div>
 
         {loading ? (
-          <div className="-mx-4 overflow-x-auto scrollbar-hide px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
+          <div className="-mx-4 overflow-x-auto overscroll-x-contain scrollbar-hide snap-x snap-mandatory px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
             <div className="flex gap-3 sm:contents">
               {[1, 2, 3].map((item) => (
                 <div key={item} className="flex-shrink-0 w-64 sm:w-auto animate-pulse overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 sm:rounded-3xl">
@@ -911,7 +913,7 @@ export default function VisitorPage() {
               {trendingBlogs.map((blog) => (
                 <article 
                   key={blog.id} 
-                  className="flex-shrink-0 w-64 sm:w-auto group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)] sm:rounded-3xl"
+                  className="flex-shrink-0 w-[min(82vw,20rem)] snap-start sm:w-auto group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)] sm:rounded-3xl"
                 >
                   <div 
                     className="overflow-hidden h-44 sm:h-52 cursor-pointer"
@@ -987,7 +989,7 @@ export default function VisitorPage() {
           </div>
 
           {loading ? (
-            <div className="-mx-4 overflow-x-auto scrollbar-hide px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
+            <div className="-mx-4 overflow-x-auto overscroll-x-contain scrollbar-hide snap-x snap-mandatory px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
               <div className="flex gap-3 sm:contents">
                 {[1, 2, 3].map((item) => (
                   <div key={item} className="flex-shrink-0 w-64 sm:w-auto animate-pulse rounded-2xl border border-white/10 bg-white/5 p-4 sm:rounded-3xl sm:p-5">
@@ -1008,7 +1010,7 @@ export default function VisitorPage() {
                 {forumThreads.map((thread) => (
                   <div 
                     key={thread.id} 
-                    className="flex-shrink-0 w-64 sm:w-auto rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-sm transition duration-300 hover:-translate-y-1 hover:border-emerald-300/40 hover:bg-white/[0.07] sm:rounded-3xl sm:p-5"
+                    className="flex-shrink-0 w-[min(82vw,20rem)] snap-start sm:w-auto rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-sm transition duration-300 hover:-translate-y-1 hover:border-emerald-300/40 hover:bg-white/[0.07] sm:rounded-3xl sm:p-5"
                   >
                     <div className="mb-2 flex items-center justify-between text-[8px] uppercase tracking-[0.18em] text-slate-300 sm:text-[10px]">
                       <span>Forum</span>
@@ -1054,7 +1056,7 @@ export default function VisitorPage() {
       </section>
 
       {/* Map Section - Hidden on Mobile */}
-      <section className="hidden lg:block mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
+      <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[linear-gradient(135deg,#f5fbff_0%,#edf7ff_28%,#ffffff_100%)] shadow-[0_25px_70px_rgba(14,116,144,0.12)] sm:rounded-3xl lg:rounded-[2.5rem]">
           <div className="grid gap-0 lg:min-h-[520px] lg:grid-cols-[0.74fr_1.26fr] lg:items-stretch">
             <div className="flex flex-col justify-between border-b border-slate-200 bg-[linear-gradient(180deg,#f8fcff_0%,#eef8ff_100%)] p-4 sm:p-6 lg:border-b-0 lg:border-r lg:p-8">
@@ -1099,7 +1101,7 @@ export default function VisitorPage() {
                 <iframe
                   title="Daet Map - Camarines Norte, Bicol, Philippines"
                   src="https://www.google.com/maps?q=Daet%20Camarines%20Norte%20Bicol%20Philippines&z=12&output=embed"
-                  className="h-[240px] w-full border-0 sm:h-[300px] lg:h-full lg:min-h-[460px]"
+                  className="h-[260px] w-full border-0 sm:h-[340px] lg:h-full lg:min-h-[460px]"
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
                   allowFullScreen
@@ -1148,14 +1150,15 @@ export default function VisitorPage() {
             <p className="max-w-md text-sm leading-6 text-slate-600">Keep these contacts close while exploring. Tap a number to call from your phone.</p>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="-mx-4 mt-6 overflow-x-auto overscroll-x-contain scrollbar-hide snap-x snap-mandatory px-4 sm:mx-0 sm:grid sm:gap-3 sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3">
+            <div className="flex gap-3 sm:contents">
             {[
               { name: 'LGU Daet MHO', detail: 'CHEMS · 24/7 Rescue', numbers: ['0960-861-8245'], tone: 'border-red-200 bg-white' },
               { name: 'MDRRMO Daet', detail: 'Disaster risk reduction and response', numbers: ['0992-445-8736', '0912-855-5551'], tone: 'border-red-200 bg-white' },
               { name: 'PNP Municipal Police Station', detail: 'Police assistance', numbers: ['0998-598-5954'], tone: 'border-blue-200 bg-white' },
               { name: 'BFP Daet Central Fire Station', detail: 'Fire and rescue assistance', numbers: ['0939-933-7795', '0920-989-5892'], tone: 'border-orange-200 bg-white' },
             ].map((contact) => (
-              <div key={contact.name} className={`rounded-2xl border p-4 shadow-sm ${contact.tone}`}>
+              <div key={contact.name} className={`w-[min(82vw,20rem)] flex-shrink-0 snap-start rounded-2xl border p-4 shadow-sm sm:w-auto ${contact.tone}`}>
                 <div className="flex items-start gap-3">
                   <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700"><PhoneCall className="h-4 w-4" /></div>
                   <div className="min-w-0"><h3 className="text-sm font-black text-slate-900">{contact.name}</h3><p className="mt-1 text-xs text-slate-500">{contact.detail}</p></div>
@@ -1166,9 +1169,10 @@ export default function VisitorPage() {
               </div>
             ))}
 
-            <div className="rounded-2xl border border-slate-300 bg-slate-900 p-4 text-white shadow-sm sm:col-span-2 lg:col-span-2">
+            <div className="w-[min(82vw,20rem)] flex-shrink-0 snap-start rounded-2xl border border-slate-300 bg-slate-900 p-4 text-white shadow-sm sm:col-span-2 sm:w-auto lg:col-span-2">
               <div className="flex items-start gap-3"><div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 text-sky-300"><Radio className="h-4 w-4" /></div><div><h3 className="text-sm font-black">Radio Frequency</h3><p className="mt-1 text-xs text-slate-300">For coordinated local emergency communication</p></div></div>
               <p className="mt-4 text-2xl font-black tracking-wide text-white">138.125 MHz</p>
+            </div>
             </div>
           </div>
 
@@ -1223,6 +1227,23 @@ export default function VisitorPage() {
           © 2026 Daet Connect.
         </div>
       </footer>
+
+      <nav aria-label="Mobile visitor navigation" className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 px-2 pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.12)] backdrop-blur-xl md:hidden" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+          {[
+            ['#discover', 'Discover', Sparkles],
+            ['#spots', 'Spots', MapPin],
+            ['#events', 'Events', Calendar],
+            ['#blogs', 'Stories', Newspaper],
+            ['#community', 'Forums', MessageCircle],
+          ].map(([href, label, Icon]) => (
+            <a key={href} href={href} onClick={() => setActiveSection(href.slice(1))} className="flex min-h-12 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1 text-[10px] font-semibold text-slate-500 transition active:bg-slate-100 active:text-sky-700">
+              <Icon className="h-4 w-4" />
+              <span>{label}</span>
+            </a>
+          ))}
+        </div>
+      </nav>
     </main>
   )
 }

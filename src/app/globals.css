@@ -29,6 +29,7 @@ html {
   scroll-behavior: smooth;
   width: 100%;
   max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -48,6 +49,26 @@ img {
 
 * {
   box-sizing: border-box;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 767px) {
+  body {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  button,
+  a {
+    touch-action: manipulation;
+  }
 }
 
 .feed-card,
