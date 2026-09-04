@@ -7,7 +7,6 @@ import { usePathname, useRouter } from 'next/navigation'
 import { clearAuthCookie } from '@/lib/authCookies'
 import { Icon } from './Icon'
 import ConfirmationModal from './ConfirmationModal'
-import logoImage from '../assets/images/logo.png'
 
 // Hub & Spoke Navigation Structure
 const navigationHubs = [
@@ -180,7 +179,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
           <div className="flex items-center gap-3 min-w-0">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-600 to-emerald-500 overflow-hidden shadow-lg shadow-sky-500/20">
               <Image
-                src={logoImage.src || logoImage}
+                src="/logo.png"
                 alt="DAET Logo"
                 width={40}
                 height={40}

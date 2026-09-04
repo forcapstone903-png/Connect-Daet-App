@@ -126,7 +126,7 @@ export default function PublicEventDetailPage() {
       <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] p-6">
         <div className="w-full max-w-md rounded-[24px] border border-red-200 bg-white p-6 text-center shadow-sm">
           <p className="text-red-600">{error || 'Event not found'}</p>
-          <Link href="/welcome" className="mt-4 inline-block rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white">
+          <Link href="/visitor" className="mt-4 inline-block rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white">
             Back to Home
           </Link>
         </div>
@@ -140,7 +140,7 @@ export default function PublicEventDetailPage() {
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <Link
-            href="/welcome"
+            href="/visitor"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700"
           >
             <ArrowLeft className="h-4 w-4" />

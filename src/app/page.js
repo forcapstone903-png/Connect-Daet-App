@@ -22,7 +22,7 @@ export default function SplashPage() {
         return
       }
 
-      router.push('/welcome')
+      router.push('/visitor')
     }
 
     checkSession()

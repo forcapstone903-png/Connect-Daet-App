@@ -4,13 +4,13 @@ import publicRoutes from './lib/publicRoutes'
 const AUTH_COOKIE = 'daet_auth_session'
 
 // Routes that already-authenticated users should never sit on. Sitting on these
-// was the source of the flicker/glitch: pages like /welcome pushed an authed
+// was the source of the flicker/glitch: pages like /visitor pushed an authed
 // user to /dashboard (or an admin page to /login) while the destination page
 // immediately bounced back because per-tab sessionStorage was empty on a fresh
 // tab, producing very fast repeated redirects/reloads.
 const AUTHD_ONLY_EXIT = new Set([
   '/',
-  '/welcome',
+  '/visitor',
   '/login',
   '/register',
   '/forgot-password',
@@ -72,7 +72,7 @@ export const config = {
     '/dashboard/:path*',
     '/user/:path*',
     '/',
-    '/welcome',
+    '/visitor',
     '/login',
     '/register',
     '/forgot-password',

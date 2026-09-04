@@ -8,6 +8,10 @@ export const metadata = {
   title: 'CONNECT-Daet',
   description: 'Connect with local artisans and tour operators in Daet',
   manifest: '/manifest.webmanifest',
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 }
 
 export default function RootLayout({ children }) {

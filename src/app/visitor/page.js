@@ -3,10 +3,9 @@
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, ArrowRight, MapPin, Sparkles, Plane, Newspaper, Menu, X, Star, Calendar, MessageCircle, Heart, Clock, Lock, ThumbsUp, Bookmark, Reply } from 'lucide-react'
+import { Search, ArrowRight, MapPin, Sparkles, Plane, Newspaper, Menu, X, Star, Calendar, ChevronLeft, ChevronRight, Megaphone, MessageCircle, Heart, Clock, Lock, ThumbsUp, Bookmark, Reply, PhoneCall, Radio } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
-import logoImage from '../assets/images/logo.png'
 import bagasbasImage from '../assets/images/bagasbasbeach.webp'
 import morgaImage from '../assets/images/morga.jpg'
 import ElevatedTownPlazaImage from '../assets/images/elevated-town-plaza.jpg'
@@ -49,13 +48,17 @@ function formatTimeAgo(value) {
   return formatDate(value)
 }
 
-export default function WelcomePage() {
+export default function VisitorPage() {
   const router = useRouter()
   const [user, setUser] = useState(null)
   const [popularSpots, setPopularSpots] = useState([])
   const [trendingBlogs, setTrendingBlogs] = useState([])
   const [forumThreads, setForumThreads] = useState([])
   const [featuredEvents, setFeaturedEvents] = useState([])
+  const [upcomingEvents, setUpcomingEvents] = useState([])
+  const [announcements, setAnnouncements] = useState([])
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date())
+  const [heroCounts, setHeroCounts] = useState({ beaches: null, stories: null, guides: null })
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('All')
@@ -65,10 +68,12 @@ export default function WelcomePage() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authAction, setAuthAction] = useState('')
   const [toastMessage, setToastMessage] = useState('')
+  const [tripStage, setTripStage] = useState('dreaming')
 
   const navigationItems = [
     { id: 'discover', label: 'Discover' },
     { id: 'spots', label: 'Spots' },
+    { id: 'events', label: 'Events' },
     { id: 'blogs', label: 'Blogs' },
     { id: 'community', label: 'Forums' },
   ]
@@ -164,8 +169,57 @@ export default function WelcomePage() {
           setFeaturedEvents(events)
         }
 
+        const today = new Date().toISOString().slice(0, 10)
+        const { data: upcoming, error: upcomingError } = await supabase
+          .from('info_events')
+          .select('id, title, description, location, venue, start_date, end_date, start_time, category, featured_image, is_free, ticket_price')
+          .eq('status', 'published')
+          .gte('start_date', today)
+          .order('start_date', { ascending: true })
+          .limit(12)
+
+        if (!upcomingError) {
+          setUpcomingEvents(upcoming || [])
+        }
+
+        const { data: noticeData, error: noticeError } = await supabase
+          .from('info_announcements')
+          .select('id, title, content, announcement_type, audience, priority, image_url, published_at, expires_at')
+          .eq('status', 'published')
+          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+          .order('priority', { ascending: false })
+          .order('published_at', { ascending: false })
+          .limit(4)
+
+        if (!noticeError) {
+          setAnnouncements(noticeData || [])
+        }
+
+        const [{ count: beachCount }, { count: storyCount }, { count: guideCount }] = await Promise.all([
+          supabase
+            .from('info_tourist_spots')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'active')
+            .ilike('category', 'beach'),
+          supabase
+            .from('info_blogs')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'published'),
+          supabase
+            .from('info_blogs')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'published')
+            .ilike('category', 'travel_guides'),
+        ])
+
+        setHeroCounts({
+          beaches: beachCount ?? 0,
+          stories: storyCount ?? 0,
+          guides: guideCount ?? 0,
+        })
+
       } catch (error) {
-        console.error('Welcome page content load failed:', error)
+        console.error('Visitor page content load failed:', error)
       } finally {
         setLoading(false)
       }
@@ -174,14 +228,11 @@ export default function WelcomePage() {
     loadContent()
   }, [])
 
-  const heroStats = useMemo(
-    () => [
-      { label: 'Beaches', value: '18+' },
-      { label: 'Local stories', value: '120+' },
-      { label: 'Travel guides', value: '40+' },
-    ],
-    []
-  )
+  const heroStats = [
+    { label: 'Beaches', value: heroCounts.beaches === null ? '—' : `${heroCounts.beaches}+` },
+    { label: 'Local stories', value: heroCounts.stories === null ? '—' : `${heroCounts.stories}+` },
+    { label: 'Travel guides', value: heroCounts.guides === null ? '—' : `${heroCounts.guides}+` },
+  ]
 
   const filteredSpots = useMemo(() => {
     return popularSpots.filter((spot) => {
@@ -197,6 +248,25 @@ export default function WelcomePage() {
   const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
   const defaultBlogImage = 'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=80'
 
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear()
+    const month = calendarMonth.getMonth()
+    const firstDay = new Date(year, month, 1).getDay()
+    const daysInMonth = new Date(year, month + 1, 0).getDate()
+    return [...Array(firstDay).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => new Date(year, month, index + 1))]
+  }, [calendarMonth])
+
+  const eventsForDay = (day) => {
+    if (!day) return []
+    return upcomingEvents.filter((event) => {
+      const start = new Date(`${event.start_date}T00:00:00`)
+      const end = new Date(`${event.end_date || event.start_date}T23:59:59`)
+      return day >= start && day <= end
+    })
+  }
+
+  const eventMonthLabel = calendarMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+
   // Handle authenticated actions
   const handleAuthRequired = (action) => {
     if (!user) {
@@ -208,25 +278,23 @@ export default function WelcomePage() {
   }
 
   const handleBlogClick = (blogId) => {
-    if (!user) {
-      setAuthAction('read_blog')
-      setShowAuthModal(true)
-      return
-    }
     router.push(`/blog/${blogId}`)
   }
 
   const handleForumClick = (threadId) => {
-    if (!user) {
-      setAuthAction('view_forum')
-      setShowAuthModal(true)
-      return
-    }
     router.push(`/forum/${threadId}`)
   }
 
   const handleSpotClick = (spotId) => {
-    // Allow viewing spot details without login
+    if (typeof window !== 'undefined') {
+      const viewedSpots = JSON.parse(window.localStorage.getItem('daet_visitor_viewed_spots') || '[]')
+      const nextViewedSpots = [...new Set([...viewedSpots, spotId])]
+      window.localStorage.setItem('daet_visitor_viewed_spots', JSON.stringify(nextViewedSpots))
+      if (!user && nextViewedSpots.length >= 3) {
+        setAuthAction('plan_trip')
+        setShowAuthModal(true)
+      }
+    }
     router.push(`/tourist-spots/${spotId}`)
   }
 
@@ -286,8 +354,7 @@ export default function WelcomePage() {
                 {authAction === 'like' && 'You need to be signed in to like content.'}
                 {authAction === 'bookmark' && 'You need to be signed in to bookmark content.'}
                 {authAction === 'reply' && 'You need to be signed in to reply to forum threads.'}
-                {authAction === 'view_forum' && 'You need to be signed in to view forum discussions.'}
-                {authAction === 'read_blog' && 'You need to be signed in to read full blog posts.'}
+                {authAction === 'plan_trip' && 'You have found a few places worth visiting. Create a free account to start planning your itinerary.'}
                 {!authAction && 'You need to be signed in to interact with this content.'}
               </p>
               <div className="mt-6 flex w-full flex-col gap-2">
@@ -310,6 +377,7 @@ export default function WelcomePage() {
                   Continue browsing
                 </button>
               </div>
+
             </div>
           </div>
         </div>
@@ -336,7 +404,7 @@ export default function WelcomePage() {
             <div className="flex items-center justify-between gap-2 sm:gap-4">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 p-1 shadow-lg shadow-sky-900/20 ring-1 ring-white/20 sm:h-11 sm:w-11">
-                  <img src={logoImage.src || logoImage} alt="Daet tourism logo" className="h-full w-full rounded-xl object-cover" />
+                  <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-xl object-cover" />
                 </div>
                 <div>
                   <p className="text-[10px] font-black tracking-[0.24em] text-white/90 sm:text-sm">DAET</p>
@@ -436,15 +504,15 @@ export default function WelcomePage() {
             <div className="py-2 sm:py-6 lg:py-10">
               <span className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[7px] font-semibold uppercase tracking-[0.26em] text-sky-100 backdrop-blur-sm sm:px-3 sm:py-1.5 sm:text-[10px]">
                 <Sparkles size={10} className="sm:size-3" />
-                Welcome to Daet Connect
+                A local field guide to Daet
               </span>
 
               <h1 className="mt-2 text-2xl font-black tracking-[-0.04em] text-white sm:text-4xl lg:text-5xl xl:text-6xl">
-                Discover the heart of Camarines Norte.
+                Take the long way through Daet.
               </h1>
 
               <p className="mt-3 max-w-2xl text-xs leading-5 text-slate-100/90 sm:text-base sm:leading-7 lg:text-lg lg:leading-8">
-                Experience coastal beauty, local stories, and community-driven travel inspiration across Daet — where surf, culture, and warm hospitality meet.
+                Start with the shoreline, stay for the stories, and let local voices shape the rest of your day in Camarines Norte.
               </p>
 
               <div className="mt-4 flex flex-col gap-2 sm:mt-6 sm:flex-row sm:gap-3">
@@ -510,8 +578,8 @@ export default function WelcomePage() {
         </div>
       </section>
 
-      {/* Discover Section - Hidden on Mobile */}
-      <section id="discover" className="hidden lg:block mx-auto max-w-[1440px] px-4 py-14 sm:px-6 sm:py-16 lg:px-8 lg:py-20 xl:px-10">
+      {/* Why visit Daet */}
+      <section id="discover" className="mx-auto max-w-[1440px] px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-20 xl:px-10">
         <div className="grid gap-6 lg:grid-cols-[1.06fr_0.94fr] lg:items-center lg:gap-8">
           <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_25px_60px_rgba(15,23,42,0.06)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.08)] sm:rounded-3xl sm:p-7 lg:p-10">
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700 sm:text-sm">Why visit Daet</p>
@@ -541,6 +609,152 @@ export default function WelcomePage() {
               alt="Camarines Norte scenery"
               className="h-[260px] w-full object-cover transition duration-700 ease-out hover:scale-105 sm:h-[360px] lg:h-full lg:min-h-[320px]"
             />
+          </div>
+        </div>
+      </section>
+
+      {/* Destination discovery */}
+      <section className="mx-auto max-w-[1440px] px-4 pb-8 pt-8 sm:px-6 lg:px-8 xl:px-10">
+        <div className="grid gap-4 lg:grid-cols-[1fr_0.34fr]">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-[0_20px_55px_rgba(15,23,42,0.06)] sm:p-7">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700 sm:text-xs">Destination discovery</p>
+                <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-900">What are you doing?</h2>
+              </div>
+              <p className="max-w-sm text-sm leading-6 text-slate-500">Choose a travel mood and we&apos;ll put the most useful Daet content first.</p>
+            </div>
+            <div className="mt-5 grid gap-2 sm:grid-cols-3">
+              {[
+                ['dreaming', 'Dreaming', 'Photo essays and local stories'],
+                ['planning', 'Planning', 'Itineraries, budgets, and advice'],
+                ['booking', 'Booking', 'Top-rated spots and entry fees'],
+              ].map(([id, label, description]) => (
+                <button key={id} type="button" onClick={() => setTripStage(id)} className={`rounded-2xl border p-4 text-left transition ${tripStage === id ? 'border-sky-500 bg-sky-50 shadow-sm' : 'border-slate-200 bg-slate-50 hover:border-sky-300'}`}>
+                  <span className="block text-sm font-bold text-slate-900">{label}</span>
+                  <span className="mt-1 block text-xs leading-5 text-slate-500">{description}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {(tripStage === 'dreaming' ? trendingBlogs : tripStage === 'planning' ? forumThreads : popularSpots).slice(0, 3).map((item) => (
+                <button key={item.id} type="button" onClick={() => tripStage === 'dreaming' ? handleBlogClick(item.id) : tripStage === 'planning' ? handleForumClick(item.id) : handleSpotClick(item.id)} className="rounded-2xl border border-slate-200 p-3 text-left transition hover:border-sky-300 hover:bg-sky-50/50">
+                  <span className="line-clamp-2 text-sm font-bold text-slate-900">{item.title || item.name}</span>
+                  <span className="mt-1 block line-clamp-2 text-xs leading-5 text-slate-500">{item.excerpt || item.content || item.description || 'Explore this destination on Daet Connect.'}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <aside className="rounded-3xl bg-slate-950 p-5 text-white shadow-[0_20px_55px_rgba(15,23,42,0.14)] sm:p-6">
+            <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-300">Live from the community</p>
+            <div className="mt-4 space-y-4 text-sm">
+              <p><span className="font-bold text-emerald-300">Maria</span> just asked about getting to Bagasbas Beach.</p>
+              <p><span className="font-bold text-amber-300">John</span> rated a Camarines Norte landmark 5 stars.</p>
+              <p><span className="font-bold text-sky-300">Local guides</span> are sharing new weekend ideas.</p>
+            </div>
+            <button type="button" onClick={() => handleAuthRequired('plan_trip')} className="mt-6 flex w-full items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-left text-sm font-semibold transition hover:bg-white/15">
+              <span><span className="block text-white">Trip planner</span><span className="mt-1 block text-xs font-normal text-slate-300">Drop a spot here to build your itinerary.</span></span>
+              <ArrowRight className="h-4 w-4 flex-shrink-0 text-emerald-300" />
+            </button>
+          </aside>
+        </div>
+      </section>
+
+      {/* Daet Field Guide */}
+      <section className="border-b border-slate-200 bg-[#fffdf8] py-10 sm:py-14 lg:py-18">
+        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 xl:px-10">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-orange-700 sm:text-xs">Your Daet field guide</p>
+              <h2 className="mt-2 max-w-2xl text-2xl font-black tracking-[-0.04em] text-slate-900 sm:text-3xl lg:text-4xl">Choose a rhythm for the day.</h2>
+            </div>
+            <p className="max-w-md text-sm leading-6 text-slate-600">A little sun, a little history, a good meal, and a conversation that makes you want to come back.</p>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { title: 'Coast', text: 'Follow the breeze to surf, sunsets, and open water.', image: bagasbasImage.src || bagasbasImage, href: '/tourist-spots', tone: 'from-sky-950/80' },
+              { title: 'Character', text: 'Find landmarks and stories that give the town its shape.', image: morgaImage.src || morgaImage, href: '/tourist-spots', tone: 'from-amber-950/80' },
+              { title: 'Taste', text: 'Make room for local tables, cafés, and the next good stop.', image: ElevatedTownPlazaImage.src || ElevatedTownPlazaImage, href: '/tourist-spots', tone: 'from-orange-950/80' },
+              { title: 'People', text: 'Ask the community what is worth seeing after the guidebook ends.', image: Daet.src || Daet, href: '#community', tone: 'from-emerald-950/80' },
+            ].map((path) => (
+              <Link key={path.title} href={path.href} className="group relative min-h-[220px] overflow-hidden rounded-[24px] border border-slate-200 bg-slate-900 shadow-sm">
+                <img src={path.image} alt={path.title} className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" />
+                <div className={`absolute inset-0 bg-gradient-to-t ${path.tone} via-slate-950/20 to-transparent`} />
+                <div className="relative flex min-h-[220px] flex-col justify-end p-5 text-white">
+                  <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-white/70">Start here</span>
+                  <h3 className="mt-1 text-2xl font-black">{path.title}</h3>
+                  <p className="mt-1 max-w-[18rem] text-xs leading-5 text-white/80">{path.text}</p>
+                  <span className="mt-4 text-xs font-bold text-white transition group-hover:translate-x-1">Open the guide →</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          <div className="mt-6 grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+            <div className="rounded-[24px] border border-orange-200 bg-orange-50 p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-orange-800">Today in Daet</p><h3 className="mt-1 text-xl font-black text-slate-900">What is moving locally</h3></div>
+                <Calendar className="h-5 w-5 text-orange-700" />
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <Link href={featuredEvents[0] ? `/events/${featuredEvents[0].id}` : '#spots'} className="rounded-2xl bg-white/75 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Events</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{featuredEvents[0]?.title || 'Find the next local event'}</span></Link>
+                <Link href={trendingBlogs[0] ? `/blog/${trendingBlogs[0].id}` : '#blogs'} className="rounded-2xl bg-white/75 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Latest story</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{trendingBlogs[0]?.title || 'Read the latest travel story'}</span></Link>
+                <Link href={forumThreads[0] ? `/forum/${forumThreads[0].id}` : '#community'} className="rounded-2xl bg-white/75 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-wide text-orange-700">Local pulse</span><span className="mt-1 block line-clamp-2 text-sm font-bold text-slate-900">{forumThreads[0]?.title || 'See what travelers are asking'}</span></Link>
+              </div>
+            </div>
+            <div className="flex flex-col justify-between rounded-[24px] bg-slate-950 p-5 text-white sm:p-6">
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-300">Travel well</p><h3 className="mt-1 text-xl font-black">Leave room for the unplanned stop.</h3><p className="mt-2 text-sm leading-6 text-slate-300">Use the map, check the community, and keep your favorite places close as you explore.</p></div>
+              <Link href="/tourist-spots" className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-sky-300 hover:text-white">Browse the destination map <ArrowRight className="h-4 w-4" /></Link>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Events and announcements */}
+      <section id="events" className="bg-slate-50 py-10 sm:py-14 lg:py-18">
+        <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 xl:px-10">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700 sm:text-xs">Plan your visit</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-900 sm:text-3xl lg:text-4xl">Upcoming in Daet</h2>
+            </div>
+            <Link href="/events" className="text-sm font-bold text-sky-700 hover:text-sky-900">View all events →</Link>
+          </div>
+
+          <div className="mt-6 grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Event calendar</p><h3 className="mt-1 text-xl font-black text-slate-900">{eventMonthLabel}</h3></div>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Previous month"><ChevronLeft className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Next month"><ChevronRight className="h-4 w-4" /></button>
+                </div>
+              </div>
+              <div className="mt-5 grid grid-cols-7 gap-1 text-center text-[10px] font-bold uppercase tracking-wide text-slate-400 sm:gap-2">
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day} className="py-2">{day}</span>)}
+                {calendarDays.map((day, index) => {
+                  const dayEvents = eventsForDay(day)
+                  return <div key={day ? day.toISOString() : `blank-${index}`} className={`min-h-14 rounded-xl border p-1 text-left sm:min-h-16 ${day ? 'border-slate-100 bg-slate-50' : 'border-transparent bg-transparent'}`}>
+                    {day && <><span className="text-xs font-bold text-slate-700">{day.getDate()}</span><div className="mt-1 space-y-1">{dayEvents.slice(0, 2).map((event) => <Link key={event.id} href={`/events/${event.id}`} className="block truncate rounded bg-sky-100 px-1 py-0.5 text-[9px] font-bold text-sky-800 hover:bg-sky-200">{event.title}</Link>)}</div></>}
+                  </div>
+                })}
+              </div>
+              {upcomingEvents.length === 0 && <p className="mt-4 rounded-xl bg-slate-50 p-3 text-center text-xs text-slate-500">No upcoming events have been published yet.</p>}
+            </div>
+
+            <div className="space-y-5">
+              <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Next up</p><h3 className="mt-1 text-xl font-black text-slate-900">Save the date</h3></div><Calendar className="h-5 w-5 text-amber-600" /></div>
+                <div className="mt-4 space-y-3">{upcomingEvents.slice(0, 3).map((event) => <Link key={event.id} href={`/events/${event.id}`} className="flex gap-3 rounded-2xl border border-slate-200 p-3 transition hover:border-sky-300 hover:bg-sky-50/40"><div className="min-w-12 rounded-xl bg-sky-50 px-2 py-1 text-center"><span className="block text-[9px] font-bold uppercase text-sky-700">{new Date(`${event.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short' })}</span><span className="block text-lg font-black text-sky-900">{new Date(`${event.start_date}T00:00:00`).getDate()}</span></div><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{event.title}</p><p className="mt-1 truncate text-xs text-slate-500">{event.location || event.venue || 'Daet'} · {event.is_free ? 'Free' : event.ticket_price ? `₱${event.ticket_price}` : 'Details inside'}</p></div></Link>)}{upcomingEvents.length === 0 && <p className="text-sm text-slate-500">New events will appear here as soon as they are announced.</p>}</div>
+              </div>
+
+              <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-4 sm:p-5">
+                <div className="flex items-center gap-2"><Megaphone className="h-5 w-5 text-amber-700" /><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800">Visitor notices</p><h3 className="mt-1 text-xl font-black text-slate-900">Announcements</h3></div></div>
+                <div className="mt-4 space-y-3">{announcements.map((notice) => <article key={notice.id} className="rounded-2xl bg-white/80 p-3"><div className="flex items-center justify-between gap-2"><span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-800">{notice.announcement_type || 'Info'}</span><span className="text-[10px] text-slate-400">{formatTimeAgo(notice.published_at)}</span></div><h4 className="mt-2 text-sm font-bold text-slate-900">{notice.title}</h4><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{notice.content}</p></article>)}{announcements.length === 0 && <p className="text-sm text-slate-600">No active announcements right now. Check back before your trip.</p>}</div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -923,12 +1137,51 @@ export default function WelcomePage() {
         </div>
       </section>
 
+      {/* Footer utility: emergency contacts */}
+      <section id="emergency" className="border-t border-red-200 bg-red-50 py-10 sm:py-14 lg:py-16">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-red-700 sm:text-xs">Footer utility · urgent assistance</p>
+              <h2 className="mt-2 text-2xl font-black tracking-[-0.04em] text-slate-900 sm:text-3xl">Daet emergency hotlines</h2>
+            </div>
+            <p className="max-w-md text-sm leading-6 text-slate-600">Keep these contacts close while exploring. Tap a number to call from your phone.</p>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { name: 'LGU Daet MHO', detail: 'CHEMS · 24/7 Rescue', numbers: ['0960-861-8245'], tone: 'border-red-200 bg-white' },
+              { name: 'MDRRMO Daet', detail: 'Disaster risk reduction and response', numbers: ['0992-445-8736', '0912-855-5551'], tone: 'border-red-200 bg-white' },
+              { name: 'PNP Municipal Police Station', detail: 'Police assistance', numbers: ['0998-598-5954'], tone: 'border-blue-200 bg-white' },
+              { name: 'BFP Daet Central Fire Station', detail: 'Fire and rescue assistance', numbers: ['0939-933-7795', '0920-989-5892'], tone: 'border-orange-200 bg-white' },
+            ].map((contact) => (
+              <div key={contact.name} className={`rounded-2xl border p-4 shadow-sm ${contact.tone}`}>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700"><PhoneCall className="h-4 w-4" /></div>
+                  <div className="min-w-0"><h3 className="text-sm font-black text-slate-900">{contact.name}</h3><p className="mt-1 text-xs text-slate-500">{contact.detail}</p></div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {contact.numbers.map((number) => <a key={number} href={`tel:${number.replaceAll('-', '')}`} className="rounded-full bg-slate-900 px-3 py-2 text-xs font-bold text-white transition hover:bg-red-700">{number}</a>)}
+                </div>
+              </div>
+            ))}
+
+            <div className="rounded-2xl border border-slate-300 bg-slate-900 p-4 text-white shadow-sm sm:col-span-2 lg:col-span-2">
+              <div className="flex items-start gap-3"><div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white/10 text-sky-300"><Radio className="h-4 w-4" /></div><div><h3 className="text-sm font-black">Radio Frequency</h3><p className="mt-1 text-xs text-slate-300">For coordinated local emergency communication</p></div></div>
+              <p className="mt-4 text-2xl font-black tracking-wide text-white">138.125 MHz</p>
+            </div>
+          </div>
+
+          <p className="mt-4 text-xs leading-5 text-red-800">In a life-threatening emergency, call the appropriate service immediately and provide your exact location.</p>
+        </div>
+      </section>
+
       {/* Footer */}
       <footer className="mt-6 border-t border-slate-200 bg-slate-950 text-slate-300 sm:mt-8">
         <div className="mx-auto grid max-w-7xl gap-4 px-4 py-5 sm:px-6 sm:py-7 sm:gap-6 lg:grid-cols-[1.2fr_0.8fr_0.8fr] lg:gap-10 lg:py-10 lg:px-8">
           <div>
             <div className="flex items-center gap-2 sm:gap-3">
-              <img src={logoImage.src || logoImage} alt="Daet tourism logo" className="h-8 w-8 rounded-xl sm:h-11 sm:w-11 sm:rounded-2xl" />
+              <img src="/logo.png" alt="Daet tourism logo" className="h-8 w-8 rounded-xl sm:h-11 sm:w-11 sm:rounded-2xl" />
               <div>
                 <p className="text-xs font-bold tracking-[0.2em] text-white sm:text-sm">DAET</p>
                 <p className="text-[7px] uppercase tracking-[0.2em] text-slate-400 sm:text-[10px]">Camarines Norte</p>
@@ -944,8 +1197,10 @@ export default function WelcomePage() {
             <ul className="mt-2 space-y-1.5 text-xs text-slate-300 sm:mt-3 sm:space-y-2 sm:text-sm">
               <li><a href="#discover" className="transition hover:text-white">Discover</a></li>
               <li><a href="#spots" className="transition hover:text-white">Popular spots</a></li>
+              <li><a href="#events" className="transition hover:text-white">Upcoming events</a></li>
               <li><a href="#blogs" className="transition hover:text-white">Travel blogs</a></li>
               <li><a href="#community" className="transition hover:text-white">Community forum</a></li>
+              <li><a href="#emergency" className="transition hover:text-white">Emergency contacts</a></li>
             </ul>
           </div>
 

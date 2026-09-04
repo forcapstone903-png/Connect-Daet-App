@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight, CheckCircle2, Eye, EyeOff, MapPin, ShieldCheck, Sparkles, XCircle } from 'lucide-react'
-import logoImage from '../../assets/images/logo.png'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -185,7 +184,7 @@ export default function RegisterPage() {
 
             <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14 text-white">
               <div className="flex items-center gap-3">
-                <img src={logoImage.src || logoImage} alt="Daet logo" className="h-14 w-14 rounded-2xl border border-white/20 bg-white/10 p-1" />
+                <img src="/logo.png" alt="Daet logo" className="h-14 w-14 rounded-2xl border border-white/20 bg-white/10 p-1" />
                 <div>
                   <p className="text-sm font-bold tracking-[0.25em] text-white/85">DAET</p>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-sky-100">Camarines Norte</p>
@@ -230,7 +229,7 @@ export default function RegisterPage() {
           >
             <div className="mb-8 text-center">
               <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 ring-4 ring-sky-100">
-                <img src={logoImage.src || logoImage} alt="Daet logo" className="h-12 w-12 object-contain" />
+                  <img src="/logo.png" alt="Daet logo" className="h-12 w-12 object-contain" />
               </div>
               <p className="text-xs font-bold uppercase tracking-[0.28em] text-sky-700">Daet Connect</p>
               <h2 className="mt-3 text-3xl font-black text-slate-900">Create account</h2>
@@ -415,8 +414,8 @@ export default function RegisterPage() {
                 </Link>
               </div>
               <div>
-                <Link href="/welcome" className="font-semibold text-slate-700 transition hover:text-slate-900">
-                  ← Back to welcome page
+                <Link href="/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
+                  ← Back to visitor page
                 </Link>
               </div>
             </div>

@@ -15,6 +15,8 @@ import {
   MoreHorizontal,
   Pencil,
   Pin,
+  List,
+  Printer,
   Send,
   Share2,
   ShieldCheck,
@@ -67,6 +69,24 @@ function writeLocalStorage(key, value) {
   }
 }
 
+function getContentHeadings(content) {
+  if (!content) return []
+  return [...content.matchAll(/<h[2-3][^>]*>(.*?)<\/h[2-3]>/gi)]
+    .map((match, index) => ({
+      id: `section-${index + 1}`,
+      label: match[1].replace(/<[^>]+>/g, '').trim(),
+    }))
+    .filter((heading) => heading.label)
+}
+
+function addContentHeadingIds(content) {
+  let index = 0
+  return (content || '').replace(/<h([2-3])([^>]*)>(.*?)<\/h\1>/gi, (match, level, attributes, label) => {
+    index += 1
+    return `<h${level}${attributes} id="section-${index}">${label}</h${level}>`
+  })
+}
+
 const categories = {
   travel_guides: 'Travel Guides',
   cultural_insights: 'Cultural Insights',
@@ -100,6 +120,7 @@ export default function PublicBlogDetailPage() {
   const [commentModifying, setCommentModifying] = useState(false)
   const [menuCommentId, setMenuCommentId] = useState(null)
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENTS)
+  const [showAuthModal, setShowAuthModal] = useState(false)
 
   useEffect(() => {
     let ignore = false
@@ -178,9 +199,20 @@ export default function PublicBlogDetailPage() {
     }
   }, [blogId])
 
+  useEffect(() => {
+    if (userId || !blog) return undefined
+    const handleScroll = () => {
+      if (window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 220) {
+        setShowAuthModal(true)
+      }
+    }
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [blog, userId])
+
   const handleLike = async () => {
     if (!userId) {
-      router.push('/login')
+      setShowAuthModal(true)
       return
     }
 
@@ -206,7 +238,7 @@ export default function PublicBlogDetailPage() {
 
   const handleSave = async () => {
     if (!userId) {
-      router.push('/login')
+      setShowAuthModal(true)
       return
     }
 
@@ -249,7 +281,7 @@ export default function PublicBlogDetailPage() {
     setSubmittingComment(true)
     try {
       if (!userId) {
-        router.push('/login')
+        setShowAuthModal(true)
         return
       }
 
@@ -411,7 +443,7 @@ export default function PublicBlogDetailPage() {
       <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
         <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <p className="text-sm text-slate-500">Article not found.</p>
-          <Link href="/welcome" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
+          <Link href="/visitor" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
             Back to Home
           </Link>
         </div>
@@ -419,11 +451,25 @@ export default function PublicBlogDetailPage() {
     )
   }
 
+  const contentHeadings = getContentHeadings(blog.content)
+
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+      <style>{`@media print { body { background: white !important; } .print-hidden { display: none !important; } .print-article { border: 0 !important; box-shadow: none !important; } }`}</style>
+      {showAuthModal && !userId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600"><Bookmark className="h-6 w-6" /></div>
+            <h2 className="mt-4 text-xl font-black text-slate-900">Keep exploring with Daet Connect</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Create a free account to save this guide and build your trip list.</p>
+            <div className="mt-5 grid gap-2"><Link href="/register" className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">Create free account</Link><Link href="/login" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700">Sign in</Link></div>
+            <button type="button" onClick={() => setShowAuthModal(false)} className="mt-4 text-xs font-semibold text-slate-500 hover:text-slate-800">Continue reading</button>
+          </div>
+        </div>
+      )}
       <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/welcome" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+        <div className="print-hidden mb-6 flex items-center justify-between">
+          <Link href="/visitor" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
             <ArrowLeft className="h-4 w-4" />
             Back
           </Link>
@@ -452,10 +498,11 @@ export default function PublicBlogDetailPage() {
                 </div>
               )}
             </div>
+            <button type="button" onClick={() => window.print()} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title="Print or save as PDF"><Printer className="h-5 w-5" /></button>
           </div>
         </div>
 
-        <article className="mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8">
+        <article className="print-article mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8">
           {blog.featured_image ? (
             <div className="mb-6 overflow-hidden rounded-[16px]">
               <img alt={blog.title} src={blog.featured_image} className="h-96 w-full object-cover" />
@@ -468,7 +515,7 @@ export default function PublicBlogDetailPage() {
 
           <div className="flex flex-wrap items-center gap-3 text-xs">
             <span className="inline-block rounded-full border border-sky-200 bg-sky-50 px-3 py-1 font-bold uppercase text-sky-700">
-              {categories[blog.category] || blog.category}
+              {blog.category === 'food' ? '🥘 Food Diary' : blog.category === 'budget' ? '💰 Budget Tips' : blog.category === 'travel_guides' ? '📍 Destination Guide' : categories[blog.category] || blog.category}
             </span>
             <span className="text-slate-500">•</span>
             <span className="inline-flex items-center gap-1 text-slate-600">
@@ -511,10 +558,17 @@ export default function PublicBlogDetailPage() {
           <div className="mt-8 space-y-6 leading-relaxed text-slate-700">
             {blog.excerpt && <p className="text-lg italic text-slate-600">{blog.excerpt}</p>}
 
+            {contentHeadings.length > 0 && (
+              <nav className="not-prose rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-label="Table of contents">
+                <div className="flex items-center gap-2 text-sm font-black text-slate-900"><List className="h-4 w-4 text-sky-600" /> In this guide</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">{contentHeadings.map((heading, index) => <a key={heading.id} href={`#section-${index + 1}`} className="text-sm font-semibold text-sky-700 hover:underline">{heading.label}</a>)}</div>
+              </nav>
+            )}
+
             {blog.content && (
               <div
                 className="prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: blog.content.replace(/\n/g, '<br />') }}
+                dangerouslySetInnerHTML={{ __html: addContentHeadingIds(blog.content).replace(/\n/g, '<br />') }}
               />
             )}
           </div>
@@ -532,6 +586,16 @@ export default function PublicBlogDetailPage() {
             </div>
           )}
         </article>
+
+        <aside className="print-hidden mb-8 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Plan around this story</p>
+          <h2 className="mt-1 text-xl font-black text-slate-900">More from your destination</h2>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <Link href="/tourist-spots" className="rounded-2xl border border-slate-200 p-3 text-sm font-bold text-slate-800 hover:border-sky-300">Tourist spots →</Link>
+            <Link href="/visitor#community" className="rounded-2xl border border-slate-200 p-3 text-sm font-bold text-slate-800 hover:border-sky-300">Active forums →</Link>
+            <Link href="/visitor#blogs" className="rounded-2xl border border-slate-200 p-3 text-sm font-bold text-slate-800 hover:border-sky-300">More stories →</Link>
+          </div>
+        </aside>
 
         <section className="mb-8">
           <h2 className="mb-4 text-2xl font-bold text-slate-900">{comments.length} Comments</h2>

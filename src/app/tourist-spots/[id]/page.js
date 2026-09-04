@@ -10,10 +10,12 @@ import {
   Compass,
   Heart,
   Loader,
+  MessageCircle,
   MapPin,
   Phone,
   Share2,
   Star,
+  ShieldCheck,
   Ticket,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -48,7 +50,10 @@ export default function TouristSpotDetailPage() {
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [galleryIndex, setGalleryIndex] = useState(0)
   const [relatedSpots, setRelatedSpots] = useState([])
+  const [relatedThreads, setRelatedThreads] = useState([])
+  const [relatedBlogs, setRelatedBlogs] = useState([])
   const [userId, setUserId] = useState(null)
+  const [showAuthModal, setShowAuthModal] = useState(false)
 
   useEffect(() => {
     let ignore = false
@@ -89,6 +94,23 @@ export default function TouristSpotDetailPage() {
             setRelatedSpots(relatedData || [])
           }
 
+          const [{ data: threadData }, { data: blogData }] = await Promise.all([
+            supabase
+              .from('forum_threads')
+              .select('id, title, content, reply_count, last_activity_at')
+              .eq('status', 'published')
+              .order('last_activity_at', { ascending: false })
+              .limit(3),
+            supabase
+              .from('info_blogs')
+              .select('id, title, excerpt, featured_image, category')
+              .eq('status', 'published')
+              .order('views', { ascending: false })
+              .limit(3),
+          ])
+          setRelatedThreads(threadData || [])
+          setRelatedBlogs(blogData || [])
+
           const sessionResult = await supabase.auth.getSession()
           const session = sessionResult?.data?.session
           if (session?.user?.id) {
@@ -124,7 +146,7 @@ export default function TouristSpotDetailPage() {
     const session = sessionResult?.data?.session
 
     if (!session?.user?.id) {
-      router.push('/login')
+      setShowAuthModal(true)
       return
     }
 
@@ -221,6 +243,17 @@ export default function TouristSpotDetailPage() {
     )
   }
 
+  const visitDuration = spot.visit_duration || spot.duration || '2-3 hours'
+  const bestVisitTime = spot.best_visit_time || 'Early morning'
+  const weatherAverage = spot.weather_average || 'Warm and breezy'
+  const crowdBars = [
+    ['6 AM', 32],
+    ['9 AM', 58],
+    ['12 PM', 78],
+    ['3 PM', 64],
+    ['6 PM', 42],
+  ]
+
   const galleryImages = [
     ...(Array.isArray(spot.gallery_images) ? spot.gallery_images : []),
     ...(Array.isArray(spot.images) ? spot.images : []),
@@ -229,6 +262,17 @@ export default function TouristSpotDetailPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+      {showAuthModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-rose-50 text-rose-600"><Heart className="h-6 w-6" /></div>
+            <h2 className="mt-4 text-xl font-black text-slate-900">Save this to your trip list</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">Create a free account to start planning your itinerary and keep your favorite destinations together.</p>
+            <div className="mt-5 grid gap-2"><Link href="/register" className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">Create free account</Link><Link href="/login" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700">Sign in</Link></div>
+            <button type="button" onClick={() => setShowAuthModal(false)} className="mt-4 text-xs font-semibold text-slate-500 hover:text-slate-800">Continue browsing</button>
+          </div>
+        </div>
+      )}
       <div className="mx-auto max-w-[900px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
@@ -249,7 +293,7 @@ export default function TouristSpotDetailPage() {
                   ? 'border-sky-200 bg-sky-50 text-sky-600'
                   : 'border-slate-200 bg-white hover:bg-slate-50'
               }`}
-              title={isSaved ? 'Remove from saved' : 'Save destination'}
+              title={isSaved ? 'Remove from saved' : 'Save to My Trip List'}
             >
               <Heart className={`h-5 w-5 ${isSaved ? 'fill-current' : ''}`} />
             </button>
@@ -373,6 +417,21 @@ export default function TouristSpotDetailPage() {
               </div>
             )}
 
+            <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {[
+                ['Entrance fee', spot.entrance_fee == null || Number(spot.entrance_fee) === 0 ? 'Free' : `₱${Number(spot.entrance_fee).toLocaleString()}`, Ticket],
+                ['Typical stay', visitDuration, Clock],
+                ['Best time', bestVisitTime, CalendarDays],
+                ['Weather', weatherAverage, ShieldCheck],
+              ].map(([label, value, Icon]) => (
+                <div key={label} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <Icon className="h-4 w-4 text-sky-600" />
+                  <p className="mt-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">{value}</p>
+                </div>
+              ))}
+            </div>
+
             {/* Review / Stats */}
             <div className="mt-6 grid gap-3 rounded-[20px] border border-slate-200 bg-slate-50 p-4 sm:grid-cols-3">
               <div className="text-center">
@@ -402,10 +461,33 @@ export default function TouristSpotDetailPage() {
                   referrerPolicy="no-referrer-when-downgrade"
                   allowFullScreen
                 />
+                <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
+                  <span className="rounded-xl bg-emerald-50 px-3 py-2 font-semibold text-emerald-700">Parking nearby</span>
+                  <span className="rounded-xl bg-sky-50 px-3 py-2 font-semibold text-sky-700">Public transport nearby</span>
+                  <span className="rounded-xl bg-amber-50 px-3 py-2 font-semibold text-amber-700">Check local conditions</span>
+                </div>
               </div>
             )}
+
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-end justify-between gap-3"><div><h2 className="text-sm font-black text-slate-900">Packed or peaceful?</h2><p className="mt-1 text-xs text-slate-500">Typical visitor volume by time of day</p></div><span className="text-xs font-bold text-emerald-700">Quietest at 6 AM</span></div>
+              <div className="mt-4 flex h-28 items-end justify-between gap-2">
+                {crowdBars.map(([time, value]) => <div key={time} className="flex h-full flex-1 flex-col items-center justify-end gap-2"><div className="w-full rounded-t-lg bg-sky-200" style={{ height: `${value}%` }} /><span className="text-[10px] text-slate-500">{time}</span></div>)}
+              </div>
+            </div>
           </div>
         </div>
+
+        <section className="mt-8 grid gap-5 lg:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">Local advice</p><h2 className="mt-1 text-xl font-black text-slate-900">Read the forum</h2></div><MessageCircle className="h-5 w-5 text-emerald-600" /></div>
+            <div className="mt-4 space-y-3">{relatedThreads.map((thread) => <Link key={thread.id} href={`/forum/${thread.id}`} className="block rounded-2xl border border-slate-200 p-3 transition hover:border-emerald-300 hover:bg-emerald-50/40"><p className="text-sm font-bold text-slate-900">{thread.title}</p><p className="mt-1 line-clamp-1 text-xs text-slate-500">{thread.reply_count || 0} replies · local conversation</p></Link>)}{relatedThreads.length === 0 && <p className="text-sm text-slate-500">Travel questions from the community will appear here.</p>}</div>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Travel stories from this spot</p><h2 className="mt-1 text-xl font-black text-slate-900">Curated blog picks</h2></div>
+            <div className="mt-4 space-y-3">{relatedBlogs.map((blog) => <Link key={blog.id} href={`/blog/${blog.id}`} className="flex gap-3 rounded-2xl border border-slate-200 p-2 transition hover:border-amber-300 hover:bg-amber-50/40"><img src={blog.featured_image || defaultSpotImage} alt="" className="h-14 w-16 rounded-xl object-cover" /><span className="text-sm font-bold text-slate-900">{blog.title}</span></Link>)}{relatedBlogs.length === 0 && <p className="text-sm text-slate-500">More stories are on the way.</p>}</div>
+          </div>
+        </section>
 
         {/* Ratings & Reviews */}
         <div className="mt-8">

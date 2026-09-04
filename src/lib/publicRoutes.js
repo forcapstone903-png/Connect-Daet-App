@@ -1,4 +1,4 @@
-const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password', '/confirm', '/callback', '/', '/welcome', '/access-denied']
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password', '/confirm', '/callback', '/', '/visitor', '/access-denied']
 
 function normalizePathname(pathname = '') {
   const normalized = String(pathname || '/').trim()
