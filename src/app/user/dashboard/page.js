@@ -16,19 +16,20 @@ import {
   AlertCircle,
   Bell,
   Bookmark,
-  CalendarDays,
-  ChevronRight,
-  Compass,
-  FileText,
   Flame,
-  Heart,
-  Home,
-  LayoutGrid,
+  Globe2,
   Loader,
+  LogOut,
+  MessageCircle,
   MessageSquare,
+  Megaphone,
+  MoreHorizontal,
+  MapPin,
+  ShieldCheck,
   Search,
+  Settings,
   Star,
-  ThumbsUp,
+  Clock3,
   TrendingUp,
   Zap,
 } from 'lucide-react'
@@ -82,6 +83,18 @@ function formatDate(value) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function formatRelativeTime(value) {
+  if (!value) return 'Recently'
+  const timestamp = new Date(value).getTime()
+  if (Number.isNaN(timestamp)) return 'Recently'
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+  if (seconds < 60) return 'Just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
+  return formatDate(value)
+}
+
 function getImageUrl(value, fallback = null) {
   if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
   if (typeof value === 'string' && value.trim()) return value
@@ -110,6 +123,7 @@ export default function UserDashboardPage() {
   const [categories, setCategories] = useState([])
   const [stats, setStats] = useState({ blogs: 0, events: 0, amenities: 0, announcements: 0 })
   const [announcements, setAnnouncements] = useState([])
+  const [userSignals, setUserSignals] = useState({ activities: [], reactions: [], favorites: [], preferredCategories: [] })
 
   // UI state
   const [loading, setLoading] = useState(true)
@@ -140,6 +154,9 @@ export default function UserDashboardPage() {
   const [showReactions, setShowReactions] = useState(null)
   const [openComments, setOpenComments] = useState(null)
   const [commentCounts, setCommentCounts] = useState({})
+  const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
+  const [openPostMenu, setOpenPostMenu] = useState(null)
+  const [showProfileMenu, setShowProfileMenu] = useState(false)
 
   // Persist reactions and saved items
   useEffect(() => {
@@ -265,14 +282,21 @@ export default function UserDashboardPage() {
   const trendingTopics = useMemo(() => {
     const topicMap = new Map()
     feed.forEach((item) => {
-      const category = item.category || item.type
-      topicMap.set(category, (topicMap.get(category) || 0) + 1)
+      const itemKey = `${item.type}-${item.id}`
+      const weight = savedItems.has(itemKey) ? 3 : 1
+      const hashtags = String(item.excerpt || item.description || '')
+        .match(/#[a-z0-9_]+/gi) || []
+      const topics = [item.category || item.type, ...(Array.isArray(item.tags) ? item.tags : []), ...hashtags]
+      topics.filter(Boolean).forEach((topic) => {
+        const name = String(topic).replace(/^#/, '').trim()
+        if (name) topicMap.set(name, (topicMap.get(name) || 0) + weight)
+      })
     })
     return [...topicMap.entries()]
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }))
-  }, [feed])
+  }, [feed, savedItems])
 
   // Auth check on mount
   useEffect(() => {
@@ -375,11 +399,52 @@ export default function UserDashboardPage() {
     }
 
     const loadDashboard = async () => {
+      const loadUserSignals = async (currentUserId) => {
+        try {
+          const [activityResult, reactionResult, favoriteResult, preferenceResult] = await Promise.all([
+            supabase
+              .from(TABLES.ACTIVITY_LOG)
+              .select('activity_type, entity_type, entity_id, metadata, created_at')
+              .eq('user_id', currentUserId)
+              .order('created_at', { ascending: false })
+              .limit(100),
+            supabase
+              .from('content_reactions')
+              .select('content_type, content_id, reaction_type, created_at')
+              .eq('user_id', currentUserId)
+              .limit(100),
+            supabase
+              .from('user_favorites')
+              .select('item_type, item_id, created_at')
+              .eq('user_id', currentUserId)
+              .limit(100),
+            supabase
+              .from(TABLES.FEED_PREFERENCES)
+              .select('preferred_categories')
+              .eq('user_id', currentUserId)
+              .maybeSingle(),
+          ])
+
+          if (!isMounted) return
+          setUserSignals({
+            activities: activityResult.data || [],
+            reactions: reactionResult.data || [],
+            favorites: favoriteResult.data || [],
+            preferredCategories: Array.isArray(preferenceResult.data?.preferred_categories) ? preferenceResult.data.preferred_categories : [],
+          })
+        } catch (signalError) {
+          // Recommendations are optional; the chronological feed remains available.
+          console.error('Personalization signals load failed:', signalError)
+        }
+      }
+
+      void loadUserSignals(userId)
+
       const fetchCommentCounts = async (items) => {
         const counts = {}
         await Promise.all(
           (items || []).map(async (item) => {
-            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'
+            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'announcement' ? 'announcement' : 'event'
             const { count } = await supabase
               .from('content_comments')
               .select('id', { count: 'exact', head: true })
@@ -417,26 +482,26 @@ export default function UserDashboardPage() {
             .limit(6),
           supabase
             .from(TABLES.ANNOUNCEMENTS)
-            .select('id, title, announcement_type, published_at, image_url, video_url, content')
+            .select('id, title, announcement_type, audience, priority, published_at, expires_at, image_url, video_url, content, created_by, updated_at, status')
             .eq('status', 'published')
             .order('published_at', { ascending: false })
             .limit(4),
           Promise.all([
             supabase
               .from(TABLES.BLOGS)
-              .select('id, title, excerpt, category, published_at')
+              .select('id, title, excerpt, category, tags, featured_image, published_at, updated_at, views, likes, comments_count, created_by')
               .eq('status', 'published')
               .order('published_at', { ascending: false })
               .limit(6),
             supabase
               .from(TABLES.EVENTS)
-              .select('id, title, description, category, start_date, location, featured_image, images, videos')
+              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, published_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('start_date', { ascending: true })
               .limit(6),
             supabase
               .from(TABLES.FORUM_THREADS)
-              .select('id, title, reply_count, last_activity_at')
+              .select('id, title, content, category_id, reply_count, last_activity_at, created_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('last_activity_at', { ascending: false })
               .limit(6),
@@ -453,21 +518,41 @@ export default function UserDashboardPage() {
 
         const nextCategories = categoriesResult.data || []
         const nextAnnouncements = (announcementsResult.data || []).map(normalizeAnnouncementRecord)
+        const authorIds = [
+          ...(blogsFeed.data || []).map((item) => item.created_by),
+          ...(eventsFeed.data || []).map((item) => item.created_by),
+          ...(threadsFeed.data || []).map((item) => item.created_by),
+          ...(nextAnnouncements || []).map((item) => item.created_by),
+        ].filter(Boolean)
+        const { data: authors } = authorIds.length
+          ? await supabase.from(TABLES.USERS).select('id, full_name, profile_image_url, user_type').in('id', [...new Set(authorIds)])
+          : { data: [] }
+        const authorMap = new Map((authors || []).map((author) => [author.id, author]))
+        const withAuthor = (item) => ({
+          ...item,
+          author: authorMap.get(item.created_by) || null,
+        })
+
         const mixedFeed = [
           ...(blogsFeed.data || []).map((blog) => ({
-            ...blog,
+            ...withAuthor(blog),
             type: 'blog',
             href: `/user/blogs/${blog.id}`,
           })),
           ...(eventsFeed.data || []).map((event) => ({
-            ...event,
+            ...withAuthor(event),
             type: 'event',
             href: `/user/events/${event.id}`,
           })),
           ...(threadsFeed.data || []).map((thread) => ({
-            ...thread,
+            ...withAuthor(thread),
             type: 'forum',
             href: `/user/forums/${thread.id}`,
+          })),
+          ...(nextAnnouncements || []).map((announcement) => ({
+            ...withAuthor(announcement),
+            type: 'announcement',
+            href: `/user/announcements/${announcement.id}`,
           })),
         ].sort((a, b) => new Date(b.published_at || b.last_activity_at || 0) - new Date(a.published_at || a.last_activity_at || 0))
 
@@ -519,26 +604,85 @@ export default function UserDashboardPage() {
   }
 
   const filteredFeed = useMemo(() => {
-    let result = feed
+    let result = feed.filter((item) => !hiddenPosts.has(`${item.type}-${item.id}`))
 
     if (activeCategory !== 'all') {
-      result = result.filter((item) => item.category?.toLowerCase() === activeCategory.toLowerCase())
+      result = result.filter((item) => {
+        const topics = [
+          item.category,
+          item.type,
+          ...(Array.isArray(item.tags) ? item.tags : []),
+          ...(String(item.excerpt || item.description || '').match(/#[a-z0-9_]+/gi) || []),
+        ].filter(Boolean).map((topic) => String(topic).replace(/^#/, '').toLowerCase())
+        return topics.includes(activeCategory.replace(/^#/, '').toLowerCase())
+      })
     }
 
     if (search.trim()) {
       const query = search.toLowerCase()
       result = result.filter((item) => {
-        const haystack = [item.title, item.excerpt, item.description].filter(Boolean).join(' ').toLowerCase()
+        const haystack = [item.title, item.excerpt, item.description, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean).join(' ').toLowerCase()
         return haystack.includes(query)
       })
     }
 
+    const categoryWeights = new Map()
+    const typeWeights = new Map()
+    const interactedIds = new Set()
+    const reactionIds = new Set(userSignals.reactions.map((signal) => {
+      const contentType = signal.content_type === 'forum_thread' ? 'forum' : signal.content_type
+      return `${contentType}-${signal.content_id}`
+    }))
+    const favoriteIds = new Set(userSignals.favorites.map((favorite) => `${favorite.item_type}-${favorite.item_id}`))
+
+    const addWeight = (map, key, amount) => {
+      if (!key) return
+      const normalizedKey = String(key).toLowerCase()
+      map.set(normalizedKey, (map.get(normalizedKey) || 0) + amount)
+    }
+
+    userSignals.preferredCategories.forEach((category) => addWeight(categoryWeights, category, 8))
+    userSignals.activities.forEach((activity) => {
+      const entityType = activity.entity_type === 'forum_thread' ? 'forum' : activity.entity_type
+      addWeight(typeWeights, entityType, activity.activity_type === 'visit_dashboard' ? 0 : 2)
+      if (activity.entity_id) interactedIds.add(`${entityType}-${activity.entity_id}`)
+      if (activity.metadata?.category) addWeight(categoryWeights, activity.metadata.category, 4)
+    })
+
+    userSignals.reactions.forEach((reaction) => {
+      const normalizedType = reaction.content_type === 'forum_thread' ? 'forum' : reaction.content_type
+      addWeight(typeWeights, normalizedType, 5)
+      interactedIds.add(`${normalizedType}-${reaction.content_id}`)
+    })
+
+    userSignals.favorites.forEach((favorite) => {
+      addWeight(typeWeights, favorite.item_type, 6)
+      interactedIds.add(`${favorite.item_type}-${favorite.item_id}`)
+    })
+
     return result
-  }, [feed, activeCategory, search])
+      .map((item, index) => {
+        const itemKey = `${item.type}-${item.id}`
+        const category = String(item.category || '').toLowerCase()
+        const itemType = String(item.type || '').toLowerCase()
+        const ageInDays = Math.max(0, (Date.now() - new Date(item.published_at || item.start_date || item.last_activity_at || 0).getTime()) / 86400000)
+        const recencyScore = Number.isFinite(ageInDays) ? Math.max(0, 8 - ageInDays) : 0
+        const score = recencyScore
+          + (categoryWeights.get(category) || 0)
+          + (typeWeights.get(itemType) || 0)
+          + (interactedIds.has(itemKey) ? 18 : 0)
+          + (reactionIds.has(itemKey) ? 22 : 0)
+          + (favoriteIds.has(itemKey) ? 20 : 0)
+
+        return { item, index, score }
+      })
+      .sort((left, right) => right.score - left.score || left.index - right.index)
+      .map(({ item }) => item)
+  }, [feed, activeCategory, search, userSignals, hiddenPosts])
 
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9]">
+      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
         <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
           <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
           <p className="text-slate-600">Loading...</p>
@@ -549,7 +693,7 @@ export default function UserDashboardPage() {
 
   if (authError) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9]">
+      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
         <div className="rounded-[24px] border border-red-200 bg-red-50 p-6 text-center shadow-sm">
           <AlertCircle className="mx-auto mb-4 text-red-600" />
           <p className="text-red-700">{authError}</p>
@@ -559,248 +703,156 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen w-full max-w-full overflow-x-clip bg-[#f3f5f9] text-slate-900">
+    <main className="dashboard-sharp min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
       <MobileNav />
-      {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg animate-in slide-in-from-top-2">
+        <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
           {toastMessage}
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-        {/* Header */}
-        <header className="sticky top-3 z-30 mb-5 w-full overflow-hidden rounded-[24px] border border-slate-200 bg-white/90 shadow-[0_10px_30px_rgba(15,23,42,0.06)] backdrop-blur-sm md:rounded-[28px]">
-          <div className="px-3 py-3 sm:px-4 md:px-6">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md">
-                  D
-                </div>
-                <div className="hidden min-w-0 sm:block">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Home</p>
-                  <p className="text-sm font-bold text-slate-800">CONNECT Daet</p>
-                </div>
-              </div>
+      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-5 lg:px-8 lg:pb-10">
+        <header className="sticky top-2 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:p-4 lg:rounded-[26px]">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/user/dashboard" className="flex min-w-0 items-center gap-2.5">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-sky-100 p-1 ring-1 ring-sky-200 sm:h-11 sm:w-11">
+                <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-[9px] object-cover" />
+              </span>
+              <span className="hidden min-w-0 sm:block">
+                <span className="block text-[10px] font-black tracking-[0.25em] text-sky-700">CONNECT</span>
+                <span className="block truncate text-xs font-medium text-slate-500">Daet community</span>
+              </span>
+            </Link>
 
-              <div className="hidden flex-1 items-center justify-center px-4 lg:flex">
-                <label className="flex w-full max-w-xl items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
-                  <Search className="h-4 w-4" />
-                  <input
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Search posts, events, blogs..."
-                    className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                  />
-                </label>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Link href="/user/notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                  <Bell className="h-4 w-4" />
-                </Link>
-                <Link href="/user/profile" className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5 transition hover:border-slate-300">
-                  <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-xs font-bold text-white">
-                    {getInitials(userName)}
-                  </div>
-                  <span className="hidden text-xs font-semibold text-slate-700 sm:inline">{userName.split(' ')[0]}</span>
-                </Link>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="inline-flex items-center justify-center rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-100"
-                >
-                  Logout
-                </button>
-              </div>
-            </div>
-
-            {/* Mobile search */}
-            <div className="mt-3 lg:hidden">
-              <label className="flex w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
-                <Search className="h-4 w-4" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search..."
-                  className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                />
+            <div className="hidden flex-1 px-8 lg:block">
+              <label className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
+                <Search className="h-4 w-4 shrink-0" />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
               </label>
             </div>
-          </div>
-        </header>
 
-        {/* Error message */}
-        {error && (
-          <div className="mb-5 rounded-[20px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <div className="flex gap-3">
-              <AlertCircle className="h-5 w-5 flex-shrink-0" />
-              <div>
-                <p className="font-semibold">Error loading dashboard</p>
-                <p>{error}</p>
+            <div className="flex items-center gap-2">
+              <Link href="/user/notifications" aria-label="Notifications" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-sky-700 transition hover:bg-sky-50">
+                <Bell className="h-4 w-4" />
+              </Link>
+              <div className="relative">
+                <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open profile menu" className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-1.5 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 sm:pr-3">
+                  <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">{getInitials(userName)}</span>
+                  <span className="hidden sm:inline">Profile</span>
+                </button>
+                {showProfileMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                  <Link href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile settings</Link>
+                  <Link href="/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />Messages</Link>
+                  <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
+                </div>}
               </div>
             </div>
+          </div>
+
+          <label className="mt-3 flex items-center gap-2 rounded-xl border border-sky-100 bg-white/80 px-4 py-2.5 text-sm text-slate-500 lg:hidden">
+            <Search className="h-4 w-4 shrink-0" />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search posts and places" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
+          </label>
+        </header>
+
+        {error && (
+          <div className="mb-4 flex gap-3 rounded-[18px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <div><p className="font-semibold">Could not load your feed</p><p>{error}</p></div>
           </div>
         )}
 
-        <div className="grid gap-6 xl:grid-cols-[1fr_300px] pb-20 lg:pb-0">
-          {/* Main Feed */}
-          <section className="space-y-6">
-            {/* Stats Cards */}
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {[
-                { label: 'Blogs', value: stats.blogs, icon: FileText, href: '/user/blogs' },
-                { label: 'Events', value: stats.events, icon: CalendarDays, href: '/user/events' },
-                { label: 'Amenities', value: stats.amenities, icon: Compass, href: '/user/amenities' },
-                { label: 'Updates', value: announcements.length, icon: Zap, href: '/user/announcements' },
-              ].map(({ label, value, icon: Icon, href }) => (
-                <Link key={label} href={href} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-                      <p className="mt-3 text-2xl font-bold text-slate-900">{value}</p>
-                    </div>
-                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                  </div>
-                </Link>
-              ))}
+        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-700 text-sm font-bold text-white">{getInitials(userName)}</div>
+            <Link href="/user/blogs/new" className="flex min-h-11 flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-sky-300">
+              Share something with Daet...
+            </Link>
+            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600">
+              <Zap className="h-4 w-4" />
+            </Link>
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
+            <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-white">Write a story</Link>
+            <Link href="/user/events" className="rounded-xl py-2 hover:bg-white">Find an event</Link>
+            <Link href="/user/forums" className="rounded-xl py-2 hover:bg-white">Start a chat</Link>
+          </div>
+        </div>
+
+        <div className="mb-4 -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0">
+          <button type="button" onClick={() => setActiveCategory('all')} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-bold transition ${activeCategory === 'all' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>For you</button>
+          {categories.slice(0, 5).map((cat) => (
+            <button key={cat.id} type="button" onClick={() => setActiveCategory(cat.name)} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-bold transition ${activeCategory === cat.name ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
+              {cat.icon_emoji} {cat.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_310px]">
+          <section className="min-w-0 space-y-4">
+            <div className="flex items-end justify-between px-1">
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">Latest from Daet</h1></div>
+              <span className="text-xs font-medium text-slate-500">{filteredFeed.length} posts</span>
             </div>
 
-            {/* Category Filter */}
-            {categories.length > 0 && (
-              <div className="overflow-x-auto rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm">
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setActiveCategory('all')}
-                    className={`rounded-full px-4 py-2 text-sm font-semibold transition whitespace-nowrap ${
-                      activeCategory === 'all' ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    All
-                  </button>
-                  {categories.slice(0, 5).map((cat) => (
-                    <button
-                      key={cat.id}
-                      onClick={() => setActiveCategory(cat.name)}
-                      className={`rounded-full px-4 py-2 text-sm font-semibold transition whitespace-nowrap ${
-                        activeCategory === cat.name ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      {cat.icon_emoji} {cat.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Feed */}
             {loading ? (
-              <div className="space-y-4">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-4">
-                    <div className="h-4 w-2/3 rounded bg-slate-200" />
-                    <div className="mt-3 h-3 w-full rounded bg-slate-200" />
-                    <div className="mt-2 h-3 w-1/2 rounded bg-slate-200" />
-                  </div>
-                ))}
-              </div>
+              <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className="animate-pulse rounded-[22px] border border-slate-200 bg-white p-4"><div className="h-4 w-1/2 rounded bg-slate-200" /><div className="mt-4 h-3 w-full rounded bg-slate-200" /><div className="mt-2 h-3 w-4/5 rounded bg-slate-200" /></div>)}</div>
             ) : filteredFeed.length === 0 ? (
-              <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-                <p className="text-sm text-slate-500">No content found. Try adjusting your filters.</p>
-              </div>
+              <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No posts found. Try another topic or search.</div>
             ) : (
               <div className="space-y-4">
                 {filteredFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
-                  const eventMediaUrl = item.type === 'event'
-                    ? getImageUrl(item.featured_image || item.images || item.videos, null)
-                    : null
+                  const author = item.author
+                  const authorName = author?.full_name || (item.type === 'forum' ? 'Community member' : item.type === 'event' ? 'Event organizer' : 'Daet storyteller')
+                  const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
+                  const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
-
+                  const postImageUrl = item.type === 'blog' ? item.featured_image : item.type === 'announcement' ? item.image_url : eventMediaUrl
+                  const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
+                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
-                    <article
-                      key={itemKey}
-                      className="feed-card w-full max-w-full overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] transition hover:border-slate-300 hover:shadow-[0_12px_28px_rgba(15,23,42,0.07)] sm:p-4"
-                    >
-                      <div className="feed-post-body">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex min-w-0 flex-1 items-start gap-3">
-                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-blue-600 text-sm font-bold text-white shadow-sm">
-                              {item.type === 'event' ? 'E' : item.type === 'forum' ? 'F' : 'B'}
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className="feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)]">
+                      <div className="p-4 sm:p-5">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700">
+                            {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-600">
+                              <span className="font-bold text-slate-900">{authorName}</span>
+                              {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
+                              <span className="text-slate-400">·</span>
+                              <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
                             </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-                                  {item.type}
-                                </span>
-                                {item.category && <span className="text-[11px] font-medium text-slate-500">{item.category}</span>}
-                              </div>
-                              <h3 className="mt-2 text-base font-bold leading-6 text-slate-900 sm:text-lg">{item.title}</h3>
-                              {(item.excerpt || item.description) && (
-                                <p className="mt-1 text-sm leading-6 text-slate-600">{item.excerpt || item.description}</p>
-                              )}
-                              <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-                                {item.location && <span className="inline-flex items-center gap-1">{item.location}</span>}
-                                {item.start_date && <span>{formatDate(item.start_date)}</span>}
-                                {item.reply_count !== undefined && <span>{item.reply_count} replies</span>}
-                                {item.view_count && <span>{item.view_count} views</span>}
-                              </div>
-                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{item.type}</span>{item.category && <><span className="text-slate-300">•</span><span className="normal-case tracking-normal text-slate-500">{item.category}</span></>}</div>
+                            <h2 className="mt-1 break-words text-base font-extrabold leading-6 text-slate-950 sm:text-lg">{item.title}</h2>
+                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}{item.start_date && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}{item.reply_count !== undefined && <span>{item.reply_count} replies</span>}</div>
                           </div>
-                          <Link href={item.href} aria-label={`Open ${item.title}`} className="shrink-0 text-slate-400 transition hover:text-slate-600">
-                            <ChevronRight className="h-5 w-5" />
-                          </Link>
+                          <div className="relative shrink-0">
+                            <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
+                            {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+                              <button type="button" onClick={() => { setHiddenPosts((previous) => new Set([...previous, itemKey])); setOpenPostMenu(null) }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
+                              <button type="button" onClick={() => { setHiddenPosts((previous) => new Set([...previous, itemKey])); setOpenPostMenu(null) }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
+                              <button type="button" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}${item.href}`); setOpenPostMenu(null); setToastMessage('Post link copied') }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
+                            </div>}
+                          </div>
                         </div>
 
-                        {item.type === 'event' && (eventMediaUrl || eventVideoUrl) && (
-                          <div className="feed-media mt-3">
-                            {eventVideoUrl ? (
-                              <video src={eventVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />
-                            ) : (
-                              <img src={eventMediaUrl} alt={item.title} className="aspect-[16/9] w-full object-cover" />
-                            )}
-                          </div>
-                        )}
+                        {(item.excerpt || item.description) && <p className="mt-4 break-words text-sm leading-6 text-slate-600">{item.excerpt || item.description}</p>}
+                        {item.type === 'forum' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Discussion</span>{item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span></div>}
+                        {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
+                        {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
+                        {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
+                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover" />}</div>}
 
-                        <div className="feed-actions mt-3">
-                          <SocialActionBar
-                            contentType={item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'}
-                            contentId={item.id}
-                            userId={userId}
-                            commentCount={commentCounts[`${item.type}-${item.id}`] || 0}
-                            onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)}
-                          />
+                        <div className="feed-actions mt-4"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} /></div>
+                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
+                          <button type="button" onClick={(e) => handleBookmark(e, item)} className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-bold ${isSaved ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}><Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />{isSaved ? 'Saved' : 'Save'}</button>
+                          <Link href={item.href} className="text-xs font-bold text-sky-700">Open post</Link>
                         </div>
-
-                        <div className="mt-2 flex items-center justify-between gap-3">
-                          <button
-                            type="button"
-                            onClick={(e) => handleBookmark(e, item)}
-                            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
-                              isSaved ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                            }`}
-                          >
-                            <Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />
-                            {isSaved ? 'Saved' : 'Save'}
-                          </button>
-
-                          <Link href={item.href} className="text-xs font-semibold text-sky-600 hover:text-sky-700">
-                            View details
-                          </Link>
-                        </div>
-
-                        {openComments === itemKey && (
-                          <div className="mt-3">
-                            <Comments
-                              contentType={item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : 'event'}
-                              contentId={item.id}
-                              userId={userId}
-                            />
-                          </div>
-                        )}
+                        {openComments === itemKey && <div className="mt-4"><Comments contentType={contentType} contentId={item.id} userId={userId} /></div>}
                       </div>
                     </article>
                   )
@@ -809,126 +861,22 @@ export default function UserDashboardPage() {
             )}
           </section>
 
-          {/* Sidebar */}
-          <aside className="hidden space-y-6 xl:block">
-            {/* Gamification Summary (from feature spec) */}
-            <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-gradient-to-br from-violet-600 via-indigo-600 to-cyan-500 p-4 shadow-sm">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-100">My progress</p>
-                <Flame className="h-4 w-4 text-amber-300" />
-              </div>
-              <div className="mt-3 flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-sm font-bold text-white">
-                  Lv {gamification.level}
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-white">{gamification.points} pts</p>
-                  <p className="text-xs text-violet-100">{gamification.streak}-day streak</p>
-                </div>
-              </div>
-              <Link href="/user/rewards" className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-white/10 px-3 py-2 text-xs font-semibold text-white backdrop-blur-sm transition hover:bg-white/20">
-                <Star className="h-3.5 w-3.5" />
-                View rewards
-              </Link>
+          <aside className="hidden space-y-4 lg:block lg:sticky lg:top-24">
+            <div className="overflow-hidden rounded-[22px] bg-slate-950 p-5 text-white shadow-[0_14px_35px_rgba(15,23,42,0.16)]">
+              <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-200">Your rhythm</p><Flame className="h-4 w-4 text-amber-300" /></div>
+              <p className="mt-3 text-3xl font-black">{gamification.points}<span className="ml-1 text-sm font-semibold text-sky-200">pts</span></p>
+              <p className="mt-1 text-xs text-slate-200">Level {gamification.level} · {gamification.streak}-day streak</p>
+              <Link href="/user/rewards" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-amber-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-amber-600"><Star className="h-3.5 w-3.5" />View rewards</Link>
             </div>
 
-            {/* Trending Topics (from feature spec) */}
-            {trendingTopics.length > 0 && (
-              <div className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-4 flex items-center justify-between">
-                  <h3 className="font-bold text-slate-900">Trending</h3>
-                  <TrendingUp className="h-4 w-4 text-emerald-500" />
-                </div>
-                <div className="space-y-2">
-                  {trendingTopics.map((topic, index) => (
-                    <button
-                      key={topic.name}
-                      type="button"
-                      onClick={() => setActiveCategory(topic.name)}
-                      className={`flex w-full items-center justify-between rounded-[12px] border px-3 py-2 text-left text-sm transition ${
-                        activeCategory === topic.name || activeCategory === topic.name.toLowerCase()
-                          ? 'border-slate-900 bg-slate-900 text-white'
-                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span className="font-medium">{topic.name}</span>
-                      <span className={`text-xs font-bold ${activeCategory === topic.name || activeCategory === topic.name.toLowerCase() ? 'text-white' : 'text-emerald-600'}`}>
-                        {topic.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Announcements */}
-            <div className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="font-bold text-slate-900">Updates</h3>
-                <Link href="/user/announcements" className="text-xs font-semibold text-sky-600">
-                  All
-                </Link>
-              </div>
-
-              <div className="space-y-3">
-                {announcements.length > 0 ? (
-                  announcements.map((ann) => {
-                    const announcement = normalizeAnnouncementRecord(ann)
-                    const mediaUrl = announcement.image_url || announcement.video_url
-
-                    return (
-                      <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-[14px] border border-slate-200 bg-slate-50 p-3 transition hover:border-slate-300">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">{announcement.type || 'News'}</p>
-                        <p className="mt-1 line-clamp-2 text-sm font-semibold text-slate-800">{announcement.title}</p>
-                        {announcement.content && (
-                          <p className="mt-1 line-clamp-2 text-xs text-slate-600">{announcement.content}</p>
-                        )}
-                        {mediaUrl && (
-                          <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                            {announcement.video_url ? (
-                              <video src={announcement.video_url} controls className="h-28 w-full object-cover" preload="metadata" />
-                            ) : (
-                              <img src={announcement.image_url} alt={announcement.title} className="h-28 w-full object-cover" />
-                            )}
-                          </div>
-                        )}
-                        <p className="mt-2 text-xs text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p>
-                      </Link>
-                    )
-                  })
-                ) : (
-                  <p className="text-sm text-slate-500">No updates yet</p>
-                )}
-              </div>
+            <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
+              <div className="space-y-2">{trendingTopics.map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-sky-50 px-3 text-left text-sm font-semibold text-slate-700 hover:bg-sky-100"><span>#{topic.name}</span><span className="text-xs text-sky-700">{topic.count}</span></button>)}</div>
             </div>
 
-            {/* Quick Links */}
-            <div className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="mb-4 font-bold text-slate-900">Quick Links</h3>
-              <div className="space-y-2">
-                {[
-                  { label: 'Browse Blogs', href: '/user/blogs', icon: FileText },
-                  { label: 'View Events', href: '/user/events', icon: CalendarDays },
-                  { label: 'Find Places', href: '/user/amenities', icon: Compass },
-                  { label: 'Join Forums', href: '/user/forums', icon: MessageSquare },
-                  { label: 'My Rewards', href: '/user/rewards', icon: Star },
-                  { label: 'Saved', href: '/user/saved', icon: Bookmark },
-                ].map(({ label, href, icon: Icon }) => (
-                  <Link
-                    key={href}
-                    href={href}
-                    className="flex items-center gap-3 rounded-[12px] border border-slate-200 bg-slate-50 p-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:bg-slate-100"
-                  >
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    {label}
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            {/* Today */}
-            <div className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Today</p>
-              <p className="mt-2 text-lg font-bold text-slate-900">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+            <div className="overflow-hidden rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Official notice</p><h2 className="mt-1 font-extrabold text-slate-950">Announcements</h2></div><Megaphone className="h-5 w-5 text-amber-700" /></div>
+              <div className="space-y-2">{announcements.slice(0, 2).map((ann) => { const announcement = normalizeAnnouncementRecord(ann); return <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-xl bg-white/80 p-3 shadow-sm transition hover:bg-white"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{announcement.type || 'News'}</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-800">{announcement.title}</p><p className="mt-1 text-[11px] text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p></Link> })}</div>
             </div>
           </aside>
         </div>

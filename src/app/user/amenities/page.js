@@ -145,8 +145,8 @@ export default function AmenitiesPage() {
       <div className="mx-auto max-w-[1400px] px-3 pb-8 pt-3 sm:px-4 lg:px-6">
         {/* Header */}
         <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center justify-between gap-3 sm:justify-start">
               <button
                 type="button"
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 lg:hidden"
@@ -157,8 +157,8 @@ export default function AmenitiesPage() {
               </button>
 
               <Link href="/user/dashboard" className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md shadow-cyan-500/25">
-                  D
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
+                  <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>
@@ -181,7 +181,7 @@ export default function AmenitiesPage() {
               </div>
             </label>
 
-            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5">
+            <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5 self-end sm:self-auto">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-orange-400 to-pink-500 text-sm font-bold text-white">
                 {userName.charAt(0).toUpperCase()}
               </div>
@@ -307,7 +307,7 @@ export default function AmenitiesPage() {
                 ))}
               </div>
             ) : filteredAmenities.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
                 {filteredAmenities.map((amenity) => (
                   <Link
                     key={amenity.id}

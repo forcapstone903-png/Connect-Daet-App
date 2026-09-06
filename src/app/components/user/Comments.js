@@ -242,7 +242,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
             </div>
 
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <span className="text-sm font-bold text-slate-900">{authorName}</span>
                   <span className="ml-2 text-xs text-slate-500">{formatRelativeTime(comment.created_at)}</span>
@@ -429,14 +429,14 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
           <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:justify-end">
           <SortDesc className="h-3.5 w-3.5 text-slate-400" />
           {['relevant', 'newest', 'oldest', 'most_liked'].map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => setSortMode(mode)}
-              className={`rounded-full px-2.5 py-1 text-[10px] font-semibold capitalize transition ${
+              className={`rounded-full px-2.5 py-2 text-[10px] font-semibold capitalize transition sm:py-1 ${
                 sortMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >

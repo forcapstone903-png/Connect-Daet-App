@@ -217,17 +217,26 @@ export default function ForumsPage() {
       <div className="mx-auto max-w-[1200px] px-3 pb-8 pt-3 sm:px-4 lg:px-6">
         {/* Header */}
         <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center justify-between gap-3 sm:justify-start">
               <Link href="/user/dashboard" className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md shadow-cyan-500/25">
-                  D
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
+                  <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>
                   <p className="text-base font-bold text-slate-800">Connect</p>
                 </div>
               </Link>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 sm:hidden"
+              >
+                <Plus className="h-4 w-4" />
+                New
+              </button>
             </div>
 
             <label className="hidden flex-1 items-center justify-center lg:flex">
@@ -247,10 +256,10 @@ export default function ForumsPage() {
             <button
               type="button"
               onClick={() => setShowCreateForm(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700"
+              className="hidden items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700 sm:inline-flex"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New Thread</span>
+              <span>New Thread</span>
             </button>
           </div>
 

@@ -153,7 +153,7 @@ export default function UserRewardsPage() {
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <header className="mb-5 rounded-[24px] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <Link href="/user/dashboard" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
                 <ChevronRight className="h-4 w-4 rotate-180" />
@@ -164,7 +164,7 @@ export default function UserRewardsPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Link href="/user/notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
                 <Bell className="h-4 w-4" />
               </Link>

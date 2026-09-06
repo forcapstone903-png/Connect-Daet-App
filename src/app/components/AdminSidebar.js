@@ -25,10 +25,8 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin', 'content_manager'],
     items: [
-      { href: '/admin/content', label: 'Overview', iconName: 'content' },
       { href: '/admin/tourist-spots', label: 'Tourist Spots', iconName: 'attractions', badge: null },
       { href: '/admin/events', label: 'Events', iconName: 'events', badge: null },
-      { href: '/admin/amenities', label: 'Amenities', iconName: 'amenities', badge: null },
       { href: '/admin/blog', label: 'Blogs & Articles', iconName: 'blog', badge: null },
     ],
   },
@@ -39,8 +37,8 @@ const navigationHubs = [
     badge: 0,
     requiredRoles: ['admin', 'moderator'],
     items: [
-      { href: '/admin/community', label: 'Overview', iconName: 'community' },
       { href: '/admin/forum', label: 'Forums', iconName: 'forum', badge: null },
+      { href: '/admin/engagement', label: 'Engagement', iconName: 'analytics', badge: null },
       { href: '/admin/feedback', label: 'Feedback', iconName: 'feedback', badge: 0 },
       { href: '/admin/users', label: 'Users', iconName: 'users', badge: null },
       { href: '/admin/moderation', label: 'Moderation Queue', iconName: 'moderation', badge: 0 },
@@ -53,7 +51,6 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin', 'analyst'],
     items: [
-      { href: '/admin/analytics', label: 'Overview', iconName: 'analytics' },
       { href: '/admin/analytics?tab=visitors', label: 'Visitor Statistics', iconName: 'analytics' },
       { href: '/admin/analytics?tab=popular', label: 'Popular Content', iconName: 'analytics' },
       { href: '/admin/analytics?tab=engagement', label: 'User Engagement', iconName: 'analytics' },
@@ -67,7 +64,6 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/settings', label: 'Overview', iconName: 'settings', exact: true },
       { href: '/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
       { href: '/admin/settings/email', label: 'Email & Notifications', iconName: 'settings', exact: true },
       { href: '/admin/settings/security', label: 'Security', iconName: 'settings', exact: true },
@@ -81,7 +77,6 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/data', label: 'Overview', iconName: 'data' },
       { href: '/admin/file-management', label: 'Media Library', iconName: 'data' },
       { href: '/admin/data?tab=backups', label: 'Backups', iconName: 'data' },
       { href: '/admin/data-management', label: 'Import / Export', iconName: 'data' },
@@ -95,7 +90,6 @@ const navigationHubs = [
     badge: 0,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/notifications', label: 'Overview', iconName: 'notifications' },
       { href: '/admin/announcement', label: 'Send Announcement', iconName: 'notifications' },
       { href: '/admin/announcement-settings', label: 'Scheduled', iconName: 'notifications' },
       { href: '/admin/announcement?tab=history', label: 'History', iconName: 'notifications' },
@@ -108,7 +102,6 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin', 'content_manager', 'moderator', 'analyst'],
     items: [
-      { href: '/admin/profile', label: 'Profile', iconName: 'profile' },
       { href: '/admin/account?tab=password', label: 'Change Password', iconName: 'settings' },
       { href: '/admin/account?tab=2fa', label: '2FA Settings', iconName: 'settings' },
       { href: '/admin/account?tab=sessions', label: 'Sessions', iconName: 'settings' },
@@ -323,13 +316,6 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
 
         {!isCollapsed && (
           <>
-            <Link
-              href="/admin/profile"
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-600 transition-all hover:bg-slate-50 hover:text-slate-800"
-            >
-              <Icon name="profile" className="w-5 h-5 flex-shrink-0" />
-              <span className="font-medium text-sm">Profile</span>
-            </Link>
             <Link
               href="/admin/account"
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-600 transition-all hover:bg-slate-50 hover:text-slate-800"

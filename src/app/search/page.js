@@ -111,8 +111,8 @@ function SearchContent() {
         <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
           <div className="flex items-center justify-between gap-3">
             <Link href="/visitor" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md shadow-cyan-500/25">
-                D
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
+                <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>

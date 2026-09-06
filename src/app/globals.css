@@ -119,6 +119,14 @@ select {
   flex-shrink: 0;
 }
 
+.dashboard-sharp * {
+  border-radius: 0 !important;
+}
+
+.dashboard-sharp .rounded-full {
+  border-radius: 9999px !important;
+}
+
 ::selection {
   background: rgba(14, 165, 233, 0.2);
 }

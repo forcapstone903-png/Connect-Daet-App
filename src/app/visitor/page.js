@@ -401,7 +401,7 @@ export default function VisitorPage() {
         <div className="relative mx-auto max-w-[1440px] px-3 pb-10 pt-2 sm:px-6 sm:pb-16 sm:pt-3 lg:px-8 xl:px-10">
           {/* Header */}
           <header className="relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 bg-white/10 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] backdrop-blur-xl sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5">
-            <div className="flex items-center justify-between gap-2 sm:gap-4">
+            <div className="grid items-center gap-2 sm:gap-4 md:grid-cols-[auto_1fr_auto]">
               <div className="flex items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 p-1 shadow-lg shadow-sky-900/20 ring-1 ring-white/20 sm:h-11 sm:w-11">
                   <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-xl object-cover" />
@@ -412,7 +412,7 @@ export default function VisitorPage() {
                 </div>
               </div>
 
-              <nav className="hidden items-center gap-1 text-sm md:flex">
+              <nav className="hidden items-center justify-center gap-1 text-sm md:flex">
                 {navigationItems.map((item) => (
                   <a
                     key={item.id}
@@ -429,7 +429,7 @@ export default function VisitorPage() {
                 ))}
               </nav>
 
-              <div className="flex items-center gap-1.5 sm:gap-3">
+              <div className="flex items-center justify-end gap-1.5 sm:gap-3">
                 {user ? (
                   <Link href="/dashboard" className="hidden rounded-full bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-900 transition hover:bg-slate-100 sm:inline-flex sm:px-4 sm:py-2 sm:text-sm">
                     Dashboard
@@ -957,7 +957,7 @@ export default function VisitorPage() {
                         onClick={() => handleBlogClick(blog.id)}
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 transition hover:text-amber-800 sm:mt-4 sm:text-sm"
                       >
-                        Read story <ArrowRight size={13} className="sm:size-15" />
+                        Read story
                       </button>
                       <button
                         onClick={(e) => handleBookmark(e, 'blog', blog.id)}

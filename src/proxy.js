@@ -19,6 +19,7 @@ const AUTHD_ONLY_EXIT = new Set([
 
 export function proxy(request) {
   const { pathname } = request.nextUrl
+  const normalizedPathname = pathname.replace(/\/+$/, '') || '/'
 
   // Parse the persistent auth cookie once.
   let session = null
@@ -36,7 +37,7 @@ export function proxy(request) {
   const isAdmin = loggedIn && role === 'admin'
 
   // Logged-in users go straight to their dashboard instead of a landing/auth page.
-  if (loggedIn && AUTHD_ONLY_EXIT.has(pathname)) {
+  if (loggedIn && AUTHD_ONLY_EXIT.has(normalizedPathname)) {
     return NextResponse.redirect(
       new URL(isAdmin ? '/admin/dashboard' : '/user/dashboard', request.url)
     )

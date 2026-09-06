@@ -112,20 +112,20 @@ export default function UserAnnouncementsPage() {
               const styles = getTypeStyles(announcement.announcement_type)
               const TypeIcon = styles.icon
               return (
-                <div key={announcement.id} className={`rounded-[20px] border p-5 ${styles.bg}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
+                <div key={announcement.id} className={`rounded-[18px] border p-4 sm:rounded-[20px] sm:p-5 ${styles.bg}`}>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white ${styles.iconColor}`}>
                         <TypeIcon className="h-5 w-5" />
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${styles.badge}`}>
                           {announcement.announcement_type || 'Info'}
                         </span>
-                        <h2 className="mt-1 text-base font-bold text-slate-900">{announcement.title}</h2>
+                        <h2 className="mt-1 break-words text-base font-bold text-slate-900">{announcement.title}</h2>
                       </div>
                     </div>
-                    <span className="shrink-0 text-xs text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</span>
+                    <span className="text-xs text-slate-500 sm:shrink-0">{formatDate(announcement.published_at || announcement.created_at)}</span>
                   </div>
                   <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-700">{announcement.content}</p>
                   {(announcement.image_url || announcement.video_url) && (

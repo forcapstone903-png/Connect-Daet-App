@@ -357,6 +357,19 @@ export default function UserProfilePage() {
   }, [])
 
   const levelName = useMemo(() => getLevelName(profile.points || stats.points || 0), [profile.points, stats.points])
+  const dailyChallenge = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const completedActivity = activityLog.some((activity) => {
+      const activityText = `${activity.type} ${activity.description}`.toLowerCase()
+      return activity.created_at?.slice(0, 10) === today && /bagasbas|photo|#bagasbas/.test(activityText)
+    })
+    const completedPost = userPosts.some((post) => {
+      const postText = `${post.title} ${post.content} ${post.category}`.toLowerCase()
+      return post.created_at?.slice(0, 10) === today && /bagasbas|#bagasbas/.test(postText)
+    })
+
+    return { completed: completedActivity || completedPost }
+  }, [activityLog, userPosts])
   const visiblePosts = useMemo(() => {
     if (activeTab === 'blogs') return userPosts.filter((post) => post.type === 'Blog')
     if (activeTab === 'forums') return userPosts.filter((post) => post.type === 'Forum')
@@ -432,7 +445,7 @@ export default function UserProfilePage() {
       <MobileNav />
       <div className="mx-auto max-w-[1240px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <header className="mb-5 rounded-[24px] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <Link href="/user/dashboard" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
                 <ChevronRight className="h-4 w-4 rotate-180" />
@@ -443,7 +456,7 @@ export default function UserProfilePage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-end gap-2">
               <Link href="/user/notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
                 <Bell className="h-4 w-4" />
               </Link>
@@ -580,6 +593,37 @@ export default function UserProfilePage() {
                     <span>{profile.points || 0} points</span>
                   </div>
                 </div>
+              </div>
+
+              <div className="lg:hidden rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_14px_35px_rgba(15,23,42,0.16)]">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-200">Your rhythm</p>
+                  <Sparkles className="h-4 w-4 text-amber-300" />
+                </div>
+                <p className="mt-3 text-3xl font-black">{profile.points || stats.points || 0}<span className="ml-1 text-sm font-semibold text-sky-200">pts</span></p>
+                <p className="mt-1 text-xs text-slate-200">Level {profile.level || 1} · {levelName}</p>
+                <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-slate-300">
+                  <span>Keep exploring Daet</span>
+                  <Link href="/user/rewards" className="font-bold text-amber-300 hover:text-amber-200">View rewards</Link>
+                </div>
+              </div>
+
+              <div className="lg:hidden rounded-[24px] border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">Daily challenge</p>
+                    <h3 className="mt-1 text-lg font-black text-slate-900">Bagasbas storyteller</h3>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${dailyChallenge.completed ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-amber-700'}`}>
+                    {dailyChallenge.completed ? 'Unlocked' : '0 / 1'}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-6 text-slate-700">Post a photo from Bagasbas Beach and include <span className="font-bold text-sky-700">#bagasbas</span> to earn a community achievement.</p>
+                {dailyChallenge.completed ? (
+                  <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-emerald-700"><Check className="h-4 w-4" /> Achievement unlocked for today</div>
+                ) : (
+                  <Link href="/user/blogs/new" className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-600"><Camera className="h-4 w-4" /> Share your Bagasbas moment</Link>
+                )}
               </div>
 
               <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">

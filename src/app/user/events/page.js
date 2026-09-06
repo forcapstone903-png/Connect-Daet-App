@@ -110,17 +110,17 @@ export default function UserEventsPage() {
       <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <header className="sticky top-3 z-30 mb-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white/90 shadow-sm backdrop-blur">
           <div className="px-3 py-3 sm:px-4 md:px-6">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md">
-                  D
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
+                  <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Explore</p>
                   <p className="text-sm font-bold text-slate-800">CONNECT Daet</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Link href="/user/dashboard" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
                   Back to Dashboard
                 </Link>
@@ -180,7 +180,7 @@ export default function UserEventsPage() {
             <p className="mt-1 text-xs text-slate-400">Check back later for upcoming events in Daet</p>
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
             {filteredEvents.map((event) => {
               const firstImage = getMediaUrl(event.featured_image || event.images)
               const firstVideo = getMediaUrl(event.videos || event.video_url)

@@ -104,8 +104,8 @@ export default function TouristSpotsPage() {
         <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
           <div className="flex items-center justify-between gap-3">
             <Link href="/visitor" className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-sm font-bold text-white shadow-md shadow-cyan-500/25">
-                D
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
+                <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
               </div>
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>
@@ -171,7 +171,7 @@ export default function TouristSpotsPage() {
 
         {/* Category Filters */}
         {categories.length > 1 && (
-          <div className="mb-6 flex flex-wrap gap-2">
+          <div className="mb-6 -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {categories.map((cat) => (
               <button
                 key={cat}
@@ -191,7 +191,7 @@ export default function TouristSpotsPage() {
 
         {/* Results Grid */}
         {loading ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {[1, 2, 3, 4, 5, 6].map((item) => (
               <div key={item} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-3">
                 <div className="h-44 rounded-xl bg-slate-200" />
@@ -201,7 +201,7 @@ export default function TouristSpotsPage() {
             ))}
           </div>
         ) : filteredSpots.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 xl:grid-cols-3">
             {filteredSpots.map((spot) => (
               <Link
                 key={spot.id}
@@ -213,7 +213,7 @@ export default function TouristSpotsPage() {
                   <img
                     src={getImageUrl(spot.featured_image || spot.images, defaultSpotImage)}
                     alt={spot.name}
-                    className="h-44 w-full object-cover transition group-hover:scale-105"
+                    className="aspect-[16/10] h-auto w-full object-cover transition group-hover:scale-105 sm:aspect-auto sm:h-44"
                     loading="lazy"
                   />
                   <button
@@ -222,7 +222,7 @@ export default function TouristSpotsPage() {
                       e.preventDefault()
                       toggleFavorite(spot.id)
                     }}
-                    className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white"
+                    className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white sm:h-8 sm:w-8"
                     aria-label="Toggle favorite"
                   >
                     <Heart className={`h-4 w-4 ${favorites.has(spot.id) ? 'fill-current' : ''}`} />

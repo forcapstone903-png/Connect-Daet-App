@@ -1,27 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Heart, Laugh, Meh, Smile, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 
 const REACTION_TYPES = [
-  { type: 'like', label: 'Like', icon: ThumbsUp, color: 'text-sky-600', bg: 'bg-sky-50', emoji: '👍' },
-  { type: 'love', label: 'Love', icon: Heart, color: 'text-rose-600', bg: 'bg-rose-50', emoji: '❤️' },
-  { type: 'laugh', label: 'Laugh', icon: Laugh, color: 'text-amber-600', bg: 'bg-amber-50', emoji: '😂' },
-  { type: 'wow', label: 'Wow', icon: Meh, color: 'text-violet-600', bg: 'bg-violet-50', emoji: '😮' },
-  { type: 'sad', label: 'Sad', icon: Smile, color: 'text-blue-600', bg: 'bg-blue-50', emoji: '😢' },
-  { type: 'angry', label: 'Angry', icon: ThumbsUp, color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
+  { type: 'like', label: 'Like', color: 'text-sky-600', bg: 'bg-sky-50', emoji: '👍' },
+  { type: 'love', label: 'Love', color: 'text-rose-600', bg: 'bg-rose-50', emoji: '❤️' },
+  { type: 'laugh', label: 'Laugh', color: 'text-amber-600', bg: 'bg-amber-50', emoji: '😂' },
+  { type: 'wow', label: 'Wow', color: 'text-violet-600', bg: 'bg-violet-50', emoji: '😮' },
+  { type: 'sad', label: 'Sad', color: 'text-blue-600', bg: 'bg-blue-50', emoji: '😢' },
+  { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
-
-const REACTION_ICON_MAP = {
-  like: ThumbsUp,
-  love: Heart,
-  laugh: Laugh,
-  wow: Meh,
-  sad: Smile,
-  angry: ThumbsUp,
-}
 
 export default function Reactions({ contentType, contentId, userId, onReact, compact = false, label, contentTitle = '' }) {
   const [reactionCounts, setReactionCounts] = useState({})
@@ -81,9 +71,6 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   const totalCount = Object.values(reactionCounts).reduce((sum, n) => sum + n, 0)
 
   // Determine the most used reaction (displayed as primary)
-  const primaryReaction = Object.entries(reactionCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null
-  const PrimaryIcon = primaryReaction ? REACTION_ICON_MAP[primaryReaction] : ThumbsUp
-
   const handleReact = async (reactionType) => {
     if (!userId) {
       alert('Please log in to react to this content.')
@@ -155,14 +142,14 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   const activeReactionMeta = REACTION_TYPES.find((r) => r.type === userReaction)
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       {/* Primary reaction button */}
       <div className="relative" ref={pickerRef}>
         <button
           type="button"
           onClick={() => setShowPicker((v) => !v)}
           disabled={loading}
-          className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+          className={`inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition sm:min-h-0 ${
             activeReactionMeta
               ? `${activeReactionMeta.bg} ${activeReactionMeta.color}`
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -175,7 +162,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
             </>
           ) : (
             <>
-              <ThumbsUp className="h-3.5 w-3.5" />
+              <span aria-hidden="true" className="text-sm leading-none">+</span>
               {!compact && (label || 'React')}
             </>
           )}
