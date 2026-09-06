@@ -7,6 +7,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { buildActivityMeta, buildActivityMessage, buildUserNotificationMessage, buildUserNotificationTitle } from '@/lib/trackActivity'
+import { getServerSession } from '@/lib/serverAuth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -48,14 +49,15 @@ export async function POST(request) {
 
   try {
     const body = await request.json()
-    const userId = body.userId || body.user_id
+    const authenticatedUserId = getServerSession(request)?.user_id
+    const userId = authenticatedUserId
     const activityType = body.activityType || body.activity_type
     const entityType = body.entityType || body.entity_type || null
     const entityId = body.entityId || body.entity_id || null
     const description = (body.description || '').toString().trim()
     const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {}
 
-    if (!userId || !activityType) {
+    if (!userId || !activityType || (body.userId && body.userId !== userId) || (body.user_id && body.user_id !== userId)) {
       return NextResponse.json(
         { success: false, message: 'userId and activityType are required.' },
         { status: 400 }

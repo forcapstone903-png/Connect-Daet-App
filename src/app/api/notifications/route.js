@@ -1,28 +1,16 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getServerSession } from '@/lib/serverAuth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-
-function parseSessionCookie(request) {
-  const rawCookie = request.cookies.get('daet_auth_session')?.value
-  if (!rawCookie) return null
-
-  try {
-    return JSON.parse(decodeURIComponent(rawCookie))
-  } catch (error) {
-    console.error('Invalid daet_auth_session cookie:', error)
-    return null
-  }
-}
 
 export async function GET(request) {
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json({ success: false, message: 'Notification service is not configured.' }, { status: 500 })
   }
 
-  const session = parseSessionCookie(request)
-  const userId = session?.user_id || session?.id || session?.sub || session?.userId
+  const userId = getServerSession(request)?.user_id
 
   if (!userId) {
     return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
@@ -54,8 +42,7 @@ export async function PATCH(request) {
     return NextResponse.json({ success: false, message: 'Notification service is not configured.' }, { status: 500 })
   }
 
-  const session = parseSessionCookie(request)
-  const userId = session?.user_id || session?.id || session?.sub || session?.userId
+  const userId = getServerSession(request)?.user_id
 
   if (!userId) {
     return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
@@ -102,8 +89,7 @@ export async function DELETE(request) {
     return NextResponse.json({ success: false, message: 'Notification service is not configured.' }, { status: 500 })
   }
 
-  const session = parseSessionCookie(request)
-  const userId = session?.user_id || session?.id || session?.sub || session?.userId
+  const userId = getServerSession(request)?.user_id
 
   if (!userId) {
     return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })

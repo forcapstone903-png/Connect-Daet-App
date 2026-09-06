@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getServerSession } from '@/lib/serverAuth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -7,13 +8,26 @@ const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export async function POST(request) {
   try {
+    const userId = getServerSession(request)?.user_id
+    if (!userId) return NextResponse.json({ error: 'User session is required.' }, { status: 401 })
+
     const formData = await request.formData()
     const file = formData.get('file')
-    const bucket = formData.get('bucket') || 'avatars'
-    const folder = formData.get('folder') || 'uploads'
+    const requestedBucket = String(formData.get('bucket') || '')
+    const requestedFolder = String(formData.get('folder') || '')
+    const bucket = requestedBucket === 'profile-media' ? requestedBucket : null
+    const folderType = requestedFolder.startsWith('covers/') ? 'covers' : requestedFolder.startsWith('users/') ? 'users' : null
+    const folder = folderType ? `${folderType}/${userId}` : null
+
+    if (!bucket || !folder) return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
 
     if (!file || typeof file === 'string') {
       return NextResponse.json({ error: 'No file was provided.' }, { status: 400 })
+    }
+
+    const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/quicktime', 'video/webm'])
+    if (!allowedTypes.has(file.type) || file.size > 20 * 1024 * 1024) {
+      return NextResponse.json({ error: 'Unsupported file type or file is too large.' }, { status: 400 })
     }
 
     if (!supabaseUrl || !supabaseAnonKey) {
@@ -39,27 +53,10 @@ export async function POST(request) {
 
     const storage = client.storage
 
-    let { data, error } = await storage.from(bucket).upload(objectPath, blob, {
+    const { data, error } = await storage.from(bucket).upload(objectPath, blob, {
       contentType: file.type,
-      upsert: true,
+      upsert: false,
     })
-
-    if (error) {
-      const bucketNotFound = error.message?.toLowerCase().includes('bucket not found') || error.message?.toLowerCase().includes('not found')
-      if (bucketNotFound && supabaseServiceRoleKey) {
-        const { error: createError } = await storage.createBucket(bucket, { public: true })
-        if (!createError) {
-          const retryResult = await storage.from(bucket).upload(objectPath, blob, {
-            contentType: file.type,
-            upsert: true,
-          })
-          data = retryResult.data
-          error = retryResult.error
-        } else {
-          return NextResponse.json({ error: `Failed to create bucket: ${createError.message}` }, { status: 500 })
-        }
-      }
-    }
 
     if (error) {
       return NextResponse.json({ error: error.message || 'Upload failed.' }, { status: 500 })

@@ -1,25 +1,14 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getServerSession } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-function getSessionUserId(request) {
-  const rawCookie = request.cookies.get('daet_auth_session')?.value
-  if (!rawCookie) return null
-
-  try {
-    const session = JSON.parse(decodeURIComponent(rawCookie))
-    return session?.user_id || session?.id || session?.sub || session?.userId || null
-  } catch {
-    return null
-  }
-}
-
 export async function POST(request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-  const userId = getSessionUserId(request)
+  const userId = getServerSession(request)?.user_id
 
   if (!userId) {
     return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })

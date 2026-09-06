@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { clearAuthCookie } from '@/lib/authCookies'
+import { clearSecureSessionCookie } from '@/lib/serverAuth'
 
 export async function POST(request) {
   try {
@@ -17,6 +18,7 @@ export async function POST(request) {
       maxAge: 0,
       path: '/',
     })
+    clearSecureSessionCookie(response)
 
     return response
   } catch (error) {

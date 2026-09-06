@@ -355,21 +355,33 @@ export default function UserDashboardPage() {
     }
   }
 
-  const handleBookmark = (e, item) => {
+  const handleBookmark = async (e, item) => {
     e.preventDefault()
     e.stopPropagation()
+    if (!userId) return
     const itemKey = `${item.type}-${item.id}`
+    const itemType = item.type === 'post' ? 'user_post' : item.type
     const nextSaved = new Set(savedItems)
 
-    if (nextSaved.has(itemKey)) {
-      nextSaved.delete(itemKey)
-      setToastMessage('Removed from saved items')
-    } else {
-      nextSaved.add(itemKey)
-      setToastMessage('Saved for later!')
+    try {
+      const result = nextSaved.has(itemKey)
+        ? await supabase.from('user_favorites').delete().eq('user_id', userId).eq('item_type', itemType).eq('item_id', item.id)
+        : await supabase.from('user_favorites').upsert({ user_id: userId, item_type: itemType, item_id: item.id }, { onConflict: 'user_id,item_type,item_id' })
+      if (result.error) throw result.error
+
+      if (nextSaved.has(itemKey)) {
+        nextSaved.delete(itemKey)
+        setToastMessage('Removed from saved items')
+      } else {
+        nextSaved.add(itemKey)
+        setToastMessage('Saved for later!')
+      }
+      setSavedItems(nextSaved)
+    } catch (error) {
+      console.error('Save update failed:', error)
+      setToastMessage('Unable to update saved items')
     }
 
-    setSavedItems(nextSaved)
     setTimeout(() => setToastMessage(''), 2500)
   }
 
@@ -610,6 +622,7 @@ export default function UserDashboardPage() {
           ])
 
           if (!isMounted) return
+          setSavedItems(new Set((favoriteResult.data || []).map((favorite) => `${favorite.item_type}-${favorite.item_id}`)))
           setUserSignals({
             activities: activityResult.data || [],
             reactions: reactionResult.data || [],

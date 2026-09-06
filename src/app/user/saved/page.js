@@ -29,7 +29,7 @@ export default function UserSavedPage() {
         }
 
         setAuthChecking(false)
-        await loadSavedItems()
+        await loadSavedItems(activeSession.user.id)
       } catch (err) {
         console.error('Auth error:', err)
         router.push('/login')
@@ -39,16 +39,14 @@ export default function UserSavedPage() {
     checkAuth()
   }, [router])
 
-  const loadSavedItems = async () => {
+  const loadSavedItems = async (userId) => {
     try {
-      // Load saved item keys from localStorage
-      let savedKeys = []
-      try {
-        const raw = JSON.parse(localStorage.getItem('daet_saved_items') || '[]')
-        savedKeys = Array.isArray(raw) ? raw : []
-      } catch {
-        savedKeys = []
-      }
+      const { data: favorites, error: favoritesError } = await supabase
+        .from('user_favorites')
+        .select('item_type, item_id')
+        .eq('user_id', userId)
+      if (favoritesError) throw favoritesError
+      const savedKeys = (favorites || []).map((favorite) => `${favorite.item_type}-${favorite.item_id}`)
 
       if (savedKeys.length === 0) {
         setSavedItems([])
@@ -115,12 +113,15 @@ export default function UserSavedPage() {
   const removeSaved = (e, key) => {
     e.preventDefault()
     e.stopPropagation()
-    try {
-      const raw = JSON.parse(localStorage.getItem('daet_saved_items') || '[]')
-      const next = raw.filter(k => k !== key)
-      localStorage.setItem('daet_saved_items', JSON.stringify(next))
-      setSavedItems(prev => prev.filter(item => `${item.type}-${item.id}` !== key))
-    } catch {}
+    const [type, id] = key.split('-')
+    const itemType = type === 'post' ? 'user_post' : type
+    void supabase.from('user_favorites').delete().eq('item_type', itemType).eq('item_id', id).then(({ error }) => {
+      if (error) {
+        console.error('Saved item removal failed:', error)
+        return
+      }
+      setSavedItems((previous) => previous.filter((item) => `${item.type}-${item.id}` !== key))
+    })
   }
 
   const getTypeIcon = (type) => {

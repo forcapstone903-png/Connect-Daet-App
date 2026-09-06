@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { getAuthCookieFromRequest } from '@/lib/authCookies'
+import { getServerSession } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -64,8 +64,7 @@ export async function GET(request) {
   if (!query) return NextResponse.json({ success: true, users: [] })
 
   try {
-    const session = getAuthCookieFromRequest(request)
-    const viewerId = session?.user_id || session?.id || null
+    const viewerId = getServerSession(request)?.user_id || null
     const [{ data: users, error: usersError }, { data: profiles, error: profilesError }] = await Promise.all([
       adminSupabase
         .from('info_users')

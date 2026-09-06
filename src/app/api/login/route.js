@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 import { maskEmail, sanitizeUserProfileForLog } from '@/lib/safeLogging'
+import { setSecureSessionCookie } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -157,7 +158,7 @@ export async function POST(request) {
     }
 
     // Return success with user data
-    return NextResponse.json({ 
+    const response = NextResponse.json({ 
       success: true,
       message: 'Login successful',
       user: {
@@ -174,6 +175,9 @@ export async function POST(request) {
         expires_at: authData.session?.expires_at,
       }
     })
+
+    setSecureSessionCookie(response, userProfile)
+    return response
     
   } catch (error) {
     console.error('🔴 Login API error:', error)
