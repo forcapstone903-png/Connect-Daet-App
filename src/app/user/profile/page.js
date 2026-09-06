@@ -25,7 +25,7 @@ import {
 import MediaUpload from '@/app/components/MediaUpload'
 import MobileNav from '@/app/components/user/MobileNav'
 import { supabase } from '@/lib/supabase'
-import { getStoredSession } from '@/lib/authCookies'
+import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 
 const STORAGE_KEYS = {
   profilePreferences: 'daet_user_profile_preferences',
@@ -268,7 +268,7 @@ export default function UserProfilePage() {
           full_name: profileData?.full_name || userData?.full_name || fallbackName,
           email: userData?.email || fallbackEmail,
           bio: profileData?.bio || userData?.bio || 'Tell the community what kind of experiences you love most.',
-          avatar_url: profileData?.profile_image_url || userData?.profile_image_url || '',
+          avatar_url: userData?.profile_image_url || profileData?.profile_image_url || '',
           cover_photo_url: profileData?.cover_photo_url || '',
           location: mergedLocation,
           points: userData?.points || 0,
@@ -383,6 +383,7 @@ export default function UserProfilePage() {
         full_name: profileForm.full_name,
         cover_photo_url: profileForm.cover_photo_url,
         bio: profileForm.bio,
+        profile_image_url: profileForm.avatar_url || null,
         location: nextLocation,
         privacy_level: privacyLevel,
         language_preference: languagePreference,
@@ -416,6 +417,11 @@ export default function UserProfilePage() {
       }
 
       setProfile(updatedProfile)
+      updateStoredSession({
+        full_name: updatedProfile.full_name,
+        avatar_url: updatedProfile.avatar_url,
+        profile_image_url: updatedProfile.avatar_url,
+      })
       writeLocalState(STORAGE_KEYS.profilePreferences, {
         privacyLevel,
         languagePreference,

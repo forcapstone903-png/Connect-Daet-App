@@ -1,11 +1,16 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const {
+  POINT_REWARDS,
   getLevelFromPoints,
   getLevelProgress,
   getDailyStreak,
   getRewardBadges,
 } = require('./gamification')
+
+test('comment rewards use fractional points', () => {
+  assert.equal(POINT_REWARDS.COMMENT, 0.01)
+})
 
 test('levels are derived from total points', () => {
   assert.equal(getLevelFromPoints(0), 1)

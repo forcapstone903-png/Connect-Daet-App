@@ -82,3 +82,17 @@ export function getStoredSessionObject() {
     return null
   }
 }
+
+export function updateStoredSession(patch = {}) {
+  const current = getStoredSessionObject() || {}
+  const next = { ...current, ...patch }
+
+  try {
+    sessionStorage.setItem('user_session', JSON.stringify(next))
+  } catch (error) {
+    // ignore storage failures
+  }
+
+  setAuthCookie(next)
+  return next
+}

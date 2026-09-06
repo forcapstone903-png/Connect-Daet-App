@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { getStoredSessionObject } from '@/lib/authCookies'
+import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 import MobileNav from '@/app/components/user/MobileNav'
 import MediaUpload from '@/app/components/MediaUpload'
 
@@ -33,7 +33,7 @@ export default function EditProfilePage() {
         full_name: profileData?.full_name || userData?.full_name || '',
         bio: profileData?.bio || userData?.bio || '',
         location: [profileData?.city, profileData?.country].filter(Boolean).join(', ') || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
-        avatar_url: profileData?.profile_image_url || userData?.profile_image_url || '',
+        avatar_url: userData?.profile_image_url || profileData?.profile_image_url || '',
         cover_photo_url: profileData?.cover_photo_url || '',
       })
       setLoading(false)
@@ -54,6 +54,11 @@ export default function EditProfilePage() {
       return
     }
 
+    updateStoredSession({
+      full_name: form.full_name,
+      avatar_url: form.avatar_url,
+      profile_image_url: form.avatar_url,
+    })
     window.location.assign('/user/profile')
   }
 

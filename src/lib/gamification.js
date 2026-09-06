@@ -1,3 +1,8 @@
+const POINT_REWARDS = Object.freeze({
+  COMMENT: 0.01,
+  APPROVED_POST: 10,
+})
+
 function getLevelFromPoints(points = 0) {
   if (points >= 2500) return 6
   if (points >= 1500) return 5
@@ -69,6 +74,7 @@ function getRewardBadges(points = 0) {
 }
 
 module.exports = {
+  POINT_REWARDS,
   getLevelFromPoints,
   getLevelProgress,
   getDailyStreak,

@@ -22,7 +22,7 @@ export default function AdminSettingsGeneral() {
   const [rewardSettings, setRewardSettings] = useStoredSetting('admin_reward_settings', {
     enable_points: true,
     points_per_post: 10,
-    points_per_comment: 2,
+    points_per_comment: 0.01,
     points_for_profile_complete: 20,
     daily_streak_bonus: 5,
     leaderboard_enabled: true,
@@ -191,7 +191,7 @@ export default function AdminSettingsGeneral() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Points per Comment</label>
-                  <input type="number" value={rewardSettings.points_per_comment} onChange={e => setRewardSettings(p => ({ ...p, points_per_comment: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
+                  <input type="number" min="0" step="0.01" value={rewardSettings.points_per_comment} onChange={e => setRewardSettings(p => ({ ...p, points_per_comment: parseFloat(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Points for Completed Profile</label>

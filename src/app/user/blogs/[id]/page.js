@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
-  ArrowLeft,
   Bookmark,
   ChevronDown,
   Heart,
@@ -756,12 +755,7 @@ export default function BlogDetailPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/user/blogs" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            <ArrowLeft className="h-4 w-4" />
-            Back to Articles
-          </Link>
-
+        <div className="mb-6 flex items-center justify-end">
           <div className="flex items-center gap-2">
             <button type="button" onClick={togglePin} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isPinned ? 'border-amber-200 bg-amber-50 text-amber-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title={isPinned ? 'Unpin article' : 'Pin article'}>
               <Pin className={`h-5 w-5 ${isPinned ? 'fill-current' : ''}`} />
