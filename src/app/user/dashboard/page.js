@@ -148,6 +148,7 @@ export default function UserDashboardPage() {
   const [search, setSearch] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const [recentSearches, setRecentSearches] = useState([])
+  const [profileSearchResults, setProfileSearchResults] = useState([])
   const [activeCategory, setActiveCategory] = useState('all')
   const [error, setError] = useState(null)
 
@@ -190,6 +191,33 @@ export default function UserDashboardPage() {
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
     return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
   }, [])
+
+  useEffect(() => {
+    const normalizedQuery = search.trim()
+    if (normalizedQuery.length < 2) {
+      startTransition(() => setProfileSearchResults([]))
+      return undefined
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search/users?q=${encodeURIComponent(normalizedQuery)}&limit=5`, {
+          credentials: 'same-origin',
+          signal: controller.signal,
+        })
+        const data = await response.json()
+        if (!controller.signal.aborted) setProfileSearchResults(data.success ? data.users || [] : [])
+      } catch (error) {
+        if (error.name !== 'AbortError') setProfileSearchResults([])
+      }
+    }, 300)
+
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+    }
+  }, [search])
 
   useEffect(() => {
     if (!userId) return
@@ -928,6 +956,7 @@ export default function UserDashboardPage() {
                   {(search.trim() ? searchSuggestions : recentSearches).length ? (
                     <div className="space-y-1">{(search.trim() ? searchSuggestions : recentSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setSearch(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`); setSearchFocused(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><Search className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>
                   ) : <p className="px-3 py-2 text-sm text-slate-500">{search.trim() ? 'No suggestions yet.' : 'No recent searches yet.'}</p>}
+                  {search.trim() && profileSearchResults.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>{profileSearchResults.map((person) => <Link key={person.id} href={`/user/profile/${person.id}`} onClick={() => setSearchFocused(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-sky-50"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>{person.mutual_friends?.length > 0 && <span className="shrink-0 text-[10px] font-semibold text-sky-700">{person.mutual_friends.length} mutual</span>}</Link>)}</div>}
                   <Link href="/search" className="mt-1 block border-t border-slate-100 px-3 pt-3 text-xs font-bold text-sky-700 hover:text-sky-800">View search history</Link>
                 </div>
               )}

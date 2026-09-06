@@ -62,7 +62,7 @@ function SearchContent() {
           return
         }
 
-        const [spotsRes, eventsRes, blogsRes, threadsRes, usersRes] = await Promise.all([
+        const [spotsRes, eventsRes, blogsRes, threadsRes, usersResponse] = await Promise.all([
           supabase
             .from('info_tourist_spots')
             .select('*')
@@ -83,15 +83,10 @@ function SearchContent() {
             .select('*')
             .eq('status', 'active')
             .or(`title.ilike.%${q}%,content.ilike.%${q}%`),
-          supabase
-            .from('info_users')
-            .select('id, full_name, profile_image_url, bio, city, country, user_type')
-            .eq('status', 'active')
-            .neq('user_type', 'admin')
-            .or(`full_name.ilike.%${q}%,bio.ilike.%${q}%,city.ilike.%${q}%,country.ilike.%${q}%`),
+          fetch(`/api/search/users?q=${encodeURIComponent(q)}&limit=20`, { credentials: 'same-origin' }).then((response) => response.json()),
         ])
 
-        const users = usersRes.data || []
+        const users = usersResponse.success ? usersResponse.users || [] : []
         const userIds = users.map((user) => user.id).filter(Boolean)
         let userContent = []
         let userComments = []
@@ -367,6 +362,7 @@ function SearchContent() {
                       <div className="min-w-0">
                         <h3 className="truncate text-sm font-bold text-slate-900">{user.full_name || user.email || 'Community member'}</h3>
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{user.bio || [user.city, user.country].filter(Boolean).join(', ') || 'Daet community member'}</p>
+                        {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
                       </div>
                     </Link>
                   ))}
