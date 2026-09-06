@@ -11,6 +11,7 @@ export default function MediaUpload({
   existingMediaUrl,
   mediaType = 'both',
   className = "",
+  previewClassName = "w-32 h-32",
   buttonText = "Upload Media",
   maxSizeMB = 20,
   maxVideoDuration = 30,
@@ -171,7 +172,7 @@ export default function MediaUpload({
           onChange={handleFileSelect}
           className="hidden"
         />
-        {mediaPreview && (
+        {(existingMediaUrl || mediaPreview) && (
           <button
             type="button"
             onClick={removeMedia}
@@ -182,21 +183,21 @@ export default function MediaUpload({
         )}
       </div>
       
-      {mediaPreview && (
+      {(existingMediaUrl || mediaPreview) && (
         <div className="mt-2">
           <div className="relative inline-block">
             {mediaTypeDetected === 'video' ? (
               <video
-                src={mediaPreview}
-                className="w-40 h-32 object-cover rounded-2xl border border-gray-200 shadow-sm"
+                src={existingMediaUrl || mediaPreview}
+                className={`${previewClassName} object-cover rounded-2xl border border-gray-200 shadow-sm`}
                 controls
                 preload="metadata"
               />
             ) : (
               <img
-                src={mediaPreview}
+                src={existingMediaUrl || mediaPreview}
                 alt="Upload preview"
-                className="w-32 h-32 object-cover rounded-2xl border border-gray-200 shadow-sm"
+                className={`${previewClassName} object-cover rounded-2xl border border-gray-200 shadow-sm`}
               />
             )}
             <button

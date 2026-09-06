@@ -11,7 +11,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
   Flame,
@@ -23,6 +23,7 @@ import {
   MapPinned,
   MoreHorizontal,
   MapPin,
+  RefreshCw,
   ShieldCheck,
   Search,
   Settings,
@@ -55,6 +56,23 @@ const TABLES = {
 
 const DASHBOARD_CACHE_TTL_MS = 120000
 const DASHBOARD_CACHE = new Map()
+const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
+const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
+
+function readStoredSet(key) {
+  if (typeof window === 'undefined') return new Set()
+  try {
+    const values = JSON.parse(localStorage.getItem(key) || '[]')
+    return new Set(Array.isArray(values) ? values : [])
+  } catch {
+    return new Set()
+  }
+}
+
+function writeStoredSet(key, values) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(key, JSON.stringify([...values]))
+}
 
 function getDashboardCache(userId) {
   const cacheEntry = DASHBOARD_CACHE.get(userId)
@@ -157,23 +175,36 @@ export default function UserDashboardPage() {
   const [openComments, setOpenComments] = useState(null)
   const [commentCounts, setCommentCounts] = useState({})
   const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
+  const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
   const [openPostMenu, setOpenPostMenu] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
+  const [feedNow, setFeedNow] = useState(() => Date.now())
 
   useEffect(() => {
-    const handleFeedRefresh = () => setFeedRefreshKey((value) => value + 1)
+    const handleFeedRefresh = () => {
+      setFeedNow(Date.now())
+      setFeedRefreshKey((value) => value + 1)
+    }
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
     return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
   }, [])
 
   useEffect(() => {
+    if (!userId) return
+    startTransition(() => {
+      setHiddenPosts(readStoredSet(`${HIDDEN_POSTS_KEY}_${userId}`))
+      setNotInterestedTopics(readStoredSet(`${NOT_INTERESTED_KEY}_${userId}`))
+    })
+  }, [userId])
+
+  useEffect(() => {
     try {
       const storedSearches = JSON.parse(localStorage.getItem('daet_recent_searches') || '[]')
-      setRecentSearches(Array.isArray(storedSearches) ? storedSearches.slice(0, 5) : [])
+      startTransition(() => setRecentSearches(Array.isArray(storedSearches) ? storedSearches.slice(0, 5) : []))
     } catch {
-      setRecentSearches([])
+      startTransition(() => setRecentSearches([]))
     }
   }, [])
 
@@ -374,6 +405,55 @@ export default function UserDashboardPage() {
     }
   }
 
+  const hidePost = (itemKey) => {
+    setHiddenPosts((previous) => {
+      const next = new Set([...previous, itemKey])
+      writeStoredSet(`${HIDDEN_POSTS_KEY}_${userId}`, next)
+      return next
+    })
+    setOpenPostMenu(null)
+    setToastMessage('Post hidden from your feed')
+    setTimeout(() => setToastMessage(''), 2500)
+  }
+
+  const markNotInterested = (item) => {
+    const topicKeys = [
+      item.author?.id ? `author:${item.author.id}` : null,
+      item.category ? `category:${String(item.category).toLowerCase()}` : null,
+    ].filter(Boolean)
+    setNotInterestedTopics((previous) => {
+      const next = new Set([...previous, ...topicKeys])
+      writeStoredSet(`${NOT_INTERESTED_KEY}_${userId}`, next)
+      return next
+    })
+    setOpenPostMenu(null)
+    setToastMessage('We will show fewer posts like this')
+    setTimeout(() => setToastMessage(''), 2500)
+  }
+
+  const copyPostLink = async (item) => {
+    const url = `${window.location.origin}${item.href}`
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+      } else {
+        const textArea = document.createElement('textarea')
+        textArea.value = url
+        textArea.style.position = 'fixed'
+        textArea.style.opacity = '0'
+        document.body.appendChild(textArea)
+        textArea.select()
+        document.execCommand('copy')
+        textArea.remove()
+      }
+      setToastMessage('Post link copied')
+    } catch {
+      setToastMessage('Unable to copy the post link')
+    }
+    setOpenPostMenu(null)
+    setTimeout(() => setToastMessage(''), 2500)
+  }
+
   // Auth check on mount
   useEffect(() => {
     const checkAuth = async () => {
@@ -534,7 +614,7 @@ export default function UserDashboardPage() {
 
       try {
         const cachedDashboard = getDashboardCache(userId)
-        if (cachedDashboard) {
+        if (cachedDashboard && feedRefreshKey === 0) {
           if (!isMounted) return
           setCategories(cachedDashboard.categories || [])
           setAnnouncements(cachedDashboard.announcements || [])
@@ -568,19 +648,19 @@ export default function UserDashboardPage() {
               .select('id, title, excerpt, category, tags, featured_image, published_at, updated_at, views, likes, comments_count, created_by')
               .eq('status', 'published')
               .order('published_at', { ascending: false })
-              .limit(6),
+              .limit(20),
             supabase
               .from(TABLES.EVENTS)
               .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, published_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('start_date', { ascending: true })
-              .limit(6),
+              .limit(20),
             supabase
               .from(TABLES.FORUM_THREADS)
               .select('id, title, content, category_id, reply_count, last_activity_at, created_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('last_activity_at', { ascending: false })
-              .limit(6),
+              .limit(20),
             supabase
               .from('user_follows')
               .select('following_id')
@@ -710,7 +790,12 @@ export default function UserDashboardPage() {
   }
 
   const filteredFeed = useMemo(() => {
-    let result = feed.filter((item) => !hiddenPosts.has(`${item.type}-${item.id}`))
+    let result = feed.filter((item) => {
+      if (hiddenPosts.has(`${item.type}-${item.id}`)) return false
+      if (item.author?.id && notInterestedTopics.has(`author:${item.author.id}`)) return false
+      if (item.category && notInterestedTopics.has(`category:${String(item.category).toLowerCase()}`)) return false
+      return true
+    })
 
     if (activeCategory !== 'all') {
       result = result.filter((item) => {
@@ -771,20 +856,24 @@ export default function UserDashboardPage() {
         const itemKey = `${item.type}-${item.id}`
         const category = String(item.category || '').toLowerCase()
         const itemType = String(item.type || '').toLowerCase()
-        const ageInDays = Math.max(0, (Date.now() - new Date(item.published_at || item.start_date || item.last_activity_at || 0).getTime()) / 86400000)
+        const ageInDays = Math.max(0, (feedNow - new Date(item.published_at || item.start_date || item.last_activity_at || 0).getTime()) / 86400000)
         const recencyScore = Number.isFinite(ageInDays) ? Math.max(0, 8 - ageInDays) : 0
+        const refreshVariation = feedRefreshKey > 0
+          ? ((String(item.id).charCodeAt(0) + feedRefreshKey) % 7) / 100
+          : 0
         const score = recencyScore
           + (categoryWeights.get(category) || 0)
           + (typeWeights.get(itemType) || 0)
           + (interactedIds.has(itemKey) ? 18 : 0)
           + (reactionIds.has(itemKey) ? 22 : 0)
           + (favoriteIds.has(itemKey) ? 20 : 0)
+          + refreshVariation
 
         return { item, index, score }
       })
-      .sort((left, right) => right.score - left.score || left.index - right.index)
+        .sort((left, right) => right.score - left.score || left.index - right.index)
       .map(({ item }) => item)
-  }, [feed, activeCategory, search, userSignals, hiddenPosts])
+      }, [feed, activeCategory, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
 
   if (!authenticated) {
     return (
@@ -891,6 +980,7 @@ export default function UserDashboardPage() {
           <section className="min-w-0 space-y-4">
             <div className="flex items-end justify-between px-1">
               <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} aria-label="Refresh your feed" title="Refresh your feed" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-4 w-4" /></button>
             </div>
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
@@ -961,9 +1051,9 @@ export default function UserDashboardPage() {
                           <div className="relative shrink-0">
                             <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                             {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              <button type="button" onClick={() => { setHiddenPosts((previous) => new Set([...previous, itemKey])); setOpenPostMenu(null) }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
-                              <button type="button" onClick={() => { setHiddenPosts((previous) => new Set([...previous, itemKey])); setOpenPostMenu(null) }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
-                              <button type="button" onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}${item.href}`); setOpenPostMenu(null); setToastMessage('Post link copied') }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
+                              <button type="button" onClick={() => hidePost(itemKey)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
+                              <button type="button" onClick={() => markNotInterested(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
+                              <button type="button" onClick={() => void copyPostLink(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
                             </div>}
                           </div>
                         </div>

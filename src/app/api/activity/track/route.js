@@ -114,15 +114,15 @@ export async function POST(request) {
     const recipientUserIds = new Set()
 
     if (activityType === 'new_post') {
-      const { data: allUsers, error: userLookupError } = await adminSupabase
-        .from('info_users')
-        .select('id, user_type')
+      const { data: followers, error: followerLookupError } = await adminSupabase
+        .from('user_follows')
+        .select('follower_id')
+        .eq('following_id', userId)
 
-      if (!userLookupError && Array.isArray(allUsers)) {
-        allUsers.forEach((person) => {
-          const role = String(person.user_type || '').trim().toLowerCase()
-          if (role !== 'admin') {
-            recipientUserIds.add(person.id)
+      if (!followerLookupError && Array.isArray(followers)) {
+        followers.forEach((follow) => {
+          if (follow.follower_id && follow.follower_id !== userId) {
+            recipientUserIds.add(follow.follower_id)
           }
         })
       }

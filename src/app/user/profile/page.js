@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Bell,
@@ -168,28 +168,32 @@ export default function UserProfilePage() {
       ? `${currentSession.city}, ${currentSession.country}`
       : 'Daet, Camarines Norte'
 
-    setProfileForm((previous) => ({
-      ...previous,
-      full_name: fallbackName,
-      email: fallbackEmail,
-      city: currentSession?.city || '',
-      country: currentSession?.country || '',
-      location: fallbackLocation,
-    }))
+    startTransition(() => {
+      setProfileForm((previous) => ({
+        ...previous,
+        full_name: fallbackName,
+        email: fallbackEmail,
+        city: currentSession?.city || '',
+        country: currentSession?.country || '',
+        location: fallbackLocation,
+      }))
+    })
 
-    setProfile((previous) => ({
-      ...previous,
-      full_name: fallbackName,
-      email: fallbackEmail,
-      location: fallbackLocation,
-      points: currentSession?.points || 0,
-      reputation: currentSession?.reputation || 0,
-      level: currentSession?.level || 1,
-    }))
+    startTransition(() => {
+      setProfile((previous) => ({
+        ...previous,
+        full_name: fallbackName,
+        email: fallbackEmail,
+        location: fallbackLocation,
+        points: currentSession?.points || 0,
+        reputation: currentSession?.reputation || 0,
+        level: currentSession?.level || 1,
+      }))
+    })
 
-    setUserId(fallbackUserId)
+    startTransition(() => setUserId(fallbackUserId))
     if (!fallbackUserId) {
-      setLoading(false)
+      startTransition(() => setLoading(false))
       return
     }
 
@@ -696,6 +700,7 @@ export default function UserProfilePage() {
                         folder={`covers/${userId || 'me'}`}
                         mediaType="image"
                         existingMediaUrl={profileForm.cover_photo_url}
+                        previewClassName="h-32 w-full max-w-lg aspect-[3/1]"
                         buttonText="Upload cover"
                         onUploadComplete={(url) => setProfileForm((previous) => ({ ...previous, cover_photo_url: url }))}
                         onUploadError={(message) => setSaveNotice(message)}
