@@ -12,7 +12,6 @@ export default function MediaUpload({
   mediaType = 'both',
   className = "",
   previewClassName = "w-32 h-32",
-  imagePreset = "default",
   buttonText = "Upload Media",
   maxSizeMB = 20,
   maxVideoDuration = 30,
@@ -38,41 +37,6 @@ export default function MediaUpload({
       };
       video.onerror = () => reject('Unable to read video file');
       video.src = URL.createObjectURL(file);
-    });
-  };
-
-  const prepareImageForUpload = (file) => {
-    if (imagePreset !== 'cover' || !file.type.startsWith('image/')) return Promise.resolve(file);
-
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      const objectUrl = URL.createObjectURL(file);
-      image.onload = () => {
-        const targetWidth = 1200;
-        const targetHeight = 400;
-        const scale = Math.max(targetWidth / image.naturalWidth, targetHeight / image.naturalHeight);
-        const sourceWidth = targetWidth / scale;
-        const sourceHeight = targetHeight / scale;
-        const sourceX = (image.naturalWidth - sourceWidth) / 2;
-        const sourceY = (image.naturalHeight - sourceHeight) / 2;
-        const canvas = document.createElement('canvas');
-        canvas.width = targetWidth;
-        canvas.height = targetHeight;
-        canvas.getContext('2d').drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
-        canvas.toBlob((blob) => {
-          URL.revokeObjectURL(objectUrl);
-          if (!blob) {
-            reject(new Error('Unable to prepare cover image'));
-            return;
-          }
-          resolve(new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg', lastModified: file.lastModified }));
-        }, 'image/jpeg', 0.9);
-      };
-      image.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        reject(new Error('Unable to read cover image'));
-      };
-      image.src = objectUrl;
     });
   };
 
@@ -113,8 +77,6 @@ export default function MediaUpload({
     setUploadProgress(0);
 
     try {
-      const uploadFile = await prepareImageForUpload(file);
-
       // Simulate progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => Math.min(prev + 10, 90));
@@ -122,7 +84,7 @@ export default function MediaUpload({
 
       // Upload via API route
       const formData = new FormData();
-      formData.append('file', uploadFile);
+      formData.append('file', file);
       formData.append('bucket', bucket);
       formData.append('folder', folder);
 

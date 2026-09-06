@@ -34,53 +34,32 @@ export default function PublicProfilePage() {
       setError('')
 
       try {
-        const [{ data: userData, error: userError }, { data: authData }] = await Promise.all([
-          supabase
-            .from('info_users')
-            .select('id, full_name, profile_image_url, bio, city, country, points, level, user_type')
-            .eq('id', profileId)
-            .maybeSingle(),
+        const [profileResponse, { data: authData }] = await Promise.all([
+          fetch(`/api/users/${profileId}`, { credentials: 'same-origin' }),
           supabase.auth.getUser(),
         ])
+        const profileResult = await profileResponse.json()
 
-        if (userError) throw userError
-        if (!userData) {
-          setError('This profile could not be found.')
+        if (!profileResponse.ok || !profileResult.success) {
+          setError(profileResult.message || 'This profile could not be found.')
           return
         }
 
-        const currentViewerId = authData?.user?.id || null
+        const currentViewerId = profileResult.viewer_id || authData?.user?.id || null
+        const content = profileResult.content || {}
         setViewerId(currentViewerId)
-
-        const [{ data: blogRows }, { data: threadRows }, { data: followRow }] = await Promise.all([
-          supabase
-            .from('info_blogs')
-            .select('id, title, excerpt, created_at, published_at, category, slug')
-            .eq('created_by', profileId)
-            .eq('status', 'published')
-            .order('published_at', { ascending: false })
-            .limit(6),
-          supabase
-            .from('forum_threads')
-            .select('id, title, content, created_at, category_id')
-            .eq('created_by', profileId)
-            .eq('status', 'published')
-            .order('created_at', { ascending: false })
-            .limit(6),
-          currentViewerId && currentViewerId !== profileId
-            ? supabase
-                .from('user_follows')
-                .select('id')
-                .eq('follower_id', currentViewerId)
-                .eq('following_id', profileId)
-                .maybeSingle()
-            : Promise.resolve({ data: null }),
-        ])
-
-        setProfile(userData)
-        setIsFollowing(Boolean(followRow))
+        setProfile(profileResult.profile)
+        setIsFollowing(Boolean(profileResult.is_following))
         setPosts([
-          ...(blogRows || []).map((post) => ({
+          ...(content.user_posts || []).map((post) => ({
+            id: post.id,
+            type: 'Post',
+            title: post.title,
+            text: post.content || 'Shared a community post.',
+            date: post.created_at,
+            href: `/user/profile/${profileId}`,
+          })),
+          ...(content.blogs || []).map((post) => ({
             id: post.id,
             type: 'Blog',
             title: post.title,
@@ -88,13 +67,21 @@ export default function PublicProfilePage() {
             date: post.published_at || post.created_at,
             href: post.slug ? `/user/blogs/${post.slug}` : `/user/blogs/${post.id}`,
           })),
-          ...(threadRows || []).map((post) => ({
+          ...(content.threads || []).map((post) => ({
             id: post.id,
             type: 'Forum',
             title: post.title,
             text: post.content || 'Started a community discussion.',
             date: post.created_at,
             href: `/user/forums/${post.id}`,
+          })),
+          ...(content.events || []).map((post) => ({
+            id: post.id,
+            type: 'Event',
+            title: post.title,
+            text: post.description || 'Shared a community event.',
+            date: post.start_date || post.created_at,
+            href: `/user/events/${post.id}`,
           })),
         ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)))
       } catch (loadError) {
@@ -156,7 +143,10 @@ export default function PublicProfilePage() {
         <Link href="/user/dashboard" className="mb-4 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700"><ArrowLeft className="h-4 w-4" />Back to dashboard</Link>
 
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
-          <div className="h-28 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-36" />
+          <div className="relative h-28 overflow-hidden bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-36">
+            {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="absolute inset-0 h-full w-full object-cover" />}
+            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/30 to-transparent" />
+          </div>
           <div className="px-5 pb-5 sm:px-7">
             <div className="-mt-12 flex flex-col gap-4 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
               <div className="flex items-end gap-3">
