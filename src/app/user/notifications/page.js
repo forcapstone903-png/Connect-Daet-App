@@ -56,6 +56,8 @@ export default function UserNotificationsPage() {
   const [priority, setPriority] = useState('all')
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const [retryKey, setRetryKey] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingHistory, setDeletingHistory] = useState(false)
   const [actionNotice, setActionNotice] = useState('')
@@ -64,8 +66,10 @@ export default function UserNotificationsPage() {
 
   useEffect(() => {
     const storedSession = readStoredSession()
-    setSession(storedSession)
-    if (!storedSession) setLoading(false)
+    queueMicrotask(() => {
+      setSession(storedSession)
+      if (!storedSession) setLoading(false)
+    })
   }, [])
 
   useEffect(() => {
@@ -75,6 +79,7 @@ export default function UserNotificationsPage() {
 
     const loadNotifications = async () => {
       try {
+        setLoadError('')
         const response = await fetch('/api/notifications', { method: 'GET', credentials: 'same-origin' })
         const result = await response.json()
 
@@ -85,14 +90,14 @@ export default function UserNotificationsPage() {
         setNotifications(result.notifications || [])
       } catch (error) {
         console.error('Notifications fetch failed:', error)
-        setNotifications([])
+        setLoadError('We could not load your notifications right now. Please try again.')
       } finally {
         setLoading(false)
       }
     }
 
     loadNotifications()
-  }, [userId])
+  }, [userId, retryKey])
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((notification) => {
@@ -302,6 +307,18 @@ export default function UserNotificationsPage() {
 
           {loading ? (
             <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Loading notifications...</div>
+          ) : loadError ? (
+            <div role="alert" className="rounded-[18px] border border-red-200 bg-red-50 p-6 text-center">
+              <p className="text-sm font-semibold text-red-700">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => setRetryKey((value) => value + 1)}
+                className="mt-4 inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                <Bell className="h-4 w-4" />
+                Try again
+              </button>
+            </div>
           ) : filteredNotifications.length ? (
             <div className="space-y-3">
               {filteredNotifications.map((notification) => (

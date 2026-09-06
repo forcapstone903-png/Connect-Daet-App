@@ -9,38 +9,43 @@ export default function UserMessagingPage() {
   const [messages, setMessages] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [recipientQuery, setRecipientQuery] = useState('')
   const [recipient, setRecipient] = useState(null)
   const [recipientResults, setRecipientResults] = useState([])
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
   const [notice, setNotice] = useState('')
+  const [retryKey, setRetryKey] = useState(0)
 
   useEffect(() => {
     let active = true
 
     const loadMessages = async () => {
       try {
+        setLoadError('')
         const response = await fetch('/api/messages', { credentials: 'same-origin' })
         const result = await response.json()
         if (active && response.ok && result.success) setMessages(result.messages || [])
+        else if (active) throw new Error(result.message || 'Unable to load messages')
       } catch (error) {
         console.error('Messages fetch failed:', error)
+        if (active) setLoadError('We could not load your messages right now. Please try again.')
       } finally {
         if (active) setLoading(false)
       }
     }
 
     if (getStoredSession()) loadMessages()
-    else setLoading(false)
+    else queueMicrotask(() => setLoading(false))
 
     return () => { active = false }
-  }, [])
+  }, [retryKey])
 
   useEffect(() => {
     const query = recipientQuery.trim()
     if (query.length < 2) {
-      setRecipientResults([])
+      queueMicrotask(() => setRecipientResults([]))
       return undefined
     }
     const controller = new AbortController()
@@ -123,6 +128,18 @@ export default function UserMessagingPage() {
 
           {loading ? (
             <div className="p-6 text-sm text-slate-500">Loading messages...</div>
+          ) : loadError ? (
+            <div role="alert" className="p-8 text-center">
+              <Mail className="mx-auto h-8 w-8 text-red-300" />
+              <p className="mt-3 text-sm font-semibold text-red-700">{loadError}</p>
+              <button
+                type="button"
+                onClick={() => setRetryKey((value) => value + 1)}
+                className="mt-4 rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                Try again
+              </button>
+            </div>
           ) : filteredMessages.length ? (
             <div className="divide-y divide-slate-100">
               {filteredMessages.map((message) => (

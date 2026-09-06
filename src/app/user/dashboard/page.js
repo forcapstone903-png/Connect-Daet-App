@@ -35,7 +35,8 @@ import {
   Zap,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { clearAuthCookie, getAuthCookieFromDocument } from '@/lib/authCookies'
+import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import { performLogout } from '@/lib/clientLogout'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
@@ -832,9 +833,7 @@ export default function UserDashboardPage() {
 
   const handleLogout = async () => {
     try {
-      sessionStorage.removeItem('user_session')
-      clearAuthCookie()
-      await supabase.auth.signOut()
+      await performLogout()
     } catch (err) {
       console.error('User logout error:', err)
     } finally {

@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 
 const COOKIE_NAME = 'daet_secure_session'
 const SESSION_TTL_SECONDS = 24 * 60 * 60
+const REMEMBER_TTL_SECONDS = 30 * 24 * 60 * 60
 
 function getSigningSecret() {
   return process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() || ''
@@ -11,11 +12,11 @@ function sign(value) {
   return crypto.createHmac('sha256', getSigningSecret()).update(value).digest('base64url')
 }
 
-export function createSecureSessionCookie(user) {
+export function createSecureSessionCookie(user, ttlSeconds = SESSION_TTL_SECONDS) {
   const payload = Buffer.from(JSON.stringify({
     user_id: user.id,
     role: user.user_type || 'tourist',
-    expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+    expires_at: Math.floor(Date.now() / 1000) + ttlSeconds,
   })).toString('base64url')
   return `${payload}.${sign(payload)}`
 }
@@ -41,12 +42,13 @@ export function secureSessionCookieName() {
   return COOKIE_NAME
 }
 
-export function setSecureSessionCookie(response, user) {
-  response.cookies.set(COOKIE_NAME, createSecureSessionCookie(user), {
+export function setSecureSessionCookie(response, user, remember = false) {
+  const ttlSeconds = remember ? REMEMBER_TTL_SECONDS : SESSION_TTL_SECONDS
+  response.cookies.set(COOKIE_NAME, createSecureSessionCookie(user, ttlSeconds), {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge: ttlSeconds,
     path: '/',
   })
 }

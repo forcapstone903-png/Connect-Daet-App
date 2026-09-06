@@ -14,6 +14,8 @@ export default function UserEventsPage() {
   const [events, setEvents] = useState([])
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [loadError, setLoadError] = useState('')
+  const [retryKey, setRetryKey] = useState(0)
 
   const categories = useMemo(() => {
     const catSet = new Set(events.filter(e => e.category).map(e => e.category))
@@ -47,13 +49,14 @@ export default function UserEventsPage() {
         setEvents(data || [])
       } catch (err) {
         console.error('Error loading events:', err)
+        setLoadError('We could not load events right now. Please try again.')
       } finally {
         setLoading(false)
       }
     }
 
     checkAuth()
-  }, [router])
+  }, [router, retryKey])
 
   const filteredEvents = useMemo(() => {
     let result = events
@@ -172,6 +175,18 @@ export default function UserEventsPage() {
                 <div className="mt-2 h-3 w-2/3 rounded bg-slate-200" />
               </div>
             ))}
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="rounded-[20px] border border-red-200 bg-red-50 p-10 text-center">
+            <CalendarDays className="mx-auto mb-3 h-8 w-8 text-red-300" />
+            <p className="text-sm font-semibold text-red-700">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => setRetryKey((value) => value + 1)}
+              className="mt-4 rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+            >
+              Try again
+            </button>
           </div>
         ) : filteredEvents.length === 0 ? (
           <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-10 text-center">

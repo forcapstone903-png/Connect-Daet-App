@@ -31,6 +31,8 @@ function SearchContent() {
   })
   const [activeTab, setActiveTab] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
   const [results, setResults] = useState({
     spots: [],
     events: [],
@@ -53,6 +55,7 @@ function SearchContent() {
   useEffect(() => {
     const loadResults = async () => {
       setLoading(true)
+      setError('')
       try {
         const q = query.trim().toLowerCase()
 
@@ -123,6 +126,7 @@ function SearchContent() {
         })
       } catch (error) {
         console.error('Search failed:', error)
+        setError('We could not complete your search right now. Please check your connection and try again.')
         setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], mentions: [] })
       } finally {
         setLoading(false)
@@ -131,7 +135,7 @@ function SearchContent() {
 
     const debounceTimer = setTimeout(loadResults, 300)
     return () => clearTimeout(debounceTimer)
-  }, [query])
+  }, [query, refreshKey])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -327,6 +331,18 @@ function SearchContent() {
                 <div className="mt-3 h-3 w-full rounded bg-slate-200" />
               </div>
             ))}
+          </div>
+        ) : totalCount === 0 && error ? (
+          <div role="alert" className="rounded-[22px] border border-red-200 bg-red-50 p-8 text-center shadow-sm sm:p-10">
+            <SearchIcon className="mx-auto mb-3 h-10 w-10 text-red-400" />
+            <p className="text-sm font-semibold text-red-700">{error}</p>
+            <button
+              type="button"
+              onClick={() => setRefreshKey((value) => value + 1)}
+              className="mt-4 rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+            >
+              Try again
+            </button>
           </div>
         ) : totalCount === 0 ? (
           <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm sm:p-10">

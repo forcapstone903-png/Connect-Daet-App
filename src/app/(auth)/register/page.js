@@ -258,11 +258,13 @@ export default function RegisterPage() {
             {!success && (
               <form onSubmit={handleRegister} className="space-y-5">
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
+                  <label htmlFor="reg-full_name" className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
                   <input
+                    id="reg-full_name"
                     type="text"
                     name="full_name"
                     required
+                    autoComplete="name"
                     value={formData.full_name}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -271,11 +273,13 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
+                  <label htmlFor="reg-email" className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
                   <input
+                    id="reg-email"
                     type="email"
                     name="email"
                     required
+                    autoComplete="email"
                     value={formData.email}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -284,11 +288,13 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Mobile number</label>
+                  <label htmlFor="reg-mobile_number" className="mb-2 block text-sm font-semibold text-slate-700">Mobile number</label>
                   <input
+                    id="reg-mobile_number"
                     type="tel"
                     name="mobile_number"
                     required
+                    autoComplete="tel"
                     value={formData.mobile_number}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -297,13 +303,15 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+                  <label htmlFor="reg-password" className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
                   <div className="relative">
                     <input
+                      id="reg-password"
                       type={showPassword ? 'text' : 'password'}
                       name="password"
                       required
                       minLength={6}
+                      autoComplete="new-password"
                       value={formData.password}
                       onChange={handlePasswordChange}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -356,12 +364,14 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Confirm password</label>
+                  <label htmlFor="reg-confirm_password" className="mb-2 block text-sm font-semibold text-slate-700">Confirm password</label>
                   <div className="relative">
                     <input
+                      id="reg-confirm_password"
                       type={showConfirmPassword ? 'text' : 'password'}
                       name="confirm_password"
                       required
+                      autoComplete="new-password"
                       value={formData.confirm_password}
                       onChange={handleChange}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -382,8 +392,9 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">I am a...</label>
+                  <label htmlFor="reg-user_type" className="mb-2 block text-sm font-semibold text-slate-700">I am a...</label>
                   <select
+                    id="reg-user_type"
                     name="user_type"
                     value={formData.user_type}
                     onChange={handleChange}

@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
-import { clearAuthCookie } from '@/lib/authCookies'
+import { Menu, X } from 'lucide-react'
+import { performLogout } from '@/lib/clientLogout'
 import { Icon } from './Icon'
 import ConfirmationModal from './ConfirmationModal'
 
@@ -122,6 +123,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
     account: false,
   })
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
 
   const filteredNavigation = navigationHubs.filter((hub) =>
@@ -144,8 +146,9 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
 
   const handleConfirmLogout = async () => {
     setShowLogoutConfirm(false)
-    sessionStorage.removeItem('user_session')
-    clearAuthCookie()
+    // Centralized logout: clears the signed HTTP-only server cookie via
+    // /api/logout, the display-only client cookie, storage, and Supabase.
+    await performLogout()
     if (onLogout) {
       await onLogout()
       return
@@ -156,16 +159,40 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
   const sidebarWidth = isCollapsed ? 'w-20' : 'w-72'
 
   useEffect(() => {
-    try {
-      document.documentElement.style.setProperty('--admin-sidebar-width', isCollapsed ? '5rem' : '18rem')
-    } catch (e) {
-      // ignore in non-DOM environments
+    const applyWidth = () => {
+      const isDesktop = window.innerWidth >= 1024
+      document.documentElement.style.setProperty(
+        '--admin-sidebar-width',
+        isDesktop ? (isCollapsed ? '5rem' : '18rem') : '0rem'
+      )
     }
+    applyWidth()
+    window.addEventListener('resize', applyWidth)
+    return () => window.removeEventListener('resize', applyWidth)
   }, [isCollapsed])
 
   return (
     <>
-      <div className={`fixed left-0 top-0 z-20 flex h-full ${sidebarWidth} flex-col border-r border-slate-200/60 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] transition-all duration-300`}>
+      {/* Mobile hamburger toggle (hidden on desktop) */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-md lg:hidden"
+        aria-label="Open navigation menu"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* Mobile drawer backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-20 bg-black/40 lg:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      <div className={`fixed left-0 top-0 z-30 flex h-full ${sidebarWidth} max-lg:w-72 flex-col border-r border-slate-200/60 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       {/* Header with Logo */}
       <div className="border-b border-slate-200/60 px-4 py-4">
         <div className="flex items-center justify-between">
@@ -186,13 +213,24 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
               </div>
             )}
           </div>
-          <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
-            title={isCollapsed ? 'Expand' : 'Collapse'}
-          >
-            <Icon name={isCollapsed ? 'expand' : 'collapse'} className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 lg:hidden"
+              aria-label="Close navigation menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
+              title={isCollapsed ? 'Expand' : 'Collapse'}
+              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              <Icon name={isCollapsed ? 'expand' : 'collapse'} className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* User Info - Compact */}
@@ -215,6 +253,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
         {/* Dashboard - Direct Link with active state */}
         <Link
           href="/admin/dashboard"
+          onClick={() => setMobileOpen(false)}
           className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200 ${
             isActive('/admin/dashboard')
               ? 'bg-gradient-to-r from-sky-600 to-emerald-500 text-white shadow-lg shadow-sky-500/25'
@@ -280,7 +319,10 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
                       <Link
                         key={item.href}
                         href={item.href}
-                        onClick={() => setExpandedItems((prev) => ({ ...prev, [hub.id]: true }))}
+                        onClick={() => {
+                          setExpandedItems((prev) => ({ ...prev, [hub.id]: true }))
+                          setMobileOpen(false)
+                        }}
                         className={`flex items-center gap-2.5 rounded-lg px-3 py-2 transition-all duration-200 text-sm ${
                           active
                             ? 'bg-gradient-to-r from-sky-600 to-emerald-500 text-white shadow-md shadow-sky-500/20'
@@ -318,6 +360,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
           <>
             <Link
               href="/admin/account"
+              onClick={() => setMobileOpen(false)}
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-600 transition-all hover:bg-slate-50 hover:text-slate-800"
             >
               <Icon name="settings" className="w-5 h-5 flex-shrink-0" />
@@ -333,6 +376,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
           onClick={handleLogoutClick}
           className="flex w-full items-center justify-center gap-2.5 rounded-lg px-3 py-2.5 text-red-600 transition-all hover:bg-red-50 hover:text-red-700 font-medium text-sm"
           title={isCollapsed ? 'Logout' : ''}
+          aria-label="Logout"
         >
           <Icon name="logout" className="w-5 h-5 flex-shrink-0" />
           {!isCollapsed && <span>Logout</span>}

@@ -13,7 +13,8 @@ import MediaUpload from '@/app/components/MediaUpload';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess, canAccessAdminDashboard } from '@/lib/adminRoles'
-import { getStoredSession, clearAuthCookie, getStoredSessionObject } from '@/lib/authCookies';
+import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies';
+import { performLogout } from '@/lib/clientLogout';
 
 // Weather API configuration
 const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
@@ -999,9 +1000,7 @@ export default function AdminDashboard() {
 
   const handleLogout = async () => {
     addNotification('Logged Out', 'You have been logged out successfully.', 'info', null, 0);
-    sessionStorage.removeItem('user_session');
-    clearAuthCookie();
-    await supabase.auth.signOut();
+    await performLogout();
     router.push('/login');
   };
 
@@ -1140,10 +1139,10 @@ export default function AdminDashboard() {
                 </button>
 
                 {showWeatherDetails && (
-                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-lg z-50 border border-gray-200 overflow-hidden">
-                    <div className="bg-blue-600 px-4 py-3 text-white flex justify-between items-center">
+                  <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
+                    <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
                       <div><h3 className="font-bold">Daet Weather Center</h3><p className="text-blue-100 text-xs">Real-time conditions & forecasts</p></div>
-                      <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white"><Icon name="close" className="w-4 h-4" /></button>
+                      <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white" aria-label="Close weather details"><Icon name="close" className="w-4 h-4" /></button>
                     </div>
                     
                     {weather.alert && (
@@ -1233,7 +1232,7 @@ export default function AdminDashboard() {
                 </button>
                 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-2xl shadow-lg z-50 border border-gray-200 overflow-hidden">
+                  <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
                     <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b">
                       <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm"><Icon name="notifications" /> Notifications</h3>
                       <div className="flex gap-3">

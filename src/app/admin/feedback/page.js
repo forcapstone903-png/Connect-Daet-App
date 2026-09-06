@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession, clearAuthCookie } from '@/lib/authCookies';
+import { getStoredSession } from '@/lib/authCookies';
+import { performLogout } from '@/lib/clientLogout';
 
 const DEFAULT_STATUSES = ['open', 'in_progress', 'answered', 'closed', 'cancelled'];
 const DEFAULT_CATEGORIES = ['general', 'booking', 'safety', 'feedback', 'report', 'other'];
@@ -190,9 +191,7 @@ export default function FeedbackAndComplaintPage() {
   };
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('user_session');
-    clearAuthCookie();
-    await supabase.auth.signOut();
+    await performLogout();
     router.push('/login');
   };
 

@@ -60,6 +60,7 @@ export default function VisitorPage() {
   const [calendarMonth, setCalendarMonth] = useState(() => new Date())
   const [heroCounts, setHeroCounts] = useState({ beaches: null, stories: null, guides: null })
   const [loading, setLoading] = useState(true)
+  const [contentError, setContentError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [activeSection, setActiveSection] = useState('discover')
@@ -117,6 +118,7 @@ export default function VisitorPage() {
     const loadContent = async () => {
       try {
         setLoading(true)
+        setContentError('')
 
         // Fetch tourist spots
         const { data: spots, error: spotsError } = await supabase
@@ -220,6 +222,7 @@ export default function VisitorPage() {
 
       } catch (error) {
         console.error('Visitor page content load failed:', error)
+        setContentError('Some content could not be loaded. Check your connection and refresh the page.')
       } finally {
         setLoading(false)
       }
@@ -498,6 +501,25 @@ export default function VisitorPage() {
               </div>
             )}
           </header>
+
+          {contentError && (
+            <div
+              role="alert"
+              className="mb-6 flex items-start gap-3 rounded-2xl border border-red-300/40 bg-red-950/60 px-4 py-3 text-sm text-red-100 backdrop-blur-sm"
+            >
+              <div className="flex-1">
+                <p className="font-semibold text-red-50">Something went wrong</p>
+                <p className="mt-0.5 text-xs text-red-200">{contentError}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="flex-shrink-0 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+              >
+                Refresh
+              </button>
+            </div>
+          )}
 
           {/* Hero Content */}
           <div className="grid gap-5 lg:grid-cols-[1.18fr_0.82fr] lg:items-end lg:gap-10 xl:gap-12">

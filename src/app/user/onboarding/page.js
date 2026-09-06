@@ -37,16 +37,28 @@ export default function OnboardingPage() {
         return
       }
 
-      const [{ data: categoryRows }, { data: placeRows }, { data: peopleRows }] = await Promise.all([
-        supabase.from('system_categories').select('id, name, icon_emoji').eq('is_active', true).order('sort_order').limit(12),
-        supabase.from('info_tourist_spots').select('id, name, category, location, featured_image').eq('status', 'active').order('rating', { ascending: false }).limit(12),
-        supabase.from('info_users').select('id, full_name, profile_image_url, user_type').neq('id', id).eq('status', 'active').limit(8),
-      ])
+      try {
+        const [{ data: categoryRows, error: categoryError }, { data: placeRows, error: placeError }, { data: peopleRows, error: peopleError }] = await Promise.all([
+          supabase.from('system_categories').select('id, name, icon_emoji').eq('is_active', true).order('sort_order').limit(12),
+          supabase.from('info_tourist_spots').select('id, name, category, location, featured_image').eq('status', 'active').order('rating', { ascending: false }).limit(12),
+          supabase.from('info_users').select('id, full_name, profile_image_url, user_type').neq('id', id).eq('status', 'active').limit(8),
+        ])
 
-      setTopics((categoryRows || []).length ? categoryRows : FALLBACK_TOPICS.map((name) => ({ id: name, name, icon_emoji: '' })))
-      setPlaces((placeRows || []).length ? placeRows : FALLBACK_PLACES.map((name) => ({ id: name, name })))
-      setPeople((peopleRows || []).filter((person) => person.user_type !== 'admin'))
-      setLoading(false)
+        if (categoryError) console.error('Onboarding categories fetch failed:', categoryError)
+        if (placeError) console.error('Onboarding places fetch failed:', placeError)
+        if (peopleError) console.error('Onboarding people fetch failed:', peopleError)
+
+        setTopics((categoryRows || []).length ? categoryRows : FALLBACK_TOPICS.map((name) => ({ id: name, name, icon_emoji: '' })))
+        setPlaces((placeRows || []).length ? placeRows : FALLBACK_PLACES.map((name) => ({ id: name, name })))
+        setPeople((peopleRows || []).filter((person) => person.user_type !== 'admin'))
+      } catch (loadError) {
+        console.error('Onboarding options load failed:', loadError)
+        setError('We could not load your welcome setup. Showing default options instead — you can change these later.')
+        setTopics(FALLBACK_TOPICS.map((name) => ({ id: name, name, icon_emoji: '' })))
+        setPlaces(FALLBACK_PLACES.map((name) => ({ id: name, name })))
+      } finally {
+        setLoading(false)
+      }
     }
 
     void loadOptions()

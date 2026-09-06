@@ -15,6 +15,7 @@ function LoginContent() {
   const [message, setMessage] = useState('')
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
+  const [rememberMe, setRememberMe] = useState(false)
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -59,6 +60,7 @@ function LoginContent() {
         body: JSON.stringify({
           email: formData.email,
           password: formData.password,
+          rememberMe,
         }),
       })
 
@@ -92,19 +94,22 @@ function LoginContent() {
       }
 
       sessionStorage.setItem('user_session', JSON.stringify(sessionData))
-      setAuthCookie(sessionData, 1)
+      setAuthCookie(sessionData, rememberMe ? 30 : 1)
 
-      const rememberCheckbox = document.getElementById('remember')
+      // Remembered sessions are persisted server-side via the HTTP-only
+      // `daet_secure_session` cookie (see /api/login). The localStorage entry
+      // below is only a convenience reminder for the "welcome back" banner; it
+      // is no longer used to restore authentication.
       const rememberMeKey = 'daet_remember_me_session'
-      const rememberSession = {
-        userId: user.id,
-        email: user.email,
-        userName: user.full_name,
-        token: `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
-        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-      }
 
-      if (rememberCheckbox && rememberCheckbox.checked) {
+      if (rememberMe) {
+        const rememberSession = {
+          userId: user.id,
+          email: user.email,
+          userName: user.full_name,
+          token: `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
+          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        }
         localStorage.setItem(rememberMeKey, JSON.stringify(rememberSession))
         localStorage.setItem('remembered_email', formData.email)
       } else {
@@ -234,12 +239,14 @@ function LoginContent() {
 
               <form onSubmit={handleLogin} className="space-y-5">
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
+                  <label htmlFor="login-email" className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
                   <input
                     suppressHydrationWarning
+                    id="login-email"
                     type="email"
                     name="email"
                     required
+                    autoComplete="email"
                     value={formData.email}
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -248,12 +255,14 @@ function LoginContent() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
+                  <label htmlFor="login-password" className="mb-2 block text-sm font-semibold text-slate-700">Password</label>
                   <div className="relative">
                     <input
+                      id="login-password"
                       type={showPassword ? 'text' : 'password'}
                       name="password"
                       required
+                      autoComplete="current-password"
                       value={formData.password}
                       onChange={handleChange}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
@@ -271,8 +280,8 @@ function LoginContent() {
                 </div>
 
                 <div className="flex items-center justify-between gap-3 pt-1">
-                  <label className="flex items-center gap-2 text-sm text-slate-600">
-                    <input type="checkbox" id="remember" className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                  <label htmlFor="remember" className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                    <input type="checkbox" id="remember" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
                     Remember me
                   </label>
 
@@ -293,7 +302,7 @@ function LoginContent() {
 
               <div className="mt-6 space-y-2 text-center text-sm text-slate-600">
                 <div>
-                  Don't have an account?{' '}
+                  Don&apos;t have an account?{' '}
                   <Link href="/register" className="font-semibold text-sky-700 transition hover:text-sky-800">
                     Sign up here
                   </Link>

@@ -6,7 +6,8 @@ import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession, clearAuthCookie } from '@/lib/authCookies';
+import { getStoredSession } from '@/lib/authCookies';
+import { performLogout } from '@/lib/clientLogout';
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
@@ -158,9 +159,7 @@ export default function AnalyticsAndReportsPage() {
   };
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('user_session');
-    clearAuthCookie();
-    await supabase.auth.signOut();
+    await performLogout();
     router.push('/login');
   };
 

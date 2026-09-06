@@ -16,7 +16,7 @@ export async function POST(request) {
     
     // Parse request body
     const body = await request.json()
-    const { email, password } = body
+    const { email, password, rememberMe } = body
     
     if (!email || !password) {
       return NextResponse.json(
@@ -176,7 +176,7 @@ export async function POST(request) {
       }
     })
 
-    setSecureSessionCookie(response, userProfile)
+    setSecureSessionCookie(response, userProfile, rememberMe === true)
     return response
     
   } catch (error) {

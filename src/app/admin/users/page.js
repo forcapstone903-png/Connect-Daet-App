@@ -7,7 +7,8 @@ import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession, clearAuthCookie } from '@/lib/authCookies';
+import { getStoredSession } from '@/lib/authCookies';
+import { performLogout } from '@/lib/clientLogout';
 
 // Lookup lists (populated from DB where available)
 // Defaults provided as fallbacks
@@ -512,9 +513,7 @@ export default function ManageUsersPage() {
   };
 
   const handleLogout = async () => {
-    sessionStorage.removeItem('user_session');
-    clearAuthCookie();
-    await supabase.auth.signOut();
+    await performLogout();
     router.push('/login');
   };
 

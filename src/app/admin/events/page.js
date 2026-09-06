@@ -841,7 +841,7 @@ export default function AdminEventsPage() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
-      <AdminSidebar user={user} roleLabel="Events Manager" onLogout={async () => { await supabase.auth.signOut(); }} />
+      <AdminSidebar user={user} roleLabel="Events Manager" />
 
       <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
         {/* Header */}

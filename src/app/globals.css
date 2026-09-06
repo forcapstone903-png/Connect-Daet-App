@@ -14,8 +14,8 @@ html, body {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: 'Inter', Arial, Helvetica, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -37,7 +37,7 @@ body {
   max-width: 100%;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -80,6 +80,12 @@ select {
   width: 100%;
   max-width: 100%;
   overflow: hidden;
+}
+
+/* Consistent visible focus for keyboard users on any interactive element. */
+:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
 }
 
 .feed-media {
@@ -131,13 +137,14 @@ select {
   background: rgba(14, 165, 233, 0.2);
 }
 
-/* ── Fix: Force readable text on all form elements ── */
+/* ── Base readable text for native form elements (no !important so
+      component-level and theme styles can override these defaults) ── */
 input,
 select,
 textarea {
-  color: #111827 !important;
-  background-color: #ffffff !important;
-  opacity: 1 !important;
+  color: #111827;
+  background-color: #ffffff;
+  opacity: 1;
 }
 
 input[type="password"]::-ms-reveal,
@@ -151,8 +158,8 @@ input[type="password"]::-webkit-textfield-decoration-container {
 
 input::placeholder,
 textarea::placeholder {
-  color: #9ca3af !important;
-  opacity: 1 !important;
+  color: #9ca3af;
+  opacity: 1;
 }
 
 /* Fix native date/time/calendar pickers */
@@ -226,23 +233,21 @@ select option {
    Targets all pages: smartphones, tablets, and desktop
    ══════════════════════════════════════════════════════════ */
 
-/* 1. Prevent horizontal scrolling / content overflow everywhere */
+/* 1. Prevent page-level horizontal scrolling (kept on html/body only so that
+      dropdowns, popovers, and modals inside scrolling containers aren't clipped;
+      wide tables use .table-responsive for horizontal scrolling). */
 html,
-body,
-main,
-#__next {
-  overflow-x: clip;
+body {
+  overflow-x: hidden;
   max-width: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
 }
 
-body > main,
-body > main > * {
+main {
   width: 100%;
   max-width: 100%;
-  overflow-x: clip;
 }
 
 /* 2. Responsive media and rich content — never wider than the screen */
@@ -355,23 +360,7 @@ textarea {
 }
 
 @media (max-width: 640px) {
-  html,
-  body,
-  main,
-  #__next {
-    overflow-x: clip;
-  }
-
-  body > main {
-    min-width: 0;
-  }
-
-  [class*="mx-auto"][class*="max-w-"] {
-    width: 100% !important;
-    max-width: 100% !important;
-  }
-
-  [class*="rounded-"] {
+  body {
     min-width: 0;
   }
 }

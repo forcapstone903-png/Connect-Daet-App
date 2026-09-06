@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import publicRoutes from './lib/publicRoutes'
-
-const AUTH_COOKIE = 'daet_auth_session'
+import { getServerSession } from './lib/serverAuth'
 
 // Routes that already-authenticated users should never sit on. Sitting on these
 // was the source of the flicker/glitch: pages like /visitor pushed an authed
@@ -21,19 +20,12 @@ export function proxy(request) {
   const { pathname } = request.nextUrl
   const normalizedPathname = pathname.replace(/\/+$/, '') || '/'
 
-  // Parse the persistent auth cookie once.
-  let session = null
-  const cookieValue = request.cookies.get(AUTH_COOKIE)?.value
-  if (cookieValue) {
-    try {
-      session = JSON.parse(decodeURIComponent(cookieValue))
-    } catch (error) {
-      session = null
-    }
-  }
-
-  const loggedIn = Boolean(session && session.logged_in === true)
-  const role = String(session?.role || '').trim().toLowerCase()
+  // Authorization is based on the signed, HTTP-only server session cookie.
+  // The client-facing `daet_auth_session` cookie is treated as display-only
+  // state and is never trusted for access control, since it can be forged.
+  const serverSession = getServerSession(request)
+  const loggedIn = Boolean(serverSession && serverSession.user_id)
+  const role = String(serverSession?.role || '').trim().toLowerCase()
   const isAdmin = loggedIn && role === 'admin'
 
   // Logged-in users go straight to their dashboard instead of a landing/auth page.
@@ -53,7 +45,7 @@ export function proxy(request) {
     return NextResponse.next()
   }
 
-  // Everything else requires a valid session cookie.
+  // Everything else requires a valid server session.
   if (!loggedIn) {
     const loginUrl = new URL('/login', request.url)
     loginUrl.searchParams.set('message', 'Please sign in to continue.')
