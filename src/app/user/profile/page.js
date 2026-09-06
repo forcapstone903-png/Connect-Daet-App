@@ -543,6 +543,22 @@ export default function UserProfilePage() {
           </div>
 
           <div className="p-4 sm:p-6">
+            <section className="mb-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-black text-slate-900">Followers</h2>
+                  <span className="text-xs font-semibold text-slate-500">{followers.length}</span>
+                </div>
+                {followers.length ? <div className="space-y-2">{followers.map((person) => <Link key={person.id} href={`/user/profile/${person.id}`} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></Link>)}</div> : <p className="text-sm text-slate-500">No followers yet.</p>}
+              </div>
+              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-black text-slate-900">Following</h2>
+                  <span className="text-xs font-semibold text-slate-500">{following.length}</span>
+                </div>
+                {following.length ? <div className="space-y-2">{following.map((person) => <Link key={person.id} href={`/user/profile/${person.id}`} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></Link>)}</div> : <p className="text-sm text-slate-500">Not following anyone yet.</p>}
+              </div>
+            </section>
             <section className="mb-5 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-3 flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>

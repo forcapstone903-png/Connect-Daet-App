@@ -205,6 +205,7 @@ export default function AdminDashboard() {
         ticket_price: eventData.is_free ? null : (eventData.ticket_price ? parseFloat(eventData.ticket_price) : null),
         max_attendees: eventData.max_attendees ? parseInt(eventData.max_attendees) : null,
         organizer: eventData.organizer || 'Daet Tourism Office',
+        created_by: user?.id || null,
         status: eventData.status || 'published',
           featured_image: eventData.imageUrl || null,
           images: eventData.imageUrl ? [eventData.imageUrl] : [],

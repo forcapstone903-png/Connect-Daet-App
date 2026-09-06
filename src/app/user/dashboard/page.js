@@ -38,6 +38,7 @@ import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
+import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
 
@@ -134,6 +135,7 @@ export default function UserDashboardPage() {
   const [authError, setAuthError] = useState(null)
   const [userId, setUserId] = useState(null)
   const [userName, setUserName] = useState('Traveler')
+  const [userAvatarUrl, setUserAvatarUrl] = useState('')
 
   // Data state
   const [feed, setFeed] = useState([])
@@ -224,6 +226,26 @@ export default function UserDashboardPage() {
       setHiddenPosts(readStoredSet(`${HIDDEN_POSTS_KEY}_${userId}`))
       setNotInterestedTopics(readStoredSet(`${NOT_INTERESTED_KEY}_${userId}`))
     })
+  }, [userId])
+
+  useEffect(() => {
+    if (!userId) return
+
+    let isMounted = true
+    const loadFollowedPeople = async () => {
+      const { data, error } = await supabase
+        .from('user_follows')
+        .select('following_id')
+        .eq('follower_id', userId)
+
+      if (!isMounted || error) return
+      setFollowedSuggestions(new Set((data || []).map((row) => row.following_id).filter(Boolean)))
+    }
+
+    void loadFollowedPeople()
+    return () => {
+      isMounted = false
+    }
   }, [userId])
 
   useEffect(() => {
@@ -431,7 +453,7 @@ export default function UserDashboardPage() {
   }, [feed, search])
 
   const suggestions = useMemo(() => {
-    const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId)
+    const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId && !followedSuggestions.has(item.author.id))
     const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
     const suggestedLocations = [...new Set(feed.map((item) => item.location).filter(Boolean))].slice(0, 4)
     const suggestedContent = feed.filter((item) => item.type === 'blog' || item.type === 'forum').slice(0, 2)
@@ -441,7 +463,7 @@ export default function UserDashboardPage() {
       suggestedContent,
       suggestedLocations,
     }
-  }, [feed, userId])
+  }, [feed, userId, followedSuggestions])
 
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
@@ -531,6 +553,13 @@ export default function UserDashboardPage() {
         setUserId(sessionUserId)
         setUserName(sessionUserName)
         setAuthenticated(true)
+
+        const { data: currentUserProfile } = await supabase
+          .from(TABLES.USERS)
+          .select('profile_image_url')
+          .eq('id', sessionUserId)
+          .maybeSingle()
+        setUserAvatarUrl(currentUserProfile?.profile_image_url || activeSession.user.user_metadata?.avatar_url || '')
 
         // Track page visit (async - don't block render)
         void (async () => {
@@ -987,7 +1016,7 @@ export default function UserDashboardPage() {
 
             <div className="flex items-center gap-2">
               <Link href="/user/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white transition hover:bg-sky-800">
-                {getInitials(userName)}
+                {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
               </Link>
               <div className="relative">
                 <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
@@ -1013,7 +1042,7 @@ export default function UserDashboardPage() {
 
         <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-sky-700 text-sm font-bold text-white">{getInitials(userName)}</div>
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
             <Link href="/user/blogs/new" className="flex min-h-11 flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-sky-300">
               Share something with Daet...
             </Link>
@@ -1074,8 +1103,9 @@ export default function UserDashboardPage() {
                 {filteredFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
-                  const author = item.author
-                  const authorName = author?.full_name || (item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' ? 'Event organizer' : 'Daet storyteller')
+                  const author = item.author || (item.type === 'event' ? { full_name: item.organizer || '', user_type: 'admin' } : null)
+                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' ? 'Administrator' : 'Daet storyteller')
+                  const authorRoleLabel = getAuthorRoleLabel(author || {})
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
@@ -1092,6 +1122,7 @@ export default function UserDashboardPage() {
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
                               <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700">{authorName}</Link>
+                              {authorRoleLabel && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">{authorRoleLabel}</span>}
                               {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
                               <span className="text-slate-400">·</span>
                               <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>

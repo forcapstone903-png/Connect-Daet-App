@@ -6,10 +6,13 @@ import { useRouter } from 'next/navigation'
 import { Search, ArrowRight, MapPin, Sparkles, Plane, Newspaper, Menu, X, Star, Calendar, ChevronLeft, ChevronRight, Megaphone, MessageCircle, Heart, Clock, Lock, ThumbsUp, Bookmark, Reply, PhoneCall, Radio } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
+import { isVisitorVisibleContent } from '@/lib/visitorContentFilter'
 import bagasbasImage from '../assets/images/bagasbasbeach.webp'
 import morgaImage from '../assets/images/morga.jpg'
 import ElevatedTownPlazaImage from '../assets/images/elevated-town-plaza.jpg'
 import Daet from '../assets/images/daet.jpg'
+
+const MAX_VISITOR_ITEMS = 3
 
 const heroCarouselSlides = [
   {
@@ -126,10 +129,10 @@ export default function VisitorPage() {
           .select('*')
           .eq('status', 'active')
           .order('rating', { ascending: false })
-          .limit(6)
+          .limit(9)
 
         if (!spotsError && spots?.length) {
-          setPopularSpots(spots)
+          setPopularSpots(spots.slice(0, MAX_VISITOR_ITEMS))
           const uniqueCategories = ['All', ...new Set(spots.map(spot => spot.category).filter(Boolean))]
           setCategories(uniqueCategories)
         }
@@ -137,25 +140,47 @@ export default function VisitorPage() {
         // Fetch blogs
         const { data: blogs, error: blogsError } = await supabase
           .from('info_blogs')
-          .select('id, title, excerpt, featured_image, category, created_at, views, likes, comments_count, slug')
+          .select('id, title, excerpt, featured_image, category, created_at, views, likes, comments_count, shares_count, bookmarks_count, slug, created_by')
           .eq('status', 'published')
           .order('published_at', { ascending: false })
-          .limit(3)
+          .limit(12)
 
         if (!blogsError && blogs?.length) {
-          setTrendingBlogs(blogs)
+          const authorIds = [...new Set((blogs || []).map((blog) => blog.created_by).filter(Boolean))]
+          let authorTypes = {}
+          if (authorIds.length) {
+            const { data: authorRows } = await supabase.from('info_users').select('id, user_type').in('id', authorIds)
+            authorTypes = Object.fromEntries((authorRows || []).map((author) => [author.id, author.user_type]))
+          }
+
+          const visibleBlogs = (blogs || []).filter((blog) => {
+            const authorType = String(authorTypes[blog.created_by] || '').trim().toLowerCase()
+            return isVisitorVisibleContent({ ...blog, author_type: authorType }, { authorType })
+          }).slice(0, MAX_VISITOR_ITEMS)
+          setTrendingBlogs(visibleBlogs)
         }
 
         // Fetch forum threads
         const { data: threads, error: threadsError } = await supabase
           .from('forum_threads')
-          .select('id, title, content, reply_count, created_at, last_activity_at, created_by, category_id')
+          .select('id, title, content, reply_count, created_at, last_activity_at, created_by, category_id, views, likes, shares_count, comments_count, bookmarks_count')
           .eq('status', 'published')
           .order('last_activity_at', { ascending: false })
-          .limit(3)
+          .limit(12)
 
         if (!threadsError && threads?.length) {
-          setForumThreads(threads)
+          const authorIds = [...new Set((threads || []).map((thread) => thread.created_by).filter(Boolean))]
+          let authorTypes = {}
+          if (authorIds.length) {
+            const { data: authorRows } = await supabase.from('info_users').select('id, user_type').in('id', authorIds)
+            authorTypes = Object.fromEntries((authorRows || []).map((author) => [author.id, author.user_type]))
+          }
+
+          const visibleThreads = (threads || []).filter((thread) => {
+            const authorType = String(authorTypes[thread.created_by] || '').trim().toLowerCase()
+            return isVisitorVisibleContent({ ...thread, author_type: authorType }, { authorType })
+          }).slice(0, MAX_VISITOR_ITEMS)
+          setForumThreads(visibleThreads)
         }
 
         // Fetch featured events
@@ -165,7 +190,7 @@ export default function VisitorPage() {
           .eq('status', 'published')
           .eq('featured', true)
           .order('start_date', { ascending: true })
-          .limit(3)
+          .limit(MAX_VISITOR_ITEMS)
 
         if (!eventsError && events?.length) {
           setFeaturedEvents(events)
@@ -181,7 +206,7 @@ export default function VisitorPage() {
           .limit(12)
 
         if (!upcomingError) {
-          setUpcomingEvents(upcoming || [])
+          setUpcomingEvents((upcoming || []).slice(0, MAX_VISITOR_ITEMS))
         }
 
         const { data: noticeData, error: noticeError } = await supabase
@@ -191,7 +216,7 @@ export default function VisitorPage() {
           .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
           .order('priority', { ascending: false })
           .order('published_at', { ascending: false })
-          .limit(4)
+          .limit(MAX_VISITOR_ITEMS)
 
         if (!noticeError) {
           setAnnouncements(noticeData || [])
@@ -756,13 +781,33 @@ export default function VisitorPage() {
                   <button type="button" onClick={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label="Next month"><ChevronRight className="h-4 w-4" /></button>
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-7 gap-0.5 text-center text-[9px] font-bold uppercase tracking-wide text-slate-400 sm:gap-2 sm:text-[10px]">
+              <div className="mt-5 grid grid-cols-7 gap-1 text-center text-[9px] font-bold uppercase tracking-wide text-slate-400 sm:gap-2 sm:text-[10px]">
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span key={day} className="py-2">{day}</span>)}
                 {calendarDays.map((day, index) => {
                   const dayEvents = eventsForDay(day)
-                  return <div key={day ? day.toISOString() : `blank-${index}`} className={`min-h-12 rounded-lg border p-0.5 text-left sm:min-h-16 sm:rounded-xl sm:p-1 ${day ? 'border-slate-100 bg-slate-50' : 'border-transparent bg-transparent'}`}>
-                    {day && <><span className="text-[10px] font-bold text-slate-700 sm:text-xs">{day.getDate()}</span><div className="mt-1 space-y-1">{dayEvents.slice(0, 2).map((event) => <Link key={event.id} href={`/events/${event.id}`} className="block truncate rounded bg-sky-100 px-0.5 py-0.5 text-[8px] font-bold text-sky-800 hover:bg-sky-200 sm:px-1 sm:text-[9px]">{event.title}</Link>)}</div></>}
-                  </div>
+                  return (
+                    <div
+                      key={day ? day.toISOString() : `blank-${index}`}
+                      className={`h-24 overflow-hidden rounded-lg border p-1 text-left sm:h-28 sm:rounded-xl sm:p-1.5 ${day ? 'border-slate-100 bg-slate-50' : 'border-transparent bg-transparent'}`}
+                    >
+                      {day && (
+                        <>
+                          <span className="mb-1 block text-[10px] font-bold text-slate-700 sm:text-xs">{day.getDate()}</span>
+                          <div className="space-y-1">
+                            {dayEvents.slice(0, 2).map((event) => (
+                              <Link
+                                key={event.id}
+                                href={`/events/${event.id}`}
+                                className="block truncate rounded bg-sky-100 px-1 py-0.5 text-[8px] font-bold text-sky-800 hover:bg-sky-200 sm:px-1 sm:text-[9px]"
+                              >
+                                {event.title}
+                              </Link>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
                 })}
               </div>
               {upcomingEvents.length === 0 && <p className="mt-4 rounded-xl bg-slate-50 p-3 text-center text-xs text-slate-500">No upcoming events have been published yet.</p>}

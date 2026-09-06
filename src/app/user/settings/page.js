@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, Bell, Check, Globe, Lock, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -15,6 +16,7 @@ const defaultPreferences = {
 }
 
 export default function UserSettingsPage() {
+  const router = useRouter()
   const [preferences, setPreferences] = useState(() => {
     if (typeof window === 'undefined') return defaultPreferences
     try {
@@ -29,30 +31,42 @@ export default function UserSettingsPage() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    void supabase.auth.getSession().then(async ({ data }) => {
-      const id = data.session?.user?.id
-      if (!id) return
+    const verifySession = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      const id = session?.user?.id
+      if (!id) {
+        router.replace('/login')
+        return
+      }
+
       setUserId(id)
       const { data: profile } = await supabase.from('profiles').select('notification_preferences').eq('user_id', id).maybeSingle()
       if (profile?.notification_preferences) setPreferences((previous) => ({ ...previous, ...profile.notification_preferences }))
-    })
-  }, [])
+    }
+
+    void verifySession()
+  }, [router])
 
   const savePreferences = async () => {
     setSaving(true)
+    setSaved(false)
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ notificationPrefs: preferences }))
-      if (userId) {
-        const { error } = await supabase.from('profiles').upsert({ user_id: userId, notification_preferences: preferences, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
-        if (error) throw error
+      if (!userId) {
+        throw new Error('You must be logged in to save your preferences.')
       }
+
+      const { error } = await supabase.from('profiles').upsert({ user_id: userId, notification_preferences: preferences, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+      if (error) throw error
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ notificationPrefs: preferences }))
       setSaved(true)
-    } catch {
+    } catch (error) {
+      console.error('Preferences save failed:', error)
       setSaved(false)
     } finally {
       setSaving(false)
+      window.setTimeout(() => setSaved(false), 2200)
     }
-    window.setTimeout(() => setSaved(false), 2200)
   }
 
   return (
@@ -79,7 +93,7 @@ export default function UserSettingsPage() {
         </section>
 
         <section className="mt-4 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm"><Bell className="h-4 w-4 text-sky-600" /><p className="mt-3 text-sm font-bold text-slate-900">Notifications</p><p className="mt-1 text-xs leading-5 text-slate-500">Control community and announcement alerts.</p></div>
+          <div className="rounded-[18px] border border-slate-200 bg-white p-4 text-slate-600 shadow-sm opacity-70"><Bell className="h-4 w-4 text-sky-600" /><p className="mt-3 text-sm font-bold text-slate-900">Notifications</p><p className="mt-1 text-xs leading-5 text-slate-500">Control community and announcement alerts.</p></div>
           <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm"><Lock className="h-4 w-4 text-emerald-600" /><p className="mt-3 text-sm font-bold text-slate-900">Privacy</p><p className="mt-1 text-xs leading-5 text-slate-500">Manage visibility from your profile editor.</p><Link href="/user/profile#privacy" className="mt-2 inline-block text-xs font-bold text-sky-700">Open privacy</Link></div>
           <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm"><Globe className="h-4 w-4 text-amber-600" /><p className="mt-3 text-sm font-bold text-slate-900">Profile</p><p className="mt-1 text-xs leading-5 text-slate-500">Update your public identity and bio.</p><Link href="/user/profile/edit" className="mt-2 inline-block text-xs font-bold text-sky-700">Edit profile</Link></div>
         </section>

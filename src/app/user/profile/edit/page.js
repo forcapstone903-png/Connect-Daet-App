@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 import MediaUpload from '@/app/components/MediaUpload'
 
 export default function EditProfilePage() {
+  const router = useRouter()
   const [userId, setUserId] = useState('')
   const [form, setForm] = useState({ full_name: '', bio: '', location: '', avatar_url: '', cover_photo_url: '' })
   const [loading, setLoading] = useState(true)
@@ -20,6 +22,7 @@ export default function EditProfilePage() {
       const id = stored?.user_id || stored?.id || ''
       setUserId(id)
       if (!id) {
+        router.replace('/login')
         setLoading(false)
         return
       }
@@ -42,27 +45,45 @@ export default function EditProfilePage() {
   }, [])
 
   const saveProfile = async () => {
-    if (!userId) return
-    setSaving(true)
-    setNotice('')
-    const locationParts = form.location.split(',').map((part) => part.trim()).filter(Boolean)
-    const city = locationParts[0] || ''
-    const country = locationParts.slice(1).join(', ')
-    const updatedAt = new Date().toISOString()
-    const { error: userError } = await supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, city, country, profile_image_url: form.avatar_url || null, updated_at: updatedAt }).eq('id', userId)
-    const { error: profileError } = await supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, city, country, location: form.location.trim() || null, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: updatedAt }, { onConflict: 'user_id' })
-    setSaving(false)
-    if (userError || profileError) {
-      setNotice(userError?.message || profileError?.message || 'Unable to update your profile.')
+    if (!userId) {
+      setNotice('Please log in to update your profile.')
       return
     }
 
-    updateStoredSession({
-      full_name: form.full_name,
-      avatar_url: form.avatar_url,
-      profile_image_url: form.avatar_url,
-    })
-    window.location.assign('/user/profile')
+    setSaving(true)
+    setNotice('')
+    const trimmedLocation = form.location.trim()
+    const locationParts = trimmedLocation ? trimmedLocation.split(',').map((part) => part.trim()).filter(Boolean) : []
+    const city = locationParts[0] || ''
+    const country = locationParts.slice(1).join(', ')
+    const updatedAt = new Date().toISOString()
+
+    try {
+      const [{ error: userError }, { error: profileError }] = await Promise.all([
+        supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, city, country, profile_image_url: form.avatar_url || null, updated_at: updatedAt }).eq('id', userId),
+        supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, city, country, location: trimmedLocation || null, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: updatedAt }, { onConflict: 'user_id' }),
+      ])
+
+      if (userError || profileError) {
+        throw userError || profileError
+      }
+
+      updateStoredSession({
+        full_name: form.full_name,
+        avatar_url: form.avatar_url,
+        profile_image_url: form.avatar_url,
+        city,
+        country,
+      })
+      setNotice('Profile updated successfully.')
+      window.setTimeout(() => {
+        window.location.assign('/user/profile')
+      }, 300)
+    } catch (error) {
+      setNotice(error?.message || 'Unable to update your profile.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-sm text-slate-500">Loading profile...</main>
@@ -93,7 +114,7 @@ export default function EditProfilePage() {
                 <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Cover photo</span>{form.cover_photo_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" existingMediaUrl={form.cover_photo_url} previewClassName="h-32 w-full aspect-[3/1]" buttonText="Add / change cover" maxSizeMB={8} onUploadComplete={(url) => setForm((previous) => ({ ...previous, cover_photo_url: url || '' }))} onUploadError={setNotice} /></div>
               </div>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Display name</span><input value={form.full_name} onChange={(event) => setForm((previous) => ({ ...previous, full_name: event.target.value }))} placeholder="Your name" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
-              <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Location</span><input value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} placeholder="Daet, Camarines Norte" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
+              <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Location</span><input value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} placeholder="Daet, Camarines Norte, Philippines" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Bio</span><textarea rows={6} value={form.bio} onChange={(event) => setForm((previous) => ({ ...previous, bio: event.target.value }))} placeholder="Share what kind of places, stories, or experiences you love." className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /><span className="mt-1 block text-right text-[11px] text-slate-400">{form.bio.length} characters</span></label>
             </div>
 

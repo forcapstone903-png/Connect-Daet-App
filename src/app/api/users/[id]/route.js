@@ -56,7 +56,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
 
-    const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }] = await Promise.all([
+    const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: followRows }] = await Promise.all([
       adminSupabase
         .from('info_user_posts')
         .select('id, user_id, title, content, created_at, updated_at')
@@ -85,12 +85,26 @@ export async function GET(request, { params }) {
         .eq('status', 'published')
         .order('start_date', { ascending: false })
         .limit(20),
+      adminSupabase
+        .from('user_follows')
+        .select('follower_id, following_id')
+        .or(`follower_id.eq.${profileId},following_id.eq.${profileId}`),
     ])
+
+    const relatedIds = [...new Set((followRows || []).flatMap((row) => [row.follower_id, row.following_id]).filter((id) => id && id !== profileId))]
+    const { data: relatedUsers } = relatedIds.length
+      ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url, user_type').in('id', relatedIds)
+      : { data: [] }
+    const relatedUsersById = new Map((relatedUsers || []).map((user) => [user.id, user]))
+    const followers = (followRows || []).filter((row) => row.following_id === profileId).map((row) => relatedUsersById.get(row.follower_id) || { id: row.follower_id, full_name: 'Community member' })
+    const following = (followRows || []).filter((row) => row.follower_id === profileId).map((row) => relatedUsersById.get(row.following_id) || { id: row.following_id, full_name: 'Community member' })
 
     return NextResponse.json({
       success: true,
       viewer_id: viewerId,
       is_following: Boolean(followRow),
+      followers,
+      following,
       profile: {
         ...userData,
         full_name: profileData?.full_name || userData.full_name,

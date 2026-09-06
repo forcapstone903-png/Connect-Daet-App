@@ -90,7 +90,7 @@ export default function UserMessagingPage() {
   const filteredMessages = useMemo(() => {
     const query = search.trim().toLowerCase()
     if (!query) return messages
-    return messages.filter((message) => `${message.title} ${message.message}`.toLowerCase().includes(query))
+    return messages.filter((message) => `${message.title || ''} ${message.body || ''}`.toLowerCase().includes(query))
   }, [messages, search])
 
   return (
