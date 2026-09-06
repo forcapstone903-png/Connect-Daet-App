@@ -39,7 +39,7 @@ function countCommentLikes(comment) {
 
 const INITIAL_VISIBLE_COMMENTS = 3
 
-export default function Comments({ contentType, contentId, userId, contentTitle, onPinChange, sortBy = 'relevant' }) {
+export default function Comments({ contentType, contentId, userId, contentTitle, onPinChange, sortBy = 'relevant', compact = false }) {
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -109,7 +109,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
   const totalCommentCount = comments.length
   const totalReplyCount = comments.filter((comment) => comment.parent_id).length
   const totalLikeCount = comments.reduce((sum, comment) => sum + countCommentLikes(comment), 0)
-  const visibleThreads = showAllComments ? threads : threads.slice(0, INITIAL_VISIBLE_COMMENTS)
+  const visibleThreads = showAllComments ? threads : threads.slice(0, compact ? 2 : INITIAL_VISIBLE_COMMENTS)
 
   const handleEditComment = async (commentId) => {
     const trimmed = editedCommentText.trim()
@@ -328,7 +328,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                       type="button"
                       onClick={() => handleEditComment(comment.id)}
                       disabled={!editedCommentText.trim()}
-                      className="rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="rounded-full bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Save
                     </button>
@@ -342,7 +342,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
                   >
                     <Heart className="h-3.5 w-3.5" />
                     {likeCount > 0 ? `${likeCount} like${likeCount === 1 ? '' : 's'}` : 'Like'}
@@ -361,7 +361,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
 
                       setReplyTo(replyTo === comment.id ? null : comment.id)
                     }}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
                   >
                     <CornerDownRight className="h-3.5 w-3.5" />
                     {replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
@@ -399,7 +399,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                   type="button"
                   onClick={() => handleSubmit()}
                   disabled={submitting || !body.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-sky-700 disabled:opacity-50"
                 >
                   <SendHorizontal className="h-3.5 w-3.5" />
                   {submitting ? 'Posting...' : 'Reply'}
@@ -419,17 +419,17 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
   }
 
   return (
-    <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div className={compact ? 'mt-3 border-t border-slate-100 pt-3' : 'rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
+      <div className={`${compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
         <div>
-          <h3 className="flex items-center gap-2 text-base font-bold text-slate-900">
+          <h3 className={`flex items-center gap-2 font-bold text-slate-900 ${compact ? 'text-xs' : 'text-base'}`}>
             <MessageSquare className="h-4 w-4 text-sky-600" />
-            Comments
+            {compact ? `${totalCommentCount} ${totalCommentCount === 1 ? 'comment' : 'comments'}` : 'Comments'}
           </h3>
-          <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>
+          {!compact && <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>}
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:justify-end">
+        {!compact && <div className="flex w-full flex-wrap items-center gap-1 sm:w-auto sm:justify-end">
           <SortDesc className="h-3.5 w-3.5 text-slate-400" />
           {['relevant', 'newest', 'oldest', 'most_liked'].map((mode) => (
             <button
@@ -443,10 +443,10 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
               {mode.replace('_', ' ')}
             </button>
           ))}
-        </div>
+        </div>}
       </div>
 
-      <div className="mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm">
+      <div className={`${compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm">
             {currentUser?.profile_image_url ? (
@@ -461,7 +461,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Write a comment…"
-              rows={2}
+                  rows={compact ? 1 : 2}
               className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
             />
 
@@ -489,7 +489,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting || !body.trim()}
-                className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <SendHorizontal className="h-3.5 w-3.5" />
                 {submitting ? 'Posting...' : 'Comment'}
@@ -535,14 +535,14 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
             {visibleThreads.map((comment) => renderComment(comment))}
           </div>
         </div>
-      ) : (
+      ) : !compact ? (
         <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
           <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />
           <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
         </div>
-      )}
+      ) : null}
 
-      {threads.length > INITIAL_VISIBLE_COMMENTS && (
+      {!compact && threads.length > INITIAL_VISIBLE_COMMENTS && (
         <div className="mt-4 flex justify-center">
           <button
             type="button"

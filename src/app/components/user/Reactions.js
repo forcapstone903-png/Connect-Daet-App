@@ -13,7 +13,7 @@ const REACTION_TYPES = [
   { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
 
-export default function Reactions({ contentType, contentId, userId, onReact, compact = false, label, contentTitle = '' }) {
+export default function Reactions({ contentType, contentId, userId, onReact, compact = false, label, contentTitle = '', fullWidth = false }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -142,14 +142,16 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   const activeReactionMeta = REACTION_TYPES.find((r) => r.type === userReaction)
 
   return (
-    <div className="flex min-w-0 items-center gap-2">
+    <div className="flex w-full min-w-0 items-center gap-2">
       {/* Primary reaction button */}
-      <div className="relative" ref={pickerRef}>
+      <div className="relative w-full" ref={pickerRef}>
         <button
           type="button"
           onClick={() => setShowPicker((v) => !v)}
           disabled={loading}
-          className={`inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition sm:min-h-0 ${
+          aria-label={userReaction ? `${activeReactionMeta?.label || 'Reaction'} reaction, ${totalCount} total` : `React to this post, ${totalCount} total`}
+          title="React to this post"
+          className={`inline-flex h-9 max-w-full items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition ${fullWidth ? 'w-full justify-center' : ''} ${
             activeReactionMeta
               ? `${activeReactionMeta.bg} ${activeReactionMeta.color}`
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'

@@ -4,14 +4,13 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
   Bell,
-  Bookmark,
   Briefcase,
   Camera,
   Check,
-  ChevronRight,
   FileText,
   Globe,
   MapPin,
+  Menu,
   MessageSquareText,
   MoreHorizontal,
   PencilLine,
@@ -98,7 +97,7 @@ function getBadgeTone(name) {
   const palette = {
     'Travel Starter': 'bg-amber-50 text-amber-700 border-amber-200',
     'Local Insider': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    'Content Creator': 'bg-violet-50 text-violet-700 border-violet-200',
+    'Content Creator': 'bg-sky-50 text-sky-700 border-sky-200',
     'Forum Mentor': 'bg-cyan-50 text-cyan-700 border-cyan-200',
     'Event Explorer': 'bg-pink-50 text-pink-700 border-pink-200',
     default: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -112,7 +111,6 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saveNotice, setSaveNotice] = useState('')
   const [userId, setUserId] = useState('')
-  const [activeTab, setActiveTab] = useState('posts')
   const [showMenu, setShowMenu] = useState(false)
   const [profileForm, setProfileForm] = useState({
     full_name: 'Traveler',
@@ -210,7 +208,7 @@ export default function UserProfilePage() {
 
     const loadProfile = async () => {
       try {
-        const [{ data: userData }, { data: profileData }, { data: followRows }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }] = await Promise.all([
+        const [{ data: userData }, { data: profileData }, { data: followRows }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, email, full_name, profile_image_url, bio, city, country, points, reputation, level, created_at, user_type')
@@ -246,6 +244,12 @@ export default function UserProfilePage() {
             .select('*')
             .eq('created_by', fallbackUserId)
             .order('created_at', { ascending: false }),
+          supabase
+            .from('info_events')
+            .select('*')
+            .eq('created_by', fallbackUserId)
+            .eq('status', 'published')
+            .order('start_date', { ascending: false }),
         ])
 
         const relatedIds = Array.from(
@@ -295,7 +299,9 @@ export default function UserProfilePage() {
             created_at: blog.published_at || blog.created_at,
             category: blog.category || 'Story',
             href: blog.slug ? `/user/blogs/${blog.slug}` : `/user/blogs/${blog.id}`,
-            accent: 'bg-violet-100 text-violet-700',
+            media: blog.featured_image || '',
+            pinned: Boolean(blog.is_pinned || blog.pinned),
+            accent: 'bg-sky-100 text-sky-700',
           })),
           ...(threadsData || []).map((thread) => ({
             id: thread.id,
@@ -305,7 +311,21 @@ export default function UserProfilePage() {
             created_at: thread.created_at,
             category: thread.tags?.[0] || 'Community',
             href: `/user/forums/${thread.id}`,
+            media: '',
+            pinned: Boolean(thread.is_pinned || thread.pinned),
             accent: 'bg-cyan-100 text-cyan-700',
+          })),
+          ...(eventsData || []).map((event) => ({
+            id: event.id,
+            type: 'Event',
+            title: event.title || 'Community event',
+            content: event.description || 'Shared an upcoming event.',
+            created_at: event.start_date || event.created_at,
+            category: event.category || 'Event',
+            href: `/user/events/${event.id}`,
+            media: event.featured_image || (Array.isArray(event.images) ? event.images[0] : '') || '',
+            pinned: Boolean(event.is_pinned || event.pinned),
+            accent: 'bg-amber-100 text-amber-700',
           })),
         ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
@@ -357,24 +377,8 @@ export default function UserProfilePage() {
   }, [])
 
   const levelName = useMemo(() => getLevelName(profile.points || stats.points || 0), [profile.points, stats.points])
-  const dailyChallenge = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
-    const completedActivity = activityLog.some((activity) => {
-      const activityText = `${activity.type} ${activity.description}`.toLowerCase()
-      return activity.created_at?.slice(0, 10) === today && /bagasbas|photo|#bagasbas/.test(activityText)
-    })
-    const completedPost = userPosts.some((post) => {
-      const postText = `${post.title} ${post.content} ${post.category}`.toLowerCase()
-      return post.created_at?.slice(0, 10) === today && /bagasbas|#bagasbas/.test(postText)
-    })
-
-    return { completed: completedActivity || completedPost }
-  }, [activityLog, userPosts])
-  const visiblePosts = useMemo(() => {
-    if (activeTab === 'blogs') return userPosts.filter((post) => post.type === 'Blog')
-    if (activeTab === 'forums') return userPosts.filter((post) => post.type === 'Forum')
-    return userPosts
-  }, [activeTab, userPosts])
+  const visiblePosts = userPosts
+  const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
 
   const handleSaveProfile = async () => {
     if (!userId) {
@@ -441,44 +445,58 @@ export default function UserProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
       <MobileNav />
-      <div className="mx-auto max-w-[1240px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-        <header className="mb-5 rounded-[24px] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <Link href="/user/dashboard" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
-                <ChevronRight className="h-4 w-4 rotate-180" />
-              </Link>
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-400">Profile</p>
-                <h1 className="text-lg font-bold text-slate-900">My profile</h1>
-              </div>
-            </div>
+      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
+        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:rounded-[26px]">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2">
+              <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
+                <span className="block truncate text-[10px] font-medium text-slate-500 sm:text-xs">My profile</span>
+              </span>
+            </Link>
 
-            <div className="flex items-center justify-end gap-2">
-              <Link href="/user/notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
-                <Bell className="h-4 w-4" />
+            <div className="flex items-center gap-2">
+              <Link href="/user/rewards" aria-label="Open rewards" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600 transition hover:bg-amber-200">
+                <Star className="h-5 w-5" />
               </Link>
-              <Link href="/user/profile" className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-1.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-cyan-500 text-sm font-bold text-white">
-                  {getInitials(profile.full_name)}
-                </div>
-              </Link>
+              <div className="relative">
+                <button type="button" onClick={() => setShowMenu((value) => !value)} aria-label="Open profile settings" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
+                  <Menu className="h-5 w-5" />
+                </button>
+                {showMenu && (
+                  <div className="absolute right-0 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                    <Link href="/user/profile/edit" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      <PencilLine className="h-4 w-4" /> Edit profile
+                    </Link>
+                    <Link href="/user/settings" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      <Settings className="h-4 w-4" /> Settings
+                    </Link>
+                    <Link href="/user/profile#privacy" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      <ShieldCheck className="h-4 w-4" /> Privacy
+                    </Link>
+                    <Link href="/user/notifications" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      <Bell className="h-4 w-4" /> Notifications
+                    </Link>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-sm">
-          <div className="relative h-60 bg-gradient-to-r from-violet-600 via-indigo-600 to-cyan-500 sm:h-72">
+        <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.06)]">
+          <div className="relative h-56 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-64">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
             {profile.cover_photo_url ? (
               <img src={profile.cover_photo_url} alt="Cover photo" className="absolute inset-0 h-full w-full object-cover" />
             ) : null}
 
-            <div className="absolute inset-x-0 bottom-0 p-4 sm:p-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div className="flex items-end gap-3">
+            <div className="absolute inset-x-0 bottom-0 p-3 sm:p-6">
+              <div className="flex min-w-0 items-end justify-between gap-3">
+                <div className="flex min-w-0 items-end gap-3">
                   <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-200 text-2xl font-bold text-slate-700 shadow-lg sm:h-24 sm:w-24">
                     {profile.avatar_url ? (
                       <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full object-cover" />
@@ -490,9 +508,9 @@ export default function UserProfilePage() {
                     </div>
                   </div>
 
-                  <div className="pb-2 text-white">
+                  <div className="min-w-0 pb-2 text-white">
                     <div className="flex items-center flex-wrap gap-2">
-                      <h2 className="text-2xl font-bold sm:text-3xl">{profile.full_name}</h2>
+                      <h2 className="min-w-0 break-words text-lg font-black sm:text-2xl">{profile.full_name}</h2>
                       <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-50">
                         <Sparkles className="h-3 w-3" />
                         {levelName}
@@ -507,79 +525,36 @@ export default function UserProfilePage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById('profile-editor')?.scrollIntoView({ behavior: 'smooth' })}
-                    className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-100"
-                  >
+                <div className="flex shrink-0 items-center gap-1.5 pb-1">
+                  <Link href="/user/profile/edit" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-100 sm:h-auto sm:px-4 sm:py-2.5 sm:text-sm">
                     <PencilLine className="h-4 w-4" />
-                    Edit profile
-                  </button>
+                    <span className="hidden sm:inline">Edit profile</span>
+                  </Link>
 
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setShowMenu((value) => !value)}
-                      className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-sm hover:bg-white/15"
-                      aria-label="Profile actions"
-                    >
-                      <MoreHorizontal className="h-5 w-5" />
-                    </button>
+                  <Link href="/user/settings" aria-label="Open profile settings" className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-sm hover:bg-white/15 sm:h-10 sm:w-10">
+                    <MoreHorizontal className="h-5 w-5" />
+                  </Link>
 
-                    {showMenu && (
-                      <div className="absolute right-0 top-12 z-10 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                        <button type="button" onClick={() => { document.getElementById('profile-editor')?.scrollIntoView({ behavior: 'smooth' }); setShowMenu(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                          <PencilLine className="h-4 w-4" /> Edit profile
-                        </button>
-                        <Link href="/user/profile#settings" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                          <Settings className="h-4 w-4" /> Settings
-                        </Link>
-                        <Link href="/user/profile#privacy" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                          <ShieldCheck className="h-4 w-4" /> Privacy
-                        </Link>
-                        <Link href="/user/notifications" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                          <Bell className="h-4 w-4" /> Notifications
-                        </Link>
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="grid gap-4 border-b border-slate-200 bg-slate-50 px-4 py-4 sm:grid-cols-2 xl:grid-cols-4 xl:px-6">
-            {[
-              { label: 'Posts', value: stats.posts, icon: FileText },
-              { label: 'Followers', value: stats.followers, icon: Users },
-              { label: 'Following', value: stats.following, icon: Bookmark },
-              { label: 'Badges', value: badges.length, icon: Star },
-            ].map(({ label, value, icon: Icon }) => (
-              <div key={label} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">{label}</p>
-                    <p className="mt-3 text-2xl font-bold text-slate-900">{value}</p>
-                  </div>
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
-                    <Icon className="h-5 w-5" />
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-3 border-b border-slate-200 bg-white text-center">
+            <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="text-[11px] text-slate-500">Posts</p></div>
+            <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="text-[11px] text-slate-500">Followers</p></div>
+            <div className="px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></div>
           </div>
 
-          <div className="grid gap-6 p-4 xl:grid-cols-[0.92fr_1.08fr] xl:p-6">
-            <aside className="space-y-6">
-              <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex items-center justify-between">
+          <div className="p-4 sm:p-6">
+            <section className="mb-5 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-3 flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
-                  <span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700">{levelName}</span>
-                </div>
-                <p className="text-sm leading-7 text-slate-700">{profile.bio}</p>
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{levelName}</span>
+              </div>
+              <p className="max-w-3xl text-sm leading-6 text-slate-700">{profile.bio}</p>
 
-                <div className="mt-4 space-y-3 text-sm text-slate-600">
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-slate-600">
                   <div className="flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-slate-400" />
                     <span>{profile.location}</span>
@@ -592,105 +567,16 @@ export default function UserProfilePage() {
                     <Briefcase className="h-4 w-4 text-slate-400" />
                     <span>{profile.points || 0} points</span>
                   </div>
-                </div>
               </div>
 
-              <div className="lg:hidden rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_14px_35px_rgba(15,23,42,0.16)]">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-200">Your rhythm</p>
-                  <Sparkles className="h-4 w-4 text-amber-300" />
-                </div>
-                <p className="mt-3 text-3xl font-black">{profile.points || stats.points || 0}<span className="ml-1 text-sm font-semibold text-sky-200">pts</span></p>
-                <p className="mt-1 text-xs text-slate-200">Level {profile.level || 1} · {levelName}</p>
-                <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-slate-300">
-                  <span>Keep exploring Daet</span>
-                  <Link href="/user/rewards" className="font-bold text-amber-300 hover:text-amber-200">View rewards</Link>
-                </div>
-              </div>
+            </section>
 
-              <div className="lg:hidden rounded-[24px] border border-amber-200 bg-amber-50 p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">Daily challenge</p>
-                    <h3 className="mt-1 text-lg font-black text-slate-900">Bagasbas storyteller</h3>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${dailyChallenge.completed ? 'bg-emerald-100 text-emerald-700' : 'bg-white text-amber-700'}`}>
-                    {dailyChallenge.completed ? 'Unlocked' : '0 / 1'}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm leading-6 text-slate-700">Post a photo from Bagasbas Beach and include <span className="font-bold text-sky-700">#bagasbas</span> to earn a community achievement.</p>
-                {dailyChallenge.completed ? (
-                  <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-emerald-700"><Check className="h-4 w-4" /> Achievement unlocked for today</div>
-                ) : (
-                  <Link href="/user/blogs/new" className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-600"><Camera className="h-4 w-4" /> Share your Bagasbas moment</Link>
-                )}
-              </div>
-
-              <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Badges</p>
-                    <h3 className="mt-1 text-lg font-bold text-slate-900">Recognition</h3>
-                  </div>
-                  <Star className="h-4 w-4 text-amber-500" />
-                </div>
-
-                {badges.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {badges.map((badge, index) => (
-                      <div key={badge.id || index} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${getBadgeTone(badge.badge_name)}`}>
-                        <Star className="h-3.5 w-3.5" />
-                        {badge.badge_name}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                    Earn your first badge by sharing a blog or joining community discussions.
-                  </div>
-                )}
-              </div>
-
-              <div id="settings" className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <Settings className="h-4 w-4 text-slate-700" />
-                  <h3 className="text-lg font-bold text-slate-900">Preferences</h3>
-                </div>
-
-                <div className="space-y-3">
-                  {Object.entries(notificationPrefs).map(([key, value]) => (
-                    <label key={key} className="flex items-center justify-between rounded-[14px] border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
-                      <span className="capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                      <input
-                        type="checkbox"
-                        checked={value}
-                        onChange={() => setNotificationPrefs((previous) => ({ ...previous, [key]: !previous[key] }))}
-                        className="h-4 w-4 accent-violet-600"
-                      />
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </aside>
+            {pinnedPosts.length > 0 && <section className="mb-5 rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="rounded-xl bg-white/80 p-3 hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
 
             <section className="space-y-6">
-              <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap gap-2">
-                    {['posts', 'blogs', 'forums', 'badges'].map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setActiveTab(tab)}
-                        className={`rounded-full px-3.5 py-2 text-sm font-semibold capitalize transition ${
-                          activeTab === tab ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
-                      >
-                        {tab}
-                      </button>
-                    ))}
-                  </div>
-
+                  <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
                   <div className="flex items-center gap-2">
                     <Link href="/user/blogs/new" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
                       <FileText className="h-4 w-4" /> Write blog
@@ -701,31 +587,9 @@ export default function UserProfilePage() {
                   </div>
                 </div>
 
-                {activeTab === 'badges' ? (
-                  <div className="space-y-3">
-                    {badges.length ? badges.map((badge, index) => (
-                      <div key={badge.id || index} className="flex items-center justify-between rounded-[18px] border border-slate-200 bg-slate-50 p-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-                            <Star className="h-4 w-4" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{badge.badge_name}</p>
-                            <p className="text-xs text-slate-500">Awarded on {formatDate(badge.awarded_at)}</p>
-                          </div>
-                        </div>
-                        <Check className="h-4 w-4 text-emerald-500" />
-                      </div>
-                    )) : (
-                      <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                        Your achievement badges will appear here once you earn them.
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-4">
+                <div className="space-y-4">
                     {visiblePosts.length ? visiblePosts.map((post) => (
-                      <div key={`${post.type}-${post.id}`} className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                      <div key={`${post.type}-${post.id}`} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-sky-200 hover:shadow-md">
                         <div className="mb-3 flex items-start justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${post.accent}`}>
@@ -736,28 +600,27 @@ export default function UserProfilePage() {
                           <span className="text-xs text-slate-500">{formatDate(post.created_at)}</span>
                         </div>
 
-                        <h3 className="text-lg font-bold text-slate-900">{post.title}</h3>
-                        <p className="mt-3 text-sm leading-7 text-slate-600">{post.content}</p>
+                        <h3 className="text-base font-bold leading-6 text-slate-900">{post.title}</h3>
+                        <p className="mt-2 text-[13px] leading-6 text-slate-600">{post.content}</p>
 
                         <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
                           <div className="flex items-center gap-3 text-xs text-slate-500">
                             <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{post.type === 'Blog' ? 'Story' : 'Community'}</span>
                           </div>
-                          <Link href={post.href} className="text-sm font-semibold text-violet-700">View post</Link>
+                          <Link href={post.href} className="text-sm font-semibold text-sky-700">View post</Link>
                         </div>
                       </div>
                     )) : (
                       <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-                        You haven’t shared any {activeTab === 'posts' ? 'posts' : activeTab} yet.
+                        You haven’t shared anything yet.
                       </div>
                     )}
-                  </div>
-                )}
+                </div>
               </div>
 
-              <div id="profile-editor" className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div id="profile-editor" className="hidden rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
-                  <Wand2 className="h-4 w-4 text-violet-600" />
+                  <Wand2 className="h-4 w-4 text-sky-600" />
                   <h3 className="text-lg font-bold text-slate-900">Edit profile</h3>
                 </div>
 
@@ -767,7 +630,7 @@ export default function UserProfilePage() {
                     <input
                       value={profileForm.full_name}
                       onChange={(event) => setProfileForm((previous) => ({ ...previous, full_name: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-300 focus:bg-white"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                     />
                   </div>
 
@@ -786,7 +649,7 @@ export default function UserProfilePage() {
                       <input
                         value={profileForm.city}
                         onChange={(event) => setProfileForm((previous) => ({ ...previous, city: event.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-300 focus:bg-white"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                       />
                     </div>
                     <div>
@@ -794,7 +657,7 @@ export default function UserProfilePage() {
                       <input
                         value={profileForm.country}
                         onChange={(event) => setProfileForm((previous) => ({ ...previous, country: event.target.value }))}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-300 focus:bg-white"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                       />
                     </div>
                   </div>
@@ -804,7 +667,7 @@ export default function UserProfilePage() {
                     <input
                       value={profileForm.location}
                       onChange={(event) => setProfileForm((previous) => ({ ...previous, location: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-300 focus:bg-white"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                     />
                   </div>
 
@@ -814,7 +677,7 @@ export default function UserProfilePage() {
                       rows={4}
                       value={profileForm.bio}
                       onChange={(event) => setProfileForm((previous) => ({ ...previous, bio: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-violet-300 focus:bg-white"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                     />
                   </div>
 

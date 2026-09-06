@@ -96,24 +96,23 @@ export default function CreateBlogPage() {
         comments_count: 0,
       }
 
-      const { data, error } = await supabase.from('info_blogs').insert([payload]).select('id')
+      const { error } = await supabase.from('info_blogs').insert([payload])
 
       if (error) throw error
 
-      const createdBlogId = data?.[0]?.id || null
-      if (createdBlogId) {
-        trackUserActivity({
-          userId: session.user.id,
-          activityType: 'new_post',
-          entityType: 'blog',
-          entityId: createdBlogId,
-          description: `Published a new blog post: ${form.title.trim()}`,
-          metadata: {
-            contentTitle: form.title.trim(),
-            ownerUserId: session.user.id,
-          },
-        })
-      }
+      // Activity tracking is secondary; it must not block a successful post.
+      void trackUserActivity({
+        userId: session.user.id,
+        activityType: 'new_post',
+        entityType: 'blog',
+        description: `Published a new blog post: ${form.title.trim()}`,
+        metadata: {
+          contentTitle: form.title.trim(),
+          ownerUserId: session.user.id,
+        },
+      }).catch((activityError) => {
+        console.warn('Blog activity tracking failed:', activityError)
+      })
 
       setSuccess(true)
       setTimeout(() => {

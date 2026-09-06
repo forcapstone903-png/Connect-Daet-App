@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Bell, BellRing, CheckCheck, ChevronRight, Clock3, Filter, Search, ShieldAlert, Sparkles, Volume2 } from 'lucide-react'
+import { Bell, BellRing, CheckCheck, Clock3, Filter, Search, ShieldAlert, Sparkles, Trash2, Volume2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
+import MobileNav from '@/app/components/user/MobileNav'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -56,6 +57,9 @@ export default function UserNotificationsPage() {
   const [priority, setPriority] = useState('all')
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deletingHistory, setDeletingHistory] = useState(false)
+  const [actionNotice, setActionNotice] = useState('')
 
   const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
 
@@ -146,6 +150,33 @@ export default function UserNotificationsPage() {
     }
   }
 
+  const deleteNotificationHistory = async () => {
+    if (!userId) return
+
+    setDeletingHistory(true)
+    setActionNotice('')
+    try {
+      const response = await fetch('/api/notifications', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      const result = await response.json()
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to delete notification history')
+      }
+
+      setNotifications([])
+      setShowDeleteConfirm(false)
+      setActionNotice('Notification history deleted.')
+    } catch (error) {
+      console.error('Delete notification history failed:', error)
+      setActionNotice(error.message || 'Unable to delete notification history.')
+    } finally {
+      setDeletingHistory(false)
+    }
+  }
+
   const notifyUrgent = () => {
     if (typeof window === 'undefined' || !soundEnabled) return
 
@@ -167,18 +198,14 @@ export default function UserNotificationsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-slate-900">
+      <MobileNav />
+      <div className="mx-auto max-w-[1200px] px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
         <header className="mb-6 rounded-[24px] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <Link href="/user/dashboard" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
-                <ChevronRight className="h-4 w-4 rotate-180" />
-              </Link>
-              <div>
+            <div>
                 <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-400">Alerts</p>
                 <h1 className="text-lg font-bold text-slate-900">Real-time notifications</h1>
-              </div>
             </div>
 
             <div className="flex items-center justify-end gap-2">
@@ -188,11 +215,30 @@ export default function UserNotificationsPage() {
               <button type="button" onClick={markAllAsRead} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
                 Mark all read
               </button>
+              <button type="button" onClick={() => setShowDeleteConfirm(true)} disabled={!notifications.length || deletingHistory} className="inline-flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50">
+                <Trash2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Delete history</span>
+              </button>
             </div>
           </div>
         </header>
 
-        <div className="mb-6 grid gap-3 md:grid-cols-4">
+        {actionNotice && <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800">{actionNotice}</div>}
+
+        {showDeleteConfirm && (
+          <div className="mb-6 rounded-[22px] border border-red-200 bg-red-50 p-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-red-900">Delete notification history?</h2>
+              <p className="mt-1 text-sm text-red-700">This permanently removes all of your notifications and cannot be undone.</p>
+            </div>
+            <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+              <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={deletingHistory} className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">Cancel</button>
+              <button type="button" onClick={deleteNotificationHistory} disabled={deletingHistory} className="rounded-full bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">{deletingHistory ? 'Deleting...' : 'Delete history'}</button>
+            </div>
+          </div>
+        )}
+
+        <div className="mb-6 grid grid-cols-2 gap-3">
           {[
             { label: 'Unread', value: unreadCount, icon: Bell },
             { label: 'Announcements', value: notifications.filter((n) => n.type === 'announcement').length, icon: Sparkles },

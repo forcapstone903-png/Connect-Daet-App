@@ -14,23 +14,23 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
-  Bell,
-  Bookmark,
   Flame,
-  Globe2,
   Loader,
   LogOut,
   MessageCircle,
-  MessageSquare,
   Megaphone,
+  Menu,
+  MapPinned,
   MoreHorizontal,
   MapPin,
   ShieldCheck,
   Search,
   Settings,
+  Sparkles,
   Star,
   Clock3,
   TrendingUp,
+  UserPlus,
   Zap,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -128,6 +128,8 @@ export default function UserDashboardPage() {
   // UI state
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [recentSearches, setRecentSearches] = useState([])
   const [activeCategory, setActiveCategory] = useState('all')
   const [error, setError] = useState(null)
 
@@ -157,6 +159,32 @@ export default function UserDashboardPage() {
   const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
   const [openPostMenu, setOpenPostMenu] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
+
+  useEffect(() => {
+    try {
+      const storedSearches = JSON.parse(localStorage.getItem('daet_recent_searches') || '[]')
+      setRecentSearches(Array.isArray(storedSearches) ? storedSearches.slice(0, 5) : [])
+    } catch {
+      setRecentSearches([])
+    }
+  }, [])
+
+  const saveRecentSearch = (value) => {
+    const normalizedValue = value.trim()
+    if (!normalizedValue) return
+    const nextSearches = [normalizedValue, ...recentSearches.filter((entry) => entry.toLowerCase() !== normalizedValue.toLowerCase())].slice(0, 5)
+    setRecentSearches(nextSearches)
+    localStorage.setItem('daet_recent_searches', JSON.stringify(nextSearches))
+  }
+
+  const submitSearch = (event) => {
+    event?.preventDefault()
+    if (!search.trim()) return
+    saveRecentSearch(search)
+    router.push(`/search?q=${encodeURIComponent(search.trim())}`)
+    setSearchFocused(false)
+  }
 
   // Persist reactions and saved items
   useEffect(() => {
@@ -297,6 +325,47 @@ export default function UserDashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }))
   }, [feed, savedItems])
+
+  const searchSuggestions = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return []
+
+    const suggestions = new Map()
+    feed.forEach((item) => {
+      const values = [item.title, item.category, ...(Array.isArray(item.tags) ? item.tags : [])]
+      values.filter(Boolean).forEach((value) => {
+        const suggestion = String(value).replace(/^#/, '').trim()
+        if (suggestion.toLowerCase().startsWith(query)) suggestions.set(suggestion.toLowerCase(), suggestion)
+      })
+    })
+    return [...suggestions.values()].slice(0, 5)
+  }, [feed, search])
+
+  const suggestions = useMemo(() => {
+    const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId)
+    const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
+    const suggestedLocations = [...new Set(feed.map((item) => item.location).filter(Boolean))].slice(0, 4)
+    const suggestedContent = feed.filter((item) => item.type === 'blog' || item.type === 'forum').slice(0, 2)
+    return {
+      suggestedPost: availableFeed[0] || feed[0] || null,
+      suggestedPeople,
+      suggestedContent,
+      suggestedLocations,
+    }
+  }, [feed, userId])
+
+  const followSuggestedPerson = async (personId) => {
+    if (!userId) return
+    try {
+      const { error: followError } = await supabase.from('user_follows').insert({ follower_id: userId, following_id: personId })
+      if (followError && followError.code !== '23505') throw followError
+      setFollowedSuggestions((previous) => new Set([...previous, personId]))
+    } catch (followError) {
+      console.error('Suggested follow failed:', followError)
+      setToastMessage('Unable to follow this person right now')
+      setTimeout(() => setToastMessage(''), 2500)
+    }
+  }
 
   // Auth check on mount
   useEffect(() => {
@@ -682,7 +751,7 @@ export default function UserDashboardPage() {
 
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-start justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4 pt-10 sm:items-center sm:px-0 sm:pt-0">
+      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
         <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
           <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
           <p className="text-slate-600">Loading...</p>
@@ -693,7 +762,7 @@ export default function UserDashboardPage() {
 
   if (authError) {
     return (
-      <main className="flex min-h-screen items-start justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4 pt-10 sm:items-center sm:px-0 sm:pt-0">
+      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
         <div className="rounded-[24px] border border-red-200 bg-red-50 p-6 text-center shadow-sm">
           <AlertCircle className="mx-auto mb-4 text-red-600" />
           <p className="text-red-700">{authError}</p>
@@ -703,7 +772,7 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="dashboard-sharp min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
+    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
       <MobileNav />
       {toastMessage && (
         <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
@@ -714,31 +783,37 @@ export default function UserDashboardPage() {
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:rounded-[26px]">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/user/dashboard" className="flex min-w-0 items-center gap-2.5">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-sky-100 p-1 ring-1 ring-sky-200 sm:h-11 sm:w-11">
-                <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-[9px] object-cover" />
-              </span>
-              <span className="hidden min-w-0 sm:block">
-                <span className="block text-[10px] font-black tracking-[0.25em] text-sky-700">CONNECT</span>
-                <span className="block truncate text-xs font-medium text-slate-500">Daet community</span>
+            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2">
+              <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
+                <span className="block truncate text-[10px] font-medium text-slate-500 sm:text-xs">Daet community</span>
               </span>
             </Link>
 
-            <div className="hidden flex-1 px-8 lg:block">
-              <label className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
+            <div className="relative hidden min-w-0 flex-1 px-4 lg:block">
+              <form onSubmit={submitSearch} className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
                 <Search className="h-4 w-4 shrink-0" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-              </label>
+                <input value={search} onFocus={() => setSearchFocused(true)} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
+              </form>
+              {searchFocused && (
+                <div className="absolute left-4 right-4 top-[calc(100%+0.5rem)] z-40 mx-auto max-w-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                  <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{search.trim() ? 'Suggestions' : 'Recent searches'}</p>
+                  {(search.trim() ? searchSuggestions : recentSearches).length ? (
+                    <div className="space-y-1">{(search.trim() ? searchSuggestions : recentSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setSearch(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`); setSearchFocused(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><Search className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>
+                  ) : <p className="px-3 py-2 text-sm text-slate-500">{search.trim() ? 'No suggestions yet.' : 'No recent searches yet.'}</p>}
+                  <Link href="/search" className="mt-1 block border-t border-slate-100 px-3 pt-3 text-xs font-bold text-sky-700 hover:text-sky-800">View search history</Link>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2">
-              <Link href="/user/notifications" aria-label="Notifications" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-sky-700 transition hover:bg-sky-50">
-                <Bell className="h-4 w-4" />
+              <Link href="/user/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white transition hover:bg-sky-800">
+                {getInitials(userName)}
               </Link>
               <div className="relative">
-                <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open profile menu" className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-1.5 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 sm:pr-3">
-                  <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">{getInitials(userName)}</span>
-                  <span className="hidden sm:inline">Profile</span>
+                <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
+                  <Menu className="h-5 w-5" />
                 </button>
                 {showProfileMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
                   <Link href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile settings</Link>
@@ -749,10 +824,6 @@ export default function UserDashboardPage() {
             </div>
           </div>
 
-          <label className="mt-3 flex items-center gap-2 rounded-xl border border-sky-100 bg-white/80 px-4 py-2.5 text-sm text-slate-500 lg:hidden">
-            <Search className="h-4 w-4 shrink-0" />
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search posts and places" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-          </label>
         </header>
 
         {error && (
@@ -779,21 +850,42 @@ export default function UserDashboardPage() {
           </div>
         </div>
 
-        <div className="mb-4 -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:px-0">
-          <button type="button" onClick={() => setActiveCategory('all')} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-bold transition ${activeCategory === 'all' ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>For you</button>
-          {categories.slice(0, 5).map((cat) => (
-            <button key={cat.id} type="button" onClick={() => setActiveCategory(cat.name)} className={`shrink-0 rounded-lg px-4 py-2.5 text-xs font-bold transition ${activeCategory === cat.name ? 'bg-sky-700 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
-              {cat.icon_emoji} {cat.name}
-            </button>
-          ))}
-        </div>
-
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_310px]">
           <section className="min-w-0 space-y-4">
             <div className="flex items-end justify-between px-1">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black tracking-tight text-slate-900 sm:text-2xl">Latest from Daet</h1></div>
-              <span className="text-xs font-medium text-slate-500">{filteredFeed.length} posts</span>
+              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
+              <span className="text-[11px] font-medium text-slate-500">{filteredFeed.length} posts</span>
             </div>
+
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+              <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
+                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {suggestions.suggestedPost && (
+                    <Link href={suggestions.suggestedPost.href} className="rounded-xl bg-sky-50 p-3 transition hover:bg-sky-100">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p>
+                      <p className="mt-1 line-clamp-2 text-[13px] font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">From {suggestions.suggestedPost.author?.full_name || 'the Daet community'}</p>
+                    </Link>
+                  )}
+
+                  {suggestions.suggestedPeople.length > 0 && (
+                    <div className="rounded-xl bg-emerald-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
+                      <div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><Link href={`/user/profile/${person.id}`} className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[10px] font-bold text-white">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span></Link><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : <><UserPlus className="h-3 w-3" />Follow</>}</button></div>)}</div>
+                    </div>
+                  )}
+
+                  {suggestions.suggestedContent.length > 0 && (
+                    <div className="rounded-xl bg-amber-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Suggested content</p><div className="mt-2 space-y-1">{suggestions.suggestedContent.map((item) => <Link key={`${item.type}-${item.id}`} href={item.href} className="block truncate text-[13px] font-bold leading-5 text-slate-800 hover:text-amber-700">{item.title}</Link>)}</div></div>
+                  )}
+
+                  {suggestions.suggestedLocations.length > 0 && (
+                    <div className="rounded-xl bg-violet-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Suggested locations</p><div className="mt-2 flex flex-wrap gap-2">{suggestions.suggestedLocations.map((location) => <Link key={location} href={`/search?q=${encodeURIComponent(location)}`} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-violet-700"><MapPinned className="h-3 w-3 text-violet-600" />{location}</Link>)}</div></div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {loading ? (
               <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className="animate-pulse rounded-[22px] border border-slate-200 bg-white p-4"><div className="h-4 w-1/2 rounded bg-slate-200" /><div className="mt-4 h-3 w-full rounded bg-slate-200" /><div className="mt-2 h-3 w-4/5 rounded bg-slate-200" /></div>)}</div>
@@ -816,18 +908,18 @@ export default function UserDashboardPage() {
                     <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className="feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)]">
                       <div className="p-4 sm:p-5">
                         <div className="flex items-start gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700">
+                          <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700" aria-label={`View ${authorName}'s profile`}>
                             {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
-                          </div>
+                          </Link>
                           <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-600">
-                              <span className="font-bold text-slate-900">{authorName}</span>
+                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
+                              <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700">{authorName}</Link>
                               {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
                               <span className="text-slate-400">·</span>
                               <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{item.type}</span>{item.category && <><span className="text-slate-300">•</span><span className="normal-case tracking-normal text-slate-500">{item.category}</span></>}</div>
-                            <h2 className="mt-1 break-words text-base font-extrabold leading-6 text-slate-950 sm:text-lg">{item.title}</h2>
+                            <Link href={item.href} className="block"><h2 className="mt-1 break-words text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base">{item.title}</h2></Link>
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}{item.start_date && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}{item.reply_count !== undefined && <span>{item.reply_count} replies</span>}</div>
                           </div>
                           <div className="relative shrink-0">
@@ -840,19 +932,19 @@ export default function UserDashboardPage() {
                           </div>
                         </div>
 
-                        {(item.excerpt || item.description) && <p className="mt-4 break-words text-sm leading-6 text-slate-600">{item.excerpt || item.description}</p>}
+                        {(item.excerpt || item.description) && <p className="mt-3 break-words text-[13px] leading-5 text-slate-600">{item.excerpt || item.description}</p>}
                         {item.type === 'forum' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Discussion</span>{item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span></div>}
                         {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
                         {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover" />}</div>}
+                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95" /></Link>}</div>}
 
-                        <div className="feed-actions mt-4"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} /></div>
-                        <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-                          <button type="button" onClick={(e) => handleBookmark(e, item)} className={`inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-xs font-bold ${isSaved ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`}><Bookmark className={`h-3.5 w-3.5 ${isSaved ? 'fill-current' : ''}`} />{isSaved ? 'Saved' : 'Save'}</button>
-                          <Link href={item.href} className="text-xs font-bold text-sky-700">Open post</Link>
-                        </div>
-                        {openComments === itemKey && <div className="mt-4"><Comments contentType={contentType} contentId={item.id} userId={userId} /></div>}
+                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
+                        {openComments === itemKey ? (
+                          <div className="mt-4"><Comments contentType={contentType} contentId={item.id} userId={userId} contentTitle={item.title} /></div>
+                        ) : (
+                          <Comments contentType={contentType} contentId={item.id} userId={userId} contentTitle={item.title} compact />
+                        )}
                       </div>
                     </article>
                   )

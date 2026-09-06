@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Bell, Mail, Search } from 'lucide-react'
+import { Mail, Search } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
+import MobileNav from '@/app/components/user/MobileNav'
 
 export default function UserMessagingPage() {
   const [messages, setMessages] = useState([])
@@ -39,20 +40,15 @@ export default function UserMessagingPage() {
 
   return (
     <main className="min-h-screen bg-[#eef4f5] text-slate-900">
-      <div className="mx-auto w-full max-w-[900px] px-3 pb-20 pt-3 sm:px-5 lg:px-8">
+      <MobileNav />
+      <div className="mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
         <header className="mb-4 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <div className="flex items-center gap-3">
-            <Link href="/user/dashboard" aria-label="Back to dashboard" className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#147d75]">Inbox</p>
               <h1 className="text-xl font-black text-slate-950">Messages</h1>
             </div>
           </div>
-          <Link href="/user/notifications" aria-label="Notifications" className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">
-            <Bell className="h-4 w-4" />
-          </Link>
         </header>
 
         <div className="mb-4 flex items-center gap-2 border border-slate-200 bg-white px-4 py-3 shadow-sm">

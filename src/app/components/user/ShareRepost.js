@@ -5,7 +5,7 @@ import { Link2, Mail, MessageCircle, Repeat2, Send, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 
-export default function ShareRepost({ contentType, contentId, userId, onShared }) {
+export default function ShareRepost({ contentType, contentId, userId, onShared, fullWidth = false }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showRepostModal, setShowRepostModal] = useState(false)
   const [showDMModal, setShowDMModal] = useState(false)
@@ -152,11 +152,11 @@ export default function ShareRepost({ contentType, contentId, userId, onShared }
   }
 
   return (
-    <div className="relative inline-flex max-w-full">
+    <div className="relative inline-flex w-full max-w-full">
       <button
         type="button"
         onClick={() => setShowMenu((v) => !v)}
-        className="inline-flex min-h-10 max-w-full items-center justify-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 sm:min-h-0"
+        className={`inline-flex h-9 max-w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 ${fullWidth ? 'w-full' : ''}`}
       >
         <Repeat2 className="h-3.5 w-3.5" />
         {shareCount > 0 && <span>{shareCount}</span>}

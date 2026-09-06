@@ -112,6 +112,8 @@ function LoginContent() {
 
       if (user.user_type === 'admin') {
         router.push('/admin/dashboard')
+      } else if (searchParams.get('onboarding') === '1') {
+        router.push('/user/onboarding')
       } else {
         router.push('/user/dashboard')
       }

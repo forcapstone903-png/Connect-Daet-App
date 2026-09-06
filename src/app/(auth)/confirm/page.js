@@ -44,7 +44,7 @@ export default function AuthConfirmPage() {
         setMessage('✅ Email verified successfully. Redirecting to login...')
 
         setTimeout(() => {
-          router.push('/login?message=Your email has been verified. Please sign in.')
+          router.push('/login?message=Your email has been verified. Please sign in.&onboarding=1')
         }, 2000)
       } catch (error) {
         setMessage(error.message || 'Unable to verify your email right now.')

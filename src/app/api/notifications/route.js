@@ -96,3 +96,33 @@ export async function PATCH(request) {
     )
   }
 }
+
+export async function DELETE(request) {
+  if (!supabaseUrl || !serviceRoleKey) {
+    return NextResponse.json({ success: false, message: 'Notification service is not configured.' }, { status: 500 })
+  }
+
+  const session = parseSessionCookie(request)
+  const userId = session?.user_id || session?.id || session?.sub || session?.userId
+
+  if (!userId) {
+    return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
+  }
+
+  try {
+    const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const { error } = await adminSupabase
+      .from('info_notifications')
+      .delete()
+      .eq('user_id', userId)
+
+    if (error) throw error
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Notification history deletion failed:', error)
+    return NextResponse.json(
+      { success: false, message: error.message || 'Unable to delete notification history.' },
+      { status: 500 }
+    )
+  }
+}
