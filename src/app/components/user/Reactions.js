@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 
@@ -117,6 +118,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       }
 
       if (onReact) onReact(reactionType, userReaction === reactionType ? null : reactionType)
+      window.dispatchEvent(new Event('daet-feed-refresh'))
       if (userId && userReaction !== reactionType) {
         trackUserActivity({
           userId,
@@ -164,7 +166,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
             </>
           ) : (
             <>
-              <span aria-hidden="true" className="text-sm leading-none">+</span>
+              <ThumbsUp aria-hidden="true" className="h-3.5 w-3.5" />
               {!compact && (label || 'React')}
             </>
           )}

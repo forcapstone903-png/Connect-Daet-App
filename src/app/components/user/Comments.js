@@ -156,15 +156,16 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
   }
 
   const handleSubmit = async () => {
-    if (!body.trim() || !userId) return
+    if ((!body.trim() && !selectedGif && !selectedSticker) || !userId) return
     setSubmitting(true)
     try {
+      const commentBody = body.trim() || (selectedGif ? 'GIF' : 'Sticker')
       const { error } = await supabase.from('content_comments').insert({
         content_type: contentType,
         content_id: contentId,
         user_id: userId,
         parent_id: replyTo || null,
-        body: body.trim(),
+        body: commentBody,
         gif_url: selectedGif || null,
         sticker_url: selectedSticker || null,
         relevance_score: 0,
@@ -187,11 +188,12 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
         description: `Commented on ${contentTitle || contentType}`,
         metadata: {
           contentTitle: contentTitle || '',
-          body: body.trim(),
+          body: commentBody,
           recipientUserId: contentOwner,
         },
       })
       await loadComments()
+      window.dispatchEvent(new Event('daet-feed-refresh'))
     } catch (err) {
       console.error('Failed to post comment:', err)
       alert('Failed to post comment. Please try again.')
@@ -488,7 +490,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={submitting || !body.trim()}
+                disabled={submitting || (!body.trim() && !selectedGif && !selectedSticker)}
                   className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <SendHorizontal className="h-3.5 w-3.5" />

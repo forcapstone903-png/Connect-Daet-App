@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Compass, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal } from 'lucide-react'
+import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Compass, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import MobileNav from '@/app/components/user/MobileNav'
 import { Suspense } from 'react'
@@ -36,6 +36,10 @@ function SearchContent() {
     events: [],
     blogs: [],
     threads: [],
+    users: [],
+    userContent: [],
+    userComments: [],
+    mentions: [],
   })
 
   const saveRecentSearch = (value) => {
@@ -53,12 +57,12 @@ function SearchContent() {
         const q = query.trim().toLowerCase()
 
         if (!q) {
-          setResults({ spots: [], events: [], blogs: [], threads: [] })
+          setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], mentions: [] })
           setLoading(false)
           return
         }
 
-        const [spotsRes, eventsRes, blogsRes, threadsRes] = await Promise.all([
+        const [spotsRes, eventsRes, blogsRes, threadsRes, usersRes] = await Promise.all([
           supabase
             .from('info_tourist_spots')
             .select('*')
@@ -79,17 +83,52 @@ function SearchContent() {
             .select('*')
             .eq('status', 'active')
             .or(`title.ilike.%${q}%,content.ilike.%${q}%`),
+          supabase
+            .from('info_users')
+            .select('id, full_name, email, profile_image_url, bio, city, country, user_type')
+            .eq('status', 'active')
+            .neq('user_type', 'admin')
+            .or(`full_name.ilike.%${q}%,email.ilike.%${q}%,bio.ilike.%${q}%,city.ilike.%${q}%,country.ilike.%${q}%`),
         ])
+
+        const users = usersRes.data || []
+        const userIds = users.map((user) => user.id).filter(Boolean)
+        let userContent = []
+        let userComments = []
+        let mentions = []
+
+        if (userIds.length) {
+          const [userPostsRes, blogsByUserRes, eventsByUserRes, threadsByUserRes, commentsRes, mentionsRes] = await Promise.all([
+            supabase.from('info_user_posts').select('id, user_id, title, content, created_at').in('user_id', userIds).eq('status', 'published').order('created_at', { ascending: false }),
+            supabase.from('info_blogs').select('id, created_by, title, excerpt, content, featured_image, created_at').in('created_by', userIds).eq('status', 'published').order('created_at', { ascending: false }),
+            supabase.from('info_events').select('id, created_by, title, description, featured_image, start_date, location').in('created_by', userIds).eq('status', 'published').order('start_date', { ascending: false }),
+            supabase.from('forum_threads').select('id, created_by, title, content, created_at').in('created_by', userIds).eq('status', 'active').order('created_at', { ascending: false }),
+            supabase.from('content_comments').select('id, user_id, content_type, content_id, body, gif_url, sticker_url, created_at').in('user_id', userIds).eq('status', 'active').order('created_at', { ascending: false }),
+            supabase.from('mentions').select('id, mentioned_user_id, content_type, content_id, mention_text, created_at').in('mentioned_user_id', userIds).order('created_at', { ascending: false }),
+          ])
+          userContent = [
+            ...(userPostsRes.data || []).map((item) => ({ ...item, contentKind: 'post', authorId: item.user_id, href: `/user/profile/${item.user_id}` })),
+            ...(blogsByUserRes.data || []).map((item) => ({ ...item, contentKind: 'blog', authorId: item.created_by, href: `/blog/${item.id}` })),
+            ...(eventsByUserRes.data || []).map((item) => ({ ...item, contentKind: 'event', authorId: item.created_by, href: `/events/${item.id}` })),
+            ...(threadsByUserRes.data || []).map((item) => ({ ...item, contentKind: 'forum', authorId: item.created_by, href: `/forum/${item.id}` })),
+          ]
+          userComments = commentsRes.data || []
+          mentions = mentionsRes.data || []
+        }
 
         setResults({
           spots: spotsRes.data || [],
           events: eventsRes.data || [],
           blogs: blogsRes.data || [],
           threads: threadsRes.data || [],
+          users,
+          userContent,
+          userComments,
+          mentions,
         })
       } catch (error) {
         console.error('Search failed:', error)
-        setResults({ spots: [], events: [], blogs: [], threads: [] })
+        setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], mentions: [] })
       } finally {
         setLoading(false)
       }
@@ -116,7 +155,8 @@ function SearchContent() {
 
   const visibleSuggestions = query.trim() ? suggestions : popularSearches
 
-  const totalCount = results.spots.length + results.events.length + results.blogs.length + results.threads.length
+  const communityCount = results.users.length + results.userContent.length + results.userComments.length + results.mentions.length
+  const totalCount = results.spots.length + results.events.length + results.blogs.length + results.threads.length + communityCount
 
   const tabs = [
     { id: 'all', label: 'All', count: totalCount },
@@ -124,6 +164,8 @@ function SearchContent() {
     { id: 'events', label: 'Events', count: results.events.length },
     { id: 'blogs', label: 'Blogs', count: results.blogs.length },
     { id: 'threads', label: 'Forums', count: results.threads.length },
+    { id: 'people', label: 'People', count: results.users.length },
+    { id: 'community', label: 'Community', count: communityCount },
   ]
 
   const formatDate = (value) => {
@@ -136,6 +178,15 @@ function SearchContent() {
     if (typeof image === 'string' && image.trim()) return image
     return item.category === 'blog' ? defaultBlogImage : defaultSpotImage
   }
+
+  const getContentHref = (contentType, contentId) => {
+    if (contentType === 'blog') return `/blog/${contentId}`
+    if (contentType === 'forum_thread') return `/forum/${contentId}`
+    if (contentType === 'event') return `/events/${contentId}`
+    return `/search?q=${encodeURIComponent(query.trim())}`
+  }
+
+  const userNames = new Map(results.users.map((user) => [user.id, user.full_name || user.email || 'Community member']))
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-slate-900">
@@ -301,6 +352,61 @@ function SearchContent() {
           </div>
         ) : (
           <div className="space-y-6">
+            {(activeTab === 'all' || activeTab === 'people') && results.users.length > 0 && (
+              <section>
+                <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+                  <UserRound className="h-4 w-4" />
+                  People ({results.users.length})
+                </h2>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {results.users.map((user) => (
+                    <Link key={user.id} href={`/user/profile/${user.id}`} className="flex min-w-0 items-center gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-sky-200 hover:shadow-md">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sm font-black text-sky-700">
+                        {user.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Community member'} className="h-full w-full object-cover" /> : <UserRound className="h-5 w-5" />}
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-bold text-slate-900">{user.full_name || user.email || 'Community member'}</h3>
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{user.bio || [user.city, user.country].filter(Boolean).join(', ') || 'Daet community member'}</p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {(activeTab === 'all' || activeTab === 'community') && (results.userContent.length > 0 || results.userComments.length > 0 || results.mentions.length > 0) && (
+              <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <AtSign className="h-4 w-4 text-sky-600" />
+                  <div><h2 className="text-base font-black text-slate-900">Community activity</h2><p className="text-xs text-slate-500">Public posts, comments, and mentions connected to these people.</p></div>
+                </div>
+                <div className="space-y-3">
+                  {results.userContent.map((item) => (
+                    <Link key={`${item.contentKind}-${item.id}`} href={item.href} className="block rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-sky-200 hover:bg-sky-50">
+                      <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">{item.contentKind === 'post' ? 'Public post' : item.contentKind}</span><span className="text-[11px] text-slate-400">By {userNames.get(item.authorId) || 'Community member'}</span></div>
+                      <p className="mt-1 text-sm font-bold text-slate-900">{item.title || item.content || item.description}</p>
+                      {item.excerpt && <p className="mt-1 line-clamp-2 text-xs text-slate-600">{item.excerpt}</p>}
+                    </Link>
+                  ))}
+
+                  {results.userComments.map((comment) => (
+                    <Link key={`comment-${comment.id}`} href={getContentHref(comment.content_type, comment.content_id)} className="block rounded-xl border border-slate-100 bg-amber-50/60 p-3 transition hover:border-amber-200 hover:bg-amber-50">
+                      <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Comment</span><ExternalLink className="h-3.5 w-3.5 shrink-0 text-amber-600" /></div>
+                      <p className="mt-1 line-clamp-2 text-sm text-slate-700">{comment.body}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">On {comment.content_type.replace('_', ' ')}</p>
+                    </Link>
+                  ))}
+
+                  {results.mentions.map((mention) => (
+                    <Link key={`mention-${mention.id}`} href={getContentHref(mention.content_type, mention.content_id)} className="block rounded-xl border border-slate-100 bg-violet-50/60 p-3 transition hover:border-violet-200 hover:bg-violet-50">
+                      <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Mentioned or tagged</span><AtSign className="h-3.5 w-3.5 shrink-0 text-violet-600" /></div>
+                      <p className="mt-1 text-sm font-bold text-slate-800">{mention.mention_text || `Mentioned in a ${mention.content_type.replace('_', ' ')}`}</p>
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {/* Spots */}
             {(activeTab === 'all' || activeTab === 'spots') && results.spots.length > 0 && (
               <section>

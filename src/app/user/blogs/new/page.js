@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, FileText, Save } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, MessageCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/components/MediaUpload'
 import { trackUserActivity } from '@/lib/trackActivity'
+import { getStoredSessionObject } from '@/lib/authCookies'
+import MobileNav from '@/app/components/user/MobileNav'
 
 const categories = [
   { value: 'travel_guides', label: 'Travel Guides' },
@@ -47,7 +49,11 @@ export default function CreateBlogPage() {
   useEffect(() => {
     const getSession = async () => {
       const { data } = await supabase.auth.getSession()
-      setSession(data.session)
+      const storedSession = getStoredSessionObject()
+      const user = data.session?.user || (storedSession?.user_id || storedSession?.id || storedSession?.sub || storedSession?.userId
+        ? { id: storedSession.user_id || storedSession.id || storedSession.sub || storedSession.userId, email: storedSession.email || storedSession.user_email }
+        : null)
+      setSession(user ? { user } : null)
       setLoading(false)
     }
 
@@ -89,16 +95,16 @@ export default function CreateBlogPage() {
         category: form.category,
         tags,
         status: form.status,
-        created_by: session.user.id,
-        published_at: form.status === 'published' ? new Date().toISOString() : null,
-        views: 0,
-        likes: 0,
-        comments_count: 0,
       }
 
-      const { error } = await supabase.from('info_blogs').insert([payload])
-
-      if (error) throw error
+      const response = await fetch('/api/user/blogs', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to create your blog article.')
 
       // Activity tracking is secondary; it must not block a successful post.
       void trackUserActivity({
@@ -145,8 +151,8 @@ export default function CreateBlogPage() {
           <h1 className="mt-3 text-2xl font-bold text-slate-900">Log in to publish an article</h1>
           <p className="mt-3 text-slate-600">You need an active account before creating a blog post for the community.</p>
           <div className="mt-6 flex justify-center gap-3">
-            <Link href="/user/blogs" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Back to articles
+            <Link href="/user/dashboard" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Back
             </Link>
             <Link href="/login" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">
               Log in
@@ -158,16 +164,30 @@ export default function CreateBlogPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="min-h-screen bg-[#f3f5f9] pb-24 text-slate-900">
+      <MobileNav />
       <div className="mx-auto max-w-4xl px-3 py-6 sm:px-4 lg:px-6">
         <div className="mb-6 flex items-center justify-between">
-          <Link href="/user/blogs" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <Link href="/user/dashboard" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
             <ArrowLeft className="h-4 w-4" />
-            Back to Articles
+            Back
           </Link>
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-sky-700 border border-sky-200">
             <FileText className="h-3.5 w-3.5" />
             Create Post
+          </div>
+        </div>
+
+        <div className="mb-6 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <MessageSquare className="h-4 w-4 text-sky-600" />
+            <h2 className="text-sm font-black text-slate-900">Choose what to share</h2>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-4">
+            <Link href="/user/blogs/new" className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-sm font-bold text-sky-700 transition hover:bg-sky-100"><FileText className="mb-2 h-4 w-4" />Blog post</Link>
+            <Link href="/user/forums" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-bold text-emerald-700 transition hover:bg-emerald-100"><MessageCircle className="mb-2 h-4 w-4" />Forum discussion</Link>
+            <Link href="/user/events" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-bold text-amber-700 transition hover:bg-amber-100"><CalendarDays className="mb-2 h-4 w-4" />Find an event</Link>
+            <Link href="/user/feedback" className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100"><MessageSquare className="mb-2 h-4 w-4" />Share feedback</Link>
           </div>
         </div>
 

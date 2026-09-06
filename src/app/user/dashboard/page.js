@@ -160,6 +160,13 @@ export default function UserDashboardPage() {
   const [openPostMenu, setOpenPostMenu] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
+  const [feedRefreshKey, setFeedRefreshKey] = useState(0)
+
+  useEffect(() => {
+    const handleFeedRefresh = () => setFeedRefreshKey((value) => value + 1)
+    window.addEventListener('daet-feed-refresh', handleFeedRefresh)
+    return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
+  }, [])
 
   useEffect(() => {
     try {
@@ -658,7 +665,7 @@ export default function UserDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [authenticated, userId, error])
+  }, [authenticated, userId, error, feedRefreshKey])
 
   const handleLogout = async () => {
     try {
@@ -854,7 +861,6 @@ export default function UserDashboardPage() {
           <section className="min-w-0 space-y-4">
             <div className="flex items-end justify-between px-1">
               <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
-              <span className="text-[11px] font-medium text-slate-500">{filteredFeed.length} posts</span>
             </div>
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (

@@ -27,13 +27,13 @@ export default function EditProfilePage() {
 
       const [{ data: userData }, { data: profileData }] = await Promise.all([
         supabase.from('info_users').select('full_name, bio, city, country').eq('id', id).maybeSingle(),
-        supabase.from('profiles').select('full_name, bio, location, avatar_url, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
+        supabase.from('profiles').select('full_name, bio, city, country, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
       ])
       setForm({
         full_name: profileData?.full_name || userData?.full_name || '',
         bio: profileData?.bio || userData?.bio || '',
-        location: profileData?.location || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
-        avatar_url: profileData?.avatar_url || profileData?.profile_image_url || userData?.profile_image_url || '',
+        location: [profileData?.city, profileData?.country].filter(Boolean).join(', ') || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
+        avatar_url: profileData?.profile_image_url || userData?.profile_image_url || '',
         cover_photo_url: profileData?.cover_photo_url || '',
       })
       setLoading(false)
@@ -47,7 +47,7 @@ export default function EditProfilePage() {
     setSaving(true)
     setNotice('')
     const { error: userError } = await supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, profile_image_url: form.avatar_url || null }).eq('id', userId)
-    const { error: profileError } = await supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, location: form.location, avatar_url: form.avatar_url || null, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    const { error: profileError } = await supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     setSaving(false)
     setNotice(userError?.message || profileError?.message || 'Profile updated successfully.')
   }

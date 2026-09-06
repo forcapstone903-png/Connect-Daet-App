@@ -394,7 +394,6 @@ export default function UserProfilePage() {
       const baseProfile = {
         user_id: userId,
         full_name: profileForm.full_name,
-        avatar_url: profileForm.avatar_url,
         cover_photo_url: profileForm.cover_photo_url,
         bio: profileForm.bio,
         location: nextLocation,
