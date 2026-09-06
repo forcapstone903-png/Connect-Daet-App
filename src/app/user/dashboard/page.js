@@ -682,7 +682,7 @@ export default function UserDashboardPage() {
 
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
+      <main className="flex min-h-screen items-start justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4 pt-10 sm:items-center sm:px-0 sm:pt-0">
         <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
           <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
           <p className="text-slate-600">Loading...</p>
@@ -693,7 +693,7 @@ export default function UserDashboardPage() {
 
   if (authError) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
+      <main className="flex min-h-screen items-start justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4 pt-10 sm:items-center sm:px-0 sm:pt-0">
         <div className="rounded-[24px] border border-red-200 bg-red-50 p-6 text-center shadow-sm">
           <AlertCircle className="mx-auto mb-4 text-red-600" />
           <p className="text-red-700">{authError}</p>
@@ -711,8 +711,8 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-5 lg:px-8 lg:pb-10">
-        <header className="sticky top-2 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:p-4 lg:rounded-[26px]">
+      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
+        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:rounded-[26px]">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 items-center gap-2.5">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] bg-sky-100 p-1 ring-1 ring-sky-200 sm:h-11 sm:w-11">
