@@ -7,6 +7,7 @@ import {
   Briefcase,
   Camera,
   Check,
+  FilePenLine,
   FileText,
   Globe,
   MapPin,
@@ -107,7 +108,7 @@ function getBadgeTone(name) {
 }
 
 export default function UserProfilePage() {
-  const [session, setSession] = useState(null)
+  const [session] = useState(readStoredSession)
   const [loading, setLoading] = useState(true)
   const [saveNotice, setSaveNotice] = useState('')
   const [userId, setUserId] = useState('')
@@ -122,15 +123,16 @@ export default function UserProfilePage() {
     avatar_url: '',
     cover_photo_url: '',
   })
-  const [privacyLevel, setPrivacyLevel] = useState('public')
-  const [languagePreference, setLanguagePreference] = useState('en')
-  const [notificationPrefs, setNotificationPrefs] = useState({
+  const [privacyLevel, setPrivacyLevel] = useState(() => readLocalState(STORAGE_KEYS.profilePreferences, null)?.privacyLevel || 'public')
+  const [languagePreference, setLanguagePreference] = useState(() => readLocalState(STORAGE_KEYS.profilePreferences, null)?.languagePreference || 'en')
+  const [notificationPrefs, setNotificationPrefs] = useState(() => ({
     emailAlerts: true,
     activityDigest: true,
     newFollowers: true,
     forumMentions: true,
     announcementAlerts: false,
-  })
+    ...(readLocalState(STORAGE_KEYS.profilePreferences, null)?.notificationPrefs || {}),
+  }))
   const [profile, setProfile] = useState({
     full_name: 'Traveler',
     email: '',
@@ -158,21 +160,6 @@ export default function UserProfilePage() {
 
   useEffect(() => {
     const currentSession = readStoredSession()
-    setSession(currentSession)
-
-    const storedPrefs = readLocalState(STORAGE_KEYS.profilePreferences, null)
-    if (storedPrefs) {
-      setPrivacyLevel(storedPrefs.privacyLevel || 'public')
-      setLanguagePreference(storedPrefs.languagePreference || 'en')
-      setNotificationPrefs({
-        emailAlerts: true,
-        activityDigest: true,
-        newFollowers: true,
-        forumMentions: true,
-        announcementAlerts: false,
-        ...(storedPrefs.notificationPrefs || {}),
-      })
-    }
 
     const fallbackUserId = currentSession?.user_id || currentSession?.id || currentSession?.userId || currentSession?.sub || ''
     const fallbackName = currentSession?.full_name || currentSession?.user_name || currentSession?.userName || currentSession?.email?.split('@')[0] || 'Traveler'
@@ -281,7 +268,7 @@ export default function UserProfilePage() {
           full_name: profileData?.full_name || userData?.full_name || fallbackName,
           email: userData?.email || fallbackEmail,
           bio: profileData?.bio || userData?.bio || 'Tell the community what kind of experiences you love most.',
-          avatar_url: profileData?.avatar_url || userData?.profile_image_url || '',
+          avatar_url: profileData?.profile_image_url || userData?.profile_image_url || '',
           cover_photo_url: profileData?.cover_photo_url || '',
           location: mergedLocation,
           points: userData?.points || 0,
@@ -469,6 +456,9 @@ export default function UserProfilePage() {
                   <div className="absolute right-0 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
                     <Link href="/user/profile/edit" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
                       <PencilLine className="h-4 w-4" /> Edit profile
+                    </Link>
+                    <Link href="/user/drafts" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
+                      <FilePenLine className="h-4 w-4" /> Drafts
                     </Link>
                     <Link href="/user/settings" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
                       <Settings className="h-4 w-4" /> Settings

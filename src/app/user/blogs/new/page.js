@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, MessageCircle } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, MessageCircle, FilePenLine } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/components/MediaUpload'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -45,6 +45,10 @@ export default function CreateBlogPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [shareType, setShareType] = useState('blog')
+  const [forumForm, setForumForm] = useState({ title: '', content: '', tags: '' })
+  const [eventForm, setEventForm] = useState({ title: '', description: '', location: '', start_date: '', category: 'festival' })
+  const [feedbackForm, setFeedbackForm] = useState({ category: 'suggestion', message: '', rating: 5 })
 
   useEffect(() => {
     const getSession = async () => {
@@ -80,6 +84,31 @@ export default function CreateBlogPage() {
     setSubmitting(true)
 
     try {
+      if (shareType !== 'blog') {
+        let error = null
+
+        if (shareType === 'forum') {
+          if (!forumForm.title.trim() || !forumForm.content.trim()) throw new Error('Please add a discussion title and message.')
+          const tags = forumForm.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+          const result = await supabase.from('forum_threads').insert({ title: forumForm.title.trim(), content: forumForm.content.trim(), tags, status: 'active', created_by: session.user.id })
+          error = result.error
+        } else if (shareType === 'event') {
+          if (!eventForm.title.trim() || !eventForm.description.trim() || !eventForm.start_date) throw new Error('Please add an event title, description, and date.')
+          const result = await supabase.from('info_events').insert({ title: eventForm.title.trim(), description: eventForm.description.trim(), location: eventForm.location.trim() || null, start_date: eventForm.start_date, category: eventForm.category, status: 'published', published_at: new Date().toISOString(), created_by: session.user.id })
+          error = result.error
+        } else {
+          if (!feedbackForm.message.trim()) throw new Error('Please add your feedback message.')
+          const result = await supabase.from('info_feedback').insert({ user_id: session.user.id, category: feedbackForm.category, rating: feedbackForm.rating, status: 'pending', comments: feedbackForm.message.trim(), target_type: 'system', target_id: session.user.id })
+          error = result.error
+        }
+
+        if (error) throw error
+        setSuccess(true)
+        const destination = shareType === 'forum' ? '/user/forums' : shareType === 'event' ? '/user/events' : '/user/feedback'
+        setTimeout(() => router.push(destination), 1200)
+        return
+      }
+
       const slug = `${generateSlug(form.title)}-${Date.now()}`
       const tags = form.tags
         .split(',')
@@ -122,7 +151,7 @@ export default function CreateBlogPage() {
 
       setSuccess(true)
       setTimeout(() => {
-        router.push('/user/blogs')
+        router.push(form.status === 'published' ? '/user/blogs' : '/user/drafts')
       }, 1200)
     } catch (error) {
       console.error('Error creating blog:', error)
@@ -176,6 +205,10 @@ export default function CreateBlogPage() {
             <FileText className="h-3.5 w-3.5" />
             Create Post
           </div>
+          <Link href="/user/drafts" className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+            <FilePenLine className="h-3.5 w-3.5" />
+            Drafts
+          </Link>
         </div>
 
         <div className="mb-6 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -183,11 +216,11 @@ export default function CreateBlogPage() {
             <MessageSquare className="h-4 w-4 text-sky-600" />
             <h2 className="text-sm font-black text-slate-900">Choose what to share</h2>
           </div>
-          <div className="grid gap-2 sm:grid-cols-4">
-            <Link href="/user/blogs/new" className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-sm font-bold text-sky-700 transition hover:bg-sky-100"><FileText className="mb-2 h-4 w-4" />Blog post</Link>
-            <Link href="/user/forums" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-bold text-emerald-700 transition hover:bg-emerald-100"><MessageCircle className="mb-2 h-4 w-4" />Forum discussion</Link>
-            <Link href="/user/events" className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm font-bold text-amber-700 transition hover:bg-amber-100"><CalendarDays className="mb-2 h-4 w-4" />Find an event</Link>
-            <Link href="/user/feedback" className="rounded-xl border border-violet-200 bg-violet-50 px-3 py-3 text-sm font-bold text-violet-700 transition hover:bg-violet-100"><MessageSquare className="mb-2 h-4 w-4" />Share feedback</Link>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setShareType('blog')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'blog' ? 'border-sky-300 bg-sky-100 text-sky-800 ring-2 ring-sky-100' : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'}`}><FileText className="mb-2 h-4 w-4" />Blog post</button>
+            <button type="button" onClick={() => setShareType('forum')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'forum' ? 'border-emerald-300 bg-emerald-100 text-emerald-800 ring-2 ring-emerald-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}><MessageCircle className="mb-2 h-4 w-4" />Forum discussion</button>
+            <button type="button" onClick={() => setShareType('event')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'event' ? 'border-amber-300 bg-amber-100 text-amber-800 ring-2 ring-amber-100' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}><CalendarDays className="mb-2 h-4 w-4" />Create event</button>
+            <button type="button" onClick={() => setShareType('feedback')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'feedback' ? 'border-violet-300 bg-violet-100 text-violet-800 ring-2 ring-violet-100' : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'}`}><MessageSquare className="mb-2 h-4 w-4" />Share feedback</button>
           </div>
         </div>
 
@@ -200,9 +233,9 @@ export default function CreateBlogPage() {
           {success ? (
             <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-700">
               <CheckCircle2 className="h-5 w-5" />
-              <span className="font-medium">Your article has been submitted successfully.</span>
+              <span className="font-medium">Your {shareType} has been submitted successfully.</span>
             </div>
-          ) : (
+          ) : shareType === 'blog' ? (
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid gap-5 md:grid-cols-2">
                 <label className="md:col-span-2">
@@ -313,6 +346,32 @@ export default function CreateBlogPage() {
                   {submitting ? 'Publishing...' : form.status === 'published' ? 'Publish Article' : 'Save Draft'}
                 </button>
               </div>
+            </form>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5">
+              {shareType === 'forum' && (
+                <>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Discussion title</span><input value={forumForm.title} onChange={(event) => setForumForm((current) => ({ ...current, title: event.target.value }))} placeholder="What would you like to discuss?" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Message</span><textarea rows={8} value={forumForm.content} onChange={(event) => setForumForm((current) => ({ ...current, content: event.target.value }))} placeholder="Share your question, tip, or story..." className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Tags</span><input value={forumForm.tags} onChange={(event) => setForumForm((current) => ({ ...current, tags: event.target.value }))} placeholder="travel, tips, food" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label>
+                </>
+              )}
+              {shareType === 'event' && (
+                <>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Event title</span><input value={eventForm.title} onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))} placeholder="Name your event" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Description</span><textarea rows={6} value={eventForm.description} onChange={(event) => setEventForm((current) => ({ ...current, description: event.target.value }))} placeholder="Tell the community about the event..." className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label>
+                  <div className="grid gap-4 sm:grid-cols-2"><label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Date</span><input type="date" value={eventForm.start_date} onChange={(event) => setEventForm((current) => ({ ...current, start_date: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label><label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Location</span><input value={eventForm.location} onChange={(event) => setEventForm((current) => ({ ...current, location: event.target.value }))} placeholder="Daet, Camarines Norte" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label></div>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Category</span><select value={eventForm.category} onChange={(event) => setEventForm((current) => ({ ...current, category: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white"><option value="festival">Festival</option><option value="cultural">Cultural</option><option value="workshop">Workshop</option><option value="sports">Sports</option><option value="other">Other</option></select></label>
+                </>
+              )}
+              {shareType === 'feedback' && (
+                <>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Feedback type</span><select value={feedbackForm.category} onChange={(event) => setFeedbackForm((current) => ({ ...current, category: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white"><option value="suggestion">Suggestion</option><option value="praise">Praise</option><option value="inquiry">Inquiry</option></select></label>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Your feedback</span><textarea rows={8} value={feedbackForm.message} onChange={(event) => setFeedbackForm((current) => ({ ...current, message: event.target.value }))} placeholder="Tell us how we can improve Daet Connect..." className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white" /></label>
+                  <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Rating</span><select value={feedbackForm.rating} onChange={(event) => setFeedbackForm((current) => ({ ...current, rating: Number(event.target.value) }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-300 focus:bg-white"><option value={5}>5 - Excellent</option><option value={4}>4 - Good</option><option value={3}>3 - Fair</option><option value={2}>2 - Needs improvement</option><option value={1}>1 - Poor</option></select></label>
+                </>
+              )}
+              <div className="flex justify-end border-t border-slate-200 pt-5"><button type="submit" disabled={submitting} className="inline-flex items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-60"><Save className="h-4 w-4" />{submitting ? 'Submitting...' : `Submit ${shareType}`}</button></div>
             </form>
           )}
         </div>

@@ -269,7 +269,7 @@ function SearchContent() {
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 lg:mx-auto lg:max-w-xl">
               <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Filter by</span>
               {tabs.map((tab) => (
-                <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFilters(false) }} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${activeTab === tab.id ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:text-sky-700'}`}>
+                <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFilters(false) }} className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition ${activeTab === tab.id ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:text-sky-700'}`}>
                   {tab.label}
                 </button>
               ))}
@@ -311,7 +311,7 @@ function SearchContent() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition ${
                   activeTab === tab.id
                     ? 'bg-sky-600 text-white shadow-sm'
                     : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-700'

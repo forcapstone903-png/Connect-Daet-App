@@ -26,7 +26,7 @@ export default function EditProfilePage() {
       }
 
       const [{ data: userData }, { data: profileData }] = await Promise.all([
-        supabase.from('info_users').select('full_name, bio, city, country').eq('id', id).maybeSingle(),
+        supabase.from('info_users').select('full_name, bio, city, country, profile_image_url').eq('id', id).maybeSingle(),
         supabase.from('profiles').select('full_name, bio, city, country, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
       ])
       setForm({
@@ -49,7 +49,12 @@ export default function EditProfilePage() {
     const { error: userError } = await supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, profile_image_url: form.avatar_url || null }).eq('id', userId)
     const { error: profileError } = await supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
     setSaving(false)
-    setNotice(userError?.message || profileError?.message || 'Profile updated successfully.')
+    if (userError || profileError) {
+      setNotice(userError?.message || profileError?.message || 'Unable to update your profile.')
+      return
+    }
+
+    window.location.assign('/user/profile')
   }
 
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-sm text-slate-500">Loading profile...</main>
