@@ -74,14 +74,14 @@ export async function GET(request) {
         .limit(5000),
       adminSupabase
         .from('profiles')
-        .select('user_id, is_public')
+        .select('user_id, is_public, privacy_level')
         .limit(5000),
     ])
 
     if (usersError) throw usersError
     if (profilesError) throw profilesError
 
-    const publicById = new Map((profiles || []).map((profile) => [profile.user_id, profile.is_public !== false]))
+    const privacyById = new Map((profiles || []).map((profile) => [profile.user_id, profile.privacy_level || (profile.is_public === false ? 'private' : 'public')]))
     const viewerFollowingResult = viewerId
       ? await adminSupabase.from('user_follows').select('following_id').eq('follower_id', viewerId)
       : { data: [] }
@@ -90,7 +90,7 @@ export async function GET(request) {
 
     const candidates = (users || [])
       .filter((user) => user.id !== viewerId)
-      .filter((user) => publicById.get(user.id) !== false || viewerFollowing.has(user.id))
+      .filter((user) => privacyById.get(user.id) === 'public' || viewerFollowing.has(user.id))
       .map((user) => ({ ...user, relevance_score: scoreUser(user, queryTokens) }))
       .filter((user) => user.relevance_score > 0)
       .sort((left, right) => right.relevance_score - left.relevance_score || String(left.full_name || '').localeCompare(String(right.full_name || '')))

@@ -14,9 +14,13 @@ export default function EventDetailPage() {
   const [authChecking, setAuthChecking] = useState(true)
   const [loading, setLoading] = useState(true)
   const [event, setEvent] = useState(null)
+  const [userId, setUserId] = useState(null)
+  const [isRegistered, setIsRegistered] = useState(false)
+  const [registrationLoading, setRegistrationLoading] = useState(false)
+  const [registrationMessage, setRegistrationMessage] = useState('')
   const [error, setError] = useState(null)
 
-  async function fetchEvent() {
+  async function fetchEvent(currentUserId = userId) {
     try {
       const { data, error } = await supabase
         .from('info_events')
@@ -27,6 +31,15 @@ export default function EventDetailPage() {
 
       if (error) throw error
       setEvent(data)
+      if (currentUserId) {
+        const { data: registration } = await supabase
+          .from('event_registrations')
+          .select('status')
+          .eq('event_id', eventId)
+          .eq('user_id', currentUserId)
+          .maybeSingle()
+        setIsRegistered(registration?.status === 'confirmed')
+      }
     } catch (err) {
       console.error('Error loading event:', err)
       setError('Event not found or unavailable')
@@ -50,8 +63,9 @@ export default function EventDetailPage() {
           return
         }
 
+        setUserId(activeSession.user.id)
         setAuthChecking(false)
-        await fetchEvent()
+        await fetchEvent(activeSession.user.id)
       } catch (err) {
         console.error('Auth error:', err)
         router.push('/login')
@@ -65,6 +79,44 @@ export default function EventDetailPage() {
     if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
     if (typeof value === 'string' && value.trim()) return value
     return fallback
+  }
+
+  const registerForEvent = async () => {
+    if (!userId || !event) return
+    setRegistrationLoading(true)
+    setRegistrationMessage('')
+    try {
+      if (isRegistered) {
+        const { error: cancelError } = await supabase
+          .from('event_registrations')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('event_id', event.id)
+          .eq('user_id', userId)
+        if (cancelError) throw cancelError
+        setIsRegistered(false)
+        setEvent((previous) => ({ ...previous, current_attendees: Math.max(0, (previous.current_attendees || 1) - 1) }))
+        setRegistrationMessage('Registration cancelled.')
+        return
+      }
+
+      if (event.max_attendees > 0 && (event.current_attendees || 0) >= event.max_attendees) {
+        setRegistrationMessage('This event is already full.')
+        return
+      }
+
+      const { error: registrationError } = await supabase
+        .from('event_registrations')
+        .upsert({ event_id: event.id, user_id: userId, status: 'confirmed' }, { onConflict: 'event_id,user_id' })
+      if (registrationError) throw registrationError
+      setIsRegistered(true)
+      setEvent((previous) => ({ ...previous, current_attendees: (previous.current_attendees || 0) + 1 }))
+      setRegistrationMessage('You are registered for this event.')
+    } catch (registrationError) {
+      console.error('Event registration failed:', registrationError)
+      setRegistrationMessage('Unable to update registration right now.')
+    } finally {
+      setRegistrationLoading(false)
+    }
   }
 
   const formatDate = (dateStr) => {
@@ -208,17 +260,18 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {!event.is_free && event.ticket_price != null && (
+            {(event.is_free || event.ticket_price != null || event.max_attendees > 0) && (
               <div className="mt-6 flex items-center justify-between rounded-[20px] bg-gradient-to-r from-sky-600 to-emerald-500 p-4 text-white">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Ticket Price</p>
-                  <p className="text-2xl font-black">₱{Number(event.ticket_price).toLocaleString()}</p>
+                  <p className="text-2xl font-black">{event.is_free ? 'Free' : `₱${Number(event.ticket_price || 0).toLocaleString()}`}</p>
                 </div>
-                <button className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-700 transition hover:bg-sky-50">
-                  Register Now
+                <button type="button" onClick={registerForEvent} disabled={registrationLoading || (event.max_attendees > 0 && (event.current_attendees || 0) >= event.max_attendees && !isRegistered)} className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">
+                  {registrationLoading ? 'Updating...' : isRegistered ? 'Cancel registration' : event.is_free ? 'Register Now' : 'Register Now'}
                 </button>
               </div>
             )}
+            {registrationMessage && <p className="mt-3 text-sm font-semibold text-sky-700">{registrationMessage}</p>}
           </div>
         </div>
       </div>

@@ -140,11 +140,11 @@ export default function BlogDetailPage() {
 
           const { data: userData } = await supabase
             .from('info_users')
-            .select('reputation')
+            .select('points')
             .eq('id', session.user.id)
             .single()
 
-          setUserReputation(userData?.reputation || 0)
+          setUserReputation(userData?.points || 0)
 
           const { data: badgeData } = await supabase
             .from('user_badges')

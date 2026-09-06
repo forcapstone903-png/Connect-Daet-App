@@ -12,6 +12,7 @@ export default function UserSavedPage() {
   const [authChecking, setAuthChecking] = useState(true)
   const [loading, setLoading] = useState(true)
   const [savedItems, setSavedItems] = useState([])
+  const [currentUserId, setCurrentUserId] = useState('')
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -29,6 +30,7 @@ export default function UserSavedPage() {
         }
 
         setAuthChecking(false)
+        setCurrentUserId(activeSession.user.id)
         await loadSavedItems(activeSession.user.id)
       } catch (err) {
         console.error('Auth error:', err)
@@ -115,7 +117,7 @@ export default function UserSavedPage() {
     e.stopPropagation()
     const [type, id] = key.split('-')
     const itemType = type === 'post' ? 'user_post' : type
-    void supabase.from('user_favorites').delete().eq('item_type', itemType).eq('item_id', id).then(({ error }) => {
+    void supabase.from('user_favorites').delete().eq('user_id', currentUserId).eq('item_type', itemType).eq('item_id', id).then(({ error }) => {
       if (error) {
         console.error('Saved item removal failed:', error)
         return

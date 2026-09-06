@@ -36,14 +36,14 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  normalized_body TEXT := lower(regexp_replace(trim(coalesce(p_body, '')), '\s+', ' ', 'g'));
+  normalized_comment_body TEXT := lower(regexp_replace(trim(coalesce(p_body, '')), '\s+', ' ', 'g'));
   recent_comments INTEGER;
   reward_points NUMERIC(12, 2) := 0.01;
 BEGIN
   -- Short, repeated, link-only, and rapid-fire comments do not earn points.
-  IF char_length(normalized_body) < 3
-    OR normalized_body ~ '^(.)\1{2,}$'
-    OR normalized_body ~ '^(https?://|www\.)'
+  IF char_length(normalized_comment_body) < 3
+    OR normalized_comment_body ~ '^(.)\1{2,}$'
+    OR normalized_comment_body ~ '^(https?://|www\.)'
   THEN
     RETURN;
   END IF;
@@ -53,15 +53,15 @@ BEGIN
     FROM public.comment_point_rewards
    WHERE user_id = p_user_id
      AND content_type = p_content_type
-     AND content_id = p_content_id
-     AND created_at > NOW() - INTERVAL '10 minutes';
+    AND content_id = p_content_id
+    AND comment_point_rewards.created_at > NOW() - INTERVAL '10 minutes';
 
   IF recent_comments >= 3 THEN
     RETURN;
   END IF;
 
-  INSERT INTO public.comment_point_rewards (user_id, content_type, content_id, normalized_body, points)
-  VALUES (p_user_id, p_content_type, p_content_id, normalized_body, reward_points)
+  INSERT INTO public.comment_point_rewards AS comment_reward (user_id, content_type, content_id, normalized_body, points)
+  VALUES (p_user_id, p_content_type, p_content_id, normalized_comment_body, reward_points)
   ON CONFLICT (user_id, content_type, content_id, normalized_body) DO NOTHING;
 
   IF NOT FOUND THEN

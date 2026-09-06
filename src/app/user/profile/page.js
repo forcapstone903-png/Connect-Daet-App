@@ -202,7 +202,7 @@ export default function UserProfilePage() {
         const [{ data: userData }, { data: profileData }, { data: followRows }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }] = await Promise.all([
           supabase
             .from('info_users')
-            .select('id, email, full_name, profile_image_url, bio, city, country, points, reputation, level, created_at, user_type')
+            .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
             .eq('id', fallbackUserId)
             .maybeSingle(),
           supabase
@@ -218,7 +218,7 @@ export default function UserProfilePage() {
             .from('user_badges')
             .select('*')
             .eq('user_id', fallbackUserId)
-            .order('awarded_at', { ascending: false }),
+            .order('earned_at', { ascending: false }),
           supabase
             .from('user_activity_log')
             .select('*')
@@ -276,7 +276,7 @@ export default function UserProfilePage() {
           cover_photo_url: profileData?.cover_photo_url || '',
           location: mergedLocation,
           points: userData?.points || 0,
-          reputation: userData?.reputation || 0,
+          reputation: userData?.points || 0,
           level: userData?.level || 1,
           created_at: userData?.created_at || new Date().toISOString(),
         }
@@ -392,6 +392,7 @@ export default function UserProfilePage() {
         privacy_level: privacyLevel,
         language_preference: languagePreference,
         notification_preferences: notificationPrefs,
+        is_public: privacyLevel !== 'private',
         updated_at: new Date().toISOString(),
       }
 

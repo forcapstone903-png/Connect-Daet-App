@@ -91,7 +91,7 @@ export default function UserRewardsPage() {
             .from('user_badges')
             .select('*')
             .eq('user_id', userId)
-            .order('awarded_at', { ascending: false }),
+            .order('earned_at', { ascending: false }),
           supabase
             .from('info_users')
             .select('id, full_name, profile_image_url, points')

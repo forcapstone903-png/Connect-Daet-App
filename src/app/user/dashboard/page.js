@@ -321,23 +321,35 @@ export default function UserDashboardPage() {
     }
   }, [authenticated, userId])
 
-  const handleReact = (e, item, reactionType) => {
+  const handleReact = async (e, item, reactionType) => {
     e.preventDefault()
     e.stopPropagation()
+    if (!userId) return
     const itemKey = `${item.type}-${item.id}`
     const current = reactions[itemKey]
     const nextReactions = { ...reactions }
+    const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'post' ? 'user_post' : item.type
 
-    if (current === reactionType) {
-      delete nextReactions[itemKey]
-      setToastMessage('Reaction removed')
-    } else {
-      nextReactions[itemKey] = reactionType
-      const labels = { like: 'Thanks for the like!', love: 'Spread the love!', wow: 'Glad you loved it!' }
-      setToastMessage(labels[reactionType] || 'Thanks for your reaction!')
+    try {
+      const result = current === reactionType
+        ? await supabase.from('content_reactions').delete().eq('user_id', userId).eq('content_type', contentType).eq('content_id', item.id)
+        : await supabase.from('content_reactions').upsert({ user_id: userId, content_type: contentType, content_id: item.id, reaction_type: reactionType }, { onConflict: 'user_id,content_type,content_id' })
+      if (result.error) throw result.error
+
+      if (current === reactionType) {
+        delete nextReactions[itemKey]
+        setToastMessage('Reaction removed')
+      } else {
+        nextReactions[itemKey] = reactionType
+        const labels = { like: 'Thanks for the like!', love: 'Spread the love!', wow: 'Glad for the reaction!' }
+        setToastMessage(labels[reactionType] || 'Thanks for the reaction!')
+      }
+      setReactions(nextReactions)
+    } catch (error) {
+      console.error('Reaction update failed:', error)
+      setToastMessage('Unable to update reaction')
     }
 
-    setReactions(nextReactions)
     setShowReactions(null)
     setTimeout(() => setToastMessage(''), 2500)
 
@@ -622,6 +634,10 @@ export default function UserDashboardPage() {
           ])
 
           if (!isMounted) return
+          setReactions(Object.fromEntries((reactionResult.data || []).map((reaction) => [
+            `${reaction.content_type === 'forum_thread' ? 'forum' : reaction.content_type === 'user_post' ? 'post' : reaction.content_type}-${reaction.content_id}`,
+            reaction.reaction_type,
+          ])))
           setSavedItems(new Set((favoriteResult.data || []).map((favorite) => `${favorite.item_type}-${favorite.item_id}`)))
           setUserSignals({
             activities: activityResult.data || [],

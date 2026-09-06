@@ -26,7 +26,7 @@ export async function GET(request, { params }) {
         .maybeSingle(),
       adminSupabase
         .from('profiles')
-        .select('user_id, full_name, profile_image_url, cover_photo_url, bio, city, country, is_public')
+        .select('user_id, full_name, profile_image_url, cover_photo_url, bio, city, country, is_public, privacy_level')
         .eq('user_id', profileId)
         .maybeSingle(),
       viewerId && viewerId !== profileId
@@ -45,7 +45,8 @@ export async function GET(request, { params }) {
     }
 
     const isOwnProfile = viewerId === profileId
-    if (profileData?.is_public === false && !isOwnProfile && !followRow) {
+    const privacyLevel = profileData?.privacy_level || (profileData?.is_public === false ? 'private' : 'public')
+    if (privacyLevel !== 'public' && !isOwnProfile && !followRow) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
 
