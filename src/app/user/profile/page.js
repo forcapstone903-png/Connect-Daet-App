@@ -701,6 +701,7 @@ export default function UserProfilePage() {
                         mediaType="image"
                         existingMediaUrl={profileForm.cover_photo_url}
                         previewClassName="h-32 w-full max-w-lg aspect-[3/1]"
+                        imagePreset="cover"
                         buttonText="Upload cover"
                         onUploadComplete={(url) => setProfileForm((previous) => ({ ...previous, cover_photo_url: url }))}
                         onUploadError={(message) => setSaveNotice(message)}
