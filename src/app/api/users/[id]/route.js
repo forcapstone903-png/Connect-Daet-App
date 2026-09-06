@@ -14,11 +14,15 @@ export async function GET(request, { params }) {
     return NextResponse.json({ success: false, message: 'Profile service is not configured.' }, { status: 500 })
   }
 
-  const profileId = params.id
+  const resolvedParams = await params
+  const profileId = resolvedParams?.id
+  if (!profileId) {
+    return NextResponse.json({ success: false, message: 'Profile id is required.' }, { status: 400 })
+  }
   const viewerId = getServerSession(request)?.user_id || null
 
   try {
-    const [{ data: userData, error: userError }, { data: profileData }, { data: followRow }] = await Promise.all([
+    const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }] = await Promise.all([
       adminSupabase
         .from('info_users')
         .select('id, full_name, profile_image_url, bio, city, country, points, level, user_type, status')
@@ -26,7 +30,7 @@ export async function GET(request, { params }) {
         .maybeSingle(),
       adminSupabase
         .from('profiles')
-        .select('user_id, full_name, profile_image_url, cover_photo_url, bio, city, country, is_public, privacy_level')
+        .select('user_id, full_name, profile_image_url, cover_photo_url, bio, city, country, is_public')
         .eq('user_id', profileId)
         .maybeSingle(),
       viewerId && viewerId !== profileId
@@ -40,12 +44,14 @@ export async function GET(request, { params }) {
     ])
 
     if (userError) throw userError
+    if (profileError) throw profileError
+    if (followError) throw followError
     if (!userData || userData.status !== 'active') {
       return NextResponse.json({ success: false, message: 'This profile could not be found.' }, { status: 404 })
     }
 
     const isOwnProfile = viewerId === profileId
-    const privacyLevel = profileData?.privacy_level || (profileData?.is_public === false ? 'private' : 'public')
+    const privacyLevel = profileData?.is_public === false ? 'private' : 'public'
     if (privacyLevel !== 'public' && !isOwnProfile && !followRow) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
