@@ -520,7 +520,7 @@ export default function UserDashboardPage() {
         const counts = {}
         await Promise.all(
           (items || []).map(async (item) => {
-            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'announcement' ? 'announcement' : 'event'
+            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
             const { count } = await supabase
               .from('content_comments')
               .select('id', { count: 'exact', head: true })
@@ -581,16 +581,40 @@ export default function UserDashboardPage() {
               .eq('status', 'published')
               .order('last_activity_at', { ascending: false })
               .limit(6),
+            supabase
+              .from('user_follows')
+              .select('following_id')
+              .eq('follower_id', userId),
+            supabase
+              .from('info_user_posts')
+              .select('id, user_id, title, content, created_at, updated_at, status')
+              .eq('status', 'published')
+              .order('created_at', { ascending: false })
+              .limit(50),
           ]),
         ])
 
         if (categoriesResult.error) throw categoriesResult.error
         if (announcementsResult.error) throw announcementsResult.error
 
-        const [blogsFeed, eventsFeed, threadsFeed] = feedResult
+        const [blogsFeed, eventsFeed, threadsFeed, followsFeed, userPostsFeed] = feedResult
         if (blogsFeed.error || eventsFeed.error || threadsFeed.error) {
           throw new Error('Failed to load feed content')
         }
+
+        const followedUserIds = new Set([
+          userId,
+          ...(followsFeed.data || []).map((row) => row.following_id).filter(Boolean),
+        ])
+        const followedPosts = (userPostsFeed.data || [])
+          .filter((post) => followedUserIds.has(post.user_id))
+          .map((post) => ({
+            ...post,
+            created_by: post.user_id,
+            excerpt: post.content,
+            published_at: post.created_at,
+            category: 'Community',
+          }))
 
         const nextCategories = categoriesResult.data || []
         const nextAnnouncements = (announcementsResult.data || []).map(normalizeAnnouncementRecord)
@@ -598,6 +622,7 @@ export default function UserDashboardPage() {
           ...(blogsFeed.data || []).map((item) => item.created_by),
           ...(eventsFeed.data || []).map((item) => item.created_by),
           ...(threadsFeed.data || []).map((item) => item.created_by),
+          ...followedPosts.map((item) => item.created_by),
           ...(nextAnnouncements || []).map((item) => item.created_by),
         ].filter(Boolean)
         const { data: authors } = authorIds.length
@@ -624,6 +649,11 @@ export default function UserDashboardPage() {
             ...withAuthor(thread),
             type: 'forum',
             href: `/user/forums/${thread.id}`,
+          })),
+          ...followedPosts.map((post) => ({
+            ...withAuthor(post),
+            type: 'post',
+            href: `/user/profile/${post.user_id}`,
           })),
           ...(nextAnnouncements || []).map((announcement) => ({
             ...withAuthor(announcement),
@@ -903,13 +933,13 @@ export default function UserDashboardPage() {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author
-                  const authorName = author?.full_name || (item.type === 'forum' ? 'Community member' : item.type === 'event' ? 'Event organizer' : 'Daet storyteller')
+                  const authorName = author?.full_name || (item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' ? 'Event organizer' : 'Daet storyteller')
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
                   const postImageUrl = item.type === 'blog' ? item.featured_image : item.type === 'announcement' ? item.image_url : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
-                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'announcement' ? 'announcement' : 'event'
+                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
                     <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className="feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)]">
                       <div className="p-4 sm:p-5">

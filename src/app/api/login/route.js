@@ -166,6 +166,7 @@ export async function POST(request) {
         full_name: userProfile?.full_name || authData.user.email,
         user_type: userProfile?.user_type || normalizedRole || 'tourist',
         points: userProfile?.points || 0,
+        profile_image_url: userProfile?.profile_image_url || null,
       },
       session: {
         access_token: authData.session?.access_token,

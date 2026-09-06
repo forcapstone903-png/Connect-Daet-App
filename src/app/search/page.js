@@ -85,10 +85,10 @@ function SearchContent() {
             .or(`title.ilike.%${q}%,content.ilike.%${q}%`),
           supabase
             .from('info_users')
-            .select('id, full_name, email, profile_image_url, bio, city, country, user_type')
+            .select('id, full_name, profile_image_url, bio, city, country, user_type')
             .eq('status', 'active')
             .neq('user_type', 'admin')
-            .or(`full_name.ilike.%${q}%,email.ilike.%${q}%,bio.ilike.%${q}%,city.ilike.%${q}%,country.ilike.%${q}%`),
+            .or(`full_name.ilike.%${q}%,bio.ilike.%${q}%,city.ilike.%${q}%,country.ilike.%${q}%`),
         ])
 
         const users = usersRes.data || []

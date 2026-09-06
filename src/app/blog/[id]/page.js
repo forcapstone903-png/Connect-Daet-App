@@ -150,6 +150,15 @@ export default function PublicBlogDetailPage() {
         } else if (blogData && !ignore) {
           setBlog(blogData)
 
+          const { data: reactionRows } = await supabase
+            .from('content_reactions')
+            .select('user_id, reaction_type')
+            .eq('content_type', 'blog')
+            .eq('content_id', blogId)
+
+          setIsLiked(Boolean(userId && (reactionRows || []).some((reaction) => reaction.user_id === userId && reaction.reaction_type === 'like')))
+          setBlog((previous) => ({ ...previous, likes: reactionRows?.length || 0 }))
+
           await supabase.from('info_blogs').update({ views: (blogData.views || 0) + 1 }).eq('id', blogId)
 
           const { data: commentsData } = await supabase
@@ -217,8 +226,22 @@ export default function PublicBlogDetailPage() {
     }
 
     try {
-      const nextLikeCount = isLiked ? (blog.likes || 1) - 1 : (blog.likes || 0) + 1
-      await supabase.from('info_blogs').update({ likes: nextLikeCount }).eq('id', blogId)
+      const result = isLiked
+        ? await supabase
+            .from('content_reactions')
+            .delete()
+            .eq('user_id', userId)
+            .eq('content_type', 'blog')
+            .eq('content_id', blogId)
+        : await supabase
+            .from('content_reactions')
+            .upsert(
+              { user_id: userId, content_type: 'blog', content_id: blogId, reaction_type: 'like' },
+              { onConflict: 'user_id,content_type,content_id' }
+            )
+
+      if (result.error) throw result.error
+      const nextLikeCount = Math.max(0, (blog.likes || 0) + (isLiked ? -1 : 1))
       setIsLiked(!isLiked)
       setBlog((prev) => ({ ...prev, likes: nextLikeCount }))
       if (!isLiked && userId) {

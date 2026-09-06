@@ -74,6 +74,8 @@ function LoginContent() {
         user_name: user.full_name,
         user_email: user.email,
         role: user.user_type,
+        avatar_url: user.profile_image_url || '',
+        profile_image_url: user.profile_image_url || '',
         logged_in: true,
         login_time: new Date().toISOString(),
       }

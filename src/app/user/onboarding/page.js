@@ -6,7 +6,7 @@ import { ArrowLeft, ArrowRight, Check, ImagePlus, MapPin, UserPlus } from 'lucid
 import { useRouter } from 'next/navigation'
 import MediaUpload from '@/app/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
-import { getStoredSessionObject } from '@/lib/authCookies'
+import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 
 const FALLBACK_TOPICS = ['Beaches', 'Food', 'History', 'Culture', 'Events', 'Nature']
 const FALLBACK_PLACES = ['Bagasbas Beach', 'Daet Elevated Town Plaza', 'First Rizal Monument', 'Morga House', 'Vinzons Watersports']
@@ -76,6 +76,11 @@ export default function OnboardingPage() {
         const { error: followError } = await supabase.from('user_follows').upsert(followedPeople.map((followingId) => ({ follower_id: userId, following_id: followingId })), { onConflict: 'follower_id,following_id' })
         if (followError) throw followError
       }
+      updateStoredSession({
+        avatar_url: avatarUrl || '',
+        profile_image_url: avatarUrl || '',
+        onboarding_completed: true,
+      })
       router.replace('/user/dashboard')
     } catch (saveError) {
       console.error('Onboarding save failed:', saveError)

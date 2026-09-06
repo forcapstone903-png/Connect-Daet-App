@@ -26,7 +26,7 @@ export async function POST(request) {
     }
 
     const supabase = createClient(url, key)
-    const { error } = await supabase.auth.verifyOtp({
+    const { data: verificationData, error } = await supabase.auth.verifyOtp({
       token_hash,
       type,
     })
@@ -37,6 +37,18 @@ export async function POST(request) {
         { success: false, message: error.message || 'Unable to verify email.' },
         { status: 400 }
       )
+    }
+
+    const verifiedUserId = verificationData?.user?.id
+    if (verifiedUserId) {
+      const { error: profileError } = await supabase
+        .from('info_users')
+        .update({ email_verified: true, updated_at: new Date().toISOString() })
+        .eq('id', verifiedUserId)
+
+      if (profileError) {
+        console.error('Email verification profile update error:', profileError)
+      }
     }
 
     return NextResponse.json({

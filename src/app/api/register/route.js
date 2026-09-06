@@ -208,6 +208,18 @@ export async function POST(request) {
       console.log('✅ User profile created for user id:', profileData?.id)
     }
 
+    const { error: publicProfileError } = await adminSupabase
+      .from('profiles')
+      .upsert({
+        user_id: authData.user.id,
+        full_name: full_name || '',
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+
+    if (publicProfileError) {
+      console.error('Public profile creation error:', publicProfileError)
+    }
+
     // Return success
     return NextResponse.json({ 
       success: true,
