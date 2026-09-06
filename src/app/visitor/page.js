@@ -402,7 +402,7 @@ export default function VisitorPage() {
           {/* Header */}
           <header className="relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 bg-white/10 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] backdrop-blur-xl sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5">
             <div className="grid items-center gap-2 sm:gap-4 md:grid-cols-[auto_1fr_auto]">
-              <div className="flex items-center gap-2 sm:gap-3">
+              <div className="flex w-full items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 p-1 shadow-lg shadow-sky-900/20 ring-1 ring-white/20 sm:h-11 sm:w-11">
                   <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-xl object-cover" />
                 </div>
@@ -410,6 +410,19 @@ export default function VisitorPage() {
                   <p className="text-[10px] font-black tracking-[0.24em] text-white/90 sm:text-sm">DAET</p>
                   <p className="text-[7px] font-medium uppercase tracking-[0.22em] text-sky-100/90 sm:text-[10px]">Camarines Norte</p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  aria-expanded={mobileMenuOpen}
+                  aria-label="Toggle navigation menu"
+                  className={`ml-auto flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 md:hidden ${
+                    mobileMenuOpen
+                      ? 'border-white/40 bg-white text-slate-900 shadow-lg'
+                      : 'border-white/20 bg-white/10 text-white hover:bg-white/15'
+                  }`}
+                >
+                  {mobileMenuOpen ? <X size={18} className="transition-transform duration-200" /> : <Menu size={18} className="transition-transform duration-200" />}
+                </button>
               </div>
 
               <nav className="hidden items-center justify-center gap-1 text-sm md:flex">
@@ -439,19 +452,6 @@ export default function VisitorPage() {
                     Sign in
                   </Link>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                  aria-expanded={mobileMenuOpen}
-                  aria-label="Toggle navigation menu"
-                  className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-200 md:hidden ${
-                    mobileMenuOpen
-                      ? 'border-white/40 bg-white text-slate-900 shadow-lg'
-                      : 'border-white/20 bg-white/10 text-white hover:bg-white/15'
-                  }`}
-                >
-                  {mobileMenuOpen ? <X size={18} className="transition-transform duration-200" /> : <Menu size={18} className="transition-transform duration-200" />}
-                </button>
               </div>
             </div>
 
