@@ -188,14 +188,14 @@ export default function MediaUpload({
           <div className="relative inline-block">
             {mediaTypeDetected === 'video' ? (
               <video
-                src={existingMediaUrl || mediaPreview}
+                src={mediaPreview || existingMediaUrl}
                 className={`${previewClassName} object-cover rounded-2xl border border-gray-200 shadow-sm`}
                 controls
                 preload="metadata"
               />
             ) : (
               <img
-                src={existingMediaUrl || mediaPreview}
+                src={mediaPreview || existingMediaUrl}
                 alt="Upload preview"
                 className={`${previewClassName} object-cover rounded-2xl border border-gray-200 shadow-sm`}
               />
