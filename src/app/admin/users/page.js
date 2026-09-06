@@ -98,7 +98,7 @@ export default function ManageUsersPage() {
       const session = getStoredSession();
       if (!session) { router.push('/login'); return; }
       const userData = JSON.parse(session);
-      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/admin/dashboard'); return; }
       setAdminUser(userData);
       await fetchUsers();
       setLoading(false);
@@ -168,9 +168,6 @@ export default function ManageUsersPage() {
           case 'spot':
             targetTable = 'info_tourist_spots';
             break;
-          case 'amenity':
-            targetTable = 'info_amenities';
-            break;
           case 'blog':
             targetTable = 'info_blogs';
             break;
@@ -218,9 +215,6 @@ export default function ManageUsersPage() {
             break;
           case 'spot':
             targetTable = 'info_tourist_spots';
-            break;
-          case 'amenity':
-            targetTable = 'info_amenities';
             break;
           case 'blog':
             targetTable = 'info_blogs';

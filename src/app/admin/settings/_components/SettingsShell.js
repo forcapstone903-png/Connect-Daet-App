@@ -35,7 +35,7 @@ export default function SettingsShell({ title, subtitle, children }) {
       try {
         const userData = JSON.parse(session);
         if (!hasAdminAccess(userData.role)) {
-          router.push('/dashboard');
+          router.push('/admin/dashboard');
           return;
         }
         if (isActive) setUser(userData);

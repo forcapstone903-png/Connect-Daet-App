@@ -56,7 +56,7 @@ export default function FeedbackAndComplaintPage() {
 
       const userData = JSON.parse(session);
       if (!hasAdminAccess(userData.role)) {
-        router.push('/dashboard');
+        router.push('/admin/dashboard');
         return;
       }
 

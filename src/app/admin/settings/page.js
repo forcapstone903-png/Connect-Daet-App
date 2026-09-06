@@ -64,7 +64,7 @@ export default function AdminSettingsOverview() {
 
         const exportData = async () => {
           try {
-            const tables = ['info_users', 'info_events', 'info_tourist_spots', 'info_blogs', 'info_amenities', 'info_inquiries'];
+            const tables = ['info_users', 'info_events', 'info_tourist_spots', 'info_blogs', 'info_inquiries'];
             const exportData = {};
 
             for (const table of tables) {

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Mail, Search, Send, UserRound } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
-import MobileNav from '@/app/components/user/MobileNav'
 
 export default function UserMessagingPage() {
   const [messages, setMessages] = useState([])
@@ -22,7 +21,7 @@ export default function UserMessagingPage() {
 
     const loadMessages = async () => {
       try {
-        const response = await fetch('/api/notifications', { credentials: 'same-origin' })
+        const response = await fetch('/api/messages', { credentials: 'same-origin' })
         const result = await response.json()
         if (active && response.ok && result.success) setMessages(result.messages || [])
       } catch (error) {
@@ -91,7 +90,6 @@ export default function UserMessagingPage() {
 
   return (
     <main className="min-h-screen bg-[#eef4f5] text-slate-900">
-      <MobileNav />
       <div className="mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
         <header className="mb-4 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <div className="flex items-center gap-3">

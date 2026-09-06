@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, FilePenLine, Plus, Clock3 } from 'lucide-react'
-import MobileNav from '@/app/components/user/MobileNav'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
@@ -37,7 +36,6 @@ export default function UserDraftsPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] pb-24 text-slate-900">
-      <MobileNav />
       <div className="mx-auto w-full max-w-[900px] px-3 pb-10 pt-3 sm:px-5 lg:px-8">
         <header className="mb-5 flex items-center justify-between rounded-[22px] border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur sm:p-5">
           <div className="flex items-center gap-3">
@@ -54,13 +52,15 @@ export default function UserDraftsPage() {
         ) : drafts.length ? (
           <div className="space-y-3">
             {drafts.map((draft) => (
-              <article key={draft.id} className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Draft</p><h2 className="mt-1 text-base font-black text-slate-900">{draft.title || 'Untitled draft'}</h2><p className="mt-1 line-clamp-2 text-sm text-slate-600">{draft.excerpt || 'No excerpt yet.'}</p></div>
-                  <FilePenLine className="h-5 w-5 shrink-0 text-amber-500" />
-                </div>
-                <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />Updated {draft.updated_at ? new Date(draft.updated_at).toLocaleDateString() : 'recently'}</div>
-              </article>
+              <Link key={draft.id} href={`/user/blogs/${draft.id}/edit`} className="block rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 sm:p-5">
+                <article>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Draft</p><h2 className="mt-1 text-base font-black text-slate-900">{draft.title || 'Untitled draft'}</h2><p className="mt-1 line-clamp-2 text-sm text-slate-600">{draft.excerpt || 'No excerpt yet.'}</p></div>
+                    <FilePenLine className="h-5 w-5 shrink-0 text-amber-500" />
+                  </div>
+                  <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />Updated {draft.updated_at ? new Date(draft.updated_at).toLocaleDateString() : 'recently'}</div>
+                </article>
+              </Link>
             ))}
           </div>
         ) : (

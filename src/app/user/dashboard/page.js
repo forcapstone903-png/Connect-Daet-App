@@ -37,7 +37,6 @@ import {
 import { supabase } from '@/lib/supabase'
 import { clearAuthCookie, getAuthCookieFromDocument } from '@/lib/authCookies'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
-import MobileNav from '@/app/components/user/MobileNav'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
 
@@ -46,7 +45,6 @@ const TABLES = {
   USERS: 'info_users',
   BLOGS: 'info_blogs',
   EVENTS: 'info_events',
-  AMENITIES: 'info_amenities',
   ANNOUNCEMENTS: 'info_announcements',
   FORUM_THREADS: 'forum_threads',
   CATEGORIES: 'system_categories',
@@ -139,7 +137,7 @@ export default function UserDashboardPage() {
   // Data state
   const [feed, setFeed] = useState([])
   const [categories, setCategories] = useState([])
-  const [stats, setStats] = useState({ blogs: 0, events: 0, amenities: 0, announcements: 0 })
+  const [stats, setStats] = useState({ blogs: 0, events: 0, announcements: 0 })
   const [announcements, setAnnouncements] = useState([])
   const [userSignals, setUserSignals] = useState({ activities: [], reactions: [], favorites: [], preferredCategories: [] })
 
@@ -573,21 +571,19 @@ export default function UserDashboardPage() {
 
     const loadDashboardStats = async (currentUserId) => {
       try {
-        const [blogStats, eventStats, amenityStats, announcementStats] = await Promise.all([
+        const [blogStats, eventStats, announcementStats] = await Promise.all([
           supabase.from(TABLES.BLOGS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
           supabase.from(TABLES.EVENTS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
-          supabase.from(TABLES.AMENITIES).select('id', { count: 'exact', head: true }).eq('status', 'published'),
           supabase.from(TABLES.ANNOUNCEMENTS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
         ])
 
-        if (blogStats.error || eventStats.error || amenityStats.error || announcementStats.error) {
+        if (blogStats.error || eventStats.error || announcementStats.error) {
           throw new Error('Failed to load statistics')
         }
 
         const nextStats = {
           blogs: blogStats.count || 0,
           events: eventStats.count || 0,
-          amenities: amenityStats.count || 0,
           announcements: announcementStats.count || 0,
         }
 
@@ -675,7 +671,7 @@ export default function UserDashboardPage() {
           if (!isMounted) return
           setCategories(cachedDashboard.categories || [])
           setAnnouncements(cachedDashboard.announcements || [])
-          setStats(cachedDashboard.stats || { blogs: 0, events: 0, amenities: 0, announcements: 0 })
+          setStats(cachedDashboard.stats || { blogs: 0, events: 0, announcements: 0 })
           setFeed(cachedDashboard.feed || [])
           setLoading(false)
           void loadDashboardStats(userId)
@@ -715,7 +711,7 @@ export default function UserDashboardPage() {
             supabase
               .from(TABLES.FORUM_THREADS)
               .select('id, title, content, category_id, reply_count, last_activity_at, created_at, updated_at, created_by, status')
-              .eq('status', 'published')
+              .eq('status', 'active')
               .order('last_activity_at', { ascending: false })
               .limit(20),
             supabase
@@ -802,7 +798,7 @@ export default function UserDashboardPage() {
         const nextDashboardData = {
           categories: nextCategories,
           announcements: nextAnnouncements,
-          stats: { blogs: 0, events: 0, amenities: 0, announcements: nextAnnouncements.length },
+          stats: { blogs: 0, events: 0, announcements: nextAnnouncements.length },
           feed: mixedFeed,
         }
 
@@ -956,7 +952,6 @@ export default function UserDashboardPage() {
 
   return (
     <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      <MobileNav />
       {toastMessage && (
         <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
           {toastMessage}

@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/components/MediaUpload'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
-import MobileNav from '@/app/components/user/MobileNav'
 
 const categories = [
   { value: 'travel_guides', label: 'Travel Guides' },
@@ -76,11 +75,6 @@ export default function CreateBlogPage() {
       return
     }
 
-    if (!form.title.trim() || !form.content.trim() || !form.category) {
-      alert('Please add a title, category, and article content.')
-      return
-    }
-
     setSubmitting(true)
 
     try {
@@ -106,6 +100,11 @@ export default function CreateBlogPage() {
         setSuccess(true)
         const destination = shareType === 'forum' ? '/user/forums' : shareType === 'event' ? '/user/events' : '/user/feedback'
         setTimeout(() => router.push(destination), 1200)
+        return
+      }
+
+      if (!form.title.trim() || !form.content.trim() || !form.category) {
+        alert('Please add a title, category, and article content.')
         return
       }
 
@@ -194,7 +193,6 @@ export default function CreateBlogPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] pb-24 text-slate-900">
-      <MobileNav />
       <div className="mx-auto max-w-4xl px-3 py-6 sm:px-4 lg:px-6">
         <div className="mb-6 flex items-center justify-between">
           <Link href="/user/dashboard" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">

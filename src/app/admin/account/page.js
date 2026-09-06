@@ -142,7 +142,7 @@ export default function AdminAccountPage() {
     try {
       const userData = JSON.parse(session)
       if (!hasAdminAccess(userData.role)) {
-        window.location.href = '/dashboard'
+        window.location.href = '/admin/dashboard'
         return
       }
       if (!isActive) return

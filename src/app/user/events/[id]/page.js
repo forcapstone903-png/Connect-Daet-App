@@ -83,6 +83,10 @@ export default function EventDetailPage() {
 
   const registerForEvent = async () => {
     if (!userId || !event) return
+    if (!event.is_free && Number(event.ticket_price || 0) > 0) {
+      setRegistrationMessage('Online payment is not available for this paid event yet.')
+      return
+    }
     setRegistrationLoading(true)
     setRegistrationMessage('')
     try {

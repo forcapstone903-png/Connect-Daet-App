@@ -130,7 +130,7 @@ export default function AdminEngagementPage() {
     try {
       const user = JSON.parse(session)
       if (!hasAdminAccess(user.role)) {
-        router.push('/dashboard')
+        router.push('/admin/dashboard')
         return
       }
       setAdminUser(user)

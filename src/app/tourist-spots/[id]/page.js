@@ -151,20 +151,20 @@ export default function TouristSpotDetailPage() {
     }
 
     try {
-      if (isSaved) {
-        await supabase
+      const result = isSaved
+        ? await supabase
           .from('user_favorites')
           .delete()
           .eq('user_id', session.user.id)
           .eq('item_type', 'tourist_spot')
           .eq('item_id', spotId)
-      } else {
-        await supabase.from('user_favorites').insert({
+        : await supabase.from('user_favorites').upsert({
           user_id: session.user.id,
           item_type: 'tourist_spot',
           item_id: spotId,
-        })
-      }
+        }, { onConflict: 'user_id,item_type,item_id' })
+
+      if (result.error) throw result.error
 
       setIsSaved(!isSaved)
       if (!isSaved && session?.user?.id) {

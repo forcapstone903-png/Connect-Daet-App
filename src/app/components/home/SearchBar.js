@@ -16,7 +16,7 @@ export default function SearchBar() {
   return (
     <form onSubmit={submit} className="mx-auto max-w-3xl">
       <div className="flex items-center gap-2">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search attractions, events, amenities, blogs..." className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search attractions, events, blogs..." className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm" />
         <button className="rounded-xl bg-blue-600 px-4 py-3 text-sm text-white">Search</button>
       </div>
     </form>

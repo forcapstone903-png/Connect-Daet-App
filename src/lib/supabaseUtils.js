@@ -172,101 +172,6 @@ export async function resetPassword(userId, newPassword) {
 
 /**
  * ============================================================================
- * AMENITIES
- * ============================================================================
- */
-
-export async function getAmenities(filters = {}) {
-  try {
-    let query = supabase
-      .from('info_amenities')
-      .select('*')
-      .eq('status', 'active');
-
-    if (filters.type) {
-      query = query.eq('type', filters.type);
-    }
-    if (filters.search) {
-      query = query.ilike('name', `%${filters.search}%`);
-    }
-    if (filters.featured) {
-      query = query.eq('featured', true);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function getAmenityById(id) {
-  try {
-    const { data, error } = await supabase
-      .from('info_amenities')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function createAmenity(amenityData, userId) {
-  try {
-    const { data, error } = await supabase
-      .from('info_amenities')
-      .insert([{
-        ...amenityData,
-        created_by: userId
-      }])
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function updateAmenity(id, updates) {
-  try {
-    const { data, error } = await supabase
-      .from('info_amenities')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function deleteAmenity(id) {
-  try {
-    const { error } = await supabase
-      .from('info_amenities')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-/**
- * ============================================================================
  * EVENTS
  * ============================================================================
  */
@@ -742,13 +647,6 @@ export default {
   requestPasswordReset,
   verifyResetToken,
   resetPassword,
-  
-  // Amenities
-  getAmenities,
-  getAmenityById,
-  createAmenity,
-  updateAmenity,
-  deleteAmenity,
   
   // Events
   getEvents,

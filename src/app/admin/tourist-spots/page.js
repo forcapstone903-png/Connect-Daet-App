@@ -468,7 +468,7 @@ export default function TouristSpotsManagement() {
         const userData = JSON.parse(session);
         if (!hasAdminAccess(userData.role)) {
           setLoading(false);
-          router.push('/dashboard');
+          router.push('/admin/dashboard');
           return;
         }
 

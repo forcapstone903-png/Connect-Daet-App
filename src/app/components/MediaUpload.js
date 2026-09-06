@@ -135,7 +135,21 @@ export default function MediaUpload({
     }
   };
 
-  const removeMedia = () => {
+  const removeMedia = async () => {
+    const url = mediaPreview || existingMediaUrl
+    if (url) {
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bucket, url }),
+        })
+        if (!response.ok) console.warn('Uploaded media could not be removed from storage.')
+      } catch (error) {
+        console.warn('Uploaded media removal failed:', error)
+      }
+    }
+
     setMediaPreview(null);
     setMediaTypeDetected(null);
     onUploadComplete?.(null);
@@ -151,11 +165,11 @@ export default function MediaUpload({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-full text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
+          className="flex items-center gap-2 rounded-lg bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-700 transition-colors hover:bg-sky-100 disabled:opacity-50"
         >
           {uploading ? (
             <>
-              <div className="animate-spin rounded-full h-4 w-4 border-2 border-gray-600 border-t-transparent"></div>
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-600 border-t-transparent"></div>
               <span>Uploading {uploadProgress > 0 ? `${uploadProgress}%` : '...'}</span>
             </>
           ) : (
@@ -176,7 +190,7 @@ export default function MediaUpload({
           <button
             type="button"
             onClick={removeMedia}
-            className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-full text-sm font-medium transition-colors"
+            className="rounded-lg bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-100"
           >
             Remove
           </button>
@@ -189,7 +203,7 @@ export default function MediaUpload({
             {mediaTypeDetected === 'video' ? (
               <video
                 src={mediaPreview || existingMediaUrl}
-                className={`${previewClassName} object-cover rounded-2xl border border-gray-200 shadow-sm`}
+                className={`${previewClassName} rounded-xl border border-slate-200 object-cover shadow-sm`}
                 controls
                 preload="metadata"
               />
@@ -197,13 +211,13 @@ export default function MediaUpload({
               <img
                 src={mediaPreview || existingMediaUrl}
                 alt="Upload preview"
-                className={`${previewClassName} object-cover rounded-2xl border border-gray-200 shadow-sm`}
+                className={`${previewClassName} rounded-xl border border-slate-200 object-cover shadow-sm`}
               />
             )}
             <button
               type="button"
               onClick={removeMedia}
-              className="absolute -top-2 -right-2 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs hover:bg-red-700"
+              className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-xs text-white hover:bg-rose-700"
             >
               ×
             </button>
@@ -211,7 +225,7 @@ export default function MediaUpload({
         </div>
       )}
       
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-slate-400">
         {mediaType === 'video' 
           ? 'Supports MP4, MOV, WebM (max 20MB, max 30 seconds)' 
           : mediaType === 'image'

@@ -20,7 +20,6 @@ export default function AnalyticsAndReportsPage() {
     totalEvents: 0,
     totalSpots: 0,
     totalBlogs: 0,
-    totalAmenities: 0,
     totalFeedback: 0,
     openInquiries: 0,
     avgRating: 0,
@@ -37,12 +36,11 @@ export default function AnalyticsAndReportsPage() {
 
   const fetchAnalytics = useCallback(async () => {
     try {
-      const [usersRes, eventsRes, spotsRes, blogsRes, amenitiesRes, feedbackRes, inquiriesRes] = await Promise.all([
+      const [usersRes, eventsRes, spotsRes, blogsRes, feedbackRes, inquiriesRes] = await Promise.all([
         supabase.from('info_users').select('id, status, user_type, last_login, created_at'),
         supabase.from('info_events').select('id, created_at'),
         supabase.from('info_tourist_spots').select('id, name, created_at'),
         supabase.from('info_blogs').select('id, created_at'),
-        supabase.from('info_amenities').select('id, created_at'),
         supabase.from('info_feedback').select('id, rating, created_at'),
         supabase.from('info_inquiries').select('id, status, category, created_at'),
       ]);
@@ -51,7 +49,6 @@ export default function AnalyticsAndReportsPage() {
       if (eventsRes.error) throw eventsRes.error;
       if (spotsRes.error) throw spotsRes.error;
       if (blogsRes.error) throw blogsRes.error;
-      if (amenitiesRes.error) throw amenitiesRes.error;
       if (feedbackRes.error) throw feedbackRes.error;
       if (inquiriesRes.error) throw inquiriesRes.error;
 
@@ -59,7 +56,6 @@ export default function AnalyticsAndReportsPage() {
       const events = eventsRes.data || [];
       const spots = spotsRes.data || [];
       const blogs = blogsRes.data || [];
-      const amenities = amenitiesRes.data || [];
       const feedback = feedbackRes.data || [];
       const inquiries = inquiriesRes.data || [];
 
@@ -98,7 +94,6 @@ export default function AnalyticsAndReportsPage() {
         totalEvents: events.length,
         totalSpots: spots.length,
         totalBlogs: blogs.length,
-        totalAmenities: amenities.length,
         totalFeedback: feedback.length,
         openInquiries: inquiries.filter((item) => item.status === 'open').length,
         avgRating: Number(avgRating),
@@ -123,7 +118,7 @@ export default function AnalyticsAndReportsPage() {
 
       const userData = JSON.parse(session);
       if (!hasAdminAccess(userData.role)) {
-        router.push('/dashboard');
+        router.push('/admin/dashboard');
         return;
       }
 
@@ -143,7 +138,6 @@ export default function AnalyticsAndReportsPage() {
       ['Total Events', stats.totalEvents],
       ['Tourist Spots', stats.totalSpots],
       ['Blogs', stats.totalBlogs],
-      ['Amenities', stats.totalAmenities],
       ['Feedback Entries', stats.totalFeedback],
       ['Open Inquiries', stats.openInquiries],
       ['Average Rating', `${stats.avgRating}`],
@@ -272,7 +266,6 @@ export default function AnalyticsAndReportsPage() {
               {[
                 { label: 'Tourist Spots', value: stats.totalSpots },
                 { label: 'Blogs', value: stats.totalBlogs },
-                { label: 'Amenities', value: stats.totalAmenities },
                 { label: 'Feedback Entries', value: stats.totalFeedback },
               ].map((item) => (
                 <div key={item.label}>
@@ -283,7 +276,7 @@ export default function AnalyticsAndReportsPage() {
                   <div className="h-2.5 rounded-full bg-slate-100">
                     <div
                       className="h-2.5 rounded-full bg-gradient-to-r from-emerald-500 to-sky-500"
-                      style={{ width: `${Math.min((item.value / Math.max(stats.totalSpots + stats.totalBlogs + stats.totalAmenities + stats.totalFeedback, 1)) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((item.value / Math.max(stats.totalSpots + stats.totalBlogs + stats.totalFeedback, 1)) * 100, 100)}%` }}
                     />
                   </div>
                 </div>

@@ -74,3 +74,33 @@ export async function POST(request) {
 export async function GET() {
   return NextResponse.json({ ok: true })
 }
+
+export async function DELETE(request) {
+  try {
+    const userId = getServerSession(request)?.user_id
+    if (!userId) return NextResponse.json({ error: 'User session is required.' }, { status: 401 })
+    if (!supabaseUrl || !supabaseServiceRoleKey) return NextResponse.json({ error: 'Storage is not configured.' }, { status: 500 })
+
+    const { bucket, url } = await request.json()
+    const parsedUrl = new URL(String(url || ''))
+    const marker = `/storage/v1/object/public/${bucket}/`
+    const markerIndex = parsedUrl.pathname.indexOf(marker)
+    const objectPath = markerIndex >= 0 ? decodeURIComponent(parsedUrl.pathname.slice(markerIndex + marker.length)) : ''
+    const ownedPath = objectPath === `users/${userId}` || objectPath.startsWith(`users/${userId}/`) || objectPath.startsWith(`covers/${userId}/`)
+
+    if (bucket !== 'profile-media' || !ownedPath || !objectPath) {
+      return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })
+    }
+
+    const client = createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    })
+    const { error } = await client.storage.from(bucket).remove([objectPath])
+    if (error) return NextResponse.json({ error: error.message || 'Unable to remove file.' }, { status: 500 })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Upload removal route error:', error)
+    return NextResponse.json({ error: error.message || 'Unable to remove file.' }, { status: 400 })
+  }
+}

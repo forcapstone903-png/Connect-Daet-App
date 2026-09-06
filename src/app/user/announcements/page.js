@@ -112,7 +112,7 @@ export default function UserAnnouncementsPage() {
               const styles = getTypeStyles(announcement.announcement_type)
               const TypeIcon = styles.icon
               return (
-                <div key={announcement.id} className={`rounded-[18px] border p-4 sm:rounded-[20px] sm:p-5 ${styles.bg}`}>
+                <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className={`block rounded-[18px] border p-4 transition hover:shadow-sm sm:rounded-[20px] sm:p-5 ${styles.bg}`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white ${styles.iconColor}`}>
@@ -137,7 +137,7 @@ export default function UserAnnouncementsPage() {
                       )}
                     </div>
                   )}
-                </div>
+                </Link>
               )
             })}
           </div>

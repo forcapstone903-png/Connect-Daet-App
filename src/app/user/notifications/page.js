@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { Bell, BellRing, CheckCheck, Clock3, Filter, Search, ShieldAlert, Sparkles, Trash2, Volume2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
-import MobileNav from '@/app/components/user/MobileNav'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -199,7 +198,6 @@ export default function UserNotificationsPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-slate-900">
-      <MobileNav />
       <div className="mx-auto max-w-[1200px] px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
         <header className="mb-6 rounded-[24px] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

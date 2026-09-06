@@ -187,7 +187,7 @@ export default function AdminForumPage() {
       const session = getStoredSession();
       if (!session) return window.location.assign('/login');
       const sessionUser = JSON.parse(session);
-      if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/dashboard');
+      if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/admin/dashboard');
       setUser(sessionUser);
       await fetchThreads();
       await fetchReports();

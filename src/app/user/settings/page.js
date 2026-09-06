@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Bell, Check, Globe, Lock, Settings } from 'lucide-react'
-import MobileNav from '@/app/components/user/MobileNav'
+import { supabase } from '@/lib/supabase'
 
 const STORAGE_KEY = 'daet_user_profile_preferences'
 const defaultPreferences = {
@@ -25,20 +25,38 @@ export default function UserSettingsPage() {
     }
   })
   const [saved, setSaved] = useState(false)
+  const [userId, setUserId] = useState('')
+  const [saving, setSaving] = useState(false)
 
-  const savePreferences = () => {
+  useEffect(() => {
+    void supabase.auth.getSession().then(async ({ data }) => {
+      const id = data.session?.user?.id
+      if (!id) return
+      setUserId(id)
+      const { data: profile } = await supabase.from('profiles').select('notification_preferences').eq('user_id', id).maybeSingle()
+      if (profile?.notification_preferences) setPreferences((previous) => ({ ...previous, ...profile.notification_preferences }))
+    })
+  }, [])
+
+  const savePreferences = async () => {
+    setSaving(true)
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ notificationPrefs: preferences }))
+      if (userId) {
+        const { error } = await supabase.from('profiles').upsert({ user_id: userId, notification_preferences: preferences, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+        if (error) throw error
+      }
+      setSaved(true)
     } catch {
-      // Local preference storage is optional.
+      setSaved(false)
+    } finally {
+      setSaving(false)
     }
-    setSaved(true)
     window.setTimeout(() => setSaved(false), 2200)
   }
 
   return (
     <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      <MobileNav />
       <div className="mx-auto w-full max-w-[900px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4">
           <div className="flex items-center gap-3">
@@ -57,7 +75,7 @@ export default function UserSettingsPage() {
               </label>
             ))}
           </div>
-          <button type="button" onClick={savePreferences} className="mt-5 inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700"><Check className="h-4 w-4" />{saved ? 'Saved' : 'Save preferences'}</button>
+          <button type="button" onClick={savePreferences} disabled={saving} className="mt-5 inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60"><Check className="h-4 w-4" />{saving ? 'Saving...' : saved ? 'Saved' : 'Save preferences'}</button>
         </section>
 
         <section className="mt-4 grid gap-4 sm:grid-cols-3">

@@ -803,13 +803,9 @@ export default function AdminEventsPage() {
   useEffect(() => {
     const fetchVenues = async () => {
       try {
-        const [spotsRes, amenitiesRes] = await Promise.all([
-          supabase.from('info_tourist_spots').select('name').eq('status', 'published'),
-          supabase.from('info_amenities').select('name').eq('status', 'published')
-        ]);
+        const spotsRes = await supabase.from('info_tourist_spots').select('name').eq('status', 'published');
         const spots = (spotsRes?.data || []).map(s => s.name).filter(Boolean);
-        const amens = (amenitiesRes?.data || []).map(a => a.name).filter(Boolean);
-        setVenues(Array.from(new Set([...spots, ...amens])));
+        setVenues(Array.from(new Set(spots)));
       } catch (err) {
         console.error('Error fetching venues:', err);
       }
@@ -824,7 +820,7 @@ export default function AdminEventsPage() {
       const userData = JSON.parse(session);
       // Normalize session: login stores the user id as user_id, but the page expects .id
       if (!userData.id && userData.user_id) userData.id = userData.user_id;
-      if (!hasAdminAccess(userData.role)) { router.push('/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/admin/dashboard'); return; }
       setUser(userData);
       await fetchEvents();
       setLoading(false);

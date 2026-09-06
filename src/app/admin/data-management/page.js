@@ -76,7 +76,7 @@ export default function DataManagementPage() {
     }
 
     if (!hasAdminAccess(user.role)) {
-      router.push('/dashboard');
+      router.push('/admin/dashboard');
     }
   }, [router, user]);
 

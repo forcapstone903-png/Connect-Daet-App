@@ -45,6 +45,12 @@ function getInitials(name) {
     .join('') || 'T'
 }
 
+const rewards = [
+  { title: 'Local food voucher', points: 500 },
+  { title: 'Weekend attraction pass', points: 900 },
+  { title: 'Community souvenir pack', points: 1400 },
+]
+
 export default function UserRewardsPage() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -53,6 +59,9 @@ export default function UserRewardsPage() {
   const [leaderboard, setLeaderboard] = useState([])
   const [badges, setBadges] = useState([])
   const [streakInfo, setStreakInfo] = useState({ current: 0, longest: 0 })
+  const [redeeming, setRedeeming] = useState('')
+  const [redeemedRewards, setRedeemedRewards] = useState([])
+  const [redemptionNotice, setRedemptionNotice] = useState('')
 
   useEffect(() => {
     const currentSession = readStoredSession()
@@ -140,6 +149,33 @@ export default function UserRewardsPage() {
     loadRewards()
   }, [])
 
+  const redeemReward = async (reward) => {
+    if (profile.points < reward.points) {
+      setRedemptionNotice(`You need ${reward.points - profile.points} more points to redeem this reward.`)
+      return
+    }
+
+    setRedeeming(reward.title)
+    setRedemptionNotice('')
+    try {
+      const response = await fetch('/api/rewards/redeem', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ title: reward.title }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to redeem this reward.')
+      setProfile((current) => ({ ...current, points: result.points }))
+      setRedeemedRewards((current) => [...current, reward.title])
+      setRedemptionNotice(result.message)
+    } catch (error) {
+      setRedemptionNotice(error.message)
+    } finally {
+      setRedeeming('')
+    }
+  }
+
   const currentLevel = useMemo(() => getLevelFromPoints(profile.points), [profile.points])
   const levelProgress = useMemo(() => getLevelProgress(profile.points), [profile.points])
   const rewardSummary = useMemo(() => [
@@ -148,6 +184,14 @@ export default function UserRewardsPage() {
     { label: 'Streak', value: `${streakInfo.current} days`, icon: Zap },
     { label: 'Badges', value: badges.length, icon: Medal },
   ], [badges.length, currentLevel, profile.points, streakInfo.current])
+
+  if (loading) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] p-6 text-sm text-slate-600">
+        Loading your rewards...
+      </main>
+    )
+  }
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
@@ -341,29 +385,20 @@ export default function UserRewardsPage() {
               </div>
 
               <div className="space-y-3">
-                {[
-                  { title: 'Local food voucher', points: 500 },
-                  { title: 'Weekend attraction pass', points: 900 },
-                  { title: 'Community souvenir pack', points: 1400 },
-                ].map((reward) => (
-                  <button key={reward.title} type="button" className="flex w-full items-center justify-between rounded-[16px] border border-slate-200 bg-slate-50 p-3 text-left">
+                {rewards.map((reward) => (
+                  <button key={reward.title} type="button" onClick={() => redeemReward(reward)} disabled={Boolean(redeeming) || redeemedRewards.includes(reward.title)} className="flex w-full items-center justify-between rounded-[16px] border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{reward.title}</p>
                       <p className="text-xs text-slate-500">{reward.points} points</p>
                     </div>
-                    <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-bold text-violet-700">Redeem</span>
+                    <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-bold text-violet-700">{redeeming === reward.title ? 'Redeeming...' : redeemedRewards.includes(reward.title) ? 'Redeemed' : 'Redeem'}</span>
                   </button>
                 ))}
+                {redemptionNotice && <p className="text-xs font-semibold text-violet-700">{redemptionNotice}</p>}
               </div>
             </div>
           </aside>
         </div>
-
-        {loading ? (
-          <div className="mt-6 rounded-[24px] border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
-            Loading your rewards...
-          </div>
-        ) : null}
       </div>
     </main>
   )

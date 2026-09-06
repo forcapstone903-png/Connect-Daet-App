@@ -3,9 +3,14 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Bookmark, CalendarDays, FileText, Loader, MapPin, MessageSquare } from 'lucide-react'
+import { ArrowLeft, Bookmark, CalendarDays, FileText, Loader, MapPin, MessageSquare, MapPinned } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+
+function parseSavedKey(key) {
+  const separatorIndex = key.indexOf('-')
+  return separatorIndex === -1 ? [key, ''] : [key.slice(0, separatorIndex), key.slice(separatorIndex + 1)]
+}
 
 export default function UserSavedPage() {
   const router = useRouter()
@@ -60,13 +65,15 @@ export default function UserSavedPage() {
       const blogIds = []
       const eventIds = []
       const forumIds = []
+      const touristSpotIds = []
 
       savedKeys.forEach((key) => {
-        const [type, id] = key.split('-')
+        const [type, id] = parseSavedKey(key)
         if (!type || !id) return
         if (type === 'blog') blogIds.push(id)
         else if (type === 'event') eventIds.push(id)
         else if (type === 'forum') forumIds.push(id)
+        else if (type === 'tourist_spot') touristSpotIds.push(id)
       })
 
       const results = []
@@ -94,8 +101,17 @@ export default function UserSavedPage() {
           .from('forum_threads')
           .select('id, title, content, reply_count, last_activity_at')
           .in('id', forumIds)
-          .eq('status', 'published')
+          .eq('status', 'active')
         ;(data || []).forEach(item => results.push({ ...item, type: 'forum', typeLabel: 'Forum', href: `/user/forums/${item.id}` }))
+      }
+
+      if (touristSpotIds.length > 0) {
+        const { data } = await supabase
+          .from('info_tourist_spots')
+          .select('id, name, description, location, featured_image, category, updated_at')
+          .in('id', touristSpotIds)
+          .eq('status', 'active')
+        ;(data || []).forEach(item => results.push({ ...item, title: item.name, excerpt: item.description, type: 'tourist_spot', typeLabel: 'Destination', href: `/tourist-spots/${item.id}` }))
       }
 
       const sorted = results.sort((a, b) => {
@@ -115,7 +131,7 @@ export default function UserSavedPage() {
   const removeSaved = (e, key) => {
     e.preventDefault()
     e.stopPropagation()
-    const [type, id] = key.split('-')
+    const [type, id] = parseSavedKey(key)
     const itemType = type === 'post' ? 'user_post' : type
     void supabase.from('user_favorites').delete().eq('user_id', currentUserId).eq('item_type', itemType).eq('item_id', id).then(({ error }) => {
       if (error) {
@@ -130,6 +146,7 @@ export default function UserSavedPage() {
     if (type === 'blog') return FileText
     if (type === 'event') return CalendarDays
     if (type === 'forum') return MessageSquare
+    if (type === 'tourist_spot') return MapPinned
     return Bookmark
   }
 
@@ -137,6 +154,7 @@ export default function UserSavedPage() {
     if (type === 'blog') return 'bg-sky-100 text-sky-700'
     if (type === 'event') return 'bg-emerald-100 text-emerald-700'
     if (type === 'forum') return 'bg-violet-100 text-violet-700'
+    if (type === 'tourist_spot') return 'bg-amber-100 text-amber-700'
     return 'bg-slate-100 text-slate-700'
   }
 

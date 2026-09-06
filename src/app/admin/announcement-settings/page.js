@@ -80,7 +80,7 @@ export default function AnnouncementSettingsPage() {
     }
 
     if (!hasAdminAccess(user.role)) {
-      router.push('/dashboard');
+      router.push('/admin/dashboard');
     }
   }, [router, user]);
 

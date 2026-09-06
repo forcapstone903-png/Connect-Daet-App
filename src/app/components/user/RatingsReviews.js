@@ -129,7 +129,6 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
       // Update aggregate rating on parent table
       const tableMap = {
         tourist_spot: 'info_tourist_spots',
-        amenity: 'info_amenities',
         event: 'info_events',
       }
       const table = tableMap[attractionType]

@@ -70,7 +70,6 @@ export function proxy(request) {
 export const config = {
   matcher: [
     '/admin/:path*',
-    '/dashboard/:path*',
     '/user/:path*',
     '/',
     '/visitor',

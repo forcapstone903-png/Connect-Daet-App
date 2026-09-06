@@ -70,7 +70,7 @@ export default function FileManagementPage() {
     }
 
     if (!hasAdminAccess(user.role)) {
-      router.push('/dashboard');
+      router.push('/admin/dashboard');
     }
   }, [router, user, isHydrated]);
 

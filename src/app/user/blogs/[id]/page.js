@@ -19,7 +19,6 @@ import {
   Pencil,
   ShieldCheck,
   Star,
-  Pin,
   Trash2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -27,9 +26,6 @@ import { trackUserActivity } from '@/lib/trackActivity'
 
 const STORAGE_KEYS = {
   readHistory: 'daet_blog_read_history',
-  pinnedBlogs: 'daet_blog_pinned_blogs',
-  localReplies: 'daet_blog_local_replies',
-  offlineReads: 'daet_blog_offline_reads',
   shareCounts: 'daet_blog_share_counts',
 }
 
@@ -110,7 +106,6 @@ export default function BlogDetailPage() {
   const [userName, setUserName] = useState('Guest')
   const [isLiked, setIsLiked] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
-  const [isPinned, setIsPinned] = useState(false)
   const [commentContent, setCommentContent] = useState('')
   const [replyMap, setReplyMap] = useState({})
   const [submittingComment, setSubmittingComment] = useState(false)
@@ -133,6 +128,7 @@ export default function BlogDetailPage() {
       try {
         const sessionResult = await supabase.auth.getSession()
         const session = sessionResult?.data?.session
+        const currentUserId = session?.user?.id || null
         if (session) {
           const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
@@ -157,9 +153,6 @@ export default function BlogDetailPage() {
 
         if (!blogId) return
 
-        const localReplies = readLocalStorage(STORAGE_KEYS.localReplies, {})
-        const blogLocalReplies = localReplies[blogId] || {}
-
         const { data: blogData, error: blogError } = await supabase
           .from('info_blogs')
           .select('*, info_users(full_name, email)')
@@ -171,7 +164,6 @@ export default function BlogDetailPage() {
         } else if (blogData && !ignore) {
           setBlog(blogData)
           setShareCount(readLocalStorage(`${STORAGE_KEYS.shareCounts}_${blogId}`, 0))
-          setIsPinned((readLocalStorage(STORAGE_KEYS.pinnedBlogs, []) || []).includes(blogId))
 
           const { data: reactionRows } = await supabase
             .from('content_reactions')
@@ -182,18 +174,29 @@ export default function BlogDetailPage() {
           setIsLiked(Boolean(userId && (reactionRows || []).some((reaction) => reaction.user_id === userId && reaction.reaction_type === 'like')))
           setBlog((previous) => ({ ...previous, likes: reactionRows?.length || 0 }))
 
-          await supabase.from('info_blogs').update({ views: (blogData.views || 0) + 1 }).eq('id', blogId)
+          const viewKey = `daet_blog_viewed_${blogId}`
+          if (!window.sessionStorage.getItem(viewKey)) {
+            window.sessionStorage.setItem(viewKey, '1')
+            await supabase.from('info_blogs').update({ views: (blogData.views || 0) + 1 }).eq('id', blogId)
+          }
 
-          const { data: commentsData } = await supabase
+          const commentsQuery = supabase
             .from('info_comments')
             .select('*, info_users(full_name, email)')
             .eq('blog_id', blogId)
             .order('created_at', { ascending: false })
+          const visibleCommentsQuery = currentUserId
+            ? commentsQuery.or(`status.eq.approved,user_id.eq.${currentUserId}`)
+            : commentsQuery.eq('status', 'approved')
+          const { data: commentsData } = await visibleCommentsQuery
 
-          const mergedComments = (commentsData || []).map((comment) => ({
-            ...comment,
-            replies: blogLocalReplies[comment.id] || [],
-          }))
+          const repliesByParent = {}
+          ;(commentsData || []).forEach((comment) => {
+            if (comment.parent_id) repliesByParent[comment.parent_id] = [...(repliesByParent[comment.parent_id] || []), comment]
+          })
+          const mergedComments = (commentsData || [])
+            .filter((comment) => !comment.parent_id)
+            .map((comment) => ({ ...comment, replies: repliesByParent[comment.id] || [] }))
 
           setComments(mergedComments)
           setVisibleComments(INITIAL_COMMENTS)
@@ -299,11 +302,6 @@ export default function BlogDetailPage() {
           .eq('item_type', 'blog')
           .eq('item_id', blogId)
 
-        const offlineReads = readLocalStorage(STORAGE_KEYS.offlineReads, [])
-        writeLocalStorage(
-          STORAGE_KEYS.offlineReads,
-          offlineReads.filter((item) => item !== blogId)
-        )
       } else {
         await supabase.from('user_favorites').insert({
           user_id: userId,
@@ -311,8 +309,6 @@ export default function BlogDetailPage() {
           item_id: blogId,
         })
 
-        const offlineReads = readLocalStorage(STORAGE_KEYS.offlineReads, [])
-        writeLocalStorage(STORAGE_KEYS.offlineReads, [...new Set([...offlineReads, blogId])])
       }
 
       setIsSaved(!isSaved)
@@ -331,13 +327,6 @@ export default function BlogDetailPage() {
     }
   }
 
-  const togglePin = () => {
-    const pinnedBlogs = readLocalStorage(STORAGE_KEYS.pinnedBlogs, [])
-    const updated = isPinned ? pinnedBlogs.filter((id) => id !== blogId) : [...new Set([...pinnedBlogs, blogId])]
-    writeLocalStorage(STORAGE_KEYS.pinnedBlogs, updated)
-    setIsPinned(!isPinned)
-  }
-
   const handleCommentSubmit = async (parentId = null) => {
     const content = parentId ? (replyMap[parentId] || '').trim() : commentContent.trim()
     if (!content) return
@@ -350,33 +339,17 @@ export default function BlogDetailPage() {
       }
 
       if (parentId) {
-        const localReplies = readLocalStorage(STORAGE_KEYS.localReplies, {})
-        const blogLocalReplies = localReplies[blogId] || {}
-        const generatedReplyId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `reply-${Date.now()}`
-        const nextReply = {
-          id: generatedReplyId,
-          parent_id: parentId,
+        const { data, error } = await supabase.from('info_comments').insert({
           blog_id: blogId,
+          parent_id: parentId,
           user_id: userId,
           content,
-          status: 'approved',
-          created_at: new Date().toISOString(),
-          likes: 0,
-          local: true,
-          info_users: { full_name: userName, email: userName },
-        }
+          status: 'pending',
+        }).select('*, info_users(full_name, email)').single()
 
-        const nextMap = {
-          ...blogLocalReplies,
-          [parentId]: [...(blogLocalReplies[parentId] || []), nextReply],
-        }
+        if (error) throw error
 
-        const nextLocalReplies = {
-          ...localReplies,
-          [blogId]: nextMap,
-        }
-
-        writeLocalStorage(STORAGE_KEYS.localReplies, nextLocalReplies)
+        const nextReply = { ...data, replies: [] }
         setComments((prev) =>
           prev.map((item) =>
             item.id === parentId
@@ -385,6 +358,7 @@ export default function BlogDetailPage() {
           )
         )
         setReplyMap((prev) => ({ ...prev, [parentId]: '' }))
+        setModerationPending((prev) => prev + 1)
       } else {
         const { data, error } = await supabase.from('info_comments').insert({
           blog_id: blogId,
@@ -473,7 +447,9 @@ export default function BlogDetailPage() {
           .eq('id', comment.id)
           .eq('user_id', userId)
         if (error) throw error
-        setComments((prev) => prev.map((c) => (c.id === comment.id ? { ...c, content } : c)))
+        setComments((prev) => prev.map((c) => c.id === comment.id
+          ? { ...c, content }
+          : { ...c, replies: (c.replies || []).map((reply) => reply.id === comment.id ? { ...reply, content } : reply) }))
       }
       setEditingCommentId(null)
       setEditingContent('')
@@ -510,7 +486,9 @@ export default function BlogDetailPage() {
           .eq('id', comment.id)
           .eq('user_id', userId)
         if (error) throw error
-        setComments((prev) => prev.filter((c) => c.id !== comment.id))
+        setComments((prev) => prev
+          .filter((c) => c.id !== comment.id)
+          .map((c) => ({ ...c, replies: (c.replies || []).filter((reply) => reply.id !== comment.id) })))
         const nextCommentCount = Math.max(0, (blog.comments_count || 0) - 1)
         await supabase.from('info_blogs').update({ comments_count: nextCommentCount }).eq('id', blogId)
         setBlog((prev) => ({ ...prev, comments_count: nextCommentCount }))
@@ -780,10 +758,6 @@ export default function BlogDetailPage() {
       <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
         <div className="mb-6 flex items-center justify-end">
           <div className="flex items-center gap-2">
-            <button type="button" onClick={togglePin} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isPinned ? 'border-amber-200 bg-amber-50 text-amber-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title={isPinned ? 'Unpin article' : 'Pin article'}>
-              <Pin className={`h-5 w-5 ${isPinned ? 'fill-current' : ''}`} />
-            </button>
-
             <button type="button" onClick={handleLike} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isLiked ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Like article">
               <Heart className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} />
             </button>

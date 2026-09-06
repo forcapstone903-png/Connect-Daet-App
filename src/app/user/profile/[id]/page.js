@@ -57,7 +57,7 @@ export default function PublicProfilePage() {
             title: post.title,
             text: post.content || 'Shared a community post.',
             date: post.created_at,
-            href: `/user/profile/${profileId}`,
+            href: `/user/posts/${post.id}`,
           })),
           ...(content.blogs || []).map((post) => ({
             id: post.id,
@@ -65,7 +65,7 @@ export default function PublicProfilePage() {
             title: post.title,
             text: post.excerpt || 'Shared a new story with the community.',
             date: post.published_at || post.created_at,
-            href: post.slug ? `/user/blogs/${post.slug}` : `/user/blogs/${post.id}`,
+            href: `/user/blogs/${post.id}`,
           })),
           ...(content.threads || []).map((post) => ({
             id: post.id,

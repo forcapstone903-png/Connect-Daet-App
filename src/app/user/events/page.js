@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, ChevronRight, Loader, MapPin, Search, Ticket } from 'lucide-react'
+import { CalendarDays, ChevronRight, Loader, MapPin, Search, Ticket, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 
@@ -125,7 +125,7 @@ export default function UserEventsPage() {
                   Back to Dashboard
                 </Link>
                 <Link href="/user/profile" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                  <CalendarDays className="h-4 w-4" />
+                  <UserRound className="h-4 w-4" />
                 </Link>
               </div>
             </div>

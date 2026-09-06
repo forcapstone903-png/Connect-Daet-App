@@ -23,7 +23,6 @@ import {
   Wand2,
 } from 'lucide-react'
 import MediaUpload from '@/app/components/MediaUpload'
-import MobileNav from '@/app/components/user/MobileNav'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 
@@ -123,8 +122,8 @@ export default function UserProfilePage() {
     avatar_url: '',
     cover_photo_url: '',
   })
-  const [privacyLevel, setPrivacyLevel] = useState(() => readLocalState(STORAGE_KEYS.profilePreferences, null)?.privacyLevel || 'public')
-  const [languagePreference, setLanguagePreference] = useState(() => readLocalState(STORAGE_KEYS.profilePreferences, null)?.languagePreference || 'en')
+  const [privacyLevel, setPrivacyLevel] = useState('public')
+  const [languagePreference, setLanguagePreference] = useState('en')
   const [notificationPrefs, setNotificationPrefs] = useState(() => ({
     emailAlerts: true,
     activityDigest: true,
@@ -289,7 +288,7 @@ export default function UserProfilePage() {
             content: blog.excerpt || blog.content || 'Shared a new story.',
             created_at: blog.published_at || blog.created_at,
             category: blog.category || 'Story',
-            href: blog.slug ? `/user/blogs/${blog.slug}` : `/user/blogs/${blog.id}`,
+            href: `/user/blogs/${blog.id}`,
             media: blog.featured_image || '',
             pinned: Boolean(blog.is_pinned || blog.pinned),
             accent: 'bg-sky-100 text-sky-700',
@@ -428,8 +427,6 @@ export default function UserProfilePage() {
         profile_image_url: updatedProfile.avatar_url,
       })
       writeLocalState(STORAGE_KEYS.profilePreferences, {
-        privacyLevel,
-        languagePreference,
         notificationPrefs,
       })
       setSaveNotice('Profile updated successfully.')
@@ -443,7 +440,6 @@ export default function UserProfilePage() {
 
   return (
     <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      <MobileNav />
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:rounded-[26px]">
           <div className="flex items-center justify-between gap-3">
@@ -648,7 +644,11 @@ export default function UserProfilePage() {
                       <label className="mb-1 block text-sm font-medium text-slate-700">City</label>
                       <input
                         value={profileForm.city}
-                        onChange={(event) => setProfileForm((previous) => ({ ...previous, city: event.target.value }))}
+                        onChange={(event) => setProfileForm((previous) => ({
+                          ...previous,
+                          city: event.target.value,
+                          location: [event.target.value, previous.country].filter(Boolean).join(', '),
+                        }))}
                         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                       />
                     </div>
@@ -656,7 +656,11 @@ export default function UserProfilePage() {
                       <label className="mb-1 block text-sm font-medium text-slate-700">Country</label>
                       <input
                         value={profileForm.country}
-                        onChange={(event) => setProfileForm((previous) => ({ ...previous, country: event.target.value }))}
+                        onChange={(event) => setProfileForm((previous) => ({
+                          ...previous,
+                          country: event.target.value,
+                          location: [previous.city, event.target.value].filter(Boolean).join(', '),
+                        }))}
                         className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
                       />
                     </div>

@@ -836,15 +836,13 @@ export default function AdminDashboard() {
 
   const fetchVenues = async () => {
     try {
-      const [spotsRes, amenitiesRes] = await Promise.all([
-        supabase.from('info_tourist_spots').select('name').eq('status', 'active'),
-        supabase.from('info_amenities').select('name').eq('status', 'active')
-      ]);
+      const spotsRes = await supabase
+        .from('info_tourist_spots')
+        .select('name')
+        .eq('status', 'active');
 
       const spots = (spotsRes?.data || []).map(s => s.name).filter(Boolean);
-      const amens = (amenitiesRes?.data || []).map(a => a.name).filter(Boolean);
-      const merged = Array.from(new Set([...spots, ...amens]));
-      setVenues(merged);
+      setVenues(Array.from(new Set(spots)));
     } catch (err) {
       console.error('Error fetching venues:', err);
     }
@@ -971,7 +969,7 @@ export default function AdminDashboard() {
 
       const sessionUser = getStoredSessionObject() || userData;
       if (!canAccessAdminDashboard(sessionUser)) {
-        if (active) router.push('/dashboard');
+        if (active) router.push('/admin/dashboard');
         return;
       }
 

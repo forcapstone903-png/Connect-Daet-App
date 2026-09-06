@@ -21,7 +21,7 @@ export default function CommunityHubOverview() {
     try {
       const userData = JSON.parse(session)
       if (!hasAdminAccess(userData.role)) {
-        window.location.href = '/dashboard'
+        window.location.href = '/admin/dashboard'
         return
       }
       setUser(userData)

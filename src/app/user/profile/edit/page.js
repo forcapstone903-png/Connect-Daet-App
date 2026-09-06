@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { ArrowLeft, CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
-import MobileNav from '@/app/components/user/MobileNav'
 import MediaUpload from '@/app/components/MediaUpload'
 
 export default function EditProfilePage() {
@@ -27,12 +26,12 @@ export default function EditProfilePage() {
 
       const [{ data: userData }, { data: profileData }] = await Promise.all([
         supabase.from('info_users').select('full_name, bio, city, country, profile_image_url').eq('id', id).maybeSingle(),
-        supabase.from('profiles').select('full_name, bio, city, country, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
+        supabase.from('profiles').select('full_name, bio, city, country, location, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
       ])
       setForm({
         full_name: profileData?.full_name || userData?.full_name || '',
         bio: profileData?.bio || userData?.bio || '',
-        location: [profileData?.city, profileData?.country].filter(Boolean).join(', ') || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
+        location: profileData?.location || [profileData?.city, profileData?.country].filter(Boolean).join(', ') || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
         avatar_url: userData?.profile_image_url || profileData?.profile_image_url || '',
         cover_photo_url: profileData?.cover_photo_url || '',
       })
@@ -46,8 +45,12 @@ export default function EditProfilePage() {
     if (!userId) return
     setSaving(true)
     setNotice('')
-    const { error: userError } = await supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, profile_image_url: form.avatar_url || null }).eq('id', userId)
-    const { error: profileError } = await supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+    const locationParts = form.location.split(',').map((part) => part.trim()).filter(Boolean)
+    const city = locationParts[0] || ''
+    const country = locationParts.slice(1).join(', ')
+    const updatedAt = new Date().toISOString()
+    const { error: userError } = await supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, city, country, profile_image_url: form.avatar_url || null, updated_at: updatedAt }).eq('id', userId)
+    const { error: profileError } = await supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, city, country, location: form.location.trim() || null, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: updatedAt }, { onConflict: 'user_id' })
     setSaving(false)
     if (userError || profileError) {
       setNotice(userError?.message || profileError?.message || 'Unable to update your profile.')
@@ -66,7 +69,6 @@ export default function EditProfilePage() {
 
   return (
     <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      <MobileNav />
       <div className="mx-auto w-full max-w-[1000px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4">
           <div className="flex items-center gap-3">

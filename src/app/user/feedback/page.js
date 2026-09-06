@@ -159,6 +159,7 @@ export default function UserFeedbackPage() {
           title: form.title || 'Complaint submission',
           message: form.message,
           category: form.category,
+          image_urls: form.images,
           status: 'open',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -169,6 +170,7 @@ export default function UserFeedbackPage() {
             title: complaintPayload.title,
             message: complaintPayload.message,
             category: complaintPayload.category,
+            image_urls: complaintPayload.image_urls,
             status: 'open',
             updated_at: complaintPayload.updated_at,
           }).eq('id', editingId)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import AttractionCard from '@/app/dashboard/user/components/attractions/AttractionCard'
+import AttractionCard from '@/app/components/attractions/AttractionCard'
 import { supabase } from '@/lib/supabase'
 
 export default function FeaturedAttractions() {

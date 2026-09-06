@@ -34,11 +34,19 @@ export default function TouristSpotsPage() {
 
     const loadSpots = async () => {
       try {
-        const { data, error } = await supabase
+        const [{ data, error }, { data: sessionData }] = await Promise.all([
+          supabase
           .from('info_tourist_spots')
           .select('*')
           .eq('status', 'active')
-          .order('rating', { ascending: false })
+          .order('rating', { ascending: false }),
+          supabase.auth.getSession(),
+        ])
+
+        const userId = sessionData?.session?.user?.id
+        const { data: favoriteRows } = userId
+          ? await supabase.from('user_favorites').select('item_id').eq('user_id', userId).eq('item_type', 'tourist_spot')
+          : { data: [] }
 
         if (!ignore) {
           if (error) {
@@ -47,6 +55,7 @@ export default function TouristSpotsPage() {
           } else {
             setSpots(data || [])
           }
+          setFavorites(new Set((favoriteRows || []).map((favorite) => favorite.item_id)))
           setLoading(false)
         }
       } catch (error) {
@@ -85,16 +94,27 @@ export default function TouristSpotsPage() {
     return result
   }, [spots, category, search])
 
-  const toggleFavorite = (spotId) => {
-    setFavorites((prev) => {
-      const next = new Set(prev)
-      if (next.has(spotId)) {
-        next.delete(spotId)
-      } else {
-        next.add(spotId)
-      }
-      return next
-    })
+  const toggleFavorite = async (event, spotId) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const sessionResult = await supabase.auth.getSession()
+    const userId = sessionResult?.data?.session?.user?.id
+    if (!userId) return
+
+    const isFavorite = favorites.has(spotId)
+    const result = isFavorite
+      ? await supabase.from('user_favorites').delete().eq('user_id', userId).eq('item_type', 'tourist_spot').eq('item_id', spotId)
+      : await supabase.from('user_favorites').upsert({ user_id: userId, item_type: 'tourist_spot', item_id: spotId }, { onConflict: 'user_id,item_type,item_id' })
+
+    if (!result.error) {
+      setFavorites((previous) => {
+        const next = new Set(previous)
+        if (isFavorite) next.delete(spotId)
+        else next.add(spotId)
+        return next
+      })
+    }
   }
 
   return (
@@ -218,10 +238,7 @@ export default function TouristSpotsPage() {
                   />
                   <button
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      toggleFavorite(spot.id)
-                    }}
+                    onClick={(event) => toggleFavorite(event, spot.id)}
                     className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white sm:h-8 sm:w-8"
                     aria-label="Toggle favorite"
                   >
