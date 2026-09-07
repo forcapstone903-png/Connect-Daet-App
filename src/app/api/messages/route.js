@@ -14,6 +14,7 @@ export async function GET(request) {
   if (!userId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
 
+  const archived = new URL(request.url).searchParams.get('archived') === 'true'
   const { data, error } = await adminSupabase
     .from('direct_messages')
     .select('id, sender_id, recipient_id, body, created_at, read_at')
@@ -21,6 +22,13 @@ export async function GET(request) {
     .order('created_at', { ascending: false })
     .limit(200)
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+
+  const { data: settings, error: settingsError } = await adminSupabase
+    .from('message_conversation_settings')
+    .select('other_user_id, is_archived')
+    .eq('user_id', userId)
+  if (settingsError) return NextResponse.json({ success: false, message: settingsError.message }, { status: 500 })
+  const archivedByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting.is_archived]))
 
   const participantIds = [...new Set((data || []).flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
   const allUserIds = [...new Set([userId, ...participantIds])]
@@ -33,6 +41,7 @@ export async function GET(request) {
 
   for (const message of data || []) {
     const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
+    if (Boolean(archivedByUser.get(otherUserId)) !== archived) continue
     if (!otherUserId || conversationIds.has(otherUserId)) continue
     conversationIds.add(otherUserId)
     conversations.push({

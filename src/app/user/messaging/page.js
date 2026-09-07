@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Mail, Plus, Search, Send, UserRound, X } from 'lucide-react'
+import { Archive, Mail, Plus, Search, Send, Trash2, UserRound, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession } from '@/lib/authCookies'
 
@@ -33,6 +33,50 @@ export default function UserMessagingPage() {
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
   const [composeError, setComposeError] = useState('')
+  const [revealedConversation, setRevealedConversation] = useState(null)
+  const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null })
+
+  const clearGesture = () => {
+    if (gestureRef.current.timer) window.clearTimeout(gestureRef.current.timer)
+    gestureRef.current.timer = null
+  }
+
+  const handleTouchStart = (event, conversationId) => {
+    clearGesture()
+    const touch = event.touches[0]
+    gestureRef.current = { id: conversationId, startX: touch.clientX, startY: touch.clientY, timer: window.setTimeout(() => setRevealedConversation(conversationId), 650) }
+  }
+
+  const handleTouchMove = (event) => {
+    const touch = event.touches[0]
+    if (Math.abs(touch.clientX - gestureRef.current.startX) > 10 || Math.abs(touch.clientY - gestureRef.current.startY) > 10) clearGesture()
+  }
+
+  const handleTouchEnd = (event, conversationId) => {
+    clearGesture()
+    const touch = event.changedTouches[0]
+    if (gestureRef.current.id === conversationId && Math.abs(touch.clientX - gestureRef.current.startX) > 60) setRevealedConversation(conversationId)
+  }
+
+  const updateArchive = async (conversationId, isArchived) => {
+    const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ isArchived }) })
+    const result = await response.json()
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update conversation.')
+    setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
+    setRevealedConversation(null)
+  }
+
+  const deleteConversation = async (conversationId) => {
+    if (!window.confirm('Delete this conversation permanently?')) return
+    const response = await fetch(`/api/messages/${conversationId}`, { method: 'DELETE', credentials: 'same-origin' })
+    const result = await response.json()
+    if (!response.ok || !result.success) {
+      window.alert(result.message || 'Unable to delete conversation.')
+      return
+    }
+    setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
+    setRevealedConversation(null)
+  }
 
   useEffect(() => {
     let active = true
@@ -150,6 +194,7 @@ export default function UserMessagingPage() {
           >
             <Plus className="h-5 w-5" />
           </button>
+          <Link href="/user/messaging/archived" className="mr-2 text-xs font-bold text-[#147d75] hover:underline">Archived</Link>
         </header>
 
         {composeOpen && (
@@ -215,12 +260,22 @@ export default function UserMessagingPage() {
             </div>
               ) : conversations.length ? (
             <div className="divide-y divide-slate-100">
-                {conversations.map((conversation) => (
-                  <Link key={conversation.other_user?.id || conversation.id} href={`/user/messaging/${encodeURIComponent(conversation.other_user?.id || '')}`} className="flex gap-3 px-4 py-4 transition hover:bg-[#f5fbfa] sm:px-5">
-                  <ProfileAvatar user={conversation.other_user} />
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
-                </Link>
-              ))}
+                {conversations.map((conversation) => {
+                  const conversationId = conversation.other_user?.id || conversation.id
+                  const revealed = revealedConversation === conversationId
+                  return (
+                    <div key={conversationId} className="relative overflow-hidden" onTouchStart={(event) => handleTouchStart(event, conversationId)} onTouchMove={handleTouchMove} onTouchEnd={(event) => handleTouchEnd(event, conversationId)}>
+                      <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
+                        <button type="button" onClick={() => updateArchive(conversationId, true)} aria-label="Archive conversation" title="Archive" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700"><Archive className="h-4 w-4" /></button>
+                        {revealed && <button type="button" onClick={() => deleteConversation(conversationId)} aria-label="Delete conversation" title="Delete" className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-700"><Trash2 className="h-4 w-4" /></button>}
+                      </div>
+                      <Link key={conversationId} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 bg-white px-4 py-4 transition-transform duration-200 hover:bg-[#f5fbfa] sm:px-5 ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
+                        <ProfileAvatar user={conversation.other_user} />
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
+                      </Link>
+                    </div>
+                  )
+                })}
             </div>
           ) : (
             <div className="p-10 text-center"><Mail className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-600">No messages yet</p><p className="mt-1 text-xs text-slate-400">Your community updates will appear here.</p></div>
