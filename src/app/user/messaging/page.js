@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Mail, Search, Send, UserRound } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
@@ -18,7 +18,7 @@ function ProfileAvatar({ user, size = 'h-10 w-10' }) {
   )
 }
 
-export default function UserMessagingPage() {
+function UserMessagingContent() {
   const searchParams = useSearchParams()
   const recipientId = searchParams.get('recipientId')
   const [messages, setMessages] = useState([])
@@ -236,5 +236,13 @@ export default function UserMessagingPage() {
         </section>
       </div>
     </main>
+  )
+}
+
+export default function UserMessagingPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[#eef4f5]" />}>
+      <UserMessagingContent />
+    </Suspense>
   )
 }
