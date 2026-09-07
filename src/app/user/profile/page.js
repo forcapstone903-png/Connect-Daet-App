@@ -198,7 +198,7 @@ export default function UserProfilePage() {
 
     const loadProfile = async () => {
       try {
-        const [{ data: userData }, { data: profileData }, { data: followRows }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }] = await Promise.all([
+        const [{ data: userData }, { data: profileData }, { data: followSummary }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
@@ -209,10 +209,11 @@ export default function UserProfilePage() {
             .select('*')
             .eq('user_id', fallbackUserId)
             .maybeSingle(),
-          supabase
-            .from('user_follows')
-            .select('id, follower_id, following_id, created_at')
-            .or(`follower_id.eq.${fallbackUserId},following_id.eq.${fallbackUserId}`),
+          fetch(`/api/users/${fallbackUserId}`, { credentials: 'same-origin' }).then(async (response) => {
+            const result = await response.json()
+            if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load follow relationships')
+            return { data: result }
+          }),
           supabase
             .from('user_badges')
             .select('*')
@@ -241,6 +242,11 @@ export default function UserProfilePage() {
             .eq('status', 'published')
             .order('start_date', { ascending: false }),
         ])
+
+        const followRows = [
+          ...(followSummary?.followers || []).map((person) => ({ follower_id: person.id, following_id: fallbackUserId })),
+          ...(followSummary?.following || []).map((person) => ({ follower_id: fallbackUserId, following_id: person.id })),
+        ]
 
         const relatedIds = Array.from(
           new Set(
@@ -351,8 +357,8 @@ export default function UserProfilePage() {
         })))
         setUserPosts(createdPosts)
         setStats({
-          followers: nextFollowers.length,
-          following: nextFollowing.length,
+          followers: followSummary?.followers_count ?? nextFollowers.length,
+          following: followSummary?.following_count ?? nextFollowing.length,
           posts: createdPosts.length,
           points: userData?.points || nextProfile.points || 0,
         })

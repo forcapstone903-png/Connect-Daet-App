@@ -181,7 +181,7 @@ export default function PublicProfilePage() {
               {!isOwnProfile && (
                 <button type="button" onClick={toggleFollow} disabled={followLoading} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 text-sm font-black transition ${isFollowing ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50' : 'bg-sky-600 text-white shadow-sm hover:bg-sky-700'} disabled:opacity-60`}>
                   {isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-                  {followLoading ? 'Updating...' : isMutual ? 'Mutual' : isFollowing ? 'Following' : 'Follow'}
+                  {followLoading ? 'Updating...' : isFollowing ? 'Following' : 'Follow'}
                 </button>
               )}
             </div>
