@@ -156,8 +156,8 @@ export default function PublicProfilePage() {
         </div>
 
         <section className="overflow-hidden border-x border-b border-slate-200 bg-white sm:rounded-2xl sm:border">
-          <div className="relative h-32 overflow-hidden bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-44">
-            {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="absolute inset-0 h-full w-full object-cover" />}
+          <div className="profile-cover-frame h-32 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-44">
+            {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="profile-cover-image" />}
             <div className="absolute inset-0 bg-slate-950/15" />
           </div>
           <div className="px-4 pb-5 sm:px-7 sm:pb-7">

@@ -484,10 +484,10 @@ export default function UserProfilePage() {
         </header>
 
         <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.06)]">
-          <div className="relative h-56 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-64">
+          <div className="profile-cover-frame h-56 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-64">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
             {profile.cover_photo_url ? (
-              <img src={profile.cover_photo_url} alt="Cover photo" className="absolute inset-0 h-full w-full object-cover" />
+              <img src={profile.cover_photo_url} alt="Cover photo" className="profile-cover-image" />
             ) : null}
 
             <div className="absolute inset-x-0 bottom-0 p-3 sm:p-6">
