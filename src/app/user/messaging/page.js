@@ -6,10 +6,23 @@ import { Mail, Search, Send, UserRound } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
 import { getStoredSession } from '@/lib/authCookies'
 
+function getInitials(name = '') {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
+}
+
+function ProfileAvatar({ user, size = 'h-10 w-10' }) {
+  return (
+    <span className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700`}>
+      {user?.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Profile'} className="h-full w-full object-cover" /> : getInitials(user?.full_name)}
+    </span>
+  )
+}
+
 export default function UserMessagingPage() {
   const searchParams = useSearchParams()
   const recipientId = searchParams.get('recipientId')
   const [messages, setMessages] = useState([])
+  const [currentUser, setCurrentUser] = useState(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -53,7 +66,10 @@ export default function UserMessagingPage() {
         setLoadError('')
         const response = await fetch('/api/messages', { credentials: 'same-origin' })
         const result = await response.json()
-        if (active && response.ok && result.success) setMessages(result.messages || [])
+        if (active && response.ok && result.success) {
+          setMessages(result.messages || [])
+          setCurrentUser(result.current_user || null)
+        }
         else if (active) throw new Error(result.message || 'Unable to load messages')
       } catch (error) {
         console.error('Messages fetch failed:', error)
@@ -120,6 +136,16 @@ export default function UserMessagingPage() {
     return messages.filter((message) => `${message.title || ''} ${message.body || ''}`.toLowerCase().includes(query))
   }, [messages, search])
 
+  const conversationMessages = useMemo(() => {
+    if (!recipientId || !currentUser) return []
+    return messages
+      .filter((message) => (
+        (message.sender_id === currentUser.id && message.recipient_id === recipientId)
+        || (message.sender_id === recipientId && message.recipient_id === currentUser.id)
+      ))
+      .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+  }, [currentUser, messages, recipientId])
+
   return (
     <main className="min-h-screen bg-[#eef4f5] text-slate-900">
       <div className="mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
@@ -136,6 +162,34 @@ export default function UserMessagingPage() {
           <Search className="h-4 w-4 text-slate-400" />
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search messages" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
         </div>
+
+        {recipient && (
+          <section className="mb-4 border border-slate-200 bg-white shadow-sm">
+            <Link href={`/user/profile/${recipient.id}`} className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 transition hover:bg-slate-50 sm:px-5">
+              <ProfileAvatar user={recipient} size="h-11 w-11" />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#147d75]">Conversation</p>
+                <h2 className="truncate text-base font-black text-slate-950">{recipient.full_name || 'Community member'}</h2>
+              </div>
+            </Link>
+            <div className="max-h-[420px] space-y-3 overflow-y-auto p-4 sm:p-5">
+              {conversationMessages.length ? conversationMessages.map((message) => {
+                const isOwnMessage = message.sender_id === currentUser?.id
+                const sender = isOwnMessage ? currentUser : message.sender_user || recipient
+                return (
+                  <div key={message.id} className={`flex items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                    {!isOwnMessage && <Link href={`/user/profile/${sender?.id || recipient.id}`} aria-label={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></Link>}
+                    <div className={`max-w-[78%] rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
+                      <p>{message.body}</p>
+                      <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
+                    </div>
+                    {isOwnMessage && <ProfileAvatar user={currentUser} size="h-8 w-8" />}
+                  </div>
+                )
+              }) : <p className="py-6 text-center text-sm text-slate-500">No messages in this conversation yet.</p>}
+            </div>
+          </section>
+        )}
 
         <form onSubmit={sendMessage} className="mb-4 border border-slate-200 bg-white p-4 shadow-sm">
           <p className="mb-2 text-xs font-bold uppercase tracking-[0.16em] text-[#147d75]">New message</p>
@@ -170,8 +224,8 @@ export default function UserMessagingPage() {
           ) : filteredMessages.length ? (
             <div className="divide-y divide-slate-100">
               {filteredMessages.map((message) => (
-                  <Link key={message.id} href={`/user/profile/${message.other_user?.id || ''}`} className="flex gap-3 px-4 py-4 transition hover:bg-[#f5fbfa] sm:px-5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#e7f6f3] text-[#147d75]"><Mail className="h-4 w-4" /></div>
+                  <Link key={message.id} href={`/user/messaging?recipientId=${encodeURIComponent(message.other_user?.id || '')}`} className="flex gap-3 px-4 py-4 transition hover:bg-[#f5fbfa] sm:px-5">
+                  <ProfileAvatar user={message.other_user} />
                   <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{message.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{message.created_at ? new Date(message.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{message.body}</p></div>
                 </Link>
               ))}
