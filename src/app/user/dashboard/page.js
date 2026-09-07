@@ -237,13 +237,11 @@ export default function UserDashboardPage() {
 
     let isMounted = true
     const loadFollowedPeople = async () => {
-      const { data, error } = await supabase
-        .from('user_follows')
-        .select('following_id')
-        .eq('follower_id', userId)
+      const response = await fetch('/api/users/following', { credentials: 'same-origin' })
+      const result = await response.json()
 
-      if (!isMounted || error) return
-      setFollowedSuggestions(new Set((data || []).map((row) => row.following_id).filter(Boolean)))
+      if (!isMounted || !response.ok || !result.success) return
+      setFollowedSuggestions(new Set(result.following_ids || []))
     }
 
     void loadFollowedPeople()
@@ -472,12 +470,13 @@ export default function UserDashboardPage() {
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
     try {
-      const { error: followError } = await supabase.from('user_follows').insert({ follower_id: userId, following_id: personId })
-      if (followError && followError.code !== '23505') throw followError
+      const response = await fetch(`/api/users/${personId}/follow`, { method: 'POST', credentials: 'same-origin' })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this person right now')
       setFollowedSuggestions((previous) => new Set([...previous, personId]))
     } catch (followError) {
-      console.error('Suggested follow failed:', followError)
-      setToastMessage('Unable to follow this person right now')
+      console.error('Suggested follow failed:', followError?.message || followError)
+      setToastMessage(followError?.message || 'Unable to follow this person right now')
       setTimeout(() => setToastMessage(''), 2500)
     }
   }
@@ -748,10 +747,11 @@ export default function UserDashboardPage() {
               .eq('status', 'active')
               .order('last_activity_at', { ascending: false })
               .limit(20),
-            supabase
-              .from('user_follows')
-              .select('following_id')
-              .eq('follower_id', userId),
+            fetch('/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
+              const result = await response.json()
+              if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load followed users')
+              return { data: (result.following_ids || []).map((followingId) => ({ following_id: followingId })), error: null }
+            }),
             supabase
               .from('info_user_posts')
               .select('id, user_id, title, content, created_at, updated_at, status')

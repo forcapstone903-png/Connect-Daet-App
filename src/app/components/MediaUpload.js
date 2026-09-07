@@ -199,11 +199,11 @@ export default function MediaUpload({
       
       {(existingMediaUrl || mediaPreview) && (
         <div className="mt-2">
-          <div className="relative inline-block">
+          <div className="relative inline-block max-w-full overflow-hidden">
             {mediaTypeDetected === 'video' ? (
               <video
                 src={mediaPreview || existingMediaUrl}
-                className={`${previewClassName} rounded-xl border border-slate-200 object-cover shadow-sm`}
+                className={`${previewClassName} block max-w-full rounded-xl border border-slate-200 object-cover shadow-sm`}
                 controls
                 preload="metadata"
               />
@@ -211,7 +211,7 @@ export default function MediaUpload({
               <img
                 src={mediaPreview || existingMediaUrl}
                 alt="Upload preview"
-                className={`${previewClassName} rounded-xl border border-slate-200 object-cover shadow-sm`}
+                className={`${previewClassName} block max-w-full rounded-xl border border-slate-200 object-cover shadow-sm`}
               />
             )}
             <button

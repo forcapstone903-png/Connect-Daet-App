@@ -23,8 +23,9 @@ export async function GET(request) {
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
 
   const participantIds = [...new Set((data || []).flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
-  const { data: users } = participantIds.length
-    ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url').in('id', participantIds)
+  const allUserIds = [...new Set([userId, ...participantIds])]
+  const { data: users } = allUserIds.length
+    ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url').in('id', allUserIds)
     : { data: [] }
   const usersById = new Map((users || []).map((user) => [user.id, user]))
 
@@ -33,7 +34,10 @@ export async function GET(request) {
     messages: (data || []).map((message) => ({
       ...message,
       other_user: usersById.get(message.sender_id === userId ? message.recipient_id : message.sender_id) || null,
+      sender_user: usersById.get(message.sender_id) || null,
+      recipient_user: usersById.get(message.recipient_id) || null,
     })),
+    current_user: usersById.get(userId) || { id: userId, full_name: 'You', profile_image_url: null },
   })
 }
 
@@ -59,5 +63,14 @@ export async function POST(request) {
     .single()
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
 
-  return NextResponse.json({ success: true, message: data })
+  const { data: sender } = await adminSupabase
+    .from('info_users')
+    .select('id, full_name, profile_image_url')
+    .eq('id', senderId)
+    .maybeSingle()
+
+  return NextResponse.json({
+    success: true,
+    message: { ...data, sender_user: sender || null, recipient_user: recipient },
+  })
 }

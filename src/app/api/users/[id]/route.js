@@ -22,7 +22,7 @@ export async function GET(request, { params }) {
   const viewerId = getServerSession(request)?.user_id || null
 
   try {
-    const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }] = await Promise.all([
+    const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }, { data: reverseFollowRow, error: reverseFollowError }] = await Promise.all([
       adminSupabase
         .from('info_users')
         .select('id, full_name, profile_image_url, bio, city, country, points, level, user_type, status')
@@ -41,11 +41,20 @@ export async function GET(request, { params }) {
             .eq('following_id', profileId)
             .maybeSingle()
         : Promise.resolve({ data: null }),
+      viewerId && viewerId !== profileId
+        ? adminSupabase
+            .from('user_follows')
+            .select('id')
+            .eq('follower_id', profileId)
+            .eq('following_id', viewerId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
     ])
 
     if (userError) throw userError
     if (profileError) throw profileError
     if (followError) throw followError
+    if (reverseFollowError) throw reverseFollowError
     if (!userData || userData.status !== 'active') {
       return NextResponse.json({ success: false, message: 'This profile could not be found.' }, { status: 404 })
     }
@@ -56,7 +65,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
 
-    const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: followRows }] = await Promise.all([
+    const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: followRows }, { count: followersCount, error: followersCountError }, { count: followingCount, error: followingCountError }] = await Promise.all([
       adminSupabase
         .from('info_user_posts')
         .select('id, user_id, title, content, created_at, updated_at')
@@ -89,7 +98,18 @@ export async function GET(request, { params }) {
         .from('user_follows')
         .select('follower_id, following_id')
         .or(`follower_id.eq.${profileId},following_id.eq.${profileId}`),
+      adminSupabase
+        .from('user_follows')
+        .select('id', { count: 'exact', head: true })
+        .eq('following_id', profileId),
+      adminSupabase
+        .from('user_follows')
+        .select('id', { count: 'exact', head: true })
+        .eq('follower_id', profileId),
     ])
+
+    if (followersCountError) throw followersCountError
+    if (followingCountError) throw followingCountError
 
     const relatedIds = [...new Set((followRows || []).flatMap((row) => [row.follower_id, row.following_id]).filter((id) => id && id !== profileId))]
     const { data: relatedUsers } = relatedIds.length
@@ -103,8 +123,12 @@ export async function GET(request, { params }) {
       success: true,
       viewer_id: viewerId,
       is_following: Boolean(followRow),
+      is_followed_by: Boolean(reverseFollowRow),
+      is_mutual: Boolean(followRow && reverseFollowRow),
       followers,
       following,
+      followers_count: followersCount || 0,
+      following_count: followingCount || 0,
       profile: {
         ...userData,
         full_name: profileData?.full_name || userData.full_name,

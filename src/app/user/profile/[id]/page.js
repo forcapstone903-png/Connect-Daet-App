@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CalendarDays, Check, FileText, MapPin, MessageCircle, UserPlus, Users } from 'lucide-react'
 import { useParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 
 function getInitials(name = '') {
   return name
@@ -22,8 +21,12 @@ export default function PublicProfilePage() {
   const [posts, setPosts] = useState([])
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
+  const [followerCount, setFollowerCount] = useState(0)
+  const [followingCount, setFollowingCount] = useState(0)
   const [viewerId, setViewerId] = useState(null)
   const [isFollowing, setIsFollowing] = useState(false)
+  const [isFollowedBy, setIsFollowedBy] = useState(false)
+  const [isMutual, setIsMutual] = useState(false)
   const [loading, setLoading] = useState(true)
   const [followLoading, setFollowLoading] = useState(false)
   const [error, setError] = useState('')
@@ -36,10 +39,7 @@ export default function PublicProfilePage() {
       setError('')
 
       try {
-        const [profileResponse, { data: authData }] = await Promise.all([
-          fetch(`/api/users/${profileId}`, { credentials: 'same-origin' }),
-          supabase.auth.getUser(),
-        ])
+        const profileResponse = await fetch(`/api/users/${profileId}`, { credentials: 'same-origin' })
         const profileResult = await profileResponse.json()
 
         if (!profileResponse.ok || !profileResult.success) {
@@ -47,13 +47,17 @@ export default function PublicProfilePage() {
           return
         }
 
-        const currentViewerId = profileResult.viewer_id || authData?.user?.id || null
+        const currentViewerId = profileResult.viewer_id || null
         const content = profileResult.content || {}
         setViewerId(currentViewerId)
         setProfile(profileResult.profile)
         setIsFollowing(Boolean(profileResult.is_following))
+        setIsFollowedBy(Boolean(profileResult.is_followed_by))
+        setIsMutual(Boolean(profileResult.is_mutual))
         setFollowers(profileResult.followers || [])
         setFollowing(profileResult.following || [])
+        setFollowerCount(profileResult.followers_count ?? profileResult.followers?.length ?? 0)
+        setFollowingCount(profileResult.following_count ?? profileResult.following?.length ?? 0)
         setPosts([
           ...(content.user_posts || []).map((post) => ({
             id: post.id,
@@ -108,23 +112,26 @@ export default function PublicProfilePage() {
     setFollowLoading(true)
     try {
       if (isFollowing) {
-        const { error: deleteError } = await supabase
-          .from('user_follows')
-          .delete()
-          .eq('follower_id', viewerId)
-          .eq('following_id', profileId)
-        if (deleteError) throw deleteError
-        setIsFollowing(false)
+        const response = await fetch(`/api/users/${profileId}/follow`, { method: 'DELETE', credentials: 'same-origin' })
+        const result = await response.json()
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to unfollow this user.')
+        setIsFollowing(Boolean(result.is_following))
+        setIsMutual(Boolean(result.is_mutual))
+        setFollowerCount(result.followers_count ?? 0)
+        setFollowingCount(result.following_count ?? 0)
       } else {
-        const { error: insertError } = await supabase
-          .from('user_follows')
-          .insert({ follower_id: viewerId, following_id: profileId })
-        if (insertError) throw insertError
-        setIsFollowing(true)
+        const response = await fetch(`/api/users/${profileId}/follow`, { method: 'POST', credentials: 'same-origin' })
+        const result = await response.json()
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this user.')
+        setIsFollowing(Boolean(result.is_following))
+        setIsFollowedBy(Boolean(result.is_followed_by))
+        setIsMutual(Boolean(result.is_mutual))
+        setFollowerCount(result.followers_count ?? 0)
+        setFollowingCount(result.following_count ?? 0)
       }
     } catch (followError) {
-      console.error('Follow update failed:', followError)
-      alert('Unable to update your follow right now.')
+      console.error('Follow update failed:', followError?.message || followError)
+      alert(followError?.message || 'Unable to update your follow right now.')
     } finally {
       setFollowLoading(false)
     }
@@ -156,11 +163,11 @@ export default function PublicProfilePage() {
         </div>
 
         <section className="overflow-hidden border-x border-b border-slate-200 bg-white sm:rounded-2xl sm:border">
-          <div className="relative h-32 overflow-hidden bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-44">
-            {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="absolute inset-0 h-full w-full object-cover" />}
+          <div className="profile-cover-frame relative z-0 h-32 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-44">
+            {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="profile-cover-image" />}
             <div className="absolute inset-0 bg-slate-950/15" />
           </div>
-          <div className="px-4 pb-5 sm:px-7 sm:pb-7">
+          <div className="relative z-10 px-4 pb-5 sm:px-7 sm:pb-7">
             <div className="-mt-12 flex flex-col gap-3 sm:-mt-14 sm:flex-row sm:items-end sm:justify-between">
               <div className="flex min-w-0 items-end gap-3">
                 <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-sky-100 text-2xl font-black text-sky-700 shadow-md sm:h-28 sm:w-28">
@@ -172,18 +179,26 @@ export default function PublicProfilePage() {
                 </div>
               </div>
               {!isOwnProfile && (
-                <button type="button" onClick={toggleFollow} disabled={followLoading} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 text-sm font-black transition ${isFollowing ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50' : 'bg-sky-600 text-white shadow-sm hover:bg-sky-700'} disabled:opacity-60`}>
-                  {isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-                  {followLoading ? 'Updating...' : isFollowing ? 'Following' : 'Follow'}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={toggleFollow} disabled={followLoading} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 text-sm font-black transition ${isFollowing ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50' : 'bg-sky-600 text-white shadow-sm hover:bg-sky-700'} disabled:opacity-60`}>
+                    {isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                    {followLoading ? 'Updating...' : isFollowing ? 'Following' : 'Follow'}
+                  </button>
+                  {isFollowing && (
+                    <Link href={`/user/messaging?recipientId=${encodeURIComponent(profile.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:bg-slate-50">
+                      <MessageCircle className="h-4 w-4" />
+                      Message
+                    </Link>
+                  )}
+                </div>
               )}
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-4 text-xs text-slate-600">
               <span className="inline-flex items-center gap-1.5"><MapPin className="h-4 w-4 text-sky-600" />{location}</span>
               <span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4 text-sky-600" />{posts.length} shared</span>
-              <span>{followers.length} followers</span>
-              <span>{following.length} following</span>
+              <span>{followerCount} followers</span>
+              <span>{followingCount} following</span>
               <span className="font-bold text-slate-800">{profile.points || 0} points</span>
             </div>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-600">{profile.bio || 'Sharing local experiences and community discoveries.'}</p>
