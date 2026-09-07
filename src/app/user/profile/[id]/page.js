@@ -185,7 +185,7 @@ export default function PublicProfilePage() {
                     {followLoading ? 'Updating...' : isFollowing ? 'Following' : 'Follow'}
                   </button>
                   {isFollowing && (
-                    <Link href={`/user/messaging?recipientId=${encodeURIComponent(profile.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:bg-slate-50">
+                    <Link href={`/user/messaging/${encodeURIComponent(profile.id)}`} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-5 text-sm font-black text-slate-700 transition hover:bg-slate-50">
                       <MessageCircle className="h-4 w-4" />
                       Message
                     </Link>

@@ -28,9 +28,26 @@ export async function GET(request) {
     ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url').in('id', allUserIds)
     : { data: [] }
   const usersById = new Map((users || []).map((user) => [user.id, user]))
+  const conversations = []
+  const conversationIds = new Set()
+
+  for (const message of data || []) {
+    const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
+    if (!otherUserId || conversationIds.has(otherUserId)) continue
+    conversationIds.add(otherUserId)
+    conversations.push({
+      id: message.id,
+      other_user: usersById.get(otherUserId) || null,
+      body: message.body,
+      created_at: message.created_at,
+      sender_id: message.sender_id,
+      recipient_id: message.recipient_id,
+    })
+  }
 
   return NextResponse.json({
     success: true,
+    conversations,
     messages: (data || []).map((message) => ({
       ...message,
       other_user: usersById.get(message.sender_id === userId ? message.recipient_id : message.sender_id) || null,

@@ -22,6 +22,7 @@ function UserMessagingContent() {
   const searchParams = useSearchParams()
   const recipientId = searchParams.get('recipientId')
   const [messages, setMessages] = useState([])
+  const [conversations, setConversations] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -68,6 +69,7 @@ function UserMessagingContent() {
         const result = await response.json()
         if (active && response.ok && result.success) {
           setMessages(result.messages || [])
+          setConversations(result.conversations || [])
           setCurrentUser(result.current_user || null)
         }
         else if (active) throw new Error(result.message || 'Unable to load messages')
@@ -119,6 +121,17 @@ function UserMessagingContent() {
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send message.')
       setMessages((previous) => [{ ...result.message, other_user: recipient }, ...previous])
+      setConversations((previous) => [
+        {
+          id: result.message.id,
+          other_user: recipient,
+          body: result.message.body,
+          created_at: result.message.created_at,
+          sender_id: result.message.sender_id,
+          recipient_id: result.message.recipient_id,
+        },
+        ...previous.filter((conversation) => conversation.other_user?.id !== recipient.id),
+      ])
       setBody('')
       setRecipient(null)
       setRecipientQuery('')
@@ -132,9 +145,9 @@ function UserMessagingContent() {
 
   const filteredMessages = useMemo(() => {
     const query = search.trim().toLowerCase()
-    if (!query) return messages
-    return messages.filter((message) => `${message.title || ''} ${message.body || ''}`.toLowerCase().includes(query))
-  }, [messages, search])
+    if (!query) return conversations
+    return conversations.filter((conversation) => `${conversation.other_user?.full_name || ''} ${conversation.body || ''}`.toLowerCase().includes(query))
+  }, [conversations, search])
 
   const conversationMessages = useMemo(() => {
     if (!recipientId || !currentUser) return []
@@ -223,10 +236,10 @@ function UserMessagingContent() {
             </div>
           ) : filteredMessages.length ? (
             <div className="divide-y divide-slate-100">
-              {filteredMessages.map((message) => (
-                  <Link key={message.id} href={`/user/messaging?recipientId=${encodeURIComponent(message.other_user?.id || '')}`} className="flex gap-3 px-4 py-4 transition hover:bg-[#f5fbfa] sm:px-5">
-                  <ProfileAvatar user={message.other_user} />
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{message.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{message.created_at ? new Date(message.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{message.body}</p></div>
+                {filteredMessages.map((conversation) => (
+                  <Link key={conversation.other_user?.id || conversation.id} href={`/user/messaging/${encodeURIComponent(conversation.other_user?.id || '')}`} className="flex gap-3 px-4 py-4 transition hover:bg-[#f5fbfa] sm:px-5">
+                  <ProfileAvatar user={conversation.other_user} />
+                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
                 </Link>
               ))}
             </div>
