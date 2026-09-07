@@ -101,6 +101,35 @@ img {
   -webkit-overflow-scrolling: touch;
 }
 
+.message-composer-row {
+  align-items: center;
+}
+
+.attach-button,
+.message-input,
+.send-button {
+  height: 48px;
+  box-sizing: border-box;
+}
+
+.attach-button,
+.send-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.message-input {
+  flex: 1;
+}
+
+.message-input-wrapper {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
 * {
   box-sizing: border-box;
 }
