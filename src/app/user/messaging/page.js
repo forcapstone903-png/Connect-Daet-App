@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Mail, Search, Send, UserRound } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
 import { getStoredSession } from '@/lib/authCookies'
 
 export default function UserMessagingPage() {
+  const searchParams = useSearchParams()
+  const recipientId = searchParams.get('recipientId')
   const [messages, setMessages] = useState([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
@@ -17,6 +20,30 @@ export default function UserMessagingPage() {
   const [sending, setSending] = useState(false)
   const [notice, setNotice] = useState('')
   const [retryKey, setRetryKey] = useState(0)
+
+  useEffect(() => {
+    if (!recipientId) return
+
+    let active = true
+    const loadRecipient = async () => {
+      try {
+        const response = await fetch(`/api/users/${recipientId}`, { credentials: 'same-origin' })
+        const result = await response.json()
+        if (!active || !response.ok || !result.success || !result.profile) return
+        setRecipient({
+          id: result.profile.id,
+          full_name: result.profile.full_name,
+          profile_image_url: result.profile.profile_image_url,
+        })
+        setRecipientQuery(result.profile.full_name || '')
+      } catch (error) {
+        if (active) console.error('Message recipient fetch failed:', error)
+      }
+    }
+
+    void loadRecipient()
+    return () => { active = false }
+  }, [recipientId])
 
   useEffect(() => {
     let active = true
