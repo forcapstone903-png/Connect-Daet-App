@@ -14,7 +14,10 @@ import { useRouter } from 'next/navigation'
 import { startTransition, useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
+  ArrowUp,
+  CalendarPlus,
   Flame,
+  Image,
   Loader,
   LogOut,
   MessageCircle,
@@ -151,6 +154,7 @@ export default function UserDashboardPage() {
   const [recentSearches, setRecentSearches] = useState([])
   const [profileSearchResults, setProfileSearchResults] = useState([])
   const [activeCategory, setActiveCategory] = useState('all')
+  const [feedScope, setFeedScope] = useState('for-you')
   const [error, setError] = useState(null)
 
   // Social engagement state (from feature spec: reactions, bookmarks, gamification)
@@ -898,6 +902,10 @@ export default function UserDashboardPage() {
       })
     }
 
+    if (feedScope === 'latest') {
+      result = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
+    }
+
     const categoryWeights = new Map()
     const typeWeights = new Map()
     const interactedIds = new Set()
@@ -932,6 +940,10 @@ export default function UserDashboardPage() {
       interactedIds.add(`${favorite.item_type}-${favorite.item_id}`)
     })
 
+    if (feedScope === 'trending') {
+      return result.sort((left, right) => (Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0)) - (Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0)))
+    }
+
     return result
       .map((item, index) => {
         const itemKey = `${item.type}-${item.id}`
@@ -954,7 +966,7 @@ export default function UserDashboardPage() {
       })
         .sort((left, right) => right.score - left.score || left.index - right.index)
       .map(({ item }) => item)
-      }, [feed, activeCategory, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
+      }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
 
   if (!authenticated) {
     return (
@@ -986,10 +998,10 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
-        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:rounded-[26px]">
+      <div className="mx-auto w-full max-w-[1440px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-6 lg:pb-10">
+        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
           <div className="flex items-center justify-between gap-3">
-            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2">
+            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
               <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
               <span className="min-w-0">
                 <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
@@ -997,7 +1009,7 @@ export default function UserDashboardPage() {
               </span>
             </Link>
 
-            <div className="relative hidden min-w-0 flex-1 px-4 lg:block">
+            <div className="relative hidden min-w-0 flex-1 px-4 lg:hidden">
               <form onSubmit={submitSearch} className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
                 <Search className="h-4 w-4 shrink-0" />
                 <input value={search} onFocus={() => setSearchFocused(true)} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
@@ -1014,7 +1026,7 @@ export default function UserDashboardPage() {
               )}
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 lg:hidden">
               <Link href="/user/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white transition hover:bg-sky-800">
                 {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
               </Link>
@@ -1040,9 +1052,46 @@ export default function UserDashboardPage() {
           </div>
         )}
 
-        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
+        <section className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-100 bg-[linear-gradient(115deg,#e0f2fe_0%,#f0fdfa_52%,#fff7ed_100%)] px-6 py-5 shadow-[0_10px_28px_rgba(14,116,144,0.08)] lg:block">
+          <div className="flex items-center justify-between gap-6">
+            <div className="max-w-[620px]">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Daet community journal</p>
+              <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Stories, places, and people worth knowing.</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
+            </div>
+            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/80 bg-white/75 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
+          </div>
+        </section>
+
+        <div className="lg:grid lg:grid-cols-[176px_minmax(0,680px)_276px] lg:items-start lg:justify-center lg:gap-5">
+          <aside className="hidden space-y-3 lg:sticky lg:top-24 lg:block lg:min-w-0">
+            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
+              <div className="border-b border-slate-100 px-2 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
+                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
+                  </div>
+                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
+                </div>
+              </div>
+              <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Explore Daet</p>
+              <nav className="space-y-1" aria-label="Community shortcuts">
+                <Link href="/user/forums" className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><MessageCircle className="h-4 w-4" />Forums</Link>
+                <Link href="/user/events" className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Clock3 className="h-4 w-4" />Events</Link>
+                <Link href="/user/saved" className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Star className="h-4 w-4" />Saved</Link>
+              </nav>
+            </div>
+            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
+              <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Topics</p>
+              <div className="space-y-1">{trendingTopics.slice(0, 4).map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-slate-600 hover:bg-sky-50 hover:text-sky-700"><span className="truncate">#{topic.name}</span><span className="text-[10px] text-slate-400">{topic.count}</span></button>)}</div>
+            </div>
+            <p className="px-2 text-[11px] leading-5 text-slate-500">Discover stories, conversations, and places from the Daet community.</p>
+          </aside>
+
+          <div className="min-w-0">
+        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
+            <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
             <Link href="/user/blogs/new" className="flex min-h-11 flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-sky-300">
               Share something with Daet...
             </Link>
@@ -1055,13 +1104,22 @@ export default function UserDashboardPage() {
             <Link href="/user/events" className="rounded-xl py-2 hover:bg-white">Find an event</Link>
             <Link href="/user/forums" className="rounded-xl py-2 hover:bg-white">Start a chat</Link>
           </div>
+          <div className="mt-3 hidden items-center gap-2 border-t border-slate-100 pt-3 lg:flex">
+            <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-sky-50 hover:text-sky-700"><Image className="h-4 w-4 text-sky-600" />Photo or video</Link>
+            <Link href="/user/events" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-amber-50 hover:text-amber-700"><CalendarPlus className="h-4 w-4 text-amber-600" />Event</Link>
+            <Link href="/user/forums" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"><MessageCircle className="h-4 w-4 text-emerald-600" />Discussion</Link>
+          </div>
         </div>
 
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_310px]">
+        <div>
           <section className="min-w-0 space-y-4">
             <div className="flex items-end justify-between px-1">
               <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
               <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} aria-label="Refresh your feed" title="Refresh your feed" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-4 w-4" /></button>
+            </div>
+
+            <div className="hidden items-center border-b border-slate-200 lg:flex">
+              {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
             </div>
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
@@ -1099,7 +1157,7 @@ export default function UserDashboardPage() {
             ) : filteredFeed.length === 0 ? (
               <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No posts found. Try another topic or search.</div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-4 lg:space-y-6">
                 {filteredFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
@@ -1113,22 +1171,22 @@ export default function UserDashboardPage() {
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className="feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)]">
-                      <div className="p-4 sm:p-5">
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-[16px] lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
+                      <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
-                          <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700" aria-label={`View ${authorName}'s profile`}>
+                          <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
                             {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
                           </Link>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                              <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700">{authorName}</Link>
+                              <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
                               {authorRoleLabel && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">{authorRoleLabel}</span>}
                               {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
                               <span className="text-slate-400">·</span>
                               <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{item.type}</span>{item.category && <><span className="text-slate-300">•</span><span className="normal-case tracking-normal text-slate-500">{item.category}</span></>}</div>
-                            <Link href={item.href} className="block"><h2 className="mt-1 break-words text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base">{item.title}</h2></Link>
+                            <Link href={item.href} className="block"><h2 className="mt-1 break-words text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:mt-2 lg:text-lg lg:leading-7">{item.title}</h2></Link>
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}{item.start_date && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}{item.reply_count !== undefined && <span>{item.reply_count} replies</span>}</div>
                           </div>
                           <div className="relative shrink-0">
@@ -1141,12 +1199,12 @@ export default function UserDashboardPage() {
                           </div>
                         </div>
 
-                        {(item.excerpt || item.description) && <p className="mt-3 break-words text-[13px] leading-5 text-slate-600">{item.excerpt || item.description}</p>}
+                        {(item.excerpt || item.description) && <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{item.excerpt || item.description}</p>}
                         {item.type === 'forum' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Discussion</span>{item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span></div>}
                         {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
                         {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95" /></Link>}</div>}
+                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
 
                         <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
                         {openComments === itemKey ? (
@@ -1162,24 +1220,33 @@ export default function UserDashboardPage() {
             )}
           </section>
 
-          <aside className="hidden space-y-4 lg:block lg:sticky lg:top-24">
-            <div className="overflow-hidden rounded-[22px] bg-slate-950 p-5 text-white shadow-[0_14px_35px_rgba(15,23,42,0.16)]">
-              <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-200">Your rhythm</p><Flame className="h-4 w-4 text-amber-300" /></div>
-              <p className="mt-3 text-3xl font-black">{gamification.points}<span className="ml-1 text-sm font-semibold text-sky-200">pts</span></p>
-              <p className="mt-1 text-xs text-slate-200">Level {gamification.level} · {gamification.streak}-day streak</p>
-              <Link href="/user/rewards" className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-full bg-amber-500 px-3 py-2.5 text-xs font-bold text-white hover:bg-amber-600"><Star className="h-3.5 w-3.5" />View rewards</Link>
+          </div>
+
+          <aside className="hidden min-w-0 space-y-4 lg:sticky lg:top-24 lg:block">
+            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p><Flame className="h-4 w-4 text-amber-500" /></div>
+              <p className="mt-3 text-3xl font-black text-slate-950">{gamification.points}<span className="ml-1 text-sm font-semibold text-slate-500">pts</span></p>
+              <p className="mt-1 text-xs text-slate-500">Level {gamification.level} · {gamification.streak}-day streak</p>
+              <Link href="/user/rewards" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Star className="h-3.5 w-3.5 text-amber-300" />View rewards</Link>
             </div>
 
-            <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
               <div className="space-y-2">{trendingTopics.map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-sky-50 px-3 text-left text-sm font-semibold text-slate-700 hover:bg-sky-100"><span>#{topic.name}</span><span className="text-xs text-sky-700">{topic.count}</span></button>)}</div>
             </div>
 
-            <div className="overflow-hidden rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm">
+            <div className="overflow-hidden rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Official notice</p><h2 className="mt-1 font-extrabold text-slate-950">Announcements</h2></div><Megaphone className="h-5 w-5 text-amber-700" /></div>
-              <div className="space-y-2">{announcements.slice(0, 2).map((ann) => { const announcement = normalizeAnnouncementRecord(ann); return <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-xl bg-white/80 p-3 shadow-sm transition hover:bg-white"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{announcement.type || 'News'}</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-800">{announcement.title}</p><p className="mt-1 text-[11px] text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p></Link> })}</div>
+              <div className="space-y-2">{announcements.slice(0, 3).map((ann) => { const announcement = normalizeAnnouncementRecord(ann); return <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-xl bg-slate-50 p-3 transition hover:bg-amber-50"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{announcement.type || 'News'}</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-800">{announcement.title}</p><p className="mt-1 text-[11px] text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p></Link> })}</div>
+              <Link href="/user/announcements" className="mt-3 block text-center text-xs font-bold text-sky-700 hover:text-sky-800">View all announcements</Link>
+            </div>
+            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">Plan your visit</p><h2 className="mt-1 font-extrabold text-slate-950">Upcoming events</h2></div><CalendarPlus className="h-4 w-4 text-emerald-700" /></div>
+              <div className="space-y-2">{feed.filter((item) => item.type === 'event').slice(0, 2).map((event) => <Link key={event.id} href={event.href} className="block rounded-xl bg-emerald-50 p-3 hover:bg-emerald-100"><p className="line-clamp-2 text-sm font-bold text-slate-800">{event.title}</p><p className="mt-1 text-[11px] text-slate-500">{event.start_date ? formatDate(event.start_date) : 'Date to be announced'}</p></Link>)}</div>
             </div>
           </aside>
+        </div>
+        <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
         </div>
       </div>
     </main>
