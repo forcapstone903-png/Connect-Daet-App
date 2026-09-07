@@ -1009,7 +1009,7 @@ export default function UserDashboardPage() {
               </span>
             </Link>
 
-            <div className="relative hidden min-w-0 flex-1 px-4 lg:block">
+            <div className="relative hidden min-w-0 flex-1 px-4 lg:hidden">
               <form onSubmit={submitSearch} className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
                 <Search className="h-4 w-4 shrink-0" />
                 <input value={search} onFocus={() => setSearchFocused(true)} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
