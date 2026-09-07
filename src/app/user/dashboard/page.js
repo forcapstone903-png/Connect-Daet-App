@@ -21,7 +21,6 @@ import {
   Loader,
   LogOut,
   MessageCircle,
-  Megaphone,
   Menu,
   MapPinned,
   MoreHorizontal,
@@ -187,6 +186,8 @@ export default function UserDashboardPage() {
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
   const [feedNow, setFeedNow] = useState(() => Date.now())
+  const [feedVisibleCount, setFeedVisibleCount] = useState(10)
+  const [feedEndReached, setFeedEndReached] = useState(false)
 
   useEffect(() => {
     const handleFeedRefresh = () => {
@@ -968,6 +969,29 @@ export default function UserDashboardPage() {
       .map(({ item }) => item)
       }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
 
+  useEffect(() => {
+    setFeedVisibleCount(10)
+    setFeedEndReached(false)
+  }, [activeCategory, feedScope, search, feedRefreshKey, hiddenPosts, notInterestedTopics])
+
+  const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
+  const hasMoreFeed = feedVisibleCount < filteredFeed.length
+
+  useEffect(() => {
+    const handleDocumentScroll = () => {
+      if (window.innerHeight + window.scrollY < document.documentElement.scrollHeight - 180) return
+
+      if (hasMoreFeed) {
+        setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))
+      } else if (filteredFeed.length > 0) {
+        setFeedEndReached(true)
+      }
+    }
+
+    window.addEventListener('scroll', handleDocumentScroll, { passive: true })
+    return () => window.removeEventListener('scroll', handleDocumentScroll)
+  }, [filteredFeed.length, hasMoreFeed])
+
   if (!authenticated) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
@@ -998,7 +1022,7 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1440px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-6 lg:pb-10">
+      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 md:mx-0 md:max-w-none md:px-6 md:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
@@ -1063,32 +1087,8 @@ export default function UserDashboardPage() {
           </div>
         </section>
 
-        <div className="lg:grid lg:grid-cols-[176px_minmax(0,680px)_276px] lg:items-start lg:justify-center lg:gap-5">
-          <aside className="hidden space-y-3 lg:sticky lg:top-24 lg:block lg:min-w-0">
-            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
-              <div className="border-b border-slate-100 px-2 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
-                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
-                  </div>
-                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
-                </div>
-              </div>
-              <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Explore Daet</p>
-              <nav className="space-y-1" aria-label="Community shortcuts">
-                <Link href="/user/forums" className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><MessageCircle className="h-4 w-4" />Forums</Link>
-                <Link href="/user/events" className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Clock3 className="h-4 w-4" />Events</Link>
-                <Link href="/user/saved" className="flex items-center gap-3 rounded-xl px-2.5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Star className="h-4 w-4" />Saved</Link>
-              </nav>
-            </div>
-            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
-              <p className="px-2 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Topics</p>
-              <div className="space-y-1">{trendingTopics.slice(0, 4).map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-xs font-semibold text-slate-600 hover:bg-sky-50 hover:text-sky-700"><span className="truncate">#{topic.name}</span><span className="text-[10px] text-slate-400">{topic.count}</span></button>)}</div>
-            </div>
-            <p className="px-2 text-[11px] leading-5 text-slate-500">Discover stories, conversations, and places from the Daet community.</p>
-          </aside>
-
-          <div className="min-w-0">
+        <div className="md:grid md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:gap-6">
+          <div className="min-w-0 md:pr-0">
         <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
             <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
@@ -1122,7 +1122,7 @@ export default function UserDashboardPage() {
               {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
             </div>
 
-            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+            {!loading && false && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
               <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1158,7 +1158,7 @@ export default function UserDashboardPage() {
               <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No posts found. Try another topic or search.</div>
             ) : (
               <div className="space-y-4 lg:space-y-6">
-                {filteredFeed.map((item) => {
+                {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { full_name: item.organizer || '', user_type: 'admin' } : null)
@@ -1218,11 +1218,23 @@ export default function UserDashboardPage() {
                 })}
               </div>
             )}
+            {!loading && filteredFeed.length > 0 && (hasMoreFeed || feedEndReached) && <div className="mt-5 rounded-[16px] border border-dashed border-slate-300 bg-white p-4 text-center"><p className="text-xs text-slate-500">{hasMoreFeed ? 'More community posts are ready.' : 'You have reached the end of this feed.'}</p>{hasMoreFeed ? <button type="button" onClick={() => setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))} className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700">Load more</button> : <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-3.5 w-3.5" />Refresh feed</button>}</div>}
           </section>
 
           </div>
 
-          <aside className="hidden min-w-0 space-y-4 lg:sticky lg:top-24 lg:block">
+          <aside className="hidden min-w-0 space-y-4 md:block">
+            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
+              <div className="border-b border-slate-100 px-2 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
+                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
+                  </div>
+                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
+                </div>
+              </div>
+            </div>
+
             <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p><Flame className="h-4 w-4 text-amber-500" /></div>
               <p className="mt-3 text-3xl font-black text-slate-950">{gamification.points}<span className="ml-1 text-sm font-semibold text-slate-500">pts</span></p>
@@ -1230,20 +1242,21 @@ export default function UserDashboardPage() {
               <Link href="/user/rewards" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Star className="h-3.5 w-3.5 text-amber-300" />View rewards</Link>
             </div>
 
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+              <section className="rounded-[16px] border border-sky-100 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
+                <div className="space-y-3">
+                  {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="block rounded-xl bg-sky-50 p-3 hover:bg-sky-100"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p><p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p></Link>}
+                  {suggestions.suggestedPeople.length > 0 && <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p><div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><Link href={`/user/profile/${person.id}`} className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</Link><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="shrink-0 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : 'Follow'}</button></div>)}</div></div>}
+                </div>
+              </section>
+            )}
+
             <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
               <div className="space-y-2">{trendingTopics.map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-sky-50 px-3 text-left text-sm font-semibold text-slate-700 hover:bg-sky-100"><span>#{topic.name}</span><span className="text-xs text-sky-700">{topic.count}</span></button>)}</div>
             </div>
 
-            <div className="overflow-hidden rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Official notice</p><h2 className="mt-1 font-extrabold text-slate-950">Announcements</h2></div><Megaphone className="h-5 w-5 text-amber-700" /></div>
-              <div className="space-y-2">{announcements.slice(0, 3).map((ann) => { const announcement = normalizeAnnouncementRecord(ann); return <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-xl bg-slate-50 p-3 transition hover:bg-amber-50"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{announcement.type || 'News'}</p><p className="mt-1 line-clamp-2 text-sm font-bold text-slate-800">{announcement.title}</p><p className="mt-1 text-[11px] text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p></Link> })}</div>
-              <Link href="/user/announcements" className="mt-3 block text-center text-xs font-bold text-sky-700 hover:text-sky-800">View all announcements</Link>
-            </div>
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">Plan your visit</p><h2 className="mt-1 font-extrabold text-slate-950">Upcoming events</h2></div><CalendarPlus className="h-4 w-4 text-emerald-700" /></div>
-              <div className="space-y-2">{feed.filter((item) => item.type === 'event').slice(0, 2).map((event) => <Link key={event.id} href={event.href} className="block rounded-xl bg-emerald-50 p-3 hover:bg-emerald-100"><p className="line-clamp-2 text-sm font-bold text-slate-800">{event.title}</p><p className="mt-1 text-[11px] text-slate-500">{event.start_date ? formatDate(event.start_date) : 'Date to be announced'}</p></Link>)}</div>
-            </div>
           </aside>
         </div>
         <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
