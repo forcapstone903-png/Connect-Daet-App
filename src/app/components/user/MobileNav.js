@@ -69,14 +69,10 @@ export default function MobileNav() {
   return (
     <>
       <nav className="sticky top-0 z-40 hidden border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur-sm lg:block">
-        <div className="mx-auto grid h-16 max-w-[1440px] grid-cols-[minmax(25rem,1fr)_auto_minmax(12rem,auto)] items-center gap-6 px-6">
+        <div className="mx-auto grid h-16 max-w-[1440px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-6">
           <div className="flex min-w-0 items-center gap-5">
             <Link href="/user/dashboard" className="flex shrink-0 items-center gap-2 whitespace-nowrap">
               <img src="/logo.png" alt="Daet tourism logo" className="h-9 w-9 object-contain" />
-              <span>
-                <span className="block text-sm font-black tracking-tight text-slate-900">Daet Connect</span>
-                <span className="block text-[10px] font-medium text-slate-500">Daet community</span>
-              </span>
             </Link>
             <form onSubmit={submitSearch} className="flex min-w-0 max-w-[300px] flex-1 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
               <Search className="h-4 w-4 shrink-0" />
