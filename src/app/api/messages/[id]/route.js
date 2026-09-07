@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
   const [{ data: messages, error: messagesError }, { data: users, error: usersError }] = await Promise.all([
     adminSupabase
       .from('direct_messages')
-      .select('id, sender_id, recipient_id, body, created_at, read_at')
+      .select('id, sender_id, recipient_id, body, media_url, media_type, created_at, read_at')
       .or(`and(sender_id.eq.${currentUserId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${currentUserId})`)
       .order('created_at', { ascending: true }),
     adminSupabase

@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Send, UserRound } from 'lucide-react'
+import { ArrowLeft, Paperclip, Send, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 
 function getInitials(name = '') {
@@ -28,6 +28,15 @@ export default function ConversationPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [mediaFile, setMediaFile] = useState(null)
+  const [mediaPreview, setMediaPreview] = useState('')
+  const [mediaType, setMediaType] = useState(null)
+  const [videoTooLarge, setVideoTooLarge] = useState(null)
+  const mediaInputRef = useRef(null)
+
+  useEffect(() => () => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview)
+  }, [mediaPreview])
 
   useEffect(() => {
     if (!otherUserId) return
@@ -58,20 +67,38 @@ export default function ConversationPage() {
   const sendMessage = async (event) => {
     event.preventDefault()
     const trimmedBody = body.trim()
-    if (!trimmedBody || !otherUserId) return
+    if ((!trimmedBody && !mediaFile) || videoTooLarge || !otherUserId) return
 
     setSending(true)
     try {
+      let uploadedMediaUrl = null
+      let uploadedMediaType = null
+      if (mediaFile) {
+        const uploadData = new FormData()
+        uploadData.append('file', mediaFile)
+        uploadData.append('bucket', 'profile-media')
+        uploadData.append('folder', `messages/${currentUser.id}`)
+        const uploadResponse = await fetch('/api/upload', { method: 'POST', credentials: 'same-origin', body: uploadData })
+        const uploadResult = await uploadResponse.json()
+        if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.error || 'Unable to upload attachment.')
+        uploadedMediaUrl = uploadResult.url
+        uploadedMediaType = mediaType
+      }
+
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ recipientId: otherUserId, body: trimmedBody }),
+        body: JSON.stringify({ recipientId: otherUserId, body: trimmedBody, mediaUrl: uploadedMediaUrl, mediaType: uploadedMediaType }),
       })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send message.')
       setMessages((previous) => [...previous, { ...result.message, sender_user: currentUser, recipient_user: otherUser }])
       setBody('')
+      setMediaFile(null)
+      setMediaPreview('')
+      setMediaType(null)
+      if (mediaInputRef.current) mediaInputRef.current.value = ''
     } catch (sendError) {
       setError(sendError.message)
     } finally {
@@ -79,10 +106,37 @@ export default function ConversationPage() {
     }
   }
 
+  const handleMediaChange = (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    const nextMediaType = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'image' : null
+    if (!nextMediaType || (nextMediaType === 'image' && file.size > 20 * 1024 * 1024)) {
+      setError('Choose a JPG, PNG, WEBP, MP4, or MOV file up to 20MB.')
+      event.target.value = ''
+      return
+    }
+    setError('')
+    setMediaFile(file)
+    setMediaType(nextMediaType)
+    setMediaPreview(URL.createObjectURL(file))
+    setVideoTooLarge(nextMediaType === 'video' && file.size > 20 * 1024 * 1024 ? {
+      name: file.name,
+      size: (file.size / (1024 * 1024)).toFixed(1),
+    } : null)
+  }
+
+  const clearMedia = () => {
+    setMediaFile(null)
+    setMediaPreview('')
+    setMediaType(null)
+    setVideoTooLarge(null)
+    if (mediaInputRef.current) mediaInputRef.current.value = ''
+  }
+
   return (
-    <main className="min-h-screen bg-[#eef4f5] text-slate-900">
-      <div className="mx-auto flex min-h-screen w-full max-w-[900px] flex-col px-3 pb-4 pt-3 sm:px-5 sm:pb-6 lg:px-8">
-        <header className="flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+    <main className="h-[100dvh] overflow-hidden bg-[#eef4f5] text-slate-900">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-[900px] flex-col overflow-hidden px-3 pb-4 pt-3 sm:px-5 sm:pb-6 lg:px-8">
+        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push('/user/messaging') }} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -97,13 +151,27 @@ export default function ConversationPage() {
           )}
         </header>
 
+        {videoTooLarge && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
+            <div role="alertdialog" aria-modal="true" aria-labelledby="video-size-warning" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+              <h2 id="video-size-warning" className="text-base font-black text-slate-950">Video is too large</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">The selected video is {videoTooLarge.size} MB. The maximum allowed size is 20 MB.</p>
+              <p className="mt-2 truncate text-xs font-semibold text-slate-500" title={videoTooLarge.name}>{videoTooLarge.name}</p>
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={clearMedia} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Remove</button>
+                <button type="button" onClick={() => { setVideoTooLarge(null); mediaInputRef.current?.click() }} className="rounded-full bg-[#147d75] px-4 py-2 text-sm font-bold text-white hover:bg-[#0f685f]">Choose another video</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {loading ? (
-          <div className="flex-1 bg-white p-6 text-sm text-slate-500 shadow-sm">Loading conversation...</div>
+          <div className="min-h-0 flex-1 overflow-hidden bg-white p-6 text-sm text-slate-500 shadow-sm">Loading conversation...</div>
         ) : error ? (
-          <div className="flex-1 bg-white p-8 text-center text-sm text-red-700 shadow-sm">{error}</div>
+          <div className="min-h-0 flex-1 overflow-hidden bg-white p-8 text-center text-sm text-red-700 shadow-sm">{error}</div>
         ) : (
-          <div className="flex min-h-0 flex-1 flex-col bg-white shadow-sm">
-            <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
+          <div className="chat-conversation-panel flex min-h-0 flex-1 flex-col overflow-visible bg-white shadow-sm">
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:p-6">
               {messages.length ? messages.map((message) => {
                 const isOwnMessage = message.sender_id === currentUser?.id
                 const sender = isOwnMessage ? currentUser : otherUser
@@ -111,7 +179,8 @@ export default function ConversationPage() {
                   <div key={message.id} className={`flex items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                     {!isOwnMessage && <Link href={`/user/profile/${otherUser.id}`} aria-label={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></Link>}
                     <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
-                      <p>{message.body}</p>
+                      {message.media_url && (message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
+                      {message.body && <p>{message.body}</p>}
                       <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
                     </div>
                     {isOwnMessage && <ProfileAvatar user={currentUser} size="h-8 w-8" />}
@@ -119,9 +188,12 @@ export default function ConversationPage() {
                 )
               }) : <p className="py-10 text-center text-sm text-slate-500">No messages yet. Start the conversation.</p>}
             </div>
-            <form onSubmit={sendMessage} className="flex gap-2 border-t border-slate-200 p-3 sm:p-4">
+            {mediaPreview && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2">{mediaType === 'video' ? <video src={mediaPreview} controls className="max-h-32 max-w-full rounded" /> : <img src={mediaPreview} alt="Attachment preview" className="max-h-32 max-w-full rounded object-contain" />}<button type="button" onClick={clearMedia} aria-label="Remove attachment" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
+            <form onSubmit={sendMessage} className="relative flex shrink-0 gap-2 border-t border-slate-200 p-3 sm:p-4">
+              <input ref={mediaInputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={handleMediaChange} className="hidden" />
+              <button type="button" onClick={() => mediaInputRef.current?.click()} aria-label="Add photo or video" title="Add photo or video" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><Paperclip className="h-5 w-5" /></button>
               <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message..." rows={2} className="min-w-0 flex-1 resize-none border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#147d75]" />
-              <button type="submit" disabled={sending || !body.trim()} className="inline-flex items-center gap-2 self-end bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
+              <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile)} className="inline-flex items-center gap-2 self-end bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
             </form>
           </div>
         )}

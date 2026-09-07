@@ -185,15 +185,6 @@ export default function UserMessagingPage() {
               <h1 className="text-xl font-black text-slate-950">Messages</h1>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={openCompose}
-            aria-label="Start a new conversation"
-            title="Start a new conversation"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#147d75] transition hover:bg-[#e7f6f3]"
-          >
-            <Plus className="h-5 w-5" />
-          </button>
           <Link href="/user/messaging/archived" className="mr-2 text-xs font-bold text-[#147d75] hover:underline">Archived</Link>
         </header>
 
@@ -282,6 +273,15 @@ export default function UserMessagingPage() {
           )}
         </section>
       </div>
+      <button
+        type="button"
+        onClick={openCompose}
+        aria-label="Start a new conversation"
+        title="Start a new conversation"
+        className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#147d75] text-white shadow-[0_8px_24px_rgba(20,125,117,0.3)] transition hover:bg-[#0f685f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#147d75] lg:bottom-8 lg:right-8"
+      >
+        <Plus className="h-6 w-6" />
+      </button>
     </main>
   )
 }

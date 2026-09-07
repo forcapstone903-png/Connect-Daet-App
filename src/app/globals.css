@@ -63,6 +63,11 @@ img {
   object-fit: cover;
 }
 
+.chat-conversation-panel {
+  position: relative;
+  min-height: 0;
+}
+
 * {
   box-sizing: border-box;
 }

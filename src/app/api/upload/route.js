@@ -16,7 +16,7 @@ export async function POST(request) {
     const requestedBucket = String(formData.get('bucket') || '')
     const requestedFolder = String(formData.get('folder') || '')
     const bucket = requestedBucket === 'profile-media' ? requestedBucket : null
-    const folderType = requestedFolder.startsWith('covers/') ? 'covers' : requestedFolder.startsWith('users/') ? 'users' : null
+    const folderType = requestedFolder.startsWith('covers/') ? 'covers' : requestedFolder.startsWith('users/') ? 'users' : requestedFolder.startsWith('messages/') ? 'messages' : null
     const folder = folderType ? `${folderType}/${userId}` : null
 
     if (!bucket || !folder) return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
