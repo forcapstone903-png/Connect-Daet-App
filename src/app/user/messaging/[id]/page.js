@@ -134,9 +134,9 @@ export default function ConversationPage() {
   }
 
   return (
-    <main className="conversation-page h-[100dvh] overflow-hidden bg-[#eef4f5] text-slate-900">
+    <main className="conversation-page flex h-[100dvh] w-full flex-col overflow-hidden bg-[#eef4f5] text-slate-900">
       <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+        <header className="conversation-header flex flex-[0_0_auto] items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push('/user/messaging') }} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -166,17 +166,18 @@ export default function ConversationPage() {
         )}
 
         {loading ? (
-          <div className="min-h-0 flex-1 overflow-hidden bg-white p-6 text-sm text-slate-500 shadow-sm">Loading conversation...</div>
+          <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-sm text-slate-500"><div className="p-6">Loading conversation...</div></div>
         ) : error ? (
-          <div className="min-h-0 flex-1 overflow-hidden bg-white p-8 text-center text-sm text-red-700 shadow-sm">{error}</div>
+          <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-center text-sm text-red-700"><div className="p-8">{error}</div></div>
         ) : (
-          <div className="chat-conversation-panel conversation-container flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
-            <div className="messages-scroll-area min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <>
+            <div className="messages-container min-h-0 flex-1 w-full overflow-hidden bg-white">
+              <div className="messages-scroll h-full min-h-0 w-full space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain">
               {messages.length ? messages.map((message) => {
                 const isOwnMessage = message.sender_id === currentUser?.id
                 const sender = isOwnMessage ? currentUser : otherUser
                 return (
-                  <div key={message.id} className={`flex items-end gap-2 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
+                  <div key={message.id} className={`flex items-end gap-2 px-4 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'}`}>
                     {!isOwnMessage && <Link href={`/user/profile/${otherUser.id}`} aria-label={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></Link>}
                     <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
                       {message.media_url && (message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
@@ -187,15 +188,18 @@ export default function ConversationPage() {
                   </div>
                 )
               }) : <p className="py-10 text-center text-sm text-slate-500">No messages yet. Start the conversation.</p>}
+              </div>
             </div>
-            {mediaPreview && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2">{mediaType === 'video' ? <video src={mediaPreview} controls className="max-h-32 max-w-full rounded" /> : <img src={mediaPreview} alt="Attachment preview" className="max-h-32 max-w-full rounded object-contain" />}<button type="button" onClick={clearMedia} aria-label="Remove attachment" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
-            <form onSubmit={sendMessage} className="relative flex shrink-0 gap-2 border-t border-slate-200 p-3 sm:p-4">
-              <input ref={mediaInputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={handleMediaChange} className="hidden" />
-              <button type="button" onClick={() => mediaInputRef.current?.click()} aria-label="Add photo or video" title="Add photo or video" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><Paperclip className="h-5 w-5" /></button>
-              <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message..." rows={2} className="min-w-0 flex-1 resize-none border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#147d75]" />
-              <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile)} className="inline-flex items-center gap-2 self-end bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
-            </form>
-          </div>
+            <div className="message-composer flex flex-[0_0_auto] w-full flex-col bg-white">
+              {mediaPreview && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2">{mediaType === 'video' ? <video src={mediaPreview} controls className="max-h-32 max-w-full rounded" /> : <img src={mediaPreview} alt="Attachment preview" className="max-h-32 max-w-full rounded object-contain" />}<button type="button" onClick={clearMedia} aria-label="Remove attachment" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
+              <form onSubmit={sendMessage} className="relative flex shrink-0 gap-2 border-t border-slate-200 p-3 sm:p-4">
+                <input ref={mediaInputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={handleMediaChange} className="hidden" />
+                <button type="button" onClick={() => mediaInputRef.current?.click()} aria-label="Add photo or video" title="Add photo or video" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><Paperclip className="h-5 w-5" /></button>
+                <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message..." rows={2} className="min-w-0 flex-1 resize-none border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#147d75]" />
+                <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile)} className="inline-flex items-center gap-2 self-end bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
+              </form>
+            </div>
+          </>
         )}
       </div>
     </main>
