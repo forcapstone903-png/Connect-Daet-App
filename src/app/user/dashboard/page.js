@@ -468,12 +468,13 @@ export default function UserDashboardPage() {
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
     try {
-      const { error: followError } = await supabase.from('user_follows').insert({ follower_id: userId, following_id: personId })
-      if (followError && followError.code !== '23505') throw followError
+      const response = await fetch(`/api/users/${personId}/follow`, { method: 'POST', credentials: 'same-origin' })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this person right now')
       setFollowedSuggestions((previous) => new Set([...previous, personId]))
     } catch (followError) {
-      console.error('Suggested follow failed:', followError)
-      setToastMessage('Unable to follow this person right now')
+      console.error('Suggested follow failed:', followError?.message || followError)
+      setToastMessage(followError?.message || 'Unable to follow this person right now')
       setTimeout(() => setToastMessage(''), 2500)
     }
   }
