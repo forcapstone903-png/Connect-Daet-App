@@ -134,8 +134,8 @@ export default function ConversationPage() {
   }
 
   return (
-    <main className="h-[100dvh] overflow-hidden bg-[#eef4f5] text-slate-900">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-[900px] flex-col overflow-hidden px-3 pb-4 pt-3 sm:px-5 sm:pb-6 lg:px-8">
+    <main className="conversation-page h-[100dvh] overflow-hidden bg-[#eef4f5] text-slate-900">
+      <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
         <header className="flex shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push('/user/messaging') }} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
             <ArrowLeft className="h-5 w-5" />
@@ -170,8 +170,8 @@ export default function ConversationPage() {
         ) : error ? (
           <div className="min-h-0 flex-1 overflow-hidden bg-white p-8 text-center text-sm text-red-700 shadow-sm">{error}</div>
         ) : (
-          <div className="chat-conversation-panel flex min-h-0 flex-1 flex-col overflow-visible bg-white shadow-sm">
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <div className="chat-conversation-panel conversation-container flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
+            <div className="messages-scroll-area min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain p-4 sm:p-6">
               {messages.length ? messages.map((message) => {
                 const isOwnMessage = message.sender_id === currentUser?.id
                 const sender = isOwnMessage ? currentUser : otherUser
