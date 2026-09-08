@@ -16,10 +16,8 @@ export default function RegisterPage() {
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
-    mobile_number: '',
     password: '',
     confirm_password: '',
-    user_type: 'tourist',
   })
 
   const getPasswordRequirements = (password) => {
@@ -103,12 +101,6 @@ export default function RegisterPage() {
       return
     }
 
-    if (!formData.mobile_number || formData.mobile_number.replace(/\s+/g, '').length < 7) {
-      setError('Please provide a valid mobile number.')
-      setLoading(false)
-      return
-    }
-
     try {
       const response = await fetch('/api/register', {
         method: 'POST',
@@ -116,9 +108,7 @@ export default function RegisterPage() {
         body: JSON.stringify({
           full_name: formData.full_name,
           email: formData.email,
-          mobile_number: formData.mobile_number,
           password: formData.password,
-          user_type: formData.user_type,
         }),
       })
 
@@ -139,10 +129,8 @@ export default function RegisterPage() {
       setFormData({
         full_name: '',
         email: '',
-        mobile_number: '',
         password: '',
         confirm_password: '',
-        user_type: 'tourist',
       })
 
       setTimeout(() => {
@@ -171,7 +159,7 @@ export default function RegisterPage() {
       `}</style>
 
       <div className="min-h-screen w-full bg-slate-100">
-        <div className="grid min-h-screen w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid min-h-dvh w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
           <div className="relative hidden overflow-hidden lg:block">
             <div
               className="absolute inset-0 bg-cover bg-center"
@@ -222,9 +210,9 @@ export default function RegisterPage() {
             </div>
           </div>
 
-        <div className="flex min-h-screen items-center justify-center px-3 py-6 sm:px-5 lg:px-8 xl:px-12">
+        <div className="flex min-h-dvh items-center justify-center px-3 py-5 sm:px-5 sm:py-8 lg:px-8 xl:px-12">
           <div
-            className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:p-8 xl:p-10"
+            className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:rounded-[1.75rem] sm:p-8 xl:p-10"
             style={{ animationFillMode: 'forwards' }}
           >
             <div className="mb-8 text-center">
@@ -232,7 +220,7 @@ export default function RegisterPage() {
                   <img src="/logo.png" alt="Daet logo" className="h-12 w-12 object-contain" />
               </div>
               <p className="text-xs font-bold uppercase tracking-[0.28em] text-sky-700">Daet Connect</p>
-              <h2 className="mt-3 text-3xl font-black text-slate-900">Create account</h2>
+              <h2 className="mt-3 text-2xl font-black text-slate-900 sm:text-3xl">Create account</h2>
               <p className="mt-2 text-sm text-slate-600">Join the local tourism community in Daet.</p>
             </div>
 
@@ -256,7 +244,7 @@ export default function RegisterPage() {
             )}
 
             {!success && (
-              <form onSubmit={handleRegister} className="space-y-5">
+              <form onSubmit={handleRegister} className="space-y-4 sm:space-y-5">
                 <div>
                   <label htmlFor="reg-full_name" className="mb-2 block text-sm font-semibold text-slate-700">Full name</label>
                   <input
@@ -284,21 +272,6 @@ export default function RegisterPage() {
                     onChange={handleChange}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
                     placeholder="you@example.com"
-                  />
-                </div>
-
-                <div>
-                  <label htmlFor="reg-mobile_number" className="mb-2 block text-sm font-semibold text-slate-700">Mobile number</label>
-                  <input
-                    id="reg-mobile_number"
-                    type="tel"
-                    name="mobile_number"
-                    required
-                    autoComplete="tel"
-                    value={formData.mobile_number}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                    placeholder="09XXXXXXXXX"
                   />
                 </div>
 
@@ -389,21 +362,6 @@ export default function RegisterPage() {
                   {formData.confirm_password && formData.password !== formData.confirm_password && (
                     <p className="mt-1 text-xs text-red-500">Passwords do not match</p>
                   )}
-                </div>
-
-                <div>
-                  <label htmlFor="reg-user_type" className="mb-2 block text-sm font-semibold text-slate-700">I am a...</label>
-                  <select
-                    id="reg-user_type"
-                    name="user_type"
-                    value={formData.user_type}
-                    onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
-                  >
-                    <option value="tourist">Tourist</option>
-                    <option value="artisan">Artisan</option>
-                    <option value="operator">Tour Operator</option>
-                  </select>
                 </div>
 
                 <button

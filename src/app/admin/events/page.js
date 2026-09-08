@@ -64,6 +64,9 @@ export default function AdminEventsPage() {
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [selectedEventDetails, setSelectedEventDetails] = useState(null);
+  const [eventDetailsSearch, setEventDetailsSearch] = useState('');
+  const [currentEventPage, setCurrentEventPage] = useState(1);
+  const EVENTS_PER_PAGE = 10;
   const [showTrashDropZone, setShowTrashDropZone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
@@ -532,6 +535,7 @@ export default function AdminEventsPage() {
   const openCreateModal = (startStr = null) => {
     setSelectedEvent(null);
     setSelectedEventDetails(null);
+    setEventDetailsSearch('');
     setEventForm({
       id: '', title: '', description: '', location: '', start_date: startStr || '', end_date: startStr || '',
       start_time: '', end_time: '', category: 'festival', is_free: true, ticket_price: '',
@@ -629,6 +633,26 @@ export default function AdminEventsPage() {
   const handleEventSelection = (eventObj) => {
     if (!eventObj) return;
     setSelectedEventDetails(eventObj);
+    setEventDetailsSearch(eventObj.title || '');
+  };
+
+  const handleEventDetailsSearch = (value) => {
+    setEventDetailsSearch(value);
+    const normalizedValue = value.trim().toLowerCase();
+    if (!normalizedValue) {
+      setSelectedEventDetails(null);
+      return;
+    }
+
+    const matchingEvent = events.find((event) => event.title?.trim().toLowerCase() === normalizedValue)
+      || events.find((event) => event.title?.trim().toLowerCase().includes(normalizedValue));
+
+    if (matchingEvent) {
+      setSelectedEventDetails(matchingEvent);
+      return;
+    }
+
+    setSelectedEventDetails(null);
   };
 
   const addRegistration = (eventId) => {
@@ -757,6 +781,16 @@ export default function AdminEventsPage() {
         !(ev.location || '').toLowerCase().includes(filters.search.toLowerCase())) return false;
     return true;
   });
+
+  const totalEventPages = Math.ceil(filteredEvents.length / EVENTS_PER_PAGE);
+  const paginatedEvents = filteredEvents.slice(
+    (currentEventPage - 1) * EVENTS_PER_PAGE,
+    currentEventPage * EVENTS_PER_PAGE
+  );
+
+  const eventDetailsSuggestions = events
+    .filter((event) => event.title?.toLowerCase().includes(eventDetailsSearch.trim().toLowerCase()))
+    .slice(0, 8);
 
   const eventAnalytics = useMemo(() => {
     const analyticsByEvent = events.map((event) => {
@@ -1226,7 +1260,18 @@ export default function AdminEventsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
-                <p className="font-semibold text-gray-900">{selectedEventDetails.title}</p>
+                <input
+                  list="event-details-titles"
+                  value={eventDetailsSearch}
+                  onChange={(e) => handleEventDetailsSearch(e.target.value)}
+                  placeholder="Search event title"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-blue-500"
+                />
+                <datalist id="event-details-titles">
+                  {events.map((event) => (
+                    <option key={event.id} value={event.title} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Category</p>
@@ -1392,10 +1437,22 @@ export default function AdminEventsPage() {
               )}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-400">
-              <span className="text-3xl">📋</span>
-              <p className="mt-2 text-sm">Select an event to view details</p>
-              <p className="text-xs">Click on any event in the calendar or list above</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
+                <input
+                  list="event-details-titles"
+                  value={eventDetailsSearch}
+                  onChange={(e) => handleEventDetailsSearch(e.target.value)}
+                  placeholder="Search event title"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-blue-500"
+                />
+                <datalist id="event-details-titles">
+                  {events.map((event) => (
+                    <option key={event.id} value={event.title} />
+                  ))}
+                </datalist>
+              </div>
             </div>
           )}
         </div>
@@ -1432,7 +1489,7 @@ export default function AdminEventsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredEvents.map((ev) => (
+                {paginatedEvents.map((ev) => (
                   <tr key={ev.id} className="hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => handleEventSelection(ev)}>
                     <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                       <input
@@ -1540,6 +1597,39 @@ export default function AdminEventsPage() {
               </div>
             )}
           </div>
+
+          {totalEventPages > 1 && (
+            <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
+              <div className="text-xs font-medium text-gray-500">
+                Page {currentEventPage} of {totalEventPages} · {filteredEvents.length} results
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentEventPage((page) => Math.max(1, page - 1))}
+                  disabled={currentEventPage === 1}
+                  className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Previous
+                </button>
+                {Array.from({ length: totalEventPages }, (_, i) => i + 1).map((page) => (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentEventPage(page)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-medium border ${page === currentEventPage ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    {page}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setCurrentEventPage((page) => Math.min(totalEventPages, page + 1))}
+                  disabled={currentEventPage === totalEventPages}
+                  className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

@@ -147,7 +147,7 @@ function LoginContent() {
       `}</style>
 
       <div className="min-h-screen w-full bg-slate-100">
-        <div className="grid min-h-screen w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid min-h-dvh w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
           <div className="relative hidden overflow-hidden lg:block">
             <div
               className="absolute inset-0 bg-cover bg-center"
@@ -198,9 +198,9 @@ function LoginContent() {
             </div>
           </div>
 
-          <div className="flex min-h-screen items-center justify-center px-3 py-6 sm:px-5 lg:px-8 xl:px-12">
+          <div className="flex min-h-dvh items-center justify-center px-3 py-5 sm:px-5 sm:py-8 lg:px-8 xl:px-12">
             <div
-              className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:p-8 xl:p-10"
+              className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:rounded-[1.75rem] sm:p-8 xl:p-10"
               style={{ animationFillMode: 'forwards' }}
             >
               <div className="mb-8 text-center">
@@ -208,7 +208,7 @@ function LoginContent() {
                   <img src="/logo.png" alt="Daet logo" className="h-12 w-12 object-contain" />
                 </div>
                 <p className="text-xs font-bold uppercase tracking-[0.28em] text-sky-700">Daet Connect</p>
-                <h2 className="mt-3 text-3xl font-black text-slate-900">Welcome back</h2>
+                <h2 className="mt-3 text-2xl font-black text-slate-900 sm:text-3xl">Welcome back</h2>
                 <p className="mt-2 text-sm text-slate-600">Sign in to continue your local travel journey.</p>
               </div>
 
@@ -237,7 +237,7 @@ function LoginContent() {
                 </div>
               </div>
 
-              <form onSubmit={handleLogin} className="space-y-5">
+              <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
                 <div>
                   <label htmlFor="login-email" className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
                   <input

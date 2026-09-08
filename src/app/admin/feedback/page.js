@@ -25,6 +25,8 @@ export default function FeedbackAndComplaintPage() {
   const [responseText, setResponseText] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
+  const [currentFeedbackPage, setCurrentFeedbackPage] = useState(1);
+  const FEEDBACK_PER_PAGE = 10;
 
   const showToast = useCallback((message, isError = false) => {
     setToast({ message, isError });
@@ -99,6 +101,12 @@ export default function FeedbackAndComplaintPage() {
       return matchesSearch && matchesStatus && matchesCategory;
     });
   }, [items, search, statusFilter, categoryFilter]);
+
+  const totalFeedbackPages = Math.ceil(filteredItems.length / FEEDBACK_PER_PAGE);
+  const paginatedItems = filteredItems.slice(
+    (currentFeedbackPage - 1) * FEEDBACK_PER_PAGE,
+    currentFeedbackPage * FEEDBACK_PER_PAGE
+  );
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -287,14 +295,14 @@ export default function FeedbackAndComplaintPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredItems.length === 0 ? (
+                {paginatedItems.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-12 text-center text-sm text-slate-400">
                       No complaint tickets match the current filters.
                     </td>
                   </tr>
                 ) : (
-                  filteredItems.map((item) => (
+                  paginatedItems.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <div className="font-semibold text-slate-800">{item.title || 'Untitled case'}</div>
@@ -341,6 +349,39 @@ export default function FeedbackAndComplaintPage() {
             </table>
           </div>
         </div>
+
+        {totalFeedbackPages > 1 && (
+          <div className="flex items-center justify-between border-t border-slate-100 bg-white px-4 py-3">
+            <div className="text-xs font-medium text-slate-500">
+              Page {currentFeedbackPage} of {totalFeedbackPages} · {filteredItems.length} results
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentFeedbackPage((page) => Math.max(1, page - 1))}
+                disabled={currentFeedbackPage === 1}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              {Array.from({ length: totalFeedbackPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentFeedbackPage(page)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium border ${page === currentFeedbackPage ? 'bg-violet-600 border-violet-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentFeedbackPage((page) => Math.min(totalFeedbackPages, page + 1))}
+                disabled={currentFeedbackPage === totalFeedbackPages}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {selectedItem && (

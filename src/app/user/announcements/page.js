@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, ArrowLeft, Bell, Loader, Zap } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Bell, Loader, MessageCircle, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 
@@ -12,6 +12,8 @@ export default function UserAnnouncementsPage() {
   const [authChecking, setAuthChecking] = useState(true)
   const [loading, setLoading] = useState(true)
   const [announcements, setAnnouncements] = useState([])
+  const [sentiment, setSentiment] = useState(null)
+  const [sentimentQuestion, setSentimentQuestion] = useState(null)
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -30,15 +32,26 @@ export default function UserAnnouncementsPage() {
 
         setAuthChecking(false)
 
-        const { data, error } = await supabase
-          .from('info_announcements')
-          .select('*')
-          .eq('status', 'published')
-          .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-          .order('published_at', { ascending: false })
+        const [{ data, error }, feedbackResponse] = await Promise.all([
+          supabase
+            .from('info_announcements')
+            .select('*')
+            .eq('status', 'published')
+            .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+            .order('published_at', { ascending: false }),
+          fetch('/api/daily-feedback', { credentials: 'same-origin' }),
+        ])
 
         if (error) throw error
         setAnnouncements(data || [])
+
+        if (feedbackResponse.ok) {
+          const feedback = await feedbackResponse.json()
+          if (feedback.success && feedback.question) {
+            setSentimentQuestion(feedback.question)
+            setSentiment(feedback.sentiment || { positive: 0, neutral: 0, concern: 0, total: 0 })
+          }
+        }
       } catch (err) {
         console.error('Error loading announcements:', err)
       } finally {
@@ -65,6 +78,12 @@ export default function UserAnnouncementsPage() {
     return styles[type] || styles.info
   }
 
+  const sentimentItems = [
+    { key: 'positive', label: 'Enjoyed it', color: 'bg-emerald-500' },
+    { key: 'neutral', label: 'It was okay', color: 'bg-sky-500' },
+    { key: 'concern', label: 'Needs improvement', color: 'bg-amber-500' },
+  ]
+
   if (authChecking) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9]">
@@ -89,6 +108,38 @@ export default function UserAnnouncementsPage() {
           <h1 className="mt-1 text-2xl font-black text-slate-900 md:text-3xl">Announcements</h1>
           <p className="mt-1 text-sm text-slate-600">Important updates and advisories from the Daet tourism office</p>
         </div>
+
+        {sentimentQuestion && sentiment && (
+          <section className="mb-6 rounded-[20px] border border-emerald-100 bg-white p-4 shadow-sm sm:p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                <MessageCircle className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Visitor sentiments</p>
+                <h2 className="mt-1 text-base font-black text-slate-900">{sentimentQuestion.question}</h2>
+                <p className="mt-1 text-xs text-slate-500">{sentiment.total} response{sentiment.total === 1 ? '' : 's'} from today</p>
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {sentimentItems.map((item) => {
+                const count = sentiment[item.key] || 0
+                const percentage = sentiment.total ? Math.round((count / sentiment.total) * 100) : 0
+                return (
+                  <div key={item.key}>
+                    <div className="mb-1 flex items-center justify-between text-xs font-semibold text-slate-600">
+                      <span>{item.label}</span>
+                      <span>{percentage}%</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className={`h-full rounded-full ${item.color}`} style={{ width: `${percentage}%` }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )}
 
         {loading ? (
           <div className="space-y-4">
