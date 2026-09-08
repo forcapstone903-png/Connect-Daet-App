@@ -40,6 +40,7 @@ import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
+import DailyFeedback from '@/app/components/user/DailyFeedback'
 
 // Database table constants
 const TABLES = {
@@ -216,10 +217,18 @@ export default function UserDashboardPage() {
       if (!active) return
       const authorMap = new Map(profiles.filter(Boolean).map((profile) => [profile.id, profile]))
       if (!authorMap.size) return
-      setFeed((currentFeed) => currentFeed.map((item) => {
-        const author = item.created_by ? authorMap.get(item.created_by) : null
-        return author ? { ...item, author: { ...author, user_type: author.user_type || 'admin' } } : item
-      }))
+      setFeed((currentFeed) => {
+        let changed = false
+        const nextFeed = currentFeed.map((item) => {
+          const author = item.created_by ? authorMap.get(item.created_by) : null
+          if (!author) return item
+          const nextAuthor = { ...author, user_type: author.user_type || 'admin' }
+          if (item.author?.id === nextAuthor.id && item.author?.full_name === nextAuthor.full_name && item.author?.profile_image_url === nextAuthor.profile_image_url) return item
+          changed = true
+          return { ...item, author: nextAuthor }
+        })
+        return changed ? nextFeed : currentFeed
+      })
     }
     void hydrateAuthors()
     return () => { active = false }
@@ -265,11 +274,14 @@ export default function UserDashboardPage() {
 
     let isMounted = true
     const loadFollowedPeople = async () => {
-      const response = await fetch('/api/users/following', { credentials: 'same-origin' })
-      const result = await response.json()
-
-      if (!isMounted || !response.ok || !result.success) return
-      setFollowedSuggestions(new Set(result.following_ids || []))
+      try {
+        const response = await fetch('/api/users/following', { credentials: 'same-origin' })
+        const result = await response.json()
+        if (!isMounted || !response.ok || !result.success) return
+        setFollowedSuggestions(new Set(result.following_ids || []))
+      } catch (error) {
+        if (isMounted) console.error('Followed people load failed:', error)
+      }
     }
 
     void loadFollowedPeople()
@@ -778,8 +790,11 @@ export default function UserDashboardPage() {
               .limit(20),
             fetch('/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
-              if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load followed users')
+              if (!response.ok || !result.success) return { data: [], error: null }
               return { data: (result.following_ids || []).map((followingId) => ({ following_id: followingId })), error: null }
+            }).catch((followingError) => {
+              console.error('Dashboard following list unavailable:', followingError)
+              return { data: [], error: null }
             }),
             supabase
               .from('info_user_posts')
@@ -887,7 +902,7 @@ export default function UserDashboardPage() {
         console.error('Dashboard load error:', err)
         setError(err.message || 'Failed to load dashboard')
       } finally {
-        if (isMounted && !error) setLoading(false)
+        if (isMounted) setLoading(false)
       }
     }
 
@@ -896,7 +911,7 @@ export default function UserDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [authenticated, userId, error, feedRefreshKey])
+  }, [authenticated, userId, feedRefreshKey])
 
   const handleLogout = async () => {
     try {
