@@ -29,6 +29,7 @@ const navigationHubs = [
       { href: '/admin/tourist-spots', label: 'Tourist Spots', iconName: 'attractions', badge: null },
       { href: '/admin/events', label: 'Events', iconName: 'events', badge: null },
       { href: '/admin/blog', label: 'Blogs & Articles', iconName: 'blog', badge: null },
+      { href: '/admin/announcement', label: 'Announcements', iconName: 'notifications', badge: null },
     ],
   },
   {

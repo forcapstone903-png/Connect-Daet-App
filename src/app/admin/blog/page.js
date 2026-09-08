@@ -436,7 +436,7 @@ export default function BlogManagement() {
               const isChecked = selectedBlogs.includes(blog.id);
 
               return (
-                <div key={blog.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                <div key={blog.id} className="min-h-[250px] bg-white rounded-2xl shadow-sm border border-gray-200 p-4 hover:shadow-md transition-shadow">
                   <div className="flex gap-4">
                     <input
                       type="checkbox"

@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Star,
   Trash2,
+  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -120,6 +121,18 @@ export default function BlogDetailPage() {
   const [commentModifying, setCommentModifying] = useState(false)
   const [menuCommentId, setMenuCommentId] = useState(null)
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENTS)
+  const [lightboxImage, setLightboxImage] = useState(null)
+
+  useEffect(() => {
+    if (!lightboxImage) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setLightboxImage(null)
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [lightboxImage])
 
   useEffect(() => {
     let ignore = false
@@ -755,7 +768,7 @@ export default function BlogDetailPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
+      <div className="mx-auto max-w-6xl px-3 py-6 sm:px-4 lg:px-6">
         <div className="mb-6 flex items-center justify-end">
           <div className="flex items-center gap-2">
             <button type="button" onClick={handleLike} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isLiked ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Like article">
@@ -784,10 +797,13 @@ export default function BlogDetailPage() {
           </div>
         </div>
 
-        <article className="mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
+        <article className="mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8 lg:mb-0">
           {blog.featured_image && (
             <div className="mb-6 overflow-hidden rounded-[16px]">
-              <img alt={blog.title} src={blog.featured_image} className="h-96 w-full object-cover" />
+              <button type="button" onClick={() => setLightboxImage({ src: blog.featured_image, alt: blog.title })} className="block w-full cursor-zoom-in" aria-label="Enlarge article photo">
+                <img alt={blog.title} src={blog.featured_image} className="h-96 w-full object-cover transition hover:brightness-95" />
+              </button>
             </div>
           )}
 
@@ -871,7 +887,7 @@ export default function BlogDetailPage() {
           )}
         </article>
 
-        <section className="mb-8">
+        <section className="mb-8 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-2xl font-bold text-slate-900">{comments.length} Comments</h2>
             {moderationPending > 0 && (
@@ -926,6 +942,7 @@ export default function BlogDetailPage() {
             </div>
           )}
         </section>
+        </div>
 
         {relatedBlogs.length > 0 && (
           <section>
@@ -956,6 +973,15 @@ export default function BlogDetailPage() {
           </section>
         )}
       </div>
+
+      {lightboxImage && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" role="dialog" aria-modal="true" aria-label="Expanded article photo" onClick={() => setLightboxImage(null)}>
+          <button type="button" onClick={() => setLightboxImage(null)} className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25" aria-label="Close expanded photo">
+            <X className="h-6 w-6" />
+          </button>
+          <img src={lightboxImage.src} alt={lightboxImage.alt} className="max-h-[90vh] max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
+        </div>
+      )}
     </main>
   )
 }

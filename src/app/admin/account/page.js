@@ -141,6 +141,7 @@ export default function AdminAccountPage() {
     let isActive = true
     try {
       const userData = JSON.parse(session)
+      if (!userData.id && userData.user_id) userData.id = userData.user_id
       if (!hasAdminAccess(userData.role)) {
         window.location.href = '/admin/dashboard'
         return
@@ -209,7 +210,8 @@ const handleSaveProfile = async () => {
         address: profile.address || null,
         city: profile.city || null,
       }
-      const { error } = await supabase.from('info_users').update(updates).eq('id', user.id)
+      const adminUserId = user.user_id || user.id
+      const { error } = await supabase.from('info_users').update(updates).eq('id', adminUserId)
       if (error) throw error
       showToast('Profile updated successfully')
     } catch (err) {

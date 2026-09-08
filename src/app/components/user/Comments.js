@@ -36,12 +36,12 @@ function countNestedReplies(comment) {
 }
 
 function countCommentLikes(comment) {
-  return Number(comment?.relevance_score || 0)
+  return Number(comment?._like_count ?? comment?.relevance_score ?? 0)
 }
 
 const INITIAL_VISIBLE_COMMENTS = 3
 
-export default function Comments({ contentType, contentId, userId, contentTitle, onPinChange, sortBy = 'relevant', compact = false }) {
+export default function Comments({ contentType, contentId, userId, contentOwnerId, contentTitle, onPinChange, sortBy = 'relevant', compact = false }) {
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -70,11 +70,34 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
         .order('created_at', { ascending: true })
 
       if (error) throw error
-      setComments(data || [])
+
+      const commentIds = (data || []).map((comment) => comment.id).filter(Boolean)
+      const { data: reactionRows, error: reactionError } = commentIds.length
+        ? await supabase
+            .from('content_reactions')
+            .select('content_id, user_id, reaction_type')
+            .eq('content_type', 'comment')
+            .in('content_id', commentIds)
+        : { data: [], error: null }
+
+      if (reactionError) throw reactionError
+      const likesByComment = new Map()
+      const likedCommentIds = new Set()
+      ;(reactionRows || []).forEach((reaction) => {
+        if (reaction.reaction_type !== 'like') return
+        likesByComment.set(reaction.content_id, (likesByComment.get(reaction.content_id) || 0) + 1)
+        if (reaction.user_id === userId) likedCommentIds.add(reaction.content_id)
+      })
+
+      setComments((data || []).map((comment) => ({
+        ...comment,
+        _like_count: likesByComment.get(comment.id) || 0,
+        _liked_by_user: likedCommentIds.has(comment.id),
+      })))
     } catch (err) {
       console.error('Failed to load comments:', err)
     }
-  }, [contentType, contentId])
+  }, [contentType, contentId, userId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -218,10 +241,60 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
     await loadComments()
   }
 
+  const handleLikeComment = async (commentId) => {
+    if (!userId) {
+      alert('Please log in to like comments.')
+      return
+    }
+
+    const comment = comments.find((item) => item.id === commentId)
+    if (!comment) return
+
+    const wasLiked = Boolean(comment._liked_by_user)
+    setComments((previous) => previous.map((item) => item.id === commentId
+      ? { ...item, _liked_by_user: !wasLiked, _like_count: Math.max(0, countCommentLikes(item) + (wasLiked ? -1 : 1)) }
+      : item))
+
+    try {
+      if (wasLiked) {
+        const { error } = await supabase
+          .from('content_reactions')
+          .delete()
+          .eq('user_id', userId)
+          .eq('content_type', 'comment')
+          .eq('content_id', commentId)
+        if (error) throw error
+      } else {
+        const { error } = await supabase
+          .from('content_reactions')
+          .upsert(
+            { user_id: userId, content_type: 'comment', content_id: commentId, reaction_type: 'like' },
+            { onConflict: 'user_id,content_type,content_id' }
+          )
+        if (error) throw error
+      }
+      void trackUserActivity({
+        userId,
+        activityType: 'react_content',
+        entityType: 'comment',
+        entityId: commentId,
+        description: `Liked a comment on ${contentTitle || contentType}`,
+        metadata: { contentTitle: contentTitle || contentType, contentType, contentId },
+      })
+    } catch (error) {
+      console.error('Failed to react to comment:', error)
+      setComments((previous) => previous.map((item) => item.id === commentId
+        ? { ...item, _liked_by_user: wasLiked, _like_count: countCommentLikes(item) + (wasLiked ? 1 : -1) }
+        : item))
+      alert('Unable to update the comment reaction right now.')
+    }
+  }
+
   const renderComment = (comment, depth = 0) => {
     const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
     const isOwner = userId === comment.user_id
+    const canPin = userId && contentOwnerId && userId === contentOwnerId
     const replyCount = countNestedReplies(comment)
     const likeCount = countCommentLikes(comment)
     const isMenuOpen = openMenuId === comment.id
@@ -256,7 +329,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                 </div>
 
                 <div className="relative flex items-center gap-2">
-                  {isOwner && (
+                  {canPin && (
                     <button
                       type="button"
                       onClick={() => handlePin(comment.id, !comment.is_pinned)}
@@ -349,9 +422,10 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+                    onClick={() => void handleLikeComment(comment.id)}
+                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:bg-slate-200 active:scale-[0.98] ${comment._liked_by_user ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-600'}`}
                   >
-                    <Heart className="h-3.5 w-3.5" />
+                    <Heart className={`h-3.5 w-3.5 ${comment._liked_by_user ? 'fill-current' : ''}`} />
                     {likeCount > 0 ? `${likeCount} like${likeCount === 1 ? '' : 's'}` : 'Like'}
                   </button>
 
