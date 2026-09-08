@@ -85,6 +85,7 @@ export default function UserMessagingPage() {
         const result = await response.json()
         if (active && response.ok && result.success) {
           setConversations(result.conversations || [])
+          window.dispatchEvent(new Event('daet-messages-updated'))
         }
         else if (active) throw new Error(result.message || 'Unable to load messages')
       } catch (error) {
@@ -95,14 +96,24 @@ export default function UserMessagingPage() {
       }
     }
 
-    if (getStoredSession()) loadMessages()
-    else queueMicrotask(() => setLoading(false))
+    if (getStoredSession()) {
+      void loadMessages()
+      const refreshTimer = window.setInterval(() => {
+        if (active) void loadMessages()
+      }, 5000)
 
+      return () => {
+        active = false
+        window.clearInterval(refreshTimer)
+      }
+    }
+
+    queueMicrotask(() => setLoading(false))
     return () => { active = false }
   }, [retryKey])
 
   useEffect(() => {
-    if (composeRecipient) {
+    if (!composeOpen || composeRecipient) {
       queueMicrotask(() => {
         setComposeResults([])
         setComposeSearchLoading(false)
@@ -130,7 +141,7 @@ export default function UserMessagingPage() {
       }
     }, 300)
     return () => { controller.abort(); clearTimeout(timer) }
-  }, [composeRecipient])
+  }, [composeOpen, composeRecipient])
 
   const filteredConversations = useMemo(() => {
     const query = conversationQuery.trim().toLocaleLowerCase()
@@ -138,6 +149,13 @@ export default function UserMessagingPage() {
 
     return conversations.filter((conversation) => matchesConversationUser(conversation, query))
   }, [conversationQuery, conversations])
+
+  const filteredComposeResults = useMemo(() => {
+    const query = composeQuery.trim().toLocaleLowerCase()
+    if (!query) return composeResults
+
+    return composeResults.filter((person) => String(person.full_name || '').trim().toLocaleLowerCase().includes(query))
+  }, [composeQuery, composeResults])
 
   const openCompose = () => {
     setComposeOpen(true)
@@ -207,7 +225,7 @@ export default function UserMessagingPage() {
                       <input autoFocus value={composeQuery} onChange={(event) => setComposeQuery(event.target.value)} placeholder="Search a community member" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
                     </div>
                   )}
-                  {(!composeSearchLoading && (composeResults.length > 0 || composeQuery.trim())) && <div className="absolute left-0 right-0 top-full z-10 border border-slate-200 bg-white shadow-lg">{composeResults.length > 0 ? composeResults.map((person) => <button key={person.id} type="button" onClick={() => { setComposeRecipient(person); setComposeQuery(person.full_name || ''); setComposeResults([]) }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><ProfileAvatar user={person} size="h-8 w-8" /><span className="text-sm font-semibold text-slate-800">{person.full_name || 'Community member'}</span></button>) : <p className="px-3 py-3 text-sm text-slate-500">No users found</p>}</div>}
+                  {(!composeSearchLoading && (filteredComposeResults.length > 0 || composeQuery.trim())) && <div className="absolute left-0 right-0 top-full z-10 border border-slate-200 bg-white shadow-lg">{filteredComposeResults.length > 0 ? filteredComposeResults.map((person) => <button key={person.id} type="button" onClick={() => { setComposeRecipient(person); setComposeQuery(person.full_name || ''); setComposeResults([]) }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><ProfileAvatar user={person} size="h-8 w-8" /><span className="text-sm font-semibold text-slate-800">{person.full_name || 'Community member'}</span></button>) : <p className="px-3 py-3 text-sm text-slate-500">No users found</p>}</div>}
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-slate-600">Message</label>
@@ -258,7 +276,7 @@ export default function UserMessagingPage() {
                       </div>
                       <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 bg-white px-4 py-4 transition-transform duration-200 hover:bg-[#f5fbfa] sm:px-5 ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><div className="flex items-center gap-2"><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time>{conversation.unread_count > 0 && <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{conversation.unread_count > 9 ? '9+' : conversation.unread_count}</span>}</div></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
                       </UserProfileLink>
                     </div>
                   )

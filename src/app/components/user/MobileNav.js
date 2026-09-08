@@ -26,6 +26,7 @@ export default function MobileNav() {
   const pathname = usePathname()
   const router = useRouter()
   const [unreadAlerts, setUnreadAlerts] = useState(0)
+  const [unreadMessages, setUnreadMessages] = useState(0)
   const [accountOpen, setAccountOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -34,23 +35,29 @@ export default function MobileNav() {
 
     const loadUnreadAlerts = async () => {
       try {
-        const response = await fetch('/api/notifications', { credentials: 'same-origin' })
-        if (!response.ok) return
-
-        const result = await response.json()
-        if (active && result.success) {
-          setUnreadAlerts((result.notifications || []).filter((notification) => !notification.is_read).length)
-        }
+        const [notificationsResponse, messagesResponse] = await Promise.all([
+          fetch('/api/notifications', { credentials: 'same-origin' }),
+          fetch('/api/messages', { credentials: 'same-origin' }),
+        ])
+        const notificationsResult = notificationsResponse.ok ? await notificationsResponse.json() : null
+        const messagesResult = messagesResponse.ok ? await messagesResponse.json() : null
+        if (active && notificationsResult?.success) setUnreadAlerts((notificationsResult.notifications || []).filter((notification) => !notification.is_read).length)
+        if (active && messagesResult?.success) setUnreadMessages(messagesResult.unread_messages || 0)
       } catch {
         // Notifications are optional for the navigation shell.
       }
     }
 
     loadUnreadAlerts()
+    const updateUnreadAlerts = () => loadUnreadAlerts()
+    window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
+    window.addEventListener('daet-messages-updated', updateUnreadAlerts)
     const refreshTimer = window.setInterval(loadUnreadAlerts, 30000)
 
     return () => {
       active = false
+      window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
+      window.removeEventListener('daet-messages-updated', updateUnreadAlerts)
       window.clearInterval(refreshTimer)
     }
   }, [])
@@ -121,6 +128,11 @@ export default function MobileNav() {
                     {href === '/user/notifications' && unreadAlerts > 0 && (
                       <span className="absolute -right-3 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-white">
                         {unreadAlerts > 9 ? '9+' : unreadAlerts}
+                      </span>
+                    )}
+                    {href === '/user/messaging' && unreadMessages > 0 && (
+                      <span className="absolute -right-3 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-white">
+                        {unreadMessages > 9 ? '9+' : unreadMessages}
                       </span>
                     )}
                   </span>
