@@ -1178,6 +1178,48 @@ export default function UserDashboardPage() {
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
                   const postImageUrl = item.type === 'blog' ? item.featured_image : item.type === 'announcement' ? item.image_url : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
+                  const postGallery = []
+
+                  if (Array.isArray(item.gallery_images)) {
+                    item.gallery_images.forEach((mediaUrl) => {
+                      if (typeof mediaUrl === 'string' && mediaUrl.trim()) {
+                        postGallery.push({ type: 'image', url: mediaUrl })
+                      }
+                    })
+                  }
+
+                  if (Array.isArray(item.images)) {
+                    item.images.forEach((mediaUrl) => {
+                      if (typeof mediaUrl === 'string' && mediaUrl.trim()) {
+                        postGallery.push({ type: 'image', url: mediaUrl })
+                      }
+                    })
+                  }
+
+                  if (item.type === 'blog' && item.featured_image) {
+                    postGallery.push({ type: 'image', url: item.featured_image })
+                  }
+
+                  if (item.type === 'announcement' && item.image_url) {
+                    postGallery.push({ type: 'image', url: item.image_url })
+                  }
+
+                  if (item.type === 'event' && item.featured_image) {
+                    postGallery.push({ type: 'image', url: item.featured_image })
+                  }
+
+                  if (item.type === 'event' && Array.isArray(item.videos)) {
+                    item.videos.forEach((videoUrl) => {
+                      if (typeof videoUrl === 'string' && videoUrl.trim()) {
+                        postGallery.push({ type: 'video', url: videoUrl })
+                      }
+                    })
+                  }
+
+                  if (item.type === 'announcement' && item.video_url) {
+                    postGallery.push({ type: 'video', url: item.video_url })
+                  }
+
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
                     <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-2xl lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
