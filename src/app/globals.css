@@ -141,6 +141,28 @@ select {
   flex-shrink: 0;
 }
 
+.dashboard-feed-layout {
+  display: block;
+}
+
+@media (min-width: 768px) {
+  .dashboard-feed-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+    align-items: start;
+    gap: 1.5rem;
+  }
+
+  .dashboard-feed-main {
+    grid-column: 1;
+  }
+
+  .dashboard-feed-sidebar {
+    display: block !important;
+    grid-column: 2;
+  }
+}
+
 .dashboard-sharp * {
   border-radius: 0 !important;
 }
