@@ -1022,7 +1022,7 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 md:mx-0 md:max-w-none md:px-6 md:pb-10">
+      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
@@ -1087,8 +1087,8 @@ export default function UserDashboardPage() {
           </div>
         </section>
 
-        <div className="md:grid md:grid-cols-[minmax(0,1fr)_300px] md:items-start md:gap-6">
-          <div className="min-w-0 md:pr-0">
+        <div className="dashboard-feed-layout">
+          <div className="dashboard-feed-main min-w-0 lg:pr-0">
         <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
             <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
@@ -1222,8 +1222,9 @@ export default function UserDashboardPage() {
           </section>
 
           </div>
+          </div>
 
-          <aside className="hidden min-w-0 space-y-4 md:block">
+          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4">
             <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
               <div className="border-b border-slate-100 px-2 pb-3">
                 <div className="flex items-center gap-2.5">
@@ -1260,7 +1261,6 @@ export default function UserDashboardPage() {
           </aside>
         </div>
         <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
-        </div>
       </div>
     </main>
   )
