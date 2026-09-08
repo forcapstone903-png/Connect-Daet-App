@@ -909,14 +909,10 @@ export default function UserDashboardPage() {
         setError(err.message || 'Failed to load dashboard')
         setFeedRefreshing(false)
       } finally {
-<<<<<<< HEAD
-        if (isMounted && !error) {
+        if (isMounted) {
           setLoading(false)
           setFeedRefreshing(false)
         }
-=======
-        if (isMounted) setLoading(false)
->>>>>>> 7fe0944329a241cb914b10c37d830ba2ac753372
       }
     }
 
@@ -1062,8 +1058,8 @@ export default function UserDashboardPage() {
 
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
+      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#ecfeff_0%,#f8fafc_30%,#f1f5f9_100%)] px-4">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
           <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
           <p className="text-slate-600">Loading...</p>
         </div>
@@ -1073,8 +1069,8 @@ export default function UserDashboardPage() {
 
   if (authError) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
-        <div className="rounded-[24px] border border-red-200 bg-red-50 p-6 text-center shadow-sm">
+      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,#ecfeff_0%,#f8fafc_30%,#f1f5f9_100%)] px-4">
+        <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-center shadow-sm">
           <AlertCircle className="mx-auto mb-4 text-red-600" />
           <p className="text-red-700">{authError}</p>
         </div>
@@ -1083,14 +1079,14 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
+    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,#ecfeff_0%,#f8fafc_30%,#f1f5f9_100%)] text-slate-900">
       {toastMessage && (
         <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
           {toastMessage}
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
+      <div className="mx-auto w-full max-w-7xl px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
@@ -1102,12 +1098,12 @@ export default function UserDashboardPage() {
             </Link>
 
             <div className="relative hidden min-w-0 flex-1 px-4 lg:hidden">
-              <form onSubmit={submitSearch} className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
+              <form onSubmit={submitSearch} className="mx-auto flex max-w-lg items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
                 <Search className="h-4 w-4 shrink-0" />
                 <input value={search} onFocus={() => setSearchFocused(true)} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
               </form>
               {searchFocused && (
-                <div className="absolute left-4 right-4 top-[calc(100%+0.5rem)] z-40 mx-auto max-w-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                <div className="absolute left-4 right-4 top-[calc(100%+0.5rem)] z-40 mx-auto max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
                   <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{search.trim() ? 'Suggestions' : 'Recent searches'}</p>
                   {(search.trim() ? searchSuggestions : recentSearches).length ? (
                     <div className="space-y-1">{(search.trim() ? searchSuggestions : recentSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setSearch(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`); setSearchFocused(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><Search className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>
@@ -1145,22 +1141,22 @@ export default function UserDashboardPage() {
         )}
 
         <section
-          className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-900/20 bg-cover bg-center px-6 py-5 text-white shadow-[0_10px_28px_rgba(14,116,144,0.14)] lg:block"
+          className="mb-6 hidden overflow-hidden rounded-3xl border border-sky-900/20 bg-cover bg-center px-6 py-5 text-white shadow-[0_10px_28px_rgba(14,116,144,0.14)] lg:block"
           style={{ backgroundImage: "linear-gradient(90deg, rgba(2, 25, 45, 0.86), rgba(2, 25, 45, 0.48)), url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85')" }}
         >
           <div className="flex items-center justify-between gap-6">
-            <div className="max-w-[620px]">
+            <div className="max-w-152">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">Daet community journal</p>
               <h1 className="mt-1 text-2xl font-black tracking-tight text-white">Stories, places, and people worth knowing.</h1>
               <p className="mt-2 text-sm leading-6 text-slate-100">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
             </div>
-            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
+            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-65 shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
           </div>
         </section>
 
         <div className="dashboard-feed-layout lg:h-[calc(100vh-11rem)] lg:min-h-0 lg:overflow-hidden">
           <div className="dashboard-feed-main min-w-0 lg:min-h-0 lg:max-h-full lg:overflow-y-auto lg:pr-3 lg:overscroll-contain">
-        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
+        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-2xl lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
             <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
             <Link href="/user/blogs/new" className="flex min-h-11 flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-sky-300">
@@ -1240,7 +1236,7 @@ export default function UserDashboardPage() {
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-[16px] lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-2xl lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
                       <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
                           <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
@@ -1255,7 +1251,7 @@ export default function UserDashboardPage() {
                               <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{item.type}</span>{item.category && <><span className="text-slate-300">•</span><span className="normal-case tracking-normal text-slate-500">{item.category}</span></>}</div>
-                            <Link href={item.href} className="block"><h2 className="mt-1 break-words text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:mt-2 lg:text-lg lg:leading-7">{item.title}</h2></Link>
+                            <Link href={item.href} className="block"><h2 className="mt-1 wrap-break-word text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:mt-2 lg:text-lg lg:leading-7">{item.title}</h2></Link>
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}{item.start_date && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}{item.reply_count !== undefined && <span>{item.reply_count} replies</span>}</div>
                           </div>
                           <div className="relative shrink-0">
@@ -1268,12 +1264,12 @@ export default function UserDashboardPage() {
                           </div>
                         </div>
 
-                        {(item.excerpt || item.description) && <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{item.excerpt || item.description}</p>}
+                        {(item.excerpt || item.description) && <p className="mt-3 wrap-break-word text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{item.excerpt || item.description}</p>}
                         {item.type === 'forum' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Discussion</span>{item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span></div>}
                         {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
                         {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
+                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-2xl lg:mt-5 lg:rounded-xl ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-video w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-video w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-video w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-video w-full object-cover transition hover:brightness-95 lg:aspect-16/8.5" /></Link>}</div>}
 
                         <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => router.push(item.href)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
                       </div>
@@ -1282,7 +1278,7 @@ export default function UserDashboardPage() {
                 })}
               </div>
             )}
-            {!loading && filteredFeed.length > 0 && (hasMoreFeed || feedEndReached) && <div className="mt-5 rounded-[16px] border border-dashed border-slate-300 bg-white p-4 text-center"><p className="text-xs text-slate-500">{hasMoreFeed ? 'More community posts are ready.' : 'You have reached the end of this feed.'}</p>{hasMoreFeed ? <button type="button" onClick={() => setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))} className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700">Load more</button> : <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-3.5 w-3.5" />Refresh feed</button>}</div>}
+            {!loading && filteredFeed.length > 0 && (hasMoreFeed || feedEndReached) && <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white p-4 text-center"><p className="text-xs text-slate-500">{hasMoreFeed ? 'More community posts are ready.' : 'You have reached the end of this feed.'}</p>{hasMoreFeed ? <button type="button" onClick={() => setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))} className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700">Load more</button> : <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-3.5 w-3.5" />Refresh feed</button>}</div>}
           </section>
 
           </div>
@@ -1300,7 +1296,7 @@ export default function UserDashboardPage() {
               </div>
             </div>
 
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p><Flame className="h-4 w-4 text-amber-500" /></div>
               <p className="mt-3 text-3xl font-black text-slate-950">{gamification.points}<span className="ml-1 text-sm font-semibold text-slate-500">pts</span></p>
               <p className="mt-1 text-xs text-slate-500">Level {gamification.level} · {gamification.streak}-day streak</p>
@@ -1308,7 +1304,7 @@ export default function UserDashboardPage() {
             </div>
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
-              <section className="rounded-[16px] border border-sky-100 bg-white p-4 shadow-sm">
+              <section className="rounded-2xl border border-sky-100 bg-white p-4 shadow-sm">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
                 <div className="space-y-3">
                   {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="block rounded-xl bg-sky-50 p-3 hover:bg-sky-100"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p><p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p></Link>}
@@ -1317,7 +1313,7 @@ export default function UserDashboardPage() {
               </section>
             )}
 
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
               <div className="space-y-2">{trendingTopics.map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-sky-50 px-3 text-left text-sm font-semibold text-slate-700 hover:bg-sky-100"><span>#{topic.name}</span><span className="text-xs text-sky-700">{topic.count}</span></button>)}</div>
             </div>

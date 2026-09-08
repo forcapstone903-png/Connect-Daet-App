@@ -311,7 +311,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           )}
 
           <div className="flex items-start gap-3">
-            <UserProfileLink user={authorProfileUser} className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
+            <UserProfileLink user={authorProfileUser} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
               {comment.info_users?.profile_image_url ? (
                 <img src={comment.info_users.profile_image_url} alt={authorName} className="h-full w-full object-cover" />
               ) : (
@@ -455,9 +455,9 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
         {replyTo === comment.id && (
           <div className="mt-2 ml-4 sm:ml-8">
-            <div className="rounded-[14px] border border-slate-200 bg-white p-2.5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
               <div className="flex items-start gap-3">
-                <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-violet-600 text-[9px] font-bold text-white active:scale-[0.98]">
+                <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-linear-to-br from-sky-500 to-violet-600 text-[9px] font-bold text-white active:scale-[0.98]">
                   {currentUser?.profile_image_url ? (
                     <img src={currentUser.profile_image_url} alt={currentUser.full_name || 'User'} className="h-full w-full object-cover" />
                   ) : (
@@ -529,7 +529,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
       <div className={`${compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
         <div className="flex items-start gap-3">
-          <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
+          <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
             {currentUser?.profile_image_url ? (
               <img src={currentUser.profile_image_url} alt={currentUser.full_name || 'You'} className="h-full w-full object-cover" />
             ) : (
@@ -611,13 +611,13 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
       </div>
 
       {threads.length > 0 ? (
-        <div className={`overflow-hidden transition-all duration-300 ease-out ${showAllComments ? 'max-h-[2200px] opacity-100' : 'max-h-[620px] opacity-100'}`}>
+        <div className={`overflow-hidden transition-all duration-300 ease-out ${showAllComments ? 'max-h-550 opacity-100' : 'max-h-155 opacity-100'}`}>
           <div className="space-y-3">
             {visibleThreads.map((comment) => renderComment(comment))}
           </div>
         </div>
       ) : !compact ? (
-        <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
           <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />
           <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
         </div>
