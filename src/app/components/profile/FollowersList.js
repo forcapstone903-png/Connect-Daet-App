@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 export default function FollowersList({ userId }) {
   const [followers, setFollowers] = useState([])
@@ -27,10 +28,12 @@ export default function FollowersList({ userId }) {
       <div className="flex flex-wrap gap-3">
         {followers.map(f => (
           <div key={f.id} className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full overflow-hidden bg-gray-100">
+            <UserProfileLink user={f} className="h-8 w-8 rounded-full overflow-hidden bg-gray-100 block active:scale-[0.98]">
               {f.profile_image_url ? <img src={f.profile_image_url} alt={f.full_name} className="h-full w-full object-cover" /> : <div className="h-full w-full flex items-center justify-center text-xs">{(f.full_name || 'U').charAt(0)}</div>}
-            </div>
-            <div className="text-sm text-gray-700">{f.full_name}</div>
+            </UserProfileLink>
+            <UserProfileLink user={f} className="text-sm text-gray-700 hover:text-sky-700 active:text-sky-700">
+              {f.full_name}
+            </UserProfileLink>
           </div>
         ))}
       </div>

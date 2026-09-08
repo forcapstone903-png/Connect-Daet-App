@@ -15,6 +15,7 @@ import {
   Wand2,
 } from 'lucide-react'
 import MediaUpload from '@/app/components/MediaUpload'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 
@@ -432,6 +433,48 @@ export default function UserProfilePage() {
             <Link href="/user/profile/connections?tab=following" className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></Link>
           </div>
 
+<<<<<<< HEAD
+          <div className="p-4 sm:p-6">
+            <section className="mb-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-black text-slate-900">Followers</h2>
+                  <span className="text-xs font-semibold text-slate-500">{followers.length}</span>
+                </div>
+                {followers.length ? <div className="space-y-2">{followers.map((person) => <UserProfileLink key={person.id} user={person} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></UserProfileLink>)}</div> : <p className="text-sm text-slate-500">No followers yet.</p>}
+              </div>
+              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-black text-slate-900">Following</h2>
+                  <span className="text-xs font-semibold text-slate-500">{following.length}</span>
+                </div>
+                {following.length ? <div className="space-y-2">{following.map((person) => <UserProfileLink key={person.id} user={person} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></UserProfileLink>)}</div> : <p className="text-sm text-slate-500">Not following anyone yet.</p>}
+              </div>
+            </section>
+            <section className="mb-5 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-3 flex items-center justify-between">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{levelName}</span>
+              </div>
+              <p className="max-w-3xl text-sm leading-6 text-slate-700">{profile.bio}</p>
+
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-slate-600">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="h-4 w-4 text-slate-400" />
+                    <span>{profile.location}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Globe className="h-4 w-4 text-slate-400" />
+                    <span>{profile.email || 'No email available'}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Briefcase className="h-4 w-4 text-slate-400" />
+                    <span>{profile.points || 0} points</span>
+                  </div>
+              </div>
+
+            </section>
+=======
           <section className="m-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:m-6 sm:mb-0 sm:p-5">
             <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
             <p className="max-w-3xl text-sm leading-6 text-slate-700">{profile.bio}</p>
@@ -441,6 +484,7 @@ export default function UserProfilePage() {
               <span className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-400" />{profile.points || 0} points</span>
             </div>
           </section>
+>>>>>>> d0984bcae7761afe714b0f2e896c8475e19f0dea
 
           <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0 p-4 sm:p-6 lg:pr-0">

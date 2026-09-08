@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, Mail, Plus, Search, Send, UserRound, X } from 'lucide-react'
+import { Archive, Mail, Plus, Search, Send, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession } from '@/lib/authCookies'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -18,17 +19,25 @@ function ProfileAvatar({ user, size = 'h-10 w-10' }) {
   )
 }
 
+function matchesConversationUser(conversation, query) {
+  const person = conversation.other_user || {}
+  const displayName = String(person.full_name || '').trim().toLowerCase()
+  const normalizedQuery = String(query || '').trim().toLowerCase()
+
+  return !normalizedQuery || displayName.includes(normalizedQuery)
+}
+
 export default function UserMessagingPage() {
   const router = useRouter()
   const [conversations, setConversations] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [recipientQuery, setRecipientQuery] = useState('')
-  const [recipientResults, setRecipientResults] = useState([])
+  const [conversationQuery, setConversationQuery] = useState('')
   const [retryKey, setRetryKey] = useState(0)
   const [composeOpen, setComposeOpen] = useState(false)
   const [composeQuery, setComposeQuery] = useState('')
   const [composeResults, setComposeResults] = useState([])
+  const [composeSearchLoading, setComposeSearchLoading] = useState(false)
   const [composeRecipient, setComposeRecipient] = useState(null)
   const [composeBody, setComposeBody] = useState('')
   const [composeSending, setComposeSending] = useState(false)
@@ -93,42 +102,42 @@ export default function UserMessagingPage() {
   }, [retryKey])
 
   useEffect(() => {
-    const query = recipientQuery.trim()
-    if (query.length < 2) {
-      queueMicrotask(() => setRecipientResults([]))
+    if (composeRecipient) {
+      queueMicrotask(() => {
+        setComposeResults([])
+        setComposeSearchLoading(false)
+      })
       return undefined
     }
+    queueMicrotask(() => {
+      setComposeResults([])
+      setComposeSearchLoading(true)
+    })
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch(`/api/search/users?q=${encodeURIComponent(query)}&limit=5`, { credentials: 'same-origin', signal: controller.signal })
+        const response = await fetch('/api/search/users?limit=5000&connectionsOnly=true', { credentials: 'same-origin', signal: controller.signal })
         const result = await response.json()
-        if (!controller.signal.aborted) setRecipientResults(result.success ? result.users || [] : [])
+        if (!controller.signal.aborted) {
+          setComposeResults(result.success ? result.users || [] : [])
+          setComposeSearchLoading(false)
+        }
       } catch (error) {
-        if (error.name !== 'AbortError') setRecipientResults([])
+        if (error.name !== 'AbortError') {
+          setComposeResults([])
+          setComposeSearchLoading(false)
+        }
       }
     }, 300)
     return () => { controller.abort(); clearTimeout(timer) }
-  }, [recipientQuery])
+  }, [composeRecipient])
 
-  useEffect(() => {
-    const query = composeQuery.trim()
-    if (query.length < 2 || composeRecipient) {
-      queueMicrotask(() => setComposeResults([]))
-      return undefined
-    }
-    const controller = new AbortController()
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/search/users?q=${encodeURIComponent(query)}&limit=5`, { credentials: 'same-origin', signal: controller.signal })
-        const result = await response.json()
-        if (!controller.signal.aborted) setComposeResults(result.success ? result.users || [] : [])
-      } catch (error) {
-        if (error.name !== 'AbortError') setComposeResults([])
-      }
-    }, 300)
-    return () => { controller.abort(); clearTimeout(timer) }
-  }, [composeQuery, composeRecipient])
+  const filteredConversations = useMemo(() => {
+    const query = conversationQuery.trim().toLocaleLowerCase()
+    if (!query) return conversations
+
+    return conversations.filter((conversation) => matchesConversationUser(conversation, query))
+  }, [conversationQuery, conversations])
 
   const openCompose = () => {
     setComposeOpen(true)
@@ -198,7 +207,7 @@ export default function UserMessagingPage() {
                       <input autoFocus value={composeQuery} onChange={(event) => setComposeQuery(event.target.value)} placeholder="Search a community member" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
                     </div>
                   )}
-                  {composeResults.length > 0 && <div className="absolute left-0 right-0 top-full z-10 border border-slate-200 bg-white shadow-lg">{composeResults.map((person) => <button key={person.id} type="button" onClick={() => { setComposeRecipient(person); setComposeQuery(person.full_name || ''); setComposeResults([]) }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><ProfileAvatar user={person} size="h-8 w-8" /><span className="text-sm font-semibold text-slate-800">{person.full_name || 'Community member'}</span></button>)}</div>}
+                  {(!composeSearchLoading && (composeResults.length > 0 || composeQuery.trim())) && <div className="absolute left-0 right-0 top-full z-10 border border-slate-200 bg-white shadow-lg">{composeResults.length > 0 ? composeResults.map((person) => <button key={person.id} type="button" onClick={() => { setComposeRecipient(person); setComposeQuery(person.full_name || ''); setComposeResults([]) }} className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><ProfileAvatar user={person} size="h-8 w-8" /><span className="text-sm font-semibold text-slate-800">{person.full_name || 'Community member'}</span></button>) : <p className="px-3 py-3 text-sm text-slate-500">No users found</p>}</div>}
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-slate-600">Message</label>
@@ -213,8 +222,8 @@ export default function UserMessagingPage() {
 
         <div className="relative mb-4 flex items-center gap-2 border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <Search className="h-4 w-4 text-slate-400" />
-          <input value={recipientQuery} onChange={(event) => setRecipientQuery(event.target.value)} placeholder="Search a community member" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
-          {recipientResults.length > 0 && <div className="absolute left-3 right-3 top-18 z-10 border border-slate-200 bg-white shadow-lg sm:left-auto sm:right-auto sm:w-[calc(100%-2rem)]">{recipientResults.map((person) => <Link key={person.id} href={`/user/messaging/${encodeURIComponent(person.id)}`} onClick={() => setRecipientResults([])} className="flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-3.5 w-3.5" />}</span><span className="text-xs font-semibold">{person.full_name || 'Community member'}</span></Link>)}</div>}
+          <input value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} placeholder="Search a community member" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
+          {conversationQuery && <button type="button" onClick={() => setConversationQuery('')} aria-label="Clear conversation search" title="Clear search" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
         </div>
 
         <section className="border border-slate-200 bg-white shadow-sm">
@@ -237,9 +246,9 @@ export default function UserMessagingPage() {
                 Try again
               </button>
             </div>
-              ) : conversations.length ? (
+              ) : filteredConversations.length ? (
             <div className="divide-y divide-slate-100">
-                {conversations.map((conversation) => {
+                {filteredConversations.map((conversation) => {
                   const conversationId = conversation.other_user?.id || conversation.id
                   const revealed = revealedConversation === conversationId
                   return (
@@ -247,16 +256,16 @@ export default function UserMessagingPage() {
                       <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
                         <button type="button" onClick={() => updateArchive(conversationId, true)} aria-label="Archive conversation" title="Archive" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700"><Archive className="h-4 w-4" /></button>
                       </div>
-                      <Link key={conversationId} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 bg-white px-4 py-4 transition-transform duration-200 hover:bg-[#f5fbfa] sm:px-5 ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
+                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 bg-white px-4 py-4 transition-transform duration-200 hover:bg-[#f5fbfa] sm:px-5 ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
                         <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
-                      </Link>
+                      </UserProfileLink>
                     </div>
                   )
                 })}
             </div>
           ) : (
-            <div className="p-10 text-center"><Mail className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-600">No messages yet</p><p className="mt-1 text-xs text-slate-400">Your community updates will appear here.</p></div>
+            <div className="p-10 text-center"><Mail className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-600">{conversationQuery.trim() ? 'No conversations found' : 'No messages yet'}</p><p className="mt-1 text-xs text-slate-400">{conversationQuery.trim() ? 'Try another name or username.' : 'Your community updates will appear here.'}</p></div>
           )}
         </section>
       </div>

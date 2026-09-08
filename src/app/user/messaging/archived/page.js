@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Archive, ArrowLeft, RotateCcw } from 'lucide-react'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -39,7 +40,7 @@ export default function ArchivedMessagesPage() {
         <section className="border border-slate-200 bg-white shadow-sm">
           {loading ? <div className="p-6 text-sm text-slate-500">Loading archived conversations...</div> : conversations.length ? conversations.map((conversation) => {
             const userId = conversation.other_user?.id || conversation.id
-            return <div key={userId} className="flex items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-0 sm:px-5"><ProfileAvatar user={conversation.other_user} /><Link href={`/user/messaging/${userId}`} className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</p><p className="truncate text-sm text-slate-600">{conversation.body}</p></Link><button type="button" onClick={() => unarchive(userId)} aria-label="Unarchive conversation" title="Unarchive" className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><RotateCcw className="h-4 w-4" /></button></div>
+            return <div key={userId} className="flex items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-0 sm:px-5"><UserProfileLink user={conversation.other_user} href={`/user/messaging/${userId}`} className="flex min-w-0 flex-1 items-center gap-3"><ProfileAvatar user={conversation.other_user} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</p><p className="truncate text-sm text-slate-600">{conversation.body}</p></div></UserProfileLink><button type="button" onClick={() => unarchive(userId)} aria-label="Unarchive conversation" title="Unarchive" className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><RotateCcw className="h-4 w-4" /></button></div>
           }) : <div className="p-10 text-center"><Archive className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-600">No archived conversations</p></div>}
         </section>
       </div>

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Compass, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import MobileNav from '@/app/components/user/MobileNav'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 import { Suspense } from 'react'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
@@ -371,7 +372,7 @@ function SearchContent() {
                 </h2>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {results.users.map((user) => (
-                    <Link key={user.id} href={`/user/profile/${user.id}`} className="flex min-w-0 items-center gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-sky-200 hover:shadow-md">
+                    <UserProfileLink key={user.id} user={user} className="flex min-w-0 items-center gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-sky-200 hover:shadow-md">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sm font-black text-sky-700">
                         {user.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Community member'} className="h-full w-full object-cover" /> : <UserRound className="h-5 w-5" />}
                       </div>
@@ -380,7 +381,7 @@ function SearchContent() {
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{user.bio || [user.city, user.country].filter(Boolean).join(', ') || 'Daet community member'}</p>
                         {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
                       </div>
-                    </Link>
+                    </UserProfileLink>
                   ))}
                 </div>
               </section>
