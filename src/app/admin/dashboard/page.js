@@ -146,12 +146,9 @@ export default function AdminDashboard() {
     if (!user) return undefined;
     let active = true;
     const loadDailyFeedback = async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: question } = await supabase
-        .from('daily_feedback_questions')
-        .select('id, question, feedback_date')
-        .eq('feedback_date', today)
-        .maybeSingle();
+      const response = await fetch('/api/daily-feedback', { credentials: 'same-origin' });
+      const result = await response.json();
+      const question = result.success ? result.question : null;
       if (!active) return;
       setDailyFeedbackQuestion(question || null);
       setDailyFeedbackDraft(question?.question || '');
@@ -159,11 +156,7 @@ export default function AdminDashboard() {
         setDailyFeedbackVotes([]);
         return;
       }
-      const { data: votes } = await supabase
-        .from('daily_feedback_votes')
-        .select('response')
-        .eq('question_id', question.id);
-      if (active) setDailyFeedbackVotes(votes || []);
+      if (active) setDailyFeedbackVotes(result.votes || []);
     };
     void loadDailyFeedback();
     return () => { active = false };
@@ -171,19 +164,19 @@ export default function AdminDashboard() {
 
   const saveDailyFeedbackQuestion = async () => {
     const questionText = dailyFeedbackDraft.trim();
-    const adminId = user?.user_id || user?.id;
-    if (!questionText || !adminId) return;
-    const today = new Date().toISOString().slice(0, 10);
-    const { data, error } = await supabase
-      .from('daily_feedback_questions')
-      .upsert({ question: questionText, feedback_date: today, created_by: adminId, is_active: true }, { onConflict: 'feedback_date' })
-      .select('id, question, feedback_date')
-      .single();
-    if (error) {
-      showToast(`Failed to save feedback question: ${error.message}`, true);
+    if (!questionText) return;
+    const response = await fetch('/api/daily-feedback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'publish', question: questionText }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) {
+      showToast(`Failed to save feedback question: ${result.message || 'Unable to publish'}`, true);
       return;
     }
-    setDailyFeedbackQuestion(data);
+    setDailyFeedbackQuestion(result.question);
     showToast('Daily feedback question published.', false);
   };
 
@@ -360,13 +353,20 @@ export default function AdminDashboard() {
   
   const markAsRead = (id) => {
     setNotifications(prev => prev.map(notif => notif.id === id ? { ...notif, read: true } : notif));
-    void supabase.from('info_notifications').update({ is_read: true }).eq('id', id);
+    void fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
   };
   
   const markAllAsRead = () => {
     setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
-    const adminId = user?.user_id || user?.id;
-    if (adminId) void supabase.from('info_notifications').update({ is_read: true }).eq('user_id', adminId).eq('is_read', false);
+    void fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markAllRead: true }),
+    });
   };
 
   const openNotification = (notification) => {
@@ -383,6 +383,7 @@ export default function AdminDashboard() {
     } catch (e) {
       // ignore storage errors
     }
+    void fetch('/api/notifications', { method: 'DELETE' });
     showToast('All notifications have been cleared', false);
   };
   
@@ -917,12 +918,10 @@ export default function AdminDashboard() {
           .select('id, email, full_name, user_type, status, is_online, created_at')
           .order('created_at', { ascending: false }),
         adminUserId
-          ? supabase
-              .from('info_notifications')
-              .select('*')
-              .eq('user_id', adminUserId)
-              .order('created_at', { ascending: false })
-              .limit(10)
+          ? fetch('/api/notifications', { credentials: 'same-origin' }).then(async (response) => {
+              const result = await response.json()
+              return { data: response.ok && result.success ? result.notifications || [] : [], error: response.ok ? null : new Error(result.message || 'Unable to load notifications') }
+            })
           : Promise.resolve({ data: [] })
       ]);
 

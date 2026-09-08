@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { supabase } from '@/lib/supabase'
 
 const RESPONSES = [
   { value: 'positive', label: 'Enjoyed it', emoji: '😍', selected: 'border-emerald-300 bg-emerald-50 text-emerald-700' },
@@ -17,24 +16,11 @@ export default function DailyFeedback({ userId }) {
   useEffect(() => {
     let active = true
     const load = async () => {
-      const today = new Date().toISOString().slice(0, 10)
-      const { data } = await supabase
-        .from('daily_feedback_questions')
-        .select('id, question, feedback_date')
-        .eq('feedback_date', today)
-        .eq('is_active', true)
-        .maybeSingle()
-      if (!active || !data) return
-      setQuestion(data)
-      if (userId) {
-        const { data: existingVote } = await supabase
-          .from('daily_feedback_votes')
-          .select('response')
-          .eq('question_id', data.id)
-          .eq('user_id', userId)
-          .maybeSingle()
-        if (active) setVote(existingVote?.response || null)
-      }
+      const response = await fetch('/api/daily-feedback', { credentials: 'same-origin' })
+      const result = await response.json()
+      if (!active || !response.ok || !result.success || !result.question) return
+      setQuestion(result.question)
+      setVote(result.vote || null)
     }
     void load()
     return () => { active = false }
@@ -45,11 +31,14 @@ export default function DailyFeedback({ userId }) {
     setSaving(true)
     const previous = vote
     setVote(response)
-    const { error } = await supabase
-      .from('daily_feedback_votes')
-      .upsert({ question_id: question.id, user_id: userId, response }, { onConflict: 'question_id,user_id' })
-    if (error) {
-      console.error('Daily feedback vote failed:', error)
+    const apiResponse = await fetch('/api/daily-feedback', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ response }),
+    })
+    if (!apiResponse.ok) {
+      console.error('Daily feedback vote failed:', await apiResponse.text())
       setVote(previous)
     }
     setSaving(false)
