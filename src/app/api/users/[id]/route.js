@@ -65,7 +65,7 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
 
-    const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: followRows }, { count: followersCount, error: followersCountError }, { count: followingCount, error: followingCountError }] = await Promise.all([
+    const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: followRows }, { count: followersCount, error: followersCountError }, { count: followingCount, error: followingCountError }, { data: blockedRows, error: blockedError }] = await Promise.all([
       adminSupabase
         .from('info_user_posts')
         .select('id, user_id, title, content, created_at, updated_at')
@@ -106,10 +106,14 @@ export async function GET(request, { params }) {
         .from('user_follows')
         .select('id', { count: 'exact', head: true })
         .eq('follower_id', profileId),
+      viewerId
+        ? adminSupabase.from('user_blocks').select('blocked_id').eq('blocker_id', viewerId)
+        : Promise.resolve({ data: [], error: null }),
     ])
 
     if (followersCountError) throw followersCountError
     if (followingCountError) throw followingCountError
+    if (blockedError && blockedError.code !== '42P01') throw blockedError
 
     const relatedIds = [...new Set((followRows || []).flatMap((row) => [row.follower_id, row.following_id]).filter((id) => id && id !== profileId))]
     const { data: relatedUsers } = relatedIds.length
@@ -129,6 +133,7 @@ export async function GET(request, { params }) {
       following,
       followers_count: followersCount || 0,
       following_count: followingCount || 0,
+      blocked_ids: (blockedRows || []).map((row) => row.blocked_id),
       profile: {
         ...userData,
         full_name: profileData?.full_name || userData.full_name,

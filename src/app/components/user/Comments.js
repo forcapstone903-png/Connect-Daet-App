@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { ChevronDown, ChevronUp, CornerDownRight, Heart, MessageSquare, MoreHorizontal, Pin, SendHorizontal, SortDesc } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -220,7 +221,11 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
 
   const renderComment = (comment, depth = 0) => {
     const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
+<<<<<<< HEAD
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
+=======
+    const authorProfileHref = comment.user_id === userId ? '/user/profile' : comment.user_id ? `/user/profile/${comment.user_id}` : '/user/profile'
+>>>>>>> d0984bcae7761afe714b0f2e896c8475e19f0dea
     const isOwner = userId === comment.user_id
     const replyCount = countNestedReplies(comment)
     const likeCount = countCommentLikes(comment)
@@ -238,6 +243,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
           )}
 
           <div className="flex items-start gap-3">
+<<<<<<< HEAD
             <UserProfileLink user={authorProfileUser} className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
               {comment.info_users?.profile_image_url ? (
                 <img src={comment.info_users.profile_image_url} alt={authorName} className="h-full w-full object-cover" />
@@ -245,13 +251,22 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
                 getInitials(authorName)
               )}
             </UserProfileLink>
+=======
+            <Link href={authorProfileHref} aria-label={`View ${authorName}'s profile`} className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm">
+              {comment.info_users?.profile_image_url ? <img src={comment.info_users.profile_image_url} alt={authorName} className="h-full w-full object-cover" /> : getInitials(authorName)}
+            </Link>
+>>>>>>> d0984bcae7761afe714b0f2e896c8475e19f0dea
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div className="min-w-0">
+<<<<<<< HEAD
                   <UserProfileLink user={authorProfileUser} className="inline-flex items-center text-sm font-bold text-slate-900 hover:text-sky-700 active:text-sky-700">
                     {authorName}
                   </UserProfileLink>
+=======
+                  <Link href={authorProfileHref} className="text-sm font-bold text-slate-900 hover:text-sky-700">{authorName}</Link>
+>>>>>>> d0984bcae7761afe714b0f2e896c8475e19f0dea
                   <span className="ml-2 text-xs text-slate-500">{formatRelativeTime(comment.created_at)}</span>
                 </div>
 

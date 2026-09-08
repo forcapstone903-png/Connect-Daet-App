@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Award, Star, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -279,15 +280,15 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
               <div key={review.id} className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-[10px] font-bold text-white">
+                    <Link href={`/user/profile/${review.user_id}`} aria-label={`View ${reviewerName}'s profile`} className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-[10px] font-bold text-white">
                       {review.info_users?.profile_image_url ? (
                         <img src={review.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
                       ) : (
                         reviewerName[0]?.toUpperCase()
                       )}
-                    </div>
+                    </Link>
                     <div>
-                      <p className="text-sm font-bold text-slate-900">{reviewerName}</p>
+                      <Link href={`/user/profile/${review.user_id}`} className="text-sm font-bold text-slate-900 hover:text-sky-700">{reviewerName}</Link>
                       <div className="flex items-center gap-2">
                         <StarRating value={review.rating} readOnly />
                         <span className="text-[10px] text-slate-500">

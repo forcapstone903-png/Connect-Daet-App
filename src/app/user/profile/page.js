@@ -3,21 +3,13 @@
 import { startTransition, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  Bell,
   Briefcase,
-  Camera,
-  Check,
   FilePenLine,
   FileText,
   Globe,
   MapPin,
-  Menu,
   MessageSquareText,
   MoreHorizontal,
-  PencilLine,
-  Settings,
-  ShieldCheck,
-  Sparkles,
   Star,
   Users,
   Wand2,
@@ -85,15 +77,6 @@ function getInitials(name) {
     .join('') || 'T'
 }
 
-function getLevelName(points) {
-  if (points >= 2500) return 'Local Legend'
-  if (points >= 1500) return 'Trusted Explorer'
-  if (points >= 800) return 'Community Guide'
-  if (points >= 350) return 'Seasoned Traveler'
-  if (points >= 120) return 'Curious Discoverer'
-  return 'New Explorer'
-}
-
 function getBadgeTone(name) {
   const palette = {
     'Travel Starter': 'bg-amber-50 text-amber-700 border-amber-200',
@@ -112,7 +95,6 @@ export default function UserProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saveNotice, setSaveNotice] = useState('')
   const [userId, setUserId] = useState('')
-  const [showMenu, setShowMenu] = useState(false)
   const [profileForm, setProfileForm] = useState({
     full_name: 'Traveler',
     email: '',
@@ -244,35 +226,6 @@ export default function UserProfilePage() {
             .order('start_date', { ascending: false }),
         ])
 
-        const followRows = [
-          ...(followSummary?.followers || []).map((person) => ({ follower_id: person.id, following_id: fallbackUserId })),
-          ...(followSummary?.following || []).map((person) => ({ follower_id: fallbackUserId, following_id: person.id })),
-        ]
-
-        const relatedIds = Array.from(
-          new Set(
-            (followRows || [])
-              .flatMap((row) => [row.follower_id, row.following_id])
-              .filter(Boolean)
-          )
-        )
-
-        let relatedUsersById = {}
-        if (relatedIds.length > 0) {
-          const { data: relatedUsers } = await supabase
-            .from('info_users')
-            .select('id, full_name, profile_image_url')
-            .in('id', relatedIds)
-
-          relatedUsersById = Object.fromEntries((relatedUsers || []).map((user) => [user.id, user]))
-        }
-
-        const followingRows = (followRows || []).filter((row) => row.follower_id === fallbackUserId)
-        const followerRows = (followRows || []).filter((row) => row.following_id === fallbackUserId)
-
-        const nextFollowers = followerRows.map((row) => relatedUsersById[row.follower_id] || { id: row.follower_id, full_name: 'Community member', profile_image_url: '' })
-        const nextFollowing = followingRows.map((row) => relatedUsersById[row.following_id] || { id: row.following_id, full_name: 'Community member', profile_image_url: '' })
-
         const mergedLocation = profileData?.location || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte'
         const nextProfile = {
           full_name: profileData?.full_name || userData?.full_name || fallbackName,
@@ -347,8 +300,8 @@ export default function UserProfilePage() {
           announcementAlerts: false,
           ...(profileData?.notification_preferences || {}),
         })
-        setFollowers(nextFollowers)
-        setFollowing(nextFollowing)
+        setFollowers(followSummary?.followers || [])
+        setFollowing(followSummary?.following || [])
         setBadges((badgeRows || []).map((badge) => ({ ...badge, badge_name: badge.badge_name || badge.name || 'Badge' })))
         setActivityLog((activityRows || []).map((item) => ({
           id: item.id,
@@ -358,8 +311,8 @@ export default function UserProfilePage() {
         })))
         setUserPosts(createdPosts)
         setStats({
-          followers: followSummary?.followers_count ?? nextFollowers.length,
-          following: followSummary?.following_count ?? nextFollowing.length,
+          followers: followSummary?.followers_count ?? 0,
+          following: followSummary?.following_count ?? 0,
           posts: createdPosts.length,
           points: userData?.points || nextProfile.points || 0,
         })
@@ -373,7 +326,6 @@ export default function UserProfilePage() {
     loadProfile()
   }, [])
 
-  const levelName = useMemo(() => getLevelName(profile.points || stats.points || 0), [profile.points, stats.points])
   const visiblePosts = userPosts
   const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
 
@@ -448,107 +400,40 @@ export default function UserProfilePage() {
   return (
     <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
-        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:rounded-[26px]">
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2">
-              <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
-                <span className="block truncate text-[10px] font-medium text-slate-500 sm:text-xs">My profile</span>
-              </span>
-            </Link>
-
-            <div className="flex items-center gap-2">
-              <Link href="/user/rewards" aria-label="Open rewards" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600 transition hover:bg-amber-200">
-                <Star className="h-5 w-5" />
-              </Link>
-              <div className="relative">
-                <button type="button" onClick={() => setShowMenu((value) => !value)} aria-label="Open profile settings" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
-                  <Menu className="h-5 w-5" />
-                </button>
-                {showMenu && (
-                  <div className="absolute right-0 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                    <Link href="/user/profile/edit" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                      <PencilLine className="h-4 w-4" /> Edit profile
-                    </Link>
-                    <Link href="/user/drafts" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                      <FilePenLine className="h-4 w-4" /> Drafts
-                    </Link>
-                    <Link href="/user/settings" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                      <Settings className="h-4 w-4" /> Settings
-                    </Link>
-                    <Link href="/user/profile#privacy" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                      <ShieldCheck className="h-4 w-4" /> Privacy
-                    </Link>
-                    <Link href="/user/notifications" onClick={() => setShowMenu(false)} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100">
-                      <Bell className="h-4 w-4" /> Notifications
-                    </Link>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </header>
-
         <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.06)]">
-          <div className="profile-cover-frame h-56 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-64">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
+          <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-56">
             {profile.cover_photo_url ? (
               <img src={profile.cover_photo_url} alt="Cover photo" className="profile-cover-image" />
             ) : null}
+            <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
+          </div>
 
-            <div className="absolute inset-x-0 bottom-0 p-3 sm:p-6">
-              <div className="flex min-w-0 items-end justify-between gap-3">
-                <div className="flex min-w-0 items-end gap-3">
-                  <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-slate-200 text-2xl font-bold text-slate-700 shadow-lg sm:h-24 sm:w-24">
-                    {profile.avatar_url ? (
-                      <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full object-cover" />
-                    ) : (
-                      getInitials(profile.full_name)
-                    )}
-                    <div className="absolute -bottom-1 -right-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-white bg-emerald-500 text-white shadow-sm">
-                      <Camera className="h-3.5 w-3.5" />
-                    </div>
-                  </div>
-
-                  <div className="min-w-0 pb-2 text-white">
-                    <div className="flex items-center flex-wrap gap-2">
-                      <h2 className="min-w-0 break-words text-lg font-black sm:text-2xl">{profile.full_name}</h2>
-                      <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-50">
-                        <Sparkles className="h-3 w-3" />
-                        {levelName}
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-cyan-50/90">
-                      <span className="inline-flex items-center gap-1.5">
-                        <MapPin className="h-4 w-4" />
-                        {profile.location}
-                      </span>
-                    </div>
-                  </div>
+          <div className="border-b border-slate-200 px-4 pb-4 sm:px-7 sm:pb-5">
+            <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex min-w-0 items-end gap-3">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-sky-100 text-2xl font-black text-sky-700 shadow-lg sm:h-24 sm:w-24">
+                  {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                 </div>
-
-                <div className="flex shrink-0 items-center gap-1.5 pb-1">
-                  <Link href="/user/profile/edit" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-3 text-xs font-semibold text-slate-800 shadow-sm hover:bg-slate-100 sm:h-auto sm:px-4 sm:py-2.5 sm:text-sm">
-                    <PencilLine className="h-4 w-4" />
-                    <span className="hidden sm:inline">Edit profile</span>
-                  </Link>
-
-                  <Link href="/user/settings" aria-label="Open profile settings" className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur-sm hover:bg-white/15 sm:h-10 sm:w-10">
-                    <MoreHorizontal className="h-5 w-5" />
-                  </Link>
-
+                <div className="min-w-0 pb-1">
+                  <h1 className="break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{profile.full_name}</h1>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</p>
                 </div>
+              </div>
+              <div className="flex items-center gap-2">
+                    <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link>
+                <Link href="/user/profile/edit" className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-slate-800">Edit profile</Link>
+                <Link href="/user/settings" aria-label="Open profile settings" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"><MoreHorizontal className="h-5 w-5" /></Link>
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-3 border-b border-slate-200 bg-white text-center">
             <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="text-[11px] text-slate-500">Posts</p></div>
-            <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="text-[11px] text-slate-500">Followers</p></div>
-            <div className="px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></div>
+            <Link href="/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="text-[11px] text-slate-500">Followers</p></Link>
+            <Link href="/user/profile/connections?tab=following" className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></Link>
           </div>
 
+<<<<<<< HEAD
           <div className="p-4 sm:p-6">
             <section className="mb-5 grid gap-4 sm:grid-cols-2">
               <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -589,7 +474,20 @@ export default function UserProfilePage() {
               </div>
 
             </section>
+=======
+          <section className="m-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:m-6 sm:mb-0 sm:p-5">
+            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
+            <p className="max-w-3xl text-sm leading-6 text-slate-700">{profile.bio}</p>
+            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-slate-600">
+              <span className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{profile.location}</span>
+              <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-slate-400" />{profile.email || 'No email available'}</span>
+              <span className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-400" />{profile.points || 0} points</span>
+            </div>
+          </section>
+>>>>>>> d0984bcae7761afe714b0f2e896c8475e19f0dea
 
+          <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <div className="min-w-0 p-4 sm:p-6 lg:pr-0">
             {pinnedPosts.length > 0 && <section className="mb-5 rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="rounded-xl bg-white/80 p-3 hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
 
             <section className="space-y-6">
@@ -789,6 +687,20 @@ export default function UserProfilePage() {
               </div>
             </section>
           </div>
+          <aside className="space-y-4 p-4 sm:p-6 lg:sticky lg:top-5 lg:px-0">
+            {[
+              { label: 'Followers', people: followers, tab: 'followers', tone: 'bg-sky-100 text-sky-700', empty: 'No followers yet.' },
+              { label: 'Following', people: following, tab: 'following', tone: 'bg-emerald-100 text-emerald-700', empty: 'Not following anyone yet.' },
+            ].map(({ label, people, tab, tone, empty }) => (
+              <div key={label} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p><Link href={`/user/profile/connections?tab=${tab}`} className="text-xs font-bold text-sky-700 hover:text-sky-800">View all</Link></div>
+                {people.length ? <div className="space-y-2">{people.slice(0, 5).map((person) => <Link key={person.id} href={`/user/profile/${person.id}`} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full ${tone} text-[10px] font-bold`}>{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></Link>)}</div> : <p className="text-sm text-slate-500">{empty}</p>}
+              </div>
+            ))}
+            <div className="rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_12px_30px_rgba(15,23,42,0.14)]"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200">Traveler snapshot</p><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/10 p-3"><p className="text-2xl font-black">{profile.points || 0}</p><p className="mt-1 text-[11px] text-slate-300">Points</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-2xl font-black">{stats.posts}</p><p className="mt-1 text-[11px] text-slate-300">Shared</p></div></div><p className="mt-4 text-xs leading-5 text-slate-300">Your Daet stories and community discoveries.</p></div>
+            <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Profile details</p><div className="mt-4 space-y-3 text-sm text-slate-600"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</div><div className="flex items-center gap-2"><Users className="h-4 w-4 text-sky-600" />Community member</div></div></div>
+          </aside>
+        </div>
         </div>
 
         {loading ? (

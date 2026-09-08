@@ -229,6 +229,12 @@ select {
 
   .dashboard-feed-main {
     grid-column: 1;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .dashboard-feed-main::-webkit-scrollbar {
+    display: none;
   }
 
   .dashboard-feed-sidebar {

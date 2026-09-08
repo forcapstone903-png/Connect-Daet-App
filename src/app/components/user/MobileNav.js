@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, Bookmark, CalendarDays, FileText, Home, LogOut, Mail, MessageCircle, PlusCircle, Search, Settings, UserRound } from 'lucide-react'
+import { Bell, Bookmark, CalendarDays, FileText, Home, LogOut, Mail, Menu, MessageCircle, PlusCircle, Search, Settings, UserRound } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
 
 const navItems = [
@@ -87,8 +87,8 @@ export default function MobileNav() {
           </div>
           <div className="relative flex items-center justify-self-end gap-2">
             <Link href="/user/notifications" aria-label="Notifications" className="rounded-lg p-2 text-slate-600 hover:bg-slate-50"><Bell className="h-4 w-4" /></Link>
-            <button type="button" aria-label="Open account menu" onClick={() => setAccountOpen((value) => !value)} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 hover:text-slate-900">
-              <UserRound className="h-4 w-4" />Me
+            <button type="button" aria-label="Open account menu" title="Open menu" onClick={() => setAccountOpen((value) => !value)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+              <Menu className="h-5 w-5" />
             </button>
             {accountOpen && <div className="absolute right-0 top-11 z-50 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
               <Link href="/user/profile" onClick={() => setAccountOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" />View profile</Link>

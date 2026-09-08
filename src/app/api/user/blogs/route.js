@@ -23,6 +23,8 @@ export async function POST(request) {
     const title = String(body.title || '').trim()
     const content = String(body.content || '').trim()
     const category = String(body.category || '').trim()
+    const images = Array.isArray(body.images) ? body.images.filter(Boolean) : []
+    const videos = Array.isArray(body.videos) ? body.videos.filter(Boolean) : []
 
     if (!title || !content || !category) {
       return NextResponse.json({ success: false, message: 'Please add a title, category, and article content.' }, { status: 400 })
@@ -37,6 +39,9 @@ export async function POST(request) {
         excerpt: body.excerpt || content.slice(0, 180),
         content,
         featured_image: body.featured_image || null,
+        images,
+        videos,
+        media_layout: body.media_layout === 'grid' ? 'grid' : 'swipe',
         category,
         tags: Array.isArray(body.tags) ? body.tags : [],
         status: body.status === 'published' ? 'published' : 'draft',
