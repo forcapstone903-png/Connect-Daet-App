@@ -35,44 +35,66 @@ export default function ConversationPage() {
   const [replyTo, setReplyTo] = useState(null)
   const [actionMessageId, setActionMessageId] = useState(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState(null)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [messageToDelete, setMessageToDelete] = useState(null)
+  const [swipeState, setSwipeState] = useState({ id: null, offset: 0 })
   const mediaInputRef = useRef(null)
   const messagesScrollRef = useRef(null)
-  const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, moved: false })
+  const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
 
   const clearGesture = () => {
     if (gestureRef.current.timer) window.clearTimeout(gestureRef.current.timer)
     gestureRef.current.timer = null
   }
 
-  const handleMessageTouchStart = (event, messageId) => {
+  const handleMessagePointerDown = (event, messageId) => {
     clearGesture()
-    const touch = event.touches[0]
+    event.currentTarget.setPointerCapture?.(event.pointerId)
     gestureRef.current = {
       id: messageId,
-      startX: touch.clientX,
-      startY: touch.clientY,
-      moved: false,
+      startX: event.clientX,
+      startY: event.clientY,
+      direction: null,
+      pointerId: event.pointerId,
       timer: window.setTimeout(() => setActionMessageId(messageId), 650),
     }
   }
 
-  const handleMessageTouchMove = (event) => {
-    const touch = event.touches[0]
-    const horizontalDistance = Math.abs(touch.clientX - gestureRef.current.startX)
-    const verticalDistance = Math.abs(touch.clientY - gestureRef.current.startY)
-    if (verticalDistance > 10 || horizontalDistance > 10) gestureRef.current.moved = true
-    if (verticalDistance > horizontalDistance || verticalDistance > 10) clearGesture()
+  const handleMessagePointerMove = (event) => {
+    if (gestureRef.current.id !== event.currentTarget.dataset.messageId) return
+    const deltaX = event.clientX - gestureRef.current.startX
+    const deltaY = event.clientY - gestureRef.current.startY
+    const horizontalDistance = Math.abs(deltaX)
+    const verticalDistance = Math.abs(deltaY)
+    if (!gestureRef.current.direction && (horizontalDistance > 10 || verticalDistance > 10)) {
+      gestureRef.current.direction = horizontalDistance > verticalDistance ? 'horizontal' : 'vertical'
+      clearGesture()
+    }
+    if (gestureRef.current.direction === 'horizontal') {
+      event.preventDefault()
+      const offset = Math.max(-110, Math.min(110, deltaX))
+      gestureRef.current.offset = offset
+      setSwipeState({ id: gestureRef.current.id, offset })
+    }
   }
 
-  const handleMessageTouchEnd = (event, messageId) => {
+  const handleMessagePointerUp = (event, messageId) => {
     clearGesture()
-    const touch = event.changedTouches[0]
-    const horizontalDistance = touch.clientX - gestureRef.current.startX
-    if (gestureRef.current.id === messageId && Math.abs(horizontalDistance) > 60 && Math.abs(horizontalDistance) > Math.abs(touch.clientY - gestureRef.current.startY)) {
-      setActionMessageId(messageId)
+    const wasHorizontal = gestureRef.current.id === messageId && gestureRef.current.direction === 'horizontal'
+    const offset = gestureRef.current.offset || 0
+    if (wasHorizontal && Math.abs(offset) >= 60) {
+      const message = messages.find((item) => item.id === messageId)
+      if (message) selectReply(message)
     }
+    setSwipeState({ id: null, offset: 0 })
     gestureRef.current.id = null
+    gestureRef.current.offset = 0
+  }
+
+  const handleMessagePointerCancel = () => {
+    clearGesture()
+    setSwipeState({ id: null, offset: 0 })
+    gestureRef.current.id = null
+    gestureRef.current.offset = 0
   }
 
   const selectReply = (message) => {
@@ -87,15 +109,18 @@ export default function ConversationPage() {
     window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1200)
   }
 
-  const deleteConversation = async () => {
+  const deleteMessage = async () => {
+    if (!messageToDelete) return
     try {
-      const response = await fetch(`/api/messages/${otherUserId}`, { method: 'DELETE', credentials: 'same-origin' })
+      const response = await fetch(`/api/messages/${otherUserId}?messageId=${encodeURIComponent(messageToDelete.id)}`, { method: 'DELETE', credentials: 'same-origin' })
       const result = await response.json()
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete conversation.')
-      router.push('/user/messaging')
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete message.')
+      setMessages((previous) => previous.filter((message) => message.id !== messageToDelete.id))
+      if (replyTo?.id === messageToDelete.id) setReplyTo(null)
+      setActionMessageId(null)
+      setMessageToDelete(null)
     } catch (deleteError) {
       setError(deleteError.message)
-      setDeleteDialogOpen(false)
     }
   }
 
@@ -224,19 +249,16 @@ export default function ConversationPage() {
               </div>
             </Link>
           )}
-          <button type="button" onClick={() => setDeleteDialogOpen(true)} aria-label="Delete conversation" title="Delete conversation" className="ml-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-red-50 hover:text-red-600">
-            <Trash2 className="h-4 w-4" />
-          </button>
         </header>
 
-        {deleteDialogOpen && (
+        {messageToDelete && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-            <div role="alertdialog" aria-modal="true" aria-labelledby="delete-conversation-title" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
-              <h2 id="delete-conversation-title" className="text-base font-black text-slate-950">Delete conversation?</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">This will remove this conversation and its messages.</p>
+            <div role="alertdialog" aria-modal="true" aria-labelledby="delete-message-title" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+              <h2 id="delete-message-title" className="text-base font-black text-slate-950">Delete this message?</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">This message will be removed.</p>
               <div className="mt-5 flex justify-end gap-2">
-                <button type="button" onClick={() => setDeleteDialogOpen(false)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
-                <button type="button" onClick={deleteConversation} className="rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700">Delete</button>
+                <button type="button" onClick={() => setMessageToDelete(null)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="button" onClick={deleteMessage} className="rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700">Delete</button>
               </div>
             </div>
           </div>
@@ -271,15 +293,27 @@ export default function ConversationPage() {
                 const isActionOpen = actionMessageId === message.id
                 const isHighlighted = highlightedMessageId === message.id
                 return (
-                  <div id={`message-${message.id}`} key={message.id} onContextMenu={(event) => { event.preventDefault(); setActionMessageId(message.id) }} onTouchStart={(event) => handleMessageTouchStart(event, message.id)} onTouchMove={handleMessageTouchMove} onTouchEnd={(event) => handleMessageTouchEnd(event, message.id)} className={`relative flex items-end gap-2 px-4 transition-colors duration-500 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'bg-amber-50' : ''}`}>
+                  <div id={`message-${message.id}`} key={message.id} className={`flex items-end gap-2 px-4 transition-colors duration-500 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'bg-amber-50' : ''}`}>
                     {!isOwnMessage && <Link href={`/user/profile/${otherUser.id}`} aria-label={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></Link>}
-                    <div className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
-                      {message.reply_to_message_id && <button type="button" onClick={() => scrollToMessage(message.reply_to_message_id)} className={`mb-2 block w-full border-l-2 pl-2 text-left text-xs ${isOwnMessage ? 'border-white/60 text-white/80' : 'border-[#147d75] text-slate-500'}`}><span className="block font-bold">↪ {originalMessage ? (originalMessage.sender_id === currentUser?.id ? currentUser?.full_name : otherUser?.full_name) || 'Community member' : 'Original message was deleted'}</span><span className="block truncate">{getReplyPreview(originalMessage)}</span></button>}
-                      {message.media_url && (message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
-                      {message.body && <p>{message.body}</p>}
-                      <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
+                    <div
+                      data-message-id={message.id}
+                      onContextMenu={(event) => { event.preventDefault(); setActionMessageId(message.id) }}
+                      onPointerDown={(event) => handleMessagePointerDown(event, message.id)}
+                      onPointerMove={handleMessagePointerMove}
+                      onPointerUp={(event) => handleMessagePointerUp(event, message.id)}
+                      onPointerCancel={handleMessagePointerCancel}
+                      style={{ touchAction: 'pan-y', transform: swipeState.id === message.id ? `translateX(${swipeState.offset}px)` : undefined }}
+                      className="relative max-w-[80%] transition-transform duration-150"
+                    >
+                      {swipeState.id === message.id && Math.abs(swipeState.offset) > 10 && <div className={`absolute inset-y-0 flex items-center text-[#147d75] ${swipeState.offset >= 0 ? '-left-9' : '-right-9'}`}><CornerUpLeft className="h-5 w-5" /></div>}
+                      <div className={`rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
+                        {message.reply_to_message_id && <button type="button" onClick={() => scrollToMessage(message.reply_to_message_id)} className={`mb-2 block w-full border-l-2 pl-2 text-left text-xs ${isOwnMessage ? 'border-white/60 text-white/80' : 'border-[#147d75] text-slate-500'}`}><span className="block font-bold">↪ {originalMessage ? (originalMessage.sender_id === currentUser?.id ? currentUser?.full_name : otherUser?.full_name) || 'Community member' : 'Original message was deleted'}</span><span className="block truncate">{getReplyPreview(originalMessage)}</span></button>}
+                        {message.media_url && (message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
+                        {message.body && <p>{message.body}</p>}
+                        <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
+                      </div>
+                      {isActionOpen && <div className={`absolute z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-lg ${isOwnMessage ? 'right-0' : 'left-0'} -top-11`}><button type="button" onClick={() => selectReply(message)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"><CornerUpLeft className="h-3.5 w-3.5" /> Reply</button><button type="button" onClick={() => { setMessageToDelete(message); setActionMessageId(null) }} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete</button></div>}
                     </div>
-                    {isActionOpen && <button type="button" onClick={() => selectReply(message)} className={`absolute z-10 inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-lg ${isOwnMessage ? 'right-16' : 'left-16'}`}><CornerUpLeft className="h-3.5 w-3.5" /> Reply</button>}
                     {isOwnMessage && <ProfileAvatar user={currentUser} size="h-8 w-8" />}
                   </div>
                 )
