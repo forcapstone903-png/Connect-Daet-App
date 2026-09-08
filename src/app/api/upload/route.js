@@ -15,8 +15,8 @@ export async function POST(request) {
     const file = formData.get('file')
     const requestedBucket = String(formData.get('bucket') || '')
     const requestedFolder = String(formData.get('folder') || '')
-    const bucket = requestedBucket === 'profile-media' ? requestedBucket : null
-    const folderType = requestedFolder.startsWith('covers/') ? 'covers' : requestedFolder.startsWith('users/') ? 'users' : requestedFolder.startsWith('messages/') ? 'messages' : null
+    const bucket = ['profile-media', 'blogs'].includes(requestedBucket) ? requestedBucket : null
+    const folderType = requestedFolder.startsWith('covers/') ? 'covers' : requestedFolder.startsWith('users/') ? 'users' : requestedFolder.startsWith('messages/') ? 'messages' : requestedFolder.startsWith('blog-media') ? 'blog-media' : null
     const folder = folderType ? `${folderType}/${userId}` : null
 
     if (!bucket || !folder) return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
@@ -86,9 +86,9 @@ export async function DELETE(request) {
     const marker = `/storage/v1/object/public/${bucket}/`
     const markerIndex = parsedUrl.pathname.indexOf(marker)
     const objectPath = markerIndex >= 0 ? decodeURIComponent(parsedUrl.pathname.slice(markerIndex + marker.length)) : ''
-    const ownedPath = objectPath === `users/${userId}` || objectPath.startsWith(`users/${userId}/`) || objectPath.startsWith(`covers/${userId}/`)
+    const ownedPath = objectPath === `users/${userId}` || objectPath.startsWith(`users/${userId}/`) || objectPath.startsWith(`covers/${userId}/`) || objectPath.startsWith(`blog-media/${userId}/`)
 
-    if (bucket !== 'profile-media' || !ownedPath || !objectPath) {
+    if (!['profile-media', 'blogs'].includes(bucket) || !ownedPath || !objectPath) {
       return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })
     }
 

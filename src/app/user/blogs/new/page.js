@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, MessageCircle, FilePenLine } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/components/MediaUpload'
+import MultiMediaUpload from '@/app/components/MultiMediaUpload'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
@@ -48,6 +49,8 @@ export default function CreateBlogPage() {
   const [forumForm, setForumForm] = useState({ title: '', content: '', tags: '' })
   const [eventForm, setEventForm] = useState({ title: '', description: '', location: '', start_date: '', category: 'festival' })
   const [feedbackForm, setFeedbackForm] = useState({ category: 'suggestion', message: '', rating: 5 })
+  const [mediaItems, setMediaItems] = useState([])
+  const [mediaLayout, setMediaLayout] = useState('swipe')
 
   useEffect(() => {
     const getSession = async () => {
@@ -61,6 +64,7 @@ export default function CreateBlogPage() {
     }
 
     getSession()
+    if (new URLSearchParams(window.location.search).get('share') === 'media') setShareType('blog')
   }, [])
 
   const updateField = (field, value) => {
@@ -103,23 +107,28 @@ export default function CreateBlogPage() {
         return
       }
 
-      if (!form.title.trim() || !form.content.trim() || !form.category) {
-        alert('Please add a title, category, and article content.')
+      if ((!form.title.trim() && !form.content.trim() && mediaItems.length === 0) || !form.category) {
+        alert('Please add a title, content, or at least one photo or video.')
         return
       }
 
-      const slug = `${generateSlug(form.title)}-${Date.now()}`
+      const postTitle = form.title.trim() || 'Community media post'
+      const postContent = form.content.trim() || 'Shared photos and videos with the community.'
+      const slug = `${generateSlug(postTitle)}-${Date.now()}`
       const tags = form.tags
         .split(',')
         .map((tag) => tag.trim())
         .filter(Boolean)
 
       const payload = {
-        title: form.title.trim(),
+        title: postTitle,
         slug,
-        excerpt: form.excerpt.trim() || form.content.trim().slice(0, 180),
-        content: form.content.trim(),
+        excerpt: form.excerpt.trim() || postContent.slice(0, 180),
+        content: postContent,
         featured_image: form.featured_image.trim() || null,
+        images: mediaItems.filter((media) => media.type === 'image').map((media) => media.url),
+        videos: mediaItems.filter((media) => media.type === 'video').map((media) => media.url),
+        media_layout: mediaLayout,
         category: form.category,
         tags,
         status: form.status,
@@ -139,9 +148,9 @@ export default function CreateBlogPage() {
         userId: session.user.id,
         activityType: 'new_post',
         entityType: 'blog',
-        description: `Published a new blog post: ${form.title.trim()}`,
+        description: `Published a new blog post: ${postTitle}`,
         metadata: {
-          contentTitle: form.title.trim(),
+          contentTitle: postTitle,
           ownerUserId: session.user.id,
         },
       }).catch((activityError) => {
@@ -215,7 +224,7 @@ export default function CreateBlogPage() {
             <h2 className="text-sm font-black text-slate-900">Choose what to share</h2>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => setShareType('blog')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'blog' ? 'border-sky-300 bg-sky-100 text-sky-800 ring-2 ring-sky-100' : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'}`}><FileText className="mb-2 h-4 w-4" />Blog post</button>
+            <button type="button" onClick={() => setShareType('blog')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'blog' ? 'border-sky-300 bg-sky-100 text-sky-800 ring-2 ring-sky-100' : 'border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100'}`}><FileText className="mb-2 h-4 w-4" />Story or media post</button>
             <button type="button" onClick={() => setShareType('forum')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'forum' ? 'border-emerald-300 bg-emerald-100 text-emerald-800 ring-2 ring-emerald-100' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}><MessageCircle className="mb-2 h-4 w-4" />Forum discussion</button>
             <button type="button" onClick={() => setShareType('event')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'event' ? 'border-amber-300 bg-amber-100 text-amber-800 ring-2 ring-amber-100' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}><CalendarDays className="mb-2 h-4 w-4" />Create event</button>
             <button type="button" onClick={() => setShareType('feedback')} className={`rounded-xl border px-3 py-3 text-left text-sm font-bold transition ${shareType === 'feedback' ? 'border-violet-300 bg-violet-100 text-violet-800 ring-2 ring-violet-100' : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'}`}><MessageSquare className="mb-2 h-4 w-4" />Share feedback</button>
@@ -271,6 +280,17 @@ export default function CreateBlogPage() {
                     ))}
                   </select>
                 </label>
+
+                <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div><p className="text-sm font-semibold text-slate-700">Photos and videos</p><p className="mt-1 text-xs text-slate-500">Choose multiple files and how they should appear in the post.</p></div>
+                    <select value={mediaLayout} onChange={(event) => setMediaLayout(event.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700">
+                      <option value="swipe">Swipe gallery</option>
+                      <option value="grid">Grid gallery</option>
+                    </select>
+                  </div>
+                  <MultiMediaUpload value={mediaItems} onChange={setMediaItems} bucket="blogs" folder="blog-media" maxFiles={10} />
+                </div>
 
                 <label>
                   <span className="mb-2 block text-sm font-semibold text-slate-700">Status</span>

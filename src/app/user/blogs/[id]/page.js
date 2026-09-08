@@ -808,11 +808,11 @@ export default function BlogDetailPage() {
 
           <div className="mt-6 flex items-center justify-between border-t border-b border-slate-200 py-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
+              <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
                 {(blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
-              </div>
+              </Link>
               <div>
-                <p className="font-semibold text-slate-900">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</p>
+                <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="font-semibold text-slate-900 hover:text-sky-700">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                   <span>{formatDate(blog.published_at)}</span>
                   <span>•</span>

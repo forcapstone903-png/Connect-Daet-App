@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE public.info_blogs ADD COLUMN IF NOT EXISTS images TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.info_blogs ADD COLUMN IF NOT EXISTS videos TEXT[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.info_blogs ADD COLUMN IF NOT EXISTS media_layout TEXT NOT NULL DEFAULT 'swipe';
+
+COMMIT;

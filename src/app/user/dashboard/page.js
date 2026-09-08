@@ -15,12 +15,9 @@ import { startTransition, useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
   ArrowUp,
-  CalendarPlus,
   Flame,
-  Image,
   Loader,
   LogOut,
-  MessageCircle,
   Menu,
   MapPinned,
   MoreHorizontal,
@@ -560,9 +557,10 @@ export default function UserDashboardPage() {
 
         const { data: currentUserProfile } = await supabase
           .from(TABLES.USERS)
-          .select('profile_image_url')
+          .select('full_name, profile_image_url')
           .eq('id', sessionUserId)
           .maybeSingle()
+        setUserName(currentUserProfile?.full_name?.trim() || sessionUserName)
         setUserAvatarUrl(currentUserProfile?.profile_image_url || activeSession.user.user_metadata?.avatar_url || '')
 
         // Track page visit (async - don't block render)
@@ -732,7 +730,7 @@ export default function UserDashboardPage() {
           Promise.all([
             supabase
               .from(TABLES.BLOGS)
-              .select('id, title, excerpt, category, tags, featured_image, published_at, updated_at, views, likes, comments_count, created_by')
+              .select('id, title, excerpt, category, tags, featured_image, images, videos, media_layout, published_at, updated_at, views, likes, comments_count, created_by')
               .eq('status', 'published')
               .order('published_at', { ascending: false })
               .limit(20),
@@ -1076,19 +1074,22 @@ export default function UserDashboardPage() {
           </div>
         )}
 
-        <section className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-100 bg-[linear-gradient(115deg,#e0f2fe_0%,#f0fdfa_52%,#fff7ed_100%)] px-6 py-5 shadow-[0_10px_28px_rgba(14,116,144,0.08)] lg:block">
+        <section
+          className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-900/20 bg-cover bg-center px-6 py-5 text-white shadow-[0_10px_28px_rgba(14,116,144,0.14)] lg:block"
+          style={{ backgroundImage: "linear-gradient(90deg, rgba(2, 25, 45, 0.86), rgba(2, 25, 45, 0.48)), url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85')" }}
+        >
           <div className="flex items-center justify-between gap-6">
             <div className="max-w-[620px]">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Daet community journal</p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Stories, places, and people worth knowing.</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-600">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">Daet community journal</p>
+              <h1 className="mt-1 text-2xl font-black tracking-tight text-white">Stories, places, and people worth knowing.</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-100">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
             </div>
-            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/80 bg-white/75 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
+            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
           </div>
         </section>
 
-        <div className="dashboard-feed-layout">
-          <div className="dashboard-feed-main min-w-0 lg:pr-0">
+        <div className="dashboard-feed-layout lg:h-[calc(100vh-11rem)] lg:min-h-0 lg:overflow-hidden">
+          <div className="dashboard-feed-main min-w-0 lg:min-h-0 lg:max-h-full lg:overflow-y-auto lg:pr-3 lg:overscroll-contain">
         <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
             <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
@@ -1099,15 +1100,9 @@ export default function UserDashboardPage() {
               <Zap className="h-4 w-4" />
             </Link>
           </div>
-          <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
             <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-white">Write a story</Link>
-            <Link href="/user/events" className="rounded-xl py-2 hover:bg-white">Find an event</Link>
-            <Link href="/user/forums" className="rounded-xl py-2 hover:bg-white">Start a chat</Link>
-          </div>
-          <div className="mt-3 hidden items-center gap-2 border-t border-slate-100 pt-3 lg:flex">
-            <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-sky-50 hover:text-sky-700"><Image className="h-4 w-4 text-sky-600" />Photo or video</Link>
-            <Link href="/user/events" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-amber-50 hover:text-amber-700"><CalendarPlus className="h-4 w-4 text-amber-600" />Event</Link>
-            <Link href="/user/forums" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"><MessageCircle className="h-4 w-4 text-emerald-600" />Discussion</Link>
+            <Link href="/user/blogs/new?share=media" className="rounded-xl py-2 hover:bg-white">Post a photo or video</Link>
           </div>
         </div>
 
@@ -1167,7 +1162,8 @@ export default function UserDashboardPage() {
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
-                  const postImageUrl = item.type === 'blog' ? item.featured_image : item.type === 'announcement' ? item.image_url : eventMediaUrl
+                  const postGallery = item.type === 'blog' ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
+                  const postImageUrl = item.type === 'blog' ? item.featured_image || (item.images || [])[0] : item.type === 'announcement' ? item.image_url : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
@@ -1204,7 +1200,7 @@ export default function UserDashboardPage() {
                         {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
                         {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
+                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full object-cover" />}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
 
                         <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
                         {openComments === itemKey ? (
@@ -1224,7 +1220,7 @@ export default function UserDashboardPage() {
           </div>
           </div>
 
-          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4">
+          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4 lg:min-h-0 lg:block lg:max-h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
             <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
               <div className="border-b border-slate-100 px-2 pb-3">
                 <div className="flex items-center gap-2.5">

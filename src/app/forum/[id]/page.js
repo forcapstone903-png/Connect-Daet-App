@@ -451,7 +451,7 @@ export default function PublicThreadDetailPage() {
 
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900"><span>{reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}</span><span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">{reply.is_best_answer ? 'Trusted answer' : 'Traveler'}</span></div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900"><Link href={reply.user_id ? `/user/profile/${reply.user_id}` : '/user/profile'} className="hover:text-sky-700">{reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}</Link><span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">{reply.is_best_answer ? 'Trusted answer' : 'Traveler'}</span></div>
                     <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
                   </div>
                 </div>
