@@ -22,6 +22,7 @@ import {
   MapPinned,
   MoreHorizontal,
   MapPin,
+  MessageCircle,
   RefreshCw,
   ShieldCheck,
   Search,
