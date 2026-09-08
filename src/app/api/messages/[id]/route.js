@@ -58,6 +58,17 @@ export async function PATCH(request, { params }) {
   if (!otherUserId || otherUserId === userId) return NextResponse.json({ success: false, message: 'Invalid conversation.' }, { status: 400 })
 
   const body = await request.json().catch(() => ({}))
+  if (body.markRead === true) {
+    const { error } = await adminSupabase
+      .from('direct_messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('sender_id', otherUserId)
+      .eq('recipient_id', userId)
+      .is('read_at', null)
+    if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+    return NextResponse.json({ success: true, marked_read: true })
+  }
+
   const isArchived = body.isArchived === true
   const { error } = await adminSupabase
     .from('message_conversation_settings')

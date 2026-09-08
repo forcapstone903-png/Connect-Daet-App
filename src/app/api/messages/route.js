@@ -44,6 +44,7 @@ export async function GET(request) {
     if (Boolean(archivedByUser.get(otherUserId)) !== archived) continue
     if (!otherUserId || conversationIds.has(otherUserId)) continue
     conversationIds.add(otherUserId)
+    const unreadCount = (data || []).filter((candidate) => candidate.sender_id === otherUserId && candidate.recipient_id === userId && !candidate.read_at).length
     conversations.push({
       id: message.id,
       other_user: usersById.get(otherUserId) || null,
@@ -51,6 +52,7 @@ export async function GET(request) {
       created_at: message.created_at,
       sender_id: message.sender_id,
       recipient_id: message.recipient_id,
+      unread_count: unreadCount,
     })
   }
 
@@ -64,6 +66,7 @@ export async function GET(request) {
       recipient_user: usersById.get(message.recipient_id) || null,
     })),
     current_user: usersById.get(userId) || { id: userId, full_name: 'You', profile_image_url: null },
+    unread_messages: (data || []).filter((message) => message.sender_id !== userId && message.recipient_id === userId && !message.read_at).length,
   })
 }
 

@@ -18,6 +18,7 @@ import {
   Flame,
   Loader,
   LogOut,
+  MessageCircle,
   Menu,
   MapPinned,
   MoreHorizontal,
@@ -183,6 +184,7 @@ export default function UserDashboardPage() {
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
+  const [feedRefreshing, setFeedRefreshing] = useState(false)
   const [feedNow, setFeedNow] = useState(() => Date.now())
   const [feedVisibleCount, setFeedVisibleCount] = useState(10)
   const [feedEndReached, setFeedEndReached] = useState(false)
@@ -190,6 +192,7 @@ export default function UserDashboardPage() {
   useEffect(() => {
     const handleFeedRefresh = () => {
       setFeedNow(Date.now())
+      setFeedRefreshing(true)
       setFeedRefreshKey((value) => value + 1)
     }
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
@@ -845,6 +848,7 @@ export default function UserDashboardPage() {
         setStats(nextDashboardData.stats)
         setFeed(mixedFeed)
         setLoading(false)
+        setFeedRefreshing(false)
 
         void loadDashboardStats(userId)
         void fetchCommentCounts(mixedFeed)
@@ -852,8 +856,12 @@ export default function UserDashboardPage() {
         if (!isMounted) return
         console.error('Dashboard load error:', err)
         setError(err.message || 'Failed to load dashboard')
+        setFeedRefreshing(false)
       } finally {
-        if (isMounted && !error) setLoading(false)
+        if (isMounted && !error) {
+          setLoading(false)
+          setFeedRefreshing(false)
+        }
       }
     }
 
@@ -940,11 +948,11 @@ export default function UserDashboardPage() {
       interactedIds.add(`${favorite.item_type}-${favorite.item_id}`)
     })
 
+    let rankedResult
     if (feedScope === 'trending') {
-      return result.sort((left, right) => (Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0)) - (Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0)))
-    }
-
-    return result
+      rankedResult = result.sort((left, right) => (Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0)) - (Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0)))
+    } else {
+      rankedResult = result
       .map((item, index) => {
         const itemKey = `${item.type}-${item.id}`
         const category = String(item.category || '').toLowerCase()
@@ -966,6 +974,12 @@ export default function UserDashboardPage() {
       })
         .sort((left, right) => right.score - left.score || left.index - right.index)
       .map(({ item }) => item)
+    }
+
+    if (feedRefreshKey === 0 || rankedResult.length < 2) return rankedResult
+
+    const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
+    return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
       }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
 
   useEffect(() => {
@@ -1111,7 +1125,7 @@ export default function UserDashboardPage() {
           <section className="min-w-0 space-y-4">
             <div className="flex items-end justify-between px-1">
               <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
-              <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} aria-label="Refresh your feed" title="Refresh your feed" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-4 w-4" /></button>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} aria-label="Refresh your feed" title="Refresh your feed" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-700" disabled={feedRefreshing}><RefreshCw className={`h-4 w-4 ${feedRefreshing ? 'animate-spin' : ''}`} /></button>
             </div>
 
             <div className="hidden items-center border-b border-slate-200 lg:flex">

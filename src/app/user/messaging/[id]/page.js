@@ -214,6 +214,8 @@ export default function ConversationPage() {
         setCurrentUser(result.current_user)
         setOtherUser(result.other_user)
         setMessages(result.messages || [])
+        await fetch(`/api/messages/${otherUserId}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markRead: true }) })
+        window.dispatchEvent(new Event('daet-messages-updated'))
       } catch (loadError) {
         if (active) setError(loadError.message)
       } finally {
