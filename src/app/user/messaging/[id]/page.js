@@ -69,6 +69,9 @@ export default function ConversationPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
+  const [viewportHeight, setViewportHeight] = useState('100dvh')
+  const [isNearBottom, setIsNearBottom] = useState(true)
+  const [showNewMessageIndicator, setShowNewMessageIndicator] = useState(false)
   const [mediaFile, setMediaFile] = useState(null)
   const [mediaPreview, setMediaPreview] = useState('')
   const [mediaType, setMediaType] = useState(null)
@@ -91,7 +94,36 @@ export default function ConversationPage() {
   const pickerRef = useRef(null)
   const messagesScrollRef = useRef(null)
   const selectedMessageRef = useRef(null)
+  const isNearBottomRef = useRef(true)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
+
+  useEffect(() => {
+    const syncViewport = () => {
+      if (typeof window === 'undefined') return
+      const rawHeight = typeof window.visualViewport?.height === 'number'
+        ? window.visualViewport.height
+        : window.innerHeight
+      const nextHeight = `${Math.round(rawHeight)}px`
+      setViewportHeight(nextHeight)
+    }
+
+    syncViewport()
+    window.addEventListener('resize', syncViewport)
+    window.visualViewport?.addEventListener('resize', syncViewport)
+    return () => {
+      window.removeEventListener('resize', syncViewport)
+      window.visualViewport?.removeEventListener('resize', syncViewport)
+    }
+  }, [])
+
+  const handleMessagesScroll = () => {
+    const scroller = messagesScrollRef.current
+    if (!scroller) return
+    const nearBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 180
+    isNearBottomRef.current = nearBottom
+    setIsNearBottom(nearBottom)
+    if (nearBottom) setShowNewMessageIndicator(false)
+  }
 
   const clearGesture = () => {
     if (gestureRef.current.timer) window.clearTimeout(gestureRef.current.timer)
@@ -180,6 +212,12 @@ export default function ConversationPage() {
     })
   }
 
+  const retryConversation = () => {
+    setError('')
+    setLoading(true)
+    void loadConversation(false)
+  }
+
   const scrollToMessage = (messageId) => {
     if (!messageId) return
     const target = document.getElementById(`message-${messageId}`)
@@ -188,87 +226,77 @@ export default function ConversationPage() {
     window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1200)
   }
 
-  const deleteMessage = async () => {
-    if (!messageToDelete) return
+  const loadConversation = async (silent = false) => {
+    if (!otherUserId) return
+
     try {
-      const response = await fetch(`/api/messages/${otherUserId}?messageId=${encodeURIComponent(messageToDelete.id)}`, { method: 'DELETE', credentials: 'same-origin' })
+      if (!silent) {
+        setLoading(true)
+      }
+      setError('')
+
+      const response = await fetch(`/api/messages/${otherUserId}`, { credentials: 'same-origin' })
+      if (!response.ok) {
+        throw new Error('Unable to load messages. Tap to retry.')
+      }
+
       const result = await response.json()
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete message.')
-      setMessages((previous) => previous.filter((message) => message.id !== messageToDelete.id))
-      if (replyTo?.id === messageToDelete.id) setReplyTo(null)
-      setActionMessageId(null)
-      setMessageToDelete(null)
-    } catch (deleteError) {
-      setError(deleteError.message)
+      if (!result?.success) {
+        throw new Error(result?.message || 'Unable to load messages. Tap to retry.')
+      }
+
+      setCurrentUser(result.current_user)
+      setOtherUser(result.other_user)
+
+      const incomingMessages = Array.isArray(result.messages) ? result.messages : []
+      setMessages((previousMessages) => {
+        const seen = new Map(previousMessages.map((message) => [message.id, message]))
+        for (const incoming of incomingMessages) {
+          if (!seen.has(incoming.id)) {
+            seen.set(incoming.id, { ...incoming, sender_user: incoming.sender_user || null, recipient_user: incoming.recipient_user || null })
+          }
+        }
+        const merged = [...seen.values()]
+        merged.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+        return merged
+      })
+
+      await fetch(`/api/messages/${otherUserId}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markRead: true }),
+      })
+
+      window.dispatchEvent(new Event('daet-messages-updated'))
+      const scroller = messagesScrollRef.current
+      if (scroller && isNearBottomRef.current) {
+        requestAnimationFrame(() => {
+          scroller.scrollTop = scroller.scrollHeight
+        })
+      } else if (scroller && !isNearBottomRef.current) {
+        setShowNewMessageIndicator(true)
+      }
+    } catch (loadError) {
+      const errorMessage = loadError?.message === 'Failed to fetch'
+        ? 'Unable to load messages. Tap to retry.'
+        : loadError?.message || 'Unable to load messages. Tap to retry.'
+      setError(errorMessage)
+      setLoading(false)
+    } finally {
+      if (!silent) setLoading(false)
     }
   }
-
-  useEffect(() => () => {
-    if (mediaPreview) URL.revokeObjectURL(mediaPreview)
-  }, [mediaPreview])
 
   useEffect(() => {
     if (!otherUserId) return undefined
 
     let active = true
     let pollTimer = null
-    let firstLoad = true
 
-    const loadConversation = async () => {
-      try {
-        if (!active) return
-        if (firstLoad) {
-          setLoading(true)
-          setError('')
-        }
-
-        const response = await fetch(`/api/messages/${otherUserId}`, { credentials: 'same-origin' })
-        const result = await response.json()
-        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load conversation.')
-        if (!active) return
-
-        setCurrentUser(result.current_user)
-        setOtherUser(result.other_user)
-
-        const incomingMessages = Array.isArray(result.messages) ? result.messages : []
-        setMessages((previousMessages) => {
-          const seen = new Map(previousMessages.map((message) => [message.id, message]))
-          for (const incoming of incomingMessages) {
-            if (!seen.has(incoming.id)) seen.set(incoming.id, incoming)
-          }
-          const merged = [...seen.values()]
-          merged.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
-          return merged
-        })
-
-        await fetch(`/api/messages/${otherUserId}`, {
-          method: 'PATCH',
-          credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ markRead: true }),
-        })
-
-        window.dispatchEvent(new Event('daet-messages-updated'))
-        if (messagesScrollRef.current) {
-          const scrollTarget = messagesScrollRef.current
-          const shouldAutoScroll = scrollTarget.scrollHeight - scrollTarget.scrollTop - scrollTarget.clientHeight < 180
-          if (shouldAutoScroll) scrollConversationToBottom()
-        }
-      } catch (loadError) {
-        if (active) setError(loadError.message)
-      } finally {
-        if (active) {
-          if (firstLoad) {
-            setLoading(false)
-            firstLoad = false
-          }
-        }
-      }
-    }
-
-    void loadConversation()
+    void loadConversation(false)
     pollTimer = window.setInterval(() => {
-      if (active) void loadConversation()
+      if (active) void loadConversation(true)
     }, 5000)
 
     return () => {
@@ -276,6 +304,29 @@ export default function ConversationPage() {
       if (pollTimer) window.clearInterval(pollTimer)
     }
   }, [otherUserId])
+
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow
+    const previousBodyHeight = document.body.style.height
+    const previousRootOverflow = document.documentElement.style.overflow
+    const previousRootHeight = document.documentElement.style.height
+
+    document.body.style.overflow = 'hidden'
+    document.body.style.height = '100%'
+    document.documentElement.style.overflow = 'hidden'
+    document.documentElement.style.height = '100%'
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      document.body.style.height = previousBodyHeight
+      document.documentElement.style.overflow = previousRootOverflow
+      document.documentElement.style.height = previousRootHeight
+    }
+  }, [otherUserId])
+
+  useEffect(() => () => {
+    if (mediaPreview) URL.revokeObjectURL(mediaPreview)
+  }, [mediaPreview])
 
   const loadGifs = async (query = pickerSearch) => {
     const controller = new AbortController()
@@ -441,7 +492,7 @@ export default function ConversationPage() {
   }
 
   return (
-    <main className="conversation-page flex h-dvh w-full flex-col overflow-hidden bg-[#eef4f5] text-slate-900">
+    <main className="conversation-page flex w-full flex-col overflow-hidden bg-[#eef4f5] text-slate-900" style={{ height: viewportHeight, minHeight: viewportHeight, maxHeight: viewportHeight }}>
       <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
         <header className="conversation-header flex flex-[0_0_auto] items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push('/user/messaging') }} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
@@ -488,11 +539,16 @@ export default function ConversationPage() {
         {loading ? (
           <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-sm text-slate-500"><div className="p-6">Loading conversation...</div></div>
         ) : error ? (
-          <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-center text-sm text-red-700"><div className="p-8">{error}</div></div>
+          <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-center text-sm text-red-700">
+            <div className="p-8">
+              <p className="font-semibold">{error}</p>
+              <button type="button" onClick={retryConversation} className="mt-4 rounded-full bg-[#147d75] px-5 py-2 text-sm font-bold text-white hover:bg-[#0f685f]">Retry</button>
+            </div>
+          </div>
         ) : (
           <>
             <div className="messages-container min-h-0 flex-1 w-full overflow-hidden bg-white">
-              <div ref={messagesScrollRef} className="messages-scroll h-full min-h-0 w-full space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain">
+              <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="messages-scroll h-full min-h-0 w-full space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain">
               {messages.length ? messages.map((message) => {
                 const isOwnMessage = message.sender_id === currentUser?.id
                 const sender = isOwnMessage ? currentUser : otherUser
