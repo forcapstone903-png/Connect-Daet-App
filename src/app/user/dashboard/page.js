@@ -43,6 +43,7 @@ import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 // Database table constants
 const TABLES = {
