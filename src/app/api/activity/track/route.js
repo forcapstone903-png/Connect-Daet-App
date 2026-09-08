@@ -27,6 +27,14 @@ async function resolveOwnerUserId(entityType, entityId) {
     const lookupMap = {
       blog: () => adminSupabase.from('info_blogs').select('created_by, user_id').eq('id', entityId).maybeSingle(),
       post: () => adminSupabase.from('info_user_posts').select('user_id').eq('id', entityId).maybeSingle(),
+      user_post: () => adminSupabase.from('info_user_posts').select('user_id').eq('id', entityId).maybeSingle(),
+      event: () => adminSupabase.from('info_events').select('created_by').eq('id', entityId).maybeSingle(),
+      forum: () => adminSupabase.from('forum_threads').select('created_by').eq('id', entityId).maybeSingle(),
+      forum_thread: () => adminSupabase.from('forum_threads').select('created_by').eq('id', entityId).maybeSingle(),
+      comment: async () => {
+        const { data: comment } = await adminSupabase.from('content_comments').select('content_type, content_id').eq('id', entityId).maybeSingle()
+        return comment ? { data: { created_by: await resolveOwnerUserId(comment.content_type, comment.content_id) } } : { data: null }
+      },
       article: () => adminSupabase.from('info_blogs').select('created_by, user_id').eq('id', entityId).maybeSingle(),
       announcement: () => adminSupabase.from('info_announcements').select('created_by, user_id').eq('id', entityId).maybeSingle(),
     }
@@ -42,6 +50,23 @@ async function resolveOwnerUserId(entityType, entityId) {
     console.error('Failed to resolve entity owner:', error)
     return null
   }
+}
+
+function buildAdminLink(entityType, entityId, metadata = {}) {
+  if (String(entityType || '').toLowerCase() === 'comment') {
+    return buildAdminLink(metadata.contentType, metadata.contentId)
+  }
+  if (!entityId) return '/admin/dashboard'
+  const links = {
+    blog: `/admin/blog?open=${encodeURIComponent(entityId)}`,
+    event: `/admin/events?open=${encodeURIComponent(entityId)}`,
+    forum: `/admin/forum?open=${encodeURIComponent(entityId)}`,
+    forum_thread: `/admin/forum?open=${encodeURIComponent(entityId)}`,
+    announcement: `/admin/announcement?open=${encodeURIComponent(entityId)}`,
+    user_post: `/admin/users?open=${encodeURIComponent(entityId)}`,
+    post: `/admin/users?open=${encodeURIComponent(entityId)}`,
+  }
+  return links[String(entityType || '').toLowerCase()] || '/admin/engagement'
 }
 
 export async function POST(request) {
@@ -93,24 +118,29 @@ export async function POST(request) {
     const meta = buildActivityMeta(activityType)
     const message = buildActivityMessage({ actorName, activityType, contentTitle, entityType })
 
-    const { data: admins, error: adminsError } = await adminSupabase
-      .from('info_users')
-      .select('id')
-      .eq('user_type', 'admin')
+    const explicitOwnerId = metadata.ownerUserId || metadata.postOwnerId || metadata.recipientUserId || null
+    const resolvedOwnerId = explicitOwnerId || await resolveOwnerUserId(entityType, entityId)
+    let ownerIsAdmin = false
 
-    if (!adminsError && Array.isArray(admins) && admins.length > 0) {
-      const notifications = admins.map((admin) => ({
-        user_id: admin.id,
+    if (resolvedOwnerId) {
+      const { data: owner } = await adminSupabase
+        .from('info_users')
+        .select('id, user_type')
+        .eq('id', resolvedOwnerId)
+        .maybeSingle()
+      ownerIsAdmin = owner?.user_type === 'admin'
+    }
+
+    if (ownerIsAdmin && resolvedOwnerId !== userId) {
+      const { error: notifError } = await adminSupabase.from('info_notifications').insert({
+        user_id: resolvedOwnerId,
         title: meta.title,
         message,
         type: 'activity',
         is_read: false,
-      }))
-
-      const { error: notifError } = await adminSupabase.from('info_notifications').insert(notifications)
-      if (notifError) {
-        console.error('Admin notification insert error:', notifError)
-      }
+        link: buildAdminLink(entityType, entityId, metadata),
+      })
+      if (notifError) console.error('Admin notification insert error:', notifError)
     }
 
     const recipientUserIds = new Set()
@@ -122,18 +152,21 @@ export async function POST(request) {
         .eq('following_id', userId)
 
       if (!followerLookupError && Array.isArray(followers)) {
-        followers.forEach((follow) => {
-          if (follow.follower_id && follow.follower_id !== userId) {
-            recipientUserIds.add(follow.follower_id)
-          }
-        })
+        const followerIds = followers.map((follow) => follow.follower_id).filter((id) => id && id !== userId)
+        if (followerIds.length) {
+          const { data: followerUsers } = await adminSupabase
+            .from('info_users')
+            .select('id, user_type')
+            .in('id', followerIds)
+          ;(followerUsers || []).forEach((follower) => {
+            if (follower.user_type !== 'admin') recipientUserIds.add(follower.id)
+          })
+        }
       }
     } else {
-      const explicitOwnerId = metadata.ownerUserId || metadata.postOwnerId || metadata.recipientUserId || null
-      if (explicitOwnerId) recipientUserIds.add(explicitOwnerId)
+      if (explicitOwnerId && !ownerIsAdmin) recipientUserIds.add(explicitOwnerId)
 
-      const resolvedOwnerId = metadata.ownerUserId || metadata.postOwnerId || metadata.recipientUserId || await resolveOwnerUserId(entityType, entityId)
-      if (resolvedOwnerId && resolvedOwnerId !== userId) recipientUserIds.add(resolvedOwnerId)
+      if (resolvedOwnerId && resolvedOwnerId !== userId && !ownerIsAdmin) recipientUserIds.add(resolvedOwnerId)
     }
 
     if (recipientUserIds.size > 0) {

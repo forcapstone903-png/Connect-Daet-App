@@ -49,11 +49,13 @@ export default function AdminAnnouncementPage() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState([]);
+  const [engagementByAnnouncement, setEngagementByAnnouncement] = useState({});
 
   // Modal states
   const [showModal, setShowModal] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
+  const [previewAnnouncement, setPreviewAnnouncement] = useState(null);
 
   // Filters
   const [filterType, setFilterType] = useState('all');
@@ -79,7 +81,6 @@ export default function AdminAnnouncementPage() {
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [previewAnnouncement, setPreviewAnnouncement] = useState(null);
 
   // Stats
   const [stats, setStats] = useState({
@@ -123,6 +124,42 @@ export default function AdminAnnouncementPage() {
       }));
 
       setAnnouncements(normalized);
+
+      const announcementIds = normalized.map((announcement) => announcement.id).filter(Boolean);
+      if (announcementIds.length) {
+        const [{ data: reactionRows, error: reactionError }, { data: commentRows, error: commentError }] = await Promise.all([
+          supabase
+            .from('content_reactions')
+            .select('content_id, reaction_type')
+            .eq('content_type', 'announcement')
+            .in('content_id', announcementIds),
+          supabase
+            .from('content_comments')
+            .select('id, content_id, body, created_at, user_id, info_users(full_name, email)')
+            .eq('content_type', 'announcement')
+            .eq('status', 'active')
+            .in('content_id', announcementIds)
+            .order('created_at', { ascending: false }),
+        ]);
+
+        if (reactionError) throw reactionError;
+        if (commentError) throw commentError;
+
+        const engagement = {};
+        announcementIds.forEach((id) => {
+          const reactions = (reactionRows || []).filter((row) => row.content_id === id);
+          const comments = (commentRows || []).filter((row) => row.content_id === id);
+          engagement[id] = {
+            reactionCount: reactions.length,
+            commentCount: comments.length,
+            reactionBreakdown: reactions.reduce((counts, row) => ({ ...counts, [row.reaction_type]: (counts[row.reaction_type] || 0) + 1 }), {}),
+            comments,
+          };
+        });
+        setEngagementByAnnouncement(engagement);
+      } else {
+        setEngagementByAnnouncement({});
+      }
 
       const active = normalized.filter((a) => a.status === 'published' && (!a.expires_at || new Date(a.expires_at) > new Date())).length;
       const critical = normalized.filter((a) => a.severity === 'critical' && a.status === 'published').length;
@@ -269,7 +306,7 @@ export default function AdminAnnouncementPage() {
         audience: TARGET_GROUPS.some(t => t.value === formData.audience) ? formData.audience : 'all',
         image_url: formData.image_url || null,
         video_url: formData.video_url || null,
-        created_by: user?.id,
+        created_by: user?.user_id || user?.id,
         published_at: resolvedStatus === 'published' ? new Date().toISOString() : null,
         scheduled_for: formData.scheduled_for ? new Date(formData.scheduled_for).toISOString() : null,
         expires_at: formData.expires_at ? new Date(formData.expires_at).toISOString() : null,
@@ -604,13 +641,13 @@ export default function AdminAnnouncementPage() {
               return (
                 <div
                   key={announcement.id}
-                  className={`rounded-[1.8rem] border bg-white transition-all hover:shadow-md ${
+                  className={`flex min-h-[280px] flex-col rounded-[1.8rem] border bg-white transition-all hover:shadow-md ${
                     announcement.severity === 'critical' ? 'border-red-200 bg-red-50/30' :
                     announcement.severity === 'warning' ? 'border-yellow-200 bg-yellow-50/30' :
                     'border-sky-100'
                   }`}
                 >
-                  <div className="p-5">
+                  <div className="flex flex-1 flex-col p-5">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3 flex-wrap">
                         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
@@ -703,8 +740,8 @@ export default function AdminAnnouncementPage() {
                         />
                       </div>
                     )}
-                    
-                    <div className="flex items-center justify-between mt-4 text-xs text-slate-400">
+
+                    <div className="mt-auto flex items-center justify-between pt-4 text-xs text-slate-400">
                       <div className="flex items-center gap-4 flex-wrap">
                         <span>Created: {formatDate(announcement.created_at)}</span>
                         {announcement.expires_at && (
@@ -1001,6 +1038,37 @@ export default function AdminAnnouncementPage() {
               {previewAnnouncement.image_url && (
                 <img src={previewAnnouncement.image_url} alt={previewAnnouncement.title} className="mt-4 h-48 w-full rounded-xl object-cover" />
               )}
+
+              {(() => {
+                const engagement = engagementByAnnouncement[previewAnnouncement.id] || { reactionCount: 0, commentCount: 0, reactionBreakdown: {}, comments: [] };
+                return (
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-rose-600">Reactions</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900">{engagement.reactionCount}</p>
+                        <p className="text-xs text-slate-500">{Object.entries(engagement.reactionBreakdown).map(([type, count]) => `${type}: ${count}`).join(' · ') || 'No reactions yet'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold uppercase tracking-wide text-sky-600">Comments</p>
+                        <p className="mt-1 text-2xl font-black text-slate-900">{engagement.commentCount}</p>
+                        <p className="text-xs text-slate-500">Community responses</p>
+                      </div>
+                    </div>
+                    {engagement.comments.length > 0 && (
+                      <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+                        <p className="text-xs font-bold uppercase tracking-wide text-slate-500">Latest comments</p>
+                        {engagement.comments.map((comment) => (
+                          <div key={comment.id} className="border-b border-slate-100 pb-3 last:border-0 last:pb-0">
+                            <p className="text-xs font-bold text-slate-800">{comment.info_users?.full_name || comment.info_users?.email || 'Community member'}</p>
+                            <p className="mt-1 text-sm text-slate-600">{comment.body}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
                 <span>Created: {formatDate(previewAnnouncement.created_at)}</span>

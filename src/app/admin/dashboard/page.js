@@ -4,7 +4,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { MessageSquare } from 'lucide-react';
+import { Bell, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -97,6 +97,9 @@ export default function AdminDashboard() {
     totalUsers: 0, totalTourists: 0, totalArtisans: 0, totalOperators: 0, onlineUsers: 0,
     totalEvents: 0, totalSpots: 0, totalBlogs: 0, pendingPosts: 0
   });
+  const [dailyFeedbackQuestion, setDailyFeedbackQuestion] = useState(null);
+  const [dailyFeedbackVotes, setDailyFeedbackVotes] = useState([]);
+  const [dailyFeedbackDraft, setDailyFeedbackDraft] = useState('');
   
   const [recentUsers, setRecentUsers] = useState([]);
   const [venues, setVenues] = useState([]);
@@ -133,9 +136,56 @@ export default function AdminDashboard() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [calendarKey, setCalendarKey] = useState(0);
 
+  const unreadNotificationCount = notifications.filter((notification) => !notification.read).length;
+
   const calendarRef = useRef(null);
   const eventsRef = useRef([]);
   const locationInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    const loadDailyFeedback = async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: question } = await supabase
+        .from('daily_feedback_questions')
+        .select('id, question, feedback_date')
+        .eq('feedback_date', today)
+        .maybeSingle();
+      if (!active) return;
+      setDailyFeedbackQuestion(question || null);
+      setDailyFeedbackDraft(question?.question || '');
+      if (!question) {
+        setDailyFeedbackVotes([]);
+        return;
+      }
+      const { data: votes } = await supabase
+        .from('daily_feedback_votes')
+        .select('response')
+        .eq('question_id', question.id);
+      if (active) setDailyFeedbackVotes(votes || []);
+    };
+    void loadDailyFeedback();
+    return () => { active = false };
+  }, [user]);
+
+  const saveDailyFeedbackQuestion = async () => {
+    const questionText = dailyFeedbackDraft.trim();
+    const adminId = user?.user_id || user?.id;
+    if (!questionText || !adminId) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const { data, error } = await supabase
+      .from('daily_feedback_questions')
+      .upsert({ question: questionText, feedback_date: today, created_by: adminId, is_active: true }, { onConflict: 'feedback_date' })
+      .select('id, question, feedback_date')
+      .single();
+    if (error) {
+      showToast(`Failed to save feedback question: ${error.message}`, true);
+      return;
+    }
+    setDailyFeedbackQuestion(data);
+    showToast('Daily feedback question published.', false);
+  };
 
   const getCategoryColor = (category) => {
     const colors = { 
@@ -310,10 +360,19 @@ export default function AdminDashboard() {
   
   const markAsRead = (id) => {
     setNotifications(prev => prev.map(notif => notif.id === id ? { ...notif, read: true } : notif));
+    void supabase.from('info_notifications').update({ is_read: true }).eq('id', id);
   };
   
   const markAllAsRead = () => {
     setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
+    const adminId = user?.user_id || user?.id;
+    if (adminId) void supabase.from('info_notifications').update({ is_read: true }).eq('user_id', adminId).eq('is_read', false);
+  };
+
+  const openNotification = (notification) => {
+    markAsRead(notification.id);
+    setShowNotifications(false);
+    if (notification.link) router.push(notification.link);
   };
   
   const clearAllNotifications = () => {
@@ -350,17 +409,17 @@ export default function AdminDashboard() {
 
       if (!sentNotifications[notificationKey]) {
         if (eventDate.toDateString() === now.toDateString()) {
-          addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
           sentNotifications[notificationKey] = true;
         } else if (eventDate.toDateString() === tomorrow.toDateString()) {
-          addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
           sentNotifications[notificationKey] = true;
         } else if (eventDate.toDateString() === threeDaysLater.toDateString()) {
-          addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
           sentNotifications[notificationKey] = true;
         } else if (eventDate > now && eventDate <= sevenDaysLater) {
           const daysDiff = Math.ceil((eventDate - now) / (1000 * 60 * 60 * 24));
-          addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', null, 0);
+          addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
           sentNotifications[notificationKey] = true;
         }
       }
@@ -692,13 +751,13 @@ export default function AdminDashboard() {
     
     setSaving(true);
     try {
-      const normalizedAnnouncementType = ['urgent', 'important', 'info', 'event', 'weather'].includes(quickPublish.type)
-        ? quickPublish.type
-        : quickPublish.severity === 'critical'
-          ? 'urgent'
-          : quickPublish.type === 'alert'
-            ? 'important'
-            : 'info'
+      const announcementTypeByQuickType = {
+        announcement: 'info',
+        safety: quickPublish.severity === 'critical' ? 'urgent' : 'important',
+        traffic: 'important',
+        disaster: 'urgent',
+      }
+      const normalizedAnnouncementType = announcementTypeByQuickType[quickPublish.type] || 'info'
 
       const { error } = await supabase
         .from('info_announcements')
@@ -711,7 +770,7 @@ export default function AdminDashboard() {
           priority: quickPublish.severity === 'critical' ? 3 : quickPublish.severity === 'warning' ? 2 : 1,
           image_url: quickPublish.imageUrl || null,
           video_url: quickPublish.videoUrl || null,
-          created_by: user?.id,
+          created_by: user?.user_id || user?.id,
           status: 'published',
           published_at: new Date().toISOString()
         }]);
@@ -889,6 +948,7 @@ export default function AdminDashboard() {
               title: notification.title,
               message: notification.message,
               type: notification.type || 'info',
+              link: notification.link || null,
               read: Boolean(notification.is_read),
               timestamp: new Date(notification.created_at || Date.now()),
             }))
@@ -986,7 +1046,7 @@ export default function AdminDashboard() {
         await fetchBlogsCount();
         await fetchVenues();
         await fetchRecentActivity();
-        await fetchDashboardData(sessionUser.id);
+        await fetchDashboardData(sessionUser.user_id || sessionUser.id);
       };
 
       await loadDashboardData();
@@ -1067,7 +1127,6 @@ export default function AdminDashboard() {
     { label: 'Total Attractions', value: stats.totalSpots || 0, tone: 'sky', icon: 'attractions' },
     { label: 'Events', value: calendarStats.totalEvents || 0, tone: 'emerald', icon: 'events' },
     { label: 'Users', value: stats.totalUsers || 0, tone: 'amber', icon: 'users' },
-    { label: 'Feedback', value: recentUsers.length ? Math.min(96, 24 + recentUsers.length * 9) : 24, tone: 'violet', icon: 'feedback' },
     { label: 'Complaints', value: unreadInquiries.length || 0, tone: 'rose', icon: 'warning' },
   ];
 
@@ -1080,10 +1139,11 @@ export default function AdminDashboard() {
   ];
 
   const visitorStats = [52, 70, 88, 76, 92, 108, 114];
+  const feedbackTotal = dailyFeedbackVotes.length;
   const feedbackTrend = [
-    { label: 'Positive', pct: 82, color: 'bg-emerald-500' },
-    { label: 'Neutral', pct: 11, color: 'bg-sky-500' },
-    { label: 'Concern', pct: 7, color: 'bg-amber-500' },
+    { label: 'Positive', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'positive').length / feedbackTotal) * 100) : 0, color: 'bg-emerald-500' },
+    { label: 'Neutral', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'neutral').length / feedbackTotal) * 100) : 0, color: 'bg-sky-500' },
+    { label: 'Concern', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'concern').length / feedbackTotal) * 100) : 0, color: 'bg-amber-500' },
   ];
 
   const systemStatus = [
@@ -1227,9 +1287,9 @@ export default function AdminDashboard() {
 
               {/* Notification Bell */}
               <div className="relative">
-                <button onClick={() => setShowNotifications(!showNotifications)} className="relative bg-white p-2 rounded-2xl shadow-sm hover:shadow transition-all duration-200">
-                  <Icon name="notifications" className="text-xl" />
-                  {notifications.length > 0 && (<span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center shadow-sm">{notifications.length > 9 ? '9+' : notifications.length}</span>)}
+                <button type="button" onClick={() => setShowNotifications(!showNotifications)} className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
+                  <Bell className="h-5 w-5 stroke-[2.25]" />
+                  {unreadNotificationCount > 0 && (<span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-none text-white shadow-sm">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>)}
                 </button>
                 
                 {showNotifications && (
@@ -1237,7 +1297,8 @@ export default function AdminDashboard() {
                     <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b">
                       <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm"><Icon name="notifications" /> Notifications</h3>
                       <div className="flex gap-3">
-                        {notifications.length > 0 && (<><button onClick={markAllAsRead} className="text-xs text-blue-600">Mark all read</button><button onClick={clearAllNotifications} className="text-xs text-red-600">Clear all</button></>)}
+                        {unreadNotificationCount > 0 && <button type="button" onClick={markAllAsRead} className="text-xs text-blue-600">Mark all read</button>}
+                        {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="text-xs text-red-600">Clear all</button>}
                       </div>
                     </div>
                     <div className="max-h-96 overflow-y-auto">
@@ -1245,7 +1306,7 @@ export default function AdminDashboard() {
                         <div className="text-center py-8 text-gray-400"><p className="mt-1 text-sm">No notifications</p></div>
                       ) : (
                         notifications.map(notif => (
-                          <div key={notif.id} className={`p-3 border-b cursor-pointer ${!notif.read ? 'bg-blue-50/30' : ''} ${getNotificationColor(notif.type)}`} onClick={() => markAsRead(notif.id)}>
+                          <div key={notif.id} className={`p-3 border-b cursor-pointer ${!notif.read ? 'bg-blue-50/30' : ''} ${getNotificationColor(notif.type)}`} onClick={() => openNotification(notif)}>
                             <div className="flex items-start gap-2">
                               <div className="text-xl">{getNotificationIcon(notif.type)}</div>
                               <div className="flex-1">
@@ -1266,7 +1327,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {quickStats.map((stat) => (
             <div key={stat.label} className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
               <div className="flex items-start justify-between gap-3">
@@ -1282,53 +1343,6 @@ export default function AdminDashboard() {
           ))}
         </div>
 
-        <div className="mb-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Recent Activity Feed</p>
-                <h3 className="mt-2 text-xl font-black text-slate-900">Latest updates</h3>
-              </div>
-              <button className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600">View all</button>
-            </div>
-            <div className="space-y-3">
-              {activityFeed.map((item) => (
-                <div key={item.id || `${item.title}-${item.time}`} className="flex items-start gap-3 rounded-[1.3rem] border border-slate-200 bg-slate-50 p-3">
-                  <span className={`mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full ${item.color}`}>•</span>
-                  <div className="flex-1">
-                    <p className="text-sm font-semibold text-slate-800">{item.title}</p>
-                    <p className="mt-1 text-sm text-slate-600">{item.detail}</p>
-                  </div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">{item.time}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Quick Actions</p>
-                <h3 className="mt-2 text-xl font-black text-slate-900">Create</h3>
-              </div>
-            </div>
-            <div className="space-y-3">
-              <button onClick={() => setShowQuickPublishModal(true)} className="flex w-full items-center justify-between rounded-[1.25rem] bg-gradient-to-r from-sky-600 to-emerald-500 p-3 text-left text-white shadow-sm">
-                <span className="font-semibold">Add Attraction</span>
-                <Icon name="arrow" className="w-4 h-4" />
-              </button>
-              <button onClick={() => openCreateModal(new Date().toISOString().slice(0, 10), new Date().toISOString().slice(0, 10))} className="flex w-full items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 p-3 text-left text-slate-700">
-                <span className="font-semibold">Add Event</span>
-                <Icon name="arrow" className="w-4 h-4" />
-              </button>
-              <button onClick={() => setShowQuickPublishModal(true)} className="flex w-full items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 p-3 text-left text-slate-700">
-                <span className="font-semibold">Post Announcement</span>
-                <Icon name="arrow" className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
         <div className="mb-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
             <div className="mb-4 flex items-center justify-between">
@@ -1337,11 +1351,11 @@ export default function AdminDashboard() {
                 <h3 className="mt-2 text-xl font-black text-slate-900">Most viewed destinations</h3>
               </div>
             </div>
-            <div className="flex h-48 items-end gap-3">
+            <div className="flex h-56 items-end gap-3 border-b border-slate-100 pb-8">
               {popularAttractions.map((item) => (
-                <div key={item.name} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="flex w-full items-end justify-center rounded-t-[1rem] bg-gradient-to-t from-sky-600 to-emerald-400" style={{ height: `${item.value}%` }} />
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.name}</span>
+                <div key={item.name} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                  <div className="w-full max-w-16 rounded-t-[1rem] bg-gradient-to-t from-sky-600 to-emerald-400 shadow-[0_8px_18px_rgba(14,165,233,0.18)]" style={{ height: `${Math.max(24, Math.round((item.value / 100) * 150))}px` }} />
+                  <span className="line-clamp-2 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.name}</span>
                 </div>
               ))}
             </div>
@@ -1354,10 +1368,10 @@ export default function AdminDashboard() {
                 <h3 className="mt-2 text-xl font-black text-slate-900">Traffic overview</h3>
               </div>
             </div>
-            <div className="flex h-48 items-end gap-3">
+            <div className="flex h-56 items-end gap-3 border-b border-slate-100 pb-8">
               {visitorStats.map((value, index) => (
-                <div key={index} className="flex flex-1 flex-col items-center gap-2">
-                  <div className="w-full rounded-t-[1rem] bg-gradient-to-t from-amber-500 to-orange-300" style={{ height: `${value}%` }} />
+                <div key={index} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                  <div className="w-full max-w-10 rounded-t-[1rem] bg-gradient-to-t from-amber-500 to-orange-300 shadow-[0_8px_18px_rgba(245,158,11,0.18)]" style={{ height: `${Math.max(24, Math.round((value / 114) * 150))}px` }} />
                   <span className="text-[10px] font-medium text-slate-500">{['M','T','W','T','F','S','S'][index]}</span>
                 </div>
               ))}
@@ -1484,6 +1498,7 @@ export default function AdminDashboard() {
             <div className="mb-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Feedback Trends</p>
               <h3 className="mt-2 text-xl font-black text-slate-900">Visitor sentiment</h3>
+              <p className="mt-1 text-xs text-slate-500">{dailyFeedbackQuestion ? dailyFeedbackQuestion.question : 'No daily question published'} · {feedbackTotal} responses</p>
             </div>
             <div className="space-y-3">
               {feedbackTrend.map((item) => (
@@ -1497,6 +1512,13 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="daily-feedback-question">Daily question</label>
+              <div className="mt-2 flex gap-2">
+                <input id="daily-feedback-question" value={dailyFeedbackDraft} onChange={(event) => setDailyFeedbackDraft(event.target.value)} placeholder="Ask visitors a question..." className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                <button type="button" onClick={saveDailyFeedbackQuestion} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Publish</button>
+              </div>
             </div>
           </div>
 
@@ -1811,18 +1833,19 @@ export default function AdminDashboard() {
       {/* Quick Publish Modal */}
       {showQuickPublishModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center gap-3 mb-4">
-              <div className="bg-green-100 p-3 rounded-2xl">
-                <span className="text-2xl">Announcement</span>
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl sm:p-7">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-2xl">!</div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800">Quick Publish</h3>
+                  <p className="text-xs text-gray-500">Broadcast to all users instantly</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xl font-bold text-gray-800">Quick Publish</h3>
-                <p className="text-xs text-gray-500">Broadcast to all users instantly</p>
-              </div>
+              <button type="button" onClick={closeModal} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Close quick publish dialog">X</button>
             </div>
-            <div className="space-y-4">
-              <div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                 <select value={quickPublish.type} onChange={e => setQuickPublish(p => ({ ...p, type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
                   <option value="announcement">General Announcement</option>
@@ -1831,7 +1854,7 @@ export default function AdminDashboard() {
                   <option value="disaster">Disaster Warning</option>
                 </select>
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
                 <select value={quickPublish.severity} onChange={e => setQuickPublish(p => ({ ...p, severity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
                   <option value="info">Informational (Blue)</option>
@@ -1839,17 +1862,17 @@ export default function AdminDashboard() {
                   <option value="critical">Critical (Red)</option>
                 </select>
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
                 <input type="text" value={quickPublish.title} onChange={e => setQuickPublish(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl" maxLength="60" placeholder="Short title..." />
               </div>
-              <div>
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
                 <textarea value={quickPublish.message} onChange={e => setQuickPublish(p => ({ ...p, message: e.target.value }))} rows="3" className="w-full px-3 py-2 border border-gray-300 rounded-2xl" maxLength="200" placeholder="Your announcement message..." />
               </div>
               
               {/* Announcement Image Upload */}
-              <div>
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Announcement Image (Optional)</label>
                 <MediaUpload
                   bucket="announcements"
@@ -1864,7 +1887,7 @@ export default function AdminDashboard() {
               </div>
               
               {/* Announcement Video Upload */}
-              <div>
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Announcement Video (Optional)</label>
                 <MediaUpload
                   bucket="announcements"

@@ -267,7 +267,7 @@ export default function ThreadDetailPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
+      <div className="mx-auto max-w-6xl px-3 py-6 sm:px-4 lg:px-6">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <Link
@@ -301,6 +301,8 @@ export default function ThreadDetailPage() {
           </div>
         </div>
 
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
+        <div>
         {/* Thread */}
         <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-6">
           <div className="flex items-start justify-between gap-3">
@@ -387,8 +389,10 @@ export default function ThreadDetailPage() {
           </div>
         )}
 
+        </div>
+
         {/* Replies */}
-        <div className="space-y-4">
+        <div className="mt-6 space-y-4 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
           {replies.length > 0 ? (
             replies.map((reply) => (
               <div key={reply.id} className={`rounded-[20px] border ${reply.is_best_answer ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'} p-4`}>
@@ -435,6 +439,7 @@ export default function ThreadDetailPage() {
               <p className="text-sm text-slate-500">No replies yet. Be the first to reply!</p>
             </div>
           )}
+        </div>
         </div>
       </div>
     </main>

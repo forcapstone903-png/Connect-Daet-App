@@ -705,7 +705,7 @@ export default function TouristSpotsManagement() {
           {filteredSpots.map((spot) => {
             const category = getCategoryDisplay(spot.category);
             return (
-              <div key={spot.id} className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div key={spot.id} className="flex min-h-[430px] flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
                 <div className="relative h-48 bg-gray-100">
                   {spot.image_url ? (
                     <img src={spot.image_url} alt={spot.name} className="w-full h-full object-cover" />
@@ -723,7 +723,7 @@ export default function TouristSpotsManagement() {
                     </span>
                   </div>
                 </div>
-                <div className="p-4">
+                <div className="flex flex-1 flex-col p-4">
                   <h3 className="font-bold text-gray-800 text-lg mb-1">{spot.name}</h3>
                   <p className="text-sm text-gray-500 mb-2">Location: {spot.location}</p>
                   {spot.rating > 0 && (
@@ -739,7 +739,7 @@ export default function TouristSpotsManagement() {
                   {spot.entrance_fee && (
                     <p className="text-xs text-gray-400 flex items-center gap-1">Entrance fee: ₱{spot.entrance_fee}</p>
                   )}
-                  <div className="flex gap-2 mt-4 pt-3 border-t border-gray-100">
+                  <div className="mt-auto flex gap-2 pt-3 border-t border-gray-100">
                     <button onClick={() => openEditModal(spot)} className="flex-1 bg-blue-50 text-blue-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-blue-100">Edit</button>
                     <button onClick={() => previewSpotPublic(spot)} className="flex-1 bg-purple-50 text-purple-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-purple-100">Preview</button>
                     <button onClick={() => archiveSpot(spot)} className="flex-1 bg-yellow-50 text-yellow-700 px-3 py-2 rounded-xl text-sm font-medium hover:bg-yellow-100">Archive</button>

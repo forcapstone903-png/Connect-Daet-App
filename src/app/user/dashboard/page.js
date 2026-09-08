@@ -39,7 +39,7 @@ import { performLogout } from '@/lib/clientLogout'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
-import Comments from '@/app/components/user/Comments'
+import DailyFeedback from '@/app/components/user/DailyFeedback'
 
 // Database table constants
 const TABLES = {
@@ -174,7 +174,6 @@ export default function UserDashboardPage() {
   const [gamification, setGamification] = useState({ points: 0, level: 1, streak: 0 })
   const [toastMessage, setToastMessage] = useState('')
   const [showReactions, setShowReactions] = useState(null)
-  const [openComments, setOpenComments] = useState(null)
   const [commentCounts, setCommentCounts] = useState({})
   const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
   const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
@@ -194,6 +193,37 @@ export default function UserDashboardPage() {
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
     return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
   }, [])
+
+  useEffect(() => {
+    const authorIds = [...new Set(
+      feed
+        .filter((item) => item.created_by && (!item.author || item.author.full_name === 'Administrator'))
+        .map((item) => item.created_by)
+    )]
+    if (!authorIds.length) return undefined
+
+    let active = true
+    const hydrateAuthors = async () => {
+      const profiles = await Promise.all(authorIds.map(async (authorId) => {
+        try {
+          const response = await fetch(`/api/users/${encodeURIComponent(authorId)}`, { credentials: 'same-origin' })
+          const result = await response.json()
+          return response.ok && result.success ? result.profile : null
+        } catch {
+          return null
+        }
+      }))
+      if (!active) return
+      const authorMap = new Map(profiles.filter(Boolean).map((profile) => [profile.id, profile]))
+      if (!authorMap.size) return
+      setFeed((currentFeed) => currentFeed.map((item) => {
+        const author = item.created_by ? authorMap.get(item.created_by) : null
+        return author ? { ...item, author: { ...author, user_type: author.user_type || 'admin' } } : item
+      }))
+    }
+    void hydrateAuthors()
+    return () => { active = false }
+  }, [feed])
 
   useEffect(() => {
     const normalizedQuery = search.trim()
@@ -736,7 +766,7 @@ export default function UserDashboardPage() {
               .limit(20),
             supabase
               .from(TABLES.EVENTS)
-              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, published_at, updated_at, created_by, status')
+              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('start_date', { ascending: true })
               .limit(20),
@@ -823,6 +853,11 @@ export default function UserDashboardPage() {
           })),
           ...(nextAnnouncements || []).map((announcement) => ({
             ...withAuthor(announcement),
+            author: authorMap.get(announcement.created_by) || {
+              id: announcement.created_by,
+              full_name: 'Administrator',
+              user_type: 'admin',
+            },
             type: 'announcement',
             href: `/user/announcements/${announcement.id}`,
           })),
@@ -1117,6 +1152,8 @@ export default function UserDashboardPage() {
               {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
             </div>
 
+            <DailyFeedback userId={userId} />
+
             {!loading && false && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
               <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
@@ -1156,8 +1193,9 @@ export default function UserDashboardPage() {
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
-                  const author = item.author || (item.type === 'event' ? { full_name: item.organizer || '', user_type: 'admin' } : null)
-                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' ? 'Administrator' : 'Daet storyteller')
+                  const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
+                  const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
+                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
                   const authorRoleLabel = getAuthorRoleLabel(author || {})
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
@@ -1170,12 +1208,12 @@ export default function UserDashboardPage() {
                     <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-[16px] lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
                       <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
-                          <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
+                          <Link href={authorHref} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
                             {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
                           </Link>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                              <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
+                              <Link href={authorHref} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
                               {authorRoleLabel && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">{authorRoleLabel}</span>}
                               {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
                               <span className="text-slate-400">·</span>
@@ -1200,14 +1238,9 @@ export default function UserDashboardPage() {
                         {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
                         {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full object-cover" />}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
+                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
 
-                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
-                        {openComments === itemKey ? (
-                          <div className="mt-4"><Comments contentType={contentType} contentId={item.id} userId={userId} contentTitle={item.title} /></div>
-                        ) : (
-                          <Comments contentType={contentType} contentId={item.id} userId={userId} contentTitle={item.title} compact />
-                        )}
+                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => router.push(item.href)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
                       </div>
                     </article>
                   )

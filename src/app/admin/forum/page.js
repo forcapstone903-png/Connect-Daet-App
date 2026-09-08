@@ -142,6 +142,23 @@ export default function AdminForumPage() {
     }
   };
 
+  const archiveThread = async (thread) => {
+    try {
+      const res = await fetch(`/api/admin/forum/${thread.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'archived' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || 'Unable to archive thread');
+      showToast('Thread archived successfully!');
+      await fetchThreads();
+    } catch (err) {
+      console.error('Error archiving forum thread:', err);
+      showToast(err.message, true);
+    }
+  };
+
   const pinThread = (threadId) => {
     setPinnedThreads((prev) =>
       prev.includes(threadId) ? prev.filter((id) => id !== threadId) : [...prev, threadId]
@@ -270,7 +287,7 @@ export default function AdminForumPage() {
         <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-6">
           <div className="grid gap-4">
             {filteredThreads.length ? filteredThreads.map((thread) => (
-              <div key={thread.id} className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+              <div key={thread.id} className="flex min-h-[250px] flex-col rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
                 <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -283,6 +300,7 @@ export default function AdminForumPage() {
                     <button onClick={() => pinThread(thread.id)} className="rounded-full bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">{pinnedThreads.includes(thread.id) ? 'Unpin' : 'Pin'}</button>
                     <button onClick={() => openViewModal(thread)} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">View</button>
                     <button onClick={() => openEditModal(thread)} className="rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">Edit</button>
+                    {thread.status !== 'archived' && <button onClick={() => archiveThread(thread)} className="rounded-full bg-yellow-50 px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-100">Archive</button>}
                     <button onClick={() => deleteThread(thread)} className="rounded-full bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Delete</button>
                   </div>
                 </div>

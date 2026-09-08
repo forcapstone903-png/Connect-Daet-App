@@ -6,6 +6,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, CalendarDays, Clock, Loader, MapPin, Ticket, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import Comments from '@/app/components/user/Comments'
 
 export default function EventDetailPage() {
   const router = useRouter()
@@ -175,12 +176,13 @@ export default function EventDetailPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-[900px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+      <div className="mx-auto max-w-6xl px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <Link href="/user/events" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
           Back to Events
         </Link>
 
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
         <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
           {primaryMedia ? (
             <div className="relative h-64 w-full md:h-80">
@@ -277,6 +279,11 @@ export default function EventDetailPage() {
             )}
             {registrationMessage && <p className="mt-3 text-sm font-semibold text-sky-700">{registrationMessage}</p>}
           </div>
+        </div>
+
+        <section className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
+          <Comments contentType="event" contentId={event.id} userId={userId} contentOwnerId={event.created_by} contentTitle={event.title} />
+        </section>
         </div>
       </div>
     </main>

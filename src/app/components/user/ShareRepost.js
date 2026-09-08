@@ -15,7 +15,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
   const [dmBody, setDmBody] = useState('')
   const [shareCount, setShareCount] = useState(0)
 
-  const handleRepost = async () => {
+  const handleRepost = async (quote = null) => {
     if (!userId) {
       alert('Please log in to repost.')
       return
@@ -25,7 +25,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
         user_id: userId,
         original_content_type: contentType,
         original_content_id: contentId,
-        quote_text: quoteText || null,
+        quote_text: quote || null,
       }, { onConflict: 'user_id,original_content_type,original_content_id' })
 
       if (error) throw error
@@ -242,7 +242,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
             <div className="mt-3 flex gap-2">
               <button
                 type="button"
-                onClick={() => handleRepost()}
+                onClick={() => handleRepost(quoteText.trim() || null)}
                 disabled={!userId}
                 className="flex-1 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
               >
@@ -250,7 +250,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
               </button>
               <button
                 type="button"
-                onClick={() => { setShowRepostModal(false); handleRepost() }}
+                onClick={() => handleRepost(null)}
                 className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 Repost Only
