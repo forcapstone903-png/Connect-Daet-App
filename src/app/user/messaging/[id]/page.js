@@ -172,6 +172,14 @@ export default function ConversationPage() {
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
   }, [])
 
+  const scrollConversationToBottom = () => {
+    const messagesScroller = messagesScrollRef.current
+    if (!messagesScroller) return
+    requestAnimationFrame(() => {
+      messagesScroller.scrollTop = messagesScroller.scrollHeight
+    })
+  }
+
   const scrollToMessage = (messageId) => {
     if (!messageId) return
     const target = document.getElementById(`message-${messageId}`)
@@ -200,31 +208,73 @@ export default function ConversationPage() {
   }, [mediaPreview])
 
   useEffect(() => {
-    if (!otherUserId) return
+    if (!otherUserId) return undefined
+
     let active = true
+    let pollTimer = null
+    let firstLoad = true
 
     const loadConversation = async () => {
       try {
-        setLoading(true)
-        setError('')
+        if (!active) return
+        if (firstLoad) {
+          setLoading(true)
+          setError('')
+        }
+
         const response = await fetch(`/api/messages/${otherUserId}`, { credentials: 'same-origin' })
         const result = await response.json()
         if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load conversation.')
         if (!active) return
+
         setCurrentUser(result.current_user)
         setOtherUser(result.other_user)
-        setMessages(result.messages || [])
-        await fetch(`/api/messages/${otherUserId}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markRead: true }) })
+
+        const incomingMessages = Array.isArray(result.messages) ? result.messages : []
+        setMessages((previousMessages) => {
+          const seen = new Map(previousMessages.map((message) => [message.id, message]))
+          for (const incoming of incomingMessages) {
+            if (!seen.has(incoming.id)) seen.set(incoming.id, incoming)
+          }
+          const merged = [...seen.values()]
+          merged.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+          return merged
+        })
+
+        await fetch(`/api/messages/${otherUserId}`, {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ markRead: true }),
+        })
+
         window.dispatchEvent(new Event('daet-messages-updated'))
+        if (messagesScrollRef.current) {
+          const scrollTarget = messagesScrollRef.current
+          const shouldAutoScroll = scrollTarget.scrollHeight - scrollTarget.scrollTop - scrollTarget.clientHeight < 180
+          if (shouldAutoScroll) scrollConversationToBottom()
+        }
       } catch (loadError) {
         if (active) setError(loadError.message)
       } finally {
-        if (active) setLoading(false)
+        if (active) {
+          if (firstLoad) {
+            setLoading(false)
+            firstLoad = false
+          }
+        }
       }
     }
 
     void loadConversation()
-    return () => { active = false }
+    pollTimer = window.setInterval(() => {
+      if (active) void loadConversation()
+    }, 5000)
+
+    return () => {
+      active = false
+      if (pollTimer) window.clearInterval(pollTimer)
+    }
   }, [otherUserId])
 
   const loadGifs = async (query = pickerSearch) => {
@@ -298,7 +348,12 @@ export default function ConversationPage() {
       })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send message.')
-      setMessages((previous) => [...previous, { ...result.message, sender_user: currentUser, recipient_user: otherUser }])
+      setMessages((previous) => {
+        const merged = [...previous, { ...result.message, sender_user: currentUser, recipient_user: otherUser }]
+        const seen = new Map(merged.map((message) => [message.id, message]))
+        const ordered = [...seen.values()].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+        return ordered
+      })
       setBody('')
       setMediaFile(null)
       setMediaPreview('')
@@ -308,7 +363,9 @@ export default function ConversationPage() {
       setActionMessageId(null)
       setAttachmentMenuOpen(false)
       setPickerOpen(false)
+      window.dispatchEvent(new Event('daet-messages-updated'))
       if (mediaInputRef.current) mediaInputRef.current.value = ''
+      requestAnimationFrame(scrollConversationToBottom)
     } catch (sendError) {
       setError(sendError.message)
     } finally {
