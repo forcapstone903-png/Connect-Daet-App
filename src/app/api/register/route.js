@@ -49,15 +49,14 @@ export async function POST(request) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
     const adminSupabase = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
-    const { full_name, email, password, user_type, mobile_number } = body
+    const { full_name, email, password } = body
     const normalizedEmail = email?.toLowerCase().trim()
-    const normalizedMobile = String(mobile_number || '').trim().replace(/\s+/g, '')
     console.log('📝 Parsed body:', sanitizeRegistrationBodyForLog(body))
     
     // Validate input
-    if (!full_name || !normalizedEmail || !password || !normalizedMobile) {
+    if (!full_name || !normalizedEmail || !password) {
       return NextResponse.json(
-        { success: false, message: 'Full name, email, mobile number, and password are required' },
+        { success: false, message: 'Full name, email, and password are required' },
         { status: 400 }
       )
     }
@@ -65,13 +64,6 @@ export async function POST(request) {
     if (password.length < 6) {
       return NextResponse.json(
         { success: false, message: 'Password must be at least 6 characters long' },
-        { status: 400 }
-      )
-    }
-
-    if (normalizedMobile.length < 7) {
-      return NextResponse.json(
-        { success: false, message: 'Please enter a valid mobile number' },
         { status: 400 }
       )
     }
@@ -119,8 +111,7 @@ export async function POST(request) {
       options: {
         data: {
           full_name: full_name || '',
-          user_type: user_type || 'tourist',
-          mobile_number: normalizedMobile,
+          user_type: 'tourist',
         },
         emailRedirectTo: `${appUrl}/confirm`,
       },
@@ -161,9 +152,9 @@ export async function POST(request) {
       id: authData.user.id,
       email: normalizedEmail,
       fullName: full_name,
-      userType: user_type,
+      userType: 'tourist',
       password: hashedPassword,
-      mobileNumber: normalizedMobile,
+      mobileNumber: null,
     })
 
     console.log('📝 Creating user profile via admin client for user id:', userData?.id)
@@ -197,7 +188,7 @@ export async function POST(request) {
             id: authData.user.id,
             email: normalizedEmail,
             full_name: full_name || '',
-            user_type: user_type || 'tourist',
+            user_type: 'tourist',
           },
           warning: 'Profile creation had issues'
         })
@@ -228,7 +219,7 @@ export async function POST(request) {
         id: authData.user.id,
         email: normalizedEmail,
         full_name: full_name || '',
-        user_type: user_type || 'tourist',
+        user_type: 'tourist',
       },
       requiresConfirmation: true
     })

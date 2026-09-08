@@ -54,6 +54,8 @@ export default function TouristSpotsManagement() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [confirmingSpot, setConfirmingSpot] = useState(null);
+  const [currentSpotPage, setCurrentSpotPage] = useState(1);
+  const SPOTS_PER_PAGE = 10;
 
   const [spotForm, setSpotForm] = useState({
     name: '',
@@ -417,6 +419,12 @@ export default function TouristSpotsManagement() {
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
+  const totalSpotPages = Math.ceil(filteredSpots.length / SPOTS_PER_PAGE);
+  const paginatedSpots = filteredSpots.slice(
+    (currentSpotPage - 1) * SPOTS_PER_PAGE,
+    currentSpotPage * SPOTS_PER_PAGE
+  );
+
   const analyticsSummary = useMemo(() => {
     const safeNumber = (value) => {
       const parsed = Number(value);
@@ -496,6 +504,7 @@ export default function TouristSpotsManagement() {
 
   // Refetch spots when filters/search change
   useEffect(() => {
+    setCurrentSpotPage(1);
     fetchSpots();
   }, [fetchSpots, searchTerm, categoryFilter, statusFilter]);
 
@@ -675,7 +684,7 @@ export default function TouristSpotsManagement() {
               </tr>
             </thead>
             <tbody>
-              {filteredSpots.map((spot) => (
+              {paginatedSpots.map((spot) => (
                 <tr key={spot.id} className="border-t border-gray-100">
                   <td className="p-3"><input type="checkbox" checked={selectedSpotIds.has(spot.id)} onChange={() => toggleSelectSpot(spot.id)} /></td>
                   <td className="p-3">
@@ -699,6 +708,39 @@ export default function TouristSpotsManagement() {
             </tbody>
           </table>
         </div>
+
+        {totalSpotPages > 1 && (
+          <div className="mt-4 flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3">
+            <div className="text-xs font-medium text-gray-500">
+              Page {currentSpotPage} of {totalSpotPages} · {filteredSpots.length} results
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentSpotPage((page) => Math.max(1, page - 1))}
+                disabled={currentSpotPage === 1}
+                className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Previous
+              </button>
+              {Array.from({ length: totalSpotPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentSpotPage(page)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-medium border ${page === currentSpotPage ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                >
+                  {page}
+                </button>
+              ))}
+              <button
+                onClick={() => setCurrentSpotPage((page) => Math.min(totalSpotPages, page + 1))}
+                disabled={currentSpotPage === totalSpotPages}
+                className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Spots Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

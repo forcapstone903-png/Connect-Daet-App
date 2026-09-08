@@ -34,6 +34,27 @@ const SENT_EVENT_NOTIFICATIONS_KEY = 'sent_event_notifications';
 const SENT_WEATHER_ALERTS_KEY = 'sent_weather_alerts';
 const ERROR_COOLDOWNS_KEY = 'admin_dashboard_error_cooldowns';
 const MAX_NOTIFICATIONS = 20;
+const DASHBOARD_LOAD_TIMEOUT_MS = 15000;
+
+const withTimeout = (promise, timeoutMs, label) => Promise.race([
+  promise,
+  new Promise((resolve) => {
+    setTimeout(() => {
+      console.warn(`${label} timed out after ${timeoutMs}ms`);
+      resolve();
+    }, timeoutMs);
+  }),
+]);
+
+const getUserInitials = (user) => {
+  const name = user?.full_name || user?.email || 'User';
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'U';
+};
 
 const loadStoredNotifications = () => {
   if (typeof window === 'undefined') return [];
@@ -95,16 +116,16 @@ export default function AdminDashboard() {
   // Analytics Stats
   const [stats, setStats] = useState({
     totalUsers: 0, totalTourists: 0, totalArtisans: 0, totalOperators: 0, onlineUsers: 0,
-    totalEvents: 0, totalSpots: 0, totalBlogs: 0, pendingPosts: 0
+    totalEvents: 0, totalSpots: 0, totalBlogs: 0
   });
   const [dailyFeedbackQuestion, setDailyFeedbackQuestion] = useState(null);
   const [dailyFeedbackVotes, setDailyFeedbackVotes] = useState([]);
   const [dailyFeedbackDraft, setDailyFeedbackDraft] = useState('');
+  const [publishingFeedback, setPublishingFeedback] = useState(false);
   
   const [recentUsers, setRecentUsers] = useState([]);
   const [venues, setVenues] = useState([]);
   const [events, setEvents] = useState([]);
-  const [pendingPosts, setPendingPosts] = useState([]);
   const [unreadInquiries, setUnreadInquiries] = useState([]);
   const [activityFeed, setActivityFeed] = useState([]);
   
@@ -141,6 +162,24 @@ export default function AdminDashboard() {
   const calendarRef = useRef(null);
   const eventsRef = useRef([]);
   const locationInputRef = useRef(null);
+  const weatherPopoverRef = useRef(null);
+  const notificationsPopoverRef = useRef(null);
+
+  useEffect(() => {
+    if (!showWeatherDetails && !showNotifications) return undefined;
+
+    const handleOutsidePointerDown = (event) => {
+      if (showWeatherDetails && !weatherPopoverRef.current?.contains(event.target)) {
+        setShowWeatherDetails(false);
+      }
+      if (showNotifications && !notificationsPopoverRef.current?.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [showWeatherDetails, showNotifications]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -163,21 +202,27 @@ export default function AdminDashboard() {
   }, [user]);
 
   const saveDailyFeedbackQuestion = async () => {
+    if (publishingFeedback) return;
     const questionText = dailyFeedbackDraft.trim();
     if (!questionText) return;
-    const response = await fetch('/api/daily-feedback', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'publish', question: questionText }),
-    });
-    const result = await response.json();
-    if (!response.ok || !result.success) {
-      showToast(`Failed to save feedback question: ${result.message || 'Unable to publish'}`, true);
-      return;
+    setPublishingFeedback(true);
+    try {
+      const response = await fetch('/api/daily-feedback', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', question: questionText }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        showToast(`Failed to save feedback question: ${result.message || 'Unable to publish'}`, true);
+        return;
+      }
+      setDailyFeedbackQuestion(result.question);
+      showToast('Daily feedback question published.', false);
+    } finally {
+      setPublishingFeedback(false);
     }
-    setDailyFeedbackQuestion(result.question);
-    showToast('Daily feedback question published.', false);
   };
 
   const getCategoryColor = (category) => {
@@ -561,7 +606,7 @@ export default function AdminDashboard() {
           severity: weather.alert?.type === 'critical' ? 'critical' : 'warning',
           audience: 'all',
           priority: weather.alert?.type === 'critical' ? 3 : 2,
-          created_by: user?.id,
+          created_by: user?.user_id || user?.id,
           status: 'published',
           published_at: new Date().toISOString()
         }]);
@@ -837,22 +882,6 @@ export default function AdminDashboard() {
     setShowLocationSuggestions(false);
   };
 
-  const fetchPendingPosts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('info_user_posts')
-        .select('*')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setPendingPosts(data || []);
-      setStats(prev => ({ ...prev, pendingPosts: data?.length || 0 }));
-    } catch (err) {
-      console.error('Error fetching pending posts:', err);
-    }
-  };
-
   const fetchUnreadInquiries = async () => {
     try {
       const { data, error } = await supabase
@@ -915,7 +944,7 @@ export default function AdminDashboard() {
       const [usersResult, notificationsResult] = await Promise.all([
         supabase
           .from('info_users')
-          .select('id, email, full_name, user_type, status, is_online, created_at')
+          .select('id, email, full_name, profile_image_url, user_type, status, is_online, created_at')
           .order('created_at', { ascending: false }),
         adminUserId
           ? fetch('/api/notifications', { credentials: 'same-origin' }).then(async (response) => {
@@ -940,19 +969,25 @@ export default function AdminDashboard() {
       setRecentUsers(list.filter(u => u.user_type !== 'admin').slice(0, 5));
 
       if (!notificationsResult.error && Array.isArray(notificationsResult.data)) {
-        setNotifications(
-          notificationsResult.data
-            .map((notification) => ({
-              id: notification.id,
-              title: notification.title,
-              message: notification.message,
-              type: notification.type || 'info',
-              link: notification.link || null,
-              read: Boolean(notification.is_read),
-              timestamp: new Date(notification.created_at || Date.now()),
-            }))
-            .slice(0, MAX_NOTIFICATIONS)
-        );
+        const serverNotifications = notificationsResult.data.map((notification) => ({
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type || 'info',
+          link: notification.link || null,
+          read: Boolean(notification.is_read),
+          timestamp: new Date(notification.created_at || Date.now()),
+        }));
+
+        setNotifications((localNotifications) => {
+          const merged = new Map(localNotifications.map((notification) => [String(notification.id), notification]));
+          serverNotifications.forEach((notification) => {
+            merged.set(String(notification.id), notification);
+          });
+          return [...merged.values()]
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, MAX_NOTIFICATIONS);
+        });
       }
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -1016,7 +1051,10 @@ export default function AdminDashboard() {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        if (active) router.push('/login');
+        if (active) {
+          setLoading(false);
+          router.push('/login');
+        }
         return;
       }
 
@@ -1024,13 +1062,19 @@ export default function AdminDashboard() {
       try {
         userData = JSON.parse(session);
       } catch (error) {
-        if (active) router.push('/login');
+        if (active) {
+          setLoading(false);
+          router.push('/login');
+        }
         return;
       }
 
       const sessionUser = getStoredSessionObject() || userData;
-      if (!canAccessAdminDashboard(sessionUser)) {
-        if (active) router.push('/admin/dashboard');
+      if (!canAccessAdminDashboard({ ...sessionUser, role: sessionUser.role || sessionUser.user_type })) {
+        if (active) {
+          setLoading(false);
+          router.push('/access-denied');
+        }
         return;
       }
 
@@ -1038,18 +1082,26 @@ export default function AdminDashboard() {
 
       const loadDashboardData = async () => {
         if (!active) return;
-        await fetchEventsFromDB();
-        await fetchPendingPosts();
-        await fetchUnreadInquiries();
-        await fetchTouristSpotsCount();
-        await fetchBlogsCount();
-        await fetchVenues();
-        await fetchRecentActivity();
-        await fetchDashboardData(sessionUser.user_id || sessionUser.id);
+        if (supabase?.auth) {
+          await withTimeout(supabase.auth.getSession(), 5000, 'Supabase admin session restore');
+        }
+        const loaders = [
+          fetchEventsFromDB(),
+          fetchUnreadInquiries(),
+          fetchTouristSpotsCount(),
+          fetchBlogsCount(),
+          fetchVenues(),
+          fetchRecentActivity(),
+          fetchDashboardData(sessionUser.user_id || sessionUser.id),
+        ];
+        await withTimeout(Promise.allSettled(loaders), DASHBOARD_LOAD_TIMEOUT_MS, 'Admin dashboard data load');
       };
 
-      await loadDashboardData();
-      if (active) setLoading(false);
+      try {
+        await loadDashboardData();
+      } finally {
+        if (active) setLoading(false);
+      }
     };
 
     void checkAuth();
@@ -1116,12 +1168,6 @@ export default function AdminDashboard() {
     }).sort((a, b) => new Date(a.start) - new Date(b.start));
   };
 
-  const getTrendingEvents = () => {
-    return events
-      .filter(ev => ev.status === 'published')
-      .slice(0, 5);
-  };
-
   const quickStats = [
     { label: 'Total Attractions', value: stats.totalSpots || 0, tone: 'sky', icon: 'attractions' },
     { label: 'Events', value: calendarStats.totalEvents || 0, tone: 'emerald', icon: 'events' },
@@ -1184,7 +1230,7 @@ export default function AdminDashboard() {
               </button>
 
               {/* Weather Widget */}
-              <div className="relative">
+              <div ref={weatherPopoverRef} className="relative">
                 <button onClick={() => setShowWeatherDetails(!showWeatherDetails)} className="bg-white p-2 rounded-2xl shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 border border-gray-200">
                   {weather.loading ? (
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
@@ -1285,7 +1331,7 @@ export default function AdminDashboard() {
               </div>
 
               {/* Notification Bell */}
-              <div className="relative">
+              <div ref={notificationsPopoverRef} className="relative">
                 <button type="button" onClick={() => setShowNotifications(!showNotifications)} className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
                   <Bell className="h-5 w-5 stroke-[2.25]" />
                   {unreadNotificationCount > 0 && (<span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-none text-white shadow-sm">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>)}
@@ -1516,7 +1562,7 @@ export default function AdminDashboard() {
               <label className="text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="daily-feedback-question">Daily question</label>
               <div className="mt-2 flex gap-2">
                 <input id="daily-feedback-question" value={dailyFeedbackDraft} onChange={(event) => setDailyFeedbackDraft(event.target.value)} placeholder="Ask visitors a question..." className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
-                <button type="button" onClick={saveDailyFeedbackQuestion} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Publish</button>
+                <button type="button" onClick={saveDailyFeedbackQuestion} disabled={publishingFeedback} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">{publishingFeedback ? 'Publishing...' : 'Publish'}</button>
               </div>
             </div>
           </div>
@@ -1566,7 +1612,18 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-100">
                 {recentUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{u.full_name || u.user_name}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {u.profile_image_url ? (
+                          <img src={u.profile_image_url} alt={u.full_name || 'User'} className="h-9 w-9 rounded-full object-cover ring-2 ring-white" />
+                        ) : (
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-700 ring-2 ring-white">
+                            {getUserInitials(u)}
+                          </div>
+                        )}
+                        <span className="text-sm font-medium text-gray-900">{u.full_name || u.user_name || 'Unnamed user'}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{u.email}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
@@ -1596,99 +1653,6 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* Trending Events + Pending Moderation Side by Side */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          {/* Trending Events */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <h3 className="text-lg font-bold text-gray-800 mb-3">
-              Trending Events
-            </h3>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {getTrendingEvents().length > 0 ? (
-                getTrendingEvents().map((ev, idx) => {
-                  const eventDate = new Date(ev.start);
-                  const categoryColors = {
-                    'festival': 'bg-purple-100 text-purple-700',
-                    'concert': 'bg-red-100 text-red-700',
-                    'exhibition': 'bg-yellow-100 text-yellow-700',
-                    'workshop': 'bg-blue-100 text-blue-700',
-                    'sports': 'bg-cyan-100 text-cyan-700',
-                    'cultural': 'bg-pink-100 text-pink-700',
-                  };
-                  const catColor = categoryColors[ev.category] || 'bg-gray-100 text-gray-700';
-                  return (
-                    <div key={ev.id} className="p-3 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
-                      <div className="flex items-start gap-2">
-                        <div className="bg-orange-100 text-orange-600 font-bold text-sm w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0">
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-semibold text-gray-800 text-sm truncate">{ev.title}</p>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                          </p>
-                          {ev.location && <p className="text-xs text-gray-400 mt-0.5 truncate">Location: {ev.location}</p>}
-                          {ev.category && (
-                            <span className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full font-medium ${catColor}`}>
-                              {ev.category}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="text-center py-8 text-gray-400">
-                  <p className="mt-2 text-sm">No events yet</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Pending Moderation */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                <><Icon name="moderation" className="inline-block w-4 h-4 mr-2" />Pending Moderation</>
-                {stats.pendingPosts > 0 && (
-                  <span className="bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-0.5 rounded-full">{stats.pendingPosts}</span>
-                )}
-              </h3>
-              {stats.pendingPosts > 0 && (
-                <Link href="/admin/moderation" className="text-xs text-blue-600 hover:underline font-medium">Review all <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
-              )}
-            </div>
-            <div className="space-y-2 max-h-96 overflow-y-auto">
-              {pendingPosts.length > 0 ? (
-                <>
-                  {pendingPosts.slice(0, 5).map((post) => (
-                    <div key={post.id} className="flex items-start justify-between p-3 bg-yellow-50 border border-yellow-100 rounded-2xl hover:bg-yellow-100 transition-colors">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-gray-800 text-sm truncate">{post.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5 line-clamp-1">{post.content}</p>
-                        <div className="flex items-center gap-2 mt-1">
-                          {post.post_type && <span className="text-xs capitalize bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded-full">{post.post_type}</span>}
-                          <span className="text-xs text-gray-400">{new Date(post.created_at).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                      <Link href="/admin/moderation" className="ml-3 text-xs bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-700 whitespace-nowrap flex-shrink-0">
-                        Review
-                      </Link>
-                    </div>
-                  ))}
-                  {pendingPosts.length > 5 && (
-                    <p className="text-xs text-center text-gray-400 pt-1">+{pendingPosts.length - 5} more posts awaiting review</p>
-                  )}
-                </>
-              ) : (
-                <div className="text-center py-8 text-gray-400">
-                  <p className="mt-2 text-sm">All caught up! No pending posts.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Floating Message Envelope for Inquiries - opens a separate page */}

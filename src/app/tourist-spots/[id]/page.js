@@ -320,16 +320,17 @@ export default function TouristSpotDetailPage() {
         </div>
 
         {/* Main Card */}
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
           {/* Image Gallery */}
-          <div className="relative">
+          <div className="relative isolate">
             {galleryImages.length > 0 ? (
               <>
                 <img
                   src={getImageUrl(galleryImages[galleryIndex], defaultSpotImage)}
                   alt={spot.name}
-                  className="h-64 w-full object-cover md:h-80"
+                  className="h-[min(62vw,22rem)] min-h-64 w-full object-cover md:h-[26rem]"
                 />
+                <div className="absolute inset-0 -z-0 bg-gradient-to-t from-slate-950/80 via-slate-950/10 to-slate-950/10" />
                 {galleryImages.length > 1 && (
                   <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 gap-2">
                     {galleryImages.map((_, idx) => (
@@ -354,34 +355,27 @@ export default function TouristSpotDetailPage() {
               </div>
             )}
 
-            <div className="absolute left-3 top-3 rounded-full bg-slate-900/70 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm">
-              {spot.category || 'Destination'}
-            </div>
-
-            {spot.featured && (
-              <div className="absolute right-3 top-3 rounded-full bg-amber-500/90 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm">
-                Featured
+            <div className="absolute inset-x-4 bottom-4 z-10 flex items-end justify-between gap-3 text-white sm:inset-x-6 sm:bottom-6">
+              <div className="min-w-0">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-white/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-white backdrop-blur-sm">
+                    {spot.category || 'Destination'}
+                  </span>
+                  {spot.featured && <span className="rounded-full bg-amber-400 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-amber-950">Featured</span>}
+                </div>
+                <h1 className="break-words text-2xl font-black leading-tight sm:text-4xl">{spot.name}</h1>
+                {spot.location && <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-white/85 sm:text-sm"><MapPin className="h-3.5 w-3.5" />{spot.location}</p>}
               </div>
-            )}
-          </div>
-
-          <div className="p-5 md:p-8">
-            <div className="flex items-start justify-between gap-3">
-              <h1 className="text-2xl font-black text-slate-900 md:text-3xl">{spot.name}</h1>
-              <div className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-sm font-semibold text-amber-700 flex-shrink-0">
+              <div className="flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-sm font-bold text-amber-700 shadow-lg">
                 <Star className="h-4 w-4 fill-current" />
                 {Number(spot.rating || 0).toFixed(1)}
               </div>
             </div>
+          </div>
 
+          <div className="p-5 md:p-8">
             {/* Key Info */}
-            <div className="mt-4 flex flex-wrap gap-2">
-              {spot.location && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                  <MapPin className="h-3.5 w-3.5 text-sky-600" />
-                  {spot.location}
-                </span>
-              )}
+            <div className="flex flex-wrap gap-2">
               {spot.opening_hours && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
                   <Clock className="h-3.5 w-3.5 text-sky-600" />

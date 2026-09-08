@@ -15,14 +15,17 @@ import { startTransition, useEffect, useMemo, useState } from 'react'
 import {
   AlertCircle,
   ArrowUp,
+  CalendarPlus,
   Flame,
+  Image,
   Loader,
   LogOut,
+  MessageCircle,
+  Megaphone,
   Menu,
   MapPinned,
   MoreHorizontal,
   MapPin,
-  MessageCircle,
   RefreshCw,
   ShieldCheck,
   Search,
@@ -41,8 +44,6 @@ import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
-import DailyFeedback from '@/app/components/user/DailyFeedback'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 // Database table constants
 const TABLES = {
@@ -177,6 +178,7 @@ export default function UserDashboardPage() {
   const [gamification, setGamification] = useState({ points: 0, level: 1, streak: 0 })
   const [toastMessage, setToastMessage] = useState('')
   const [showReactions, setShowReactions] = useState(null)
+  const [openComments, setOpenComments] = useState(null)
   const [commentCounts, setCommentCounts] = useState({})
   const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
   const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
@@ -196,45 +198,6 @@ export default function UserDashboardPage() {
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
     return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
   }, [])
-
-  useEffect(() => {
-    const authorIds = [...new Set(
-      feed
-        .filter((item) => item.created_by && (!item.author || item.author.full_name === 'Administrator'))
-        .map((item) => item.created_by)
-    )]
-    if (!authorIds.length) return undefined
-
-    let active = true
-    const hydrateAuthors = async () => {
-      const profiles = await Promise.all(authorIds.map(async (authorId) => {
-        try {
-          const response = await fetch(`/api/users/${encodeURIComponent(authorId)}`, { credentials: 'same-origin' })
-          const result = await response.json()
-          return response.ok && result.success ? result.profile : null
-        } catch {
-          return null
-        }
-      }))
-      if (!active) return
-      const authorMap = new Map(profiles.filter(Boolean).map((profile) => [profile.id, profile]))
-      if (!authorMap.size) return
-      setFeed((currentFeed) => {
-        let changed = false
-        const nextFeed = currentFeed.map((item) => {
-          const author = item.created_by ? authorMap.get(item.created_by) : null
-          if (!author) return item
-          const nextAuthor = { ...author, user_type: author.user_type || 'admin' }
-          if (item.author?.id === nextAuthor.id && item.author?.full_name === nextAuthor.full_name && item.author?.profile_image_url === nextAuthor.profile_image_url) return item
-          changed = true
-          return { ...item, author: nextAuthor }
-        })
-        return changed ? nextFeed : currentFeed
-      })
-    }
-    void hydrateAuthors()
-    return () => { active = false }
-  }, [feed])
 
   useEffect(() => {
     const normalizedQuery = search.trim()
@@ -276,14 +239,11 @@ export default function UserDashboardPage() {
 
     let isMounted = true
     const loadFollowedPeople = async () => {
-      try {
-        const response = await fetch('/api/users/following', { credentials: 'same-origin' })
-        const result = await response.json()
-        if (!isMounted || !response.ok || !result.success) return
-        setFollowedSuggestions(new Set(result.following_ids || []))
-      } catch (error) {
-        if (isMounted) console.error('Followed people load failed:', error)
-      }
+      const response = await fetch('/api/users/following', { credentials: 'same-origin' })
+      const result = await response.json()
+
+      if (!isMounted || !response.ok || !result.success) return
+      setFollowedSuggestions(new Set(result.following_ids || []))
     }
 
     void loadFollowedPeople()
@@ -601,10 +561,9 @@ export default function UserDashboardPage() {
 
         const { data: currentUserProfile } = await supabase
           .from(TABLES.USERS)
-          .select('full_name, profile_image_url')
+          .select('profile_image_url')
           .eq('id', sessionUserId)
           .maybeSingle()
-        setUserName(currentUserProfile?.full_name?.trim() || sessionUserName)
         setUserAvatarUrl(currentUserProfile?.profile_image_url || activeSession.user.user_metadata?.avatar_url || '')
 
         // Track page visit (async - don't block render)
@@ -774,13 +733,13 @@ export default function UserDashboardPage() {
           Promise.all([
             supabase
               .from(TABLES.BLOGS)
-              .select('id, title, excerpt, category, tags, featured_image, images, videos, media_layout, published_at, updated_at, views, likes, comments_count, created_by')
+              .select('id, title, excerpt, category, tags, featured_image, published_at, updated_at, views, likes, comments_count, created_by')
               .eq('status', 'published')
               .order('published_at', { ascending: false })
               .limit(20),
             supabase
               .from(TABLES.EVENTS)
-              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
+              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, published_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('start_date', { ascending: true })
               .limit(20),
@@ -792,11 +751,8 @@ export default function UserDashboardPage() {
               .limit(20),
             fetch('/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
-              if (!response.ok || !result.success) return { data: [], error: null }
+              if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load followed users')
               return { data: (result.following_ids || []).map((followingId) => ({ following_id: followingId })), error: null }
-            }).catch((followingError) => {
-              console.error('Dashboard following list unavailable:', followingError)
-              return { data: [], error: null }
             }),
             supabase
               .from('info_user_posts')
@@ -870,11 +826,6 @@ export default function UserDashboardPage() {
           })),
           ...(nextAnnouncements || []).map((announcement) => ({
             ...withAuthor(announcement),
-            author: authorMap.get(announcement.created_by) || {
-              id: announcement.created_by,
-              full_name: 'Administrator',
-              user_type: 'admin',
-            },
             type: 'announcement',
             href: `/user/announcements/${announcement.id}`,
           })),
@@ -904,7 +855,7 @@ export default function UserDashboardPage() {
         console.error('Dashboard load error:', err)
         setError(err.message || 'Failed to load dashboard')
       } finally {
-        if (isMounted) setLoading(false)
+        if (isMounted && !error) setLoading(false)
       }
     }
 
@@ -913,7 +864,7 @@ export default function UserDashboardPage() {
     return () => {
       isMounted = false
     }
-  }, [authenticated, userId, feedRefreshKey])
+  }, [authenticated, userId, error, feedRefreshKey])
 
   const handleLogout = async () => {
     try {
@@ -1027,20 +978,16 @@ export default function UserDashboardPage() {
   const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
 
-  useEffect(() => {
-    const handleDocumentScroll = () => {
-      if (window.innerHeight + window.scrollY < document.documentElement.scrollHeight - 180) return
+  const handleFeedScroll = (event) => {
+    const pane = event.currentTarget
+    if (pane.scrollHeight - pane.scrollTop - pane.clientHeight > 180) return
 
-      if (hasMoreFeed) {
-        setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))
-      } else if (filteredFeed.length > 0) {
-        setFeedEndReached(true)
-      }
+    if (hasMoreFeed) {
+      setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))
+    } else if (filteredFeed.length > 0) {
+      setFeedEndReached(true)
     }
-
-    window.addEventListener('scroll', handleDocumentScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleDocumentScroll)
-  }, [filteredFeed.length, hasMoreFeed])
+  }
 
   if (!authenticated) {
     return (
@@ -1072,7 +1019,7 @@ export default function UserDashboardPage() {
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
+      <div className="mx-auto w-full max-w-[1440px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-6 lg:pb-10">
         <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
@@ -1094,7 +1041,7 @@ export default function UserDashboardPage() {
                   {(search.trim() ? searchSuggestions : recentSearches).length ? (
                     <div className="space-y-1">{(search.trim() ? searchSuggestions : recentSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setSearch(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`); setSearchFocused(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><Search className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>
                   ) : <p className="px-3 py-2 text-sm text-slate-500">{search.trim() ? 'No suggestions yet.' : 'No recent searches yet.'}</p>}
-                  {search.trim() && profileSearchResults.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>{profileSearchResults.map((person) => <UserProfileLink key={person.id} user={person} href={`/user/profile/${person.id}`} onClick={() => setSearchFocused(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-sky-50"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>{person.mutual_friends?.length > 0 && <span className="shrink-0 text-[10px] font-semibold text-sky-700">{person.mutual_friends.length} mutual</span>}</UserProfileLink>)}</div>}
+                  {search.trim() && profileSearchResults.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>{profileSearchResults.map((person) => <Link key={person.id} href={`/user/profile/${person.id}`} onClick={() => setSearchFocused(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-sky-50"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>{person.mutual_friends?.length > 0 && <span className="shrink-0 text-[10px] font-semibold text-sky-700">{person.mutual_friends.length} mutual</span>}</Link>)}</div>}
                   <Link href="/search" className="mt-1 block border-t border-slate-100 px-3 pt-3 text-xs font-bold text-sky-700 hover:text-sky-800">View search history</Link>
                 </div>
               )}
@@ -1126,22 +1073,55 @@ export default function UserDashboardPage() {
           </div>
         )}
 
-        <section
-          className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-900/20 bg-cover bg-center px-6 py-5 text-white shadow-[0_10px_28px_rgba(14,116,144,0.14)] lg:block"
-          style={{ backgroundImage: "linear-gradient(90deg, rgba(2, 25, 45, 0.86), rgba(2, 25, 45, 0.48)), url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85')" }}
-        >
+        <section className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-100 bg-[linear-gradient(115deg,#e0f2fe_0%,#f0fdfa_52%,#fff7ed_100%)] px-6 py-5 shadow-[0_10px_28px_rgba(14,116,144,0.08)] lg:block">
           <div className="flex items-center justify-between gap-6">
             <div className="max-w-[620px]">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">Daet community journal</p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight text-white">Stories, places, and people worth knowing.</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-100">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Daet community journal</p>
+              <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Stories, places, and people worth knowing.</h1>
+              <p className="mt-2 text-sm leading-6 text-slate-600">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
             </div>
-            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
+            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/80 bg-white/75 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
           </div>
         </section>
 
-        <div className="dashboard-feed-layout lg:h-[calc(100vh-11rem)] lg:min-h-0 lg:overflow-hidden">
-          <div className="dashboard-feed-main min-w-0 lg:min-h-0 lg:max-h-full lg:overflow-y-auto lg:pr-3 lg:overscroll-contain">
+        <div className="lg:grid lg:grid-cols-[240px_minmax(0,680px)_276px] lg:items-start lg:justify-center lg:gap-5">
+          <aside className="hidden max-h-[calc(100vh-7rem)] min-w-0 space-y-4 overflow-y-auto pr-1 lg:block">
+            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
+              <div className="border-b border-slate-100 px-2 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
+                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
+                  </div>
+                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
+                </div>
+              </div>
+            </div>
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+              <section className="rounded-[16px] border border-sky-100 bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
+                <div className="space-y-3">
+                  {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="block rounded-xl bg-sky-50 p-3 hover:bg-sky-100"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p><p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p></Link>}
+                  {suggestions.suggestedPeople.length > 0 && (
+                    <div className="rounded-xl bg-emerald-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
+                      <div className="mt-2 space-y-2">
+                        {suggestions.suggestedPeople.map((person) => (
+                          <div key={person.id} className="flex items-center justify-between gap-2">
+                            <Link href={`/user/profile/${person.id}`} className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</Link>
+                            <button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="shrink-0 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : 'Follow'}</button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><Megaphone className="h-4 w-4 text-amber-700" /><h2 className="text-sm font-black text-slate-900">Announcements</h2></div><div className="space-y-2">{announcements.slice(0, 3).map((ann) => { const announcement = normalizeAnnouncementRecord(ann); return <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className="block rounded-xl bg-amber-50 p-3 hover:bg-amber-100"><p className="line-clamp-2 text-xs font-bold text-slate-800">{announcement.title}</p><p className="mt-1 text-[10px] text-slate-500">{formatDate(announcement.published_at || announcement.created_at)}</p></Link> })}</div></div>
+            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm"><div className="mb-3 flex items-center gap-2"><CalendarPlus className="h-4 w-4 text-emerald-700" /><h2 className="text-sm font-black text-slate-900">Upcoming events</h2></div><div className="space-y-2">{feed.filter((item) => item.type === 'event').slice(0, 3).map((event) => <Link key={event.id} href={event.href} className="block rounded-xl bg-emerald-50 p-3 hover:bg-emerald-100"><p className="line-clamp-2 text-xs font-bold text-slate-800">{event.title}</p><p className="mt-1 text-[10px] text-slate-500">{event.start_date ? formatDate(event.start_date) : 'Date to be announced'}</p></Link>)}</div></div>
+          </aside>
+
+          <div className="min-w-0 max-h-[calc(100vh-7rem)] overflow-y-auto pr-1" onScroll={handleFeedScroll}>
         <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
             <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
@@ -1152,9 +1132,15 @@ export default function UserDashboardPage() {
               <Zap className="h-4 w-4" />
             </Link>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
+          <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
             <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-white">Write a story</Link>
-            <Link href="/user/blogs/new?share=media" className="rounded-xl py-2 hover:bg-white">Post a photo or video</Link>
+            <Link href="/user/events" className="rounded-xl py-2 hover:bg-white">Find an event</Link>
+            <Link href="/user/forums" className="rounded-xl py-2 hover:bg-white">Start a chat</Link>
+          </div>
+          <div className="mt-3 hidden items-center gap-2 border-t border-slate-100 pt-3 lg:flex">
+            <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-sky-50 hover:text-sky-700"><Image className="h-4 w-4 text-sky-600" />Photo or video</Link>
+            <Link href="/user/events" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-amber-50 hover:text-amber-700"><CalendarPlus className="h-4 w-4 text-amber-600" />Event</Link>
+            <Link href="/user/forums" className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-600 hover:bg-emerald-50 hover:text-emerald-700"><MessageCircle className="h-4 w-4 text-emerald-600" />Discussion</Link>
           </div>
         </div>
 
@@ -1168,8 +1154,6 @@ export default function UserDashboardPage() {
             <div className="hidden items-center border-b border-slate-200 lg:flex">
               {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
             </div>
-
-            <DailyFeedback userId={userId} />
 
             {!loading && false && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
               <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
@@ -1186,7 +1170,7 @@ export default function UserDashboardPage() {
                   {suggestions.suggestedPeople.length > 0 && (
                     <div className="rounded-xl bg-emerald-50 p-3">
                       <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
-                      <div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><UserProfileLink user={person} className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[10px] font-bold text-white">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span></UserProfileLink><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : <><UserPlus className="h-3 w-3" />Follow</>}</button></div>)}</div>
+                      <div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><Link href={`/user/profile/${person.id}`} className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[10px] font-bold text-white">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span></Link><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : <><UserPlus className="h-3 w-3" />Follow</>}</button></div>)}</div>
                     </div>
                   )}
 
@@ -1210,15 +1194,13 @@ export default function UserDashboardPage() {
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
-                  const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
-                  const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
-                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
+                  const author = item.author || (item.type === 'event' ? { full_name: item.organizer || '', user_type: 'admin' } : null)
+                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' ? 'Administrator' : 'Daet storyteller')
                   const authorRoleLabel = getAuthorRoleLabel(author || {})
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
-                  const postGallery = item.type === 'blog' ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
-                  const postImageUrl = item.type === 'blog' ? item.featured_image || (item.images || [])[0] : item.type === 'announcement' ? item.image_url : eventMediaUrl
+                  const postImageUrl = item.type === 'blog' ? item.featured_image : item.type === 'announcement' ? item.image_url : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
@@ -1255,9 +1237,14 @@ export default function UserDashboardPage() {
                         {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
                         {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
+                        {(postImageUrl || postVideoUrl) && <div className="feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px]">{postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
 
-                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => router.push(item.href)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
+                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => setOpenComments(openComments === itemKey ? null : itemKey)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
+                        {openComments === itemKey ? (
+                          <div className="mt-4"><Comments contentType={contentType} contentId={item.id} userId={userId} contentTitle={item.title} /></div>
+                        ) : (
+                          <Comments contentType={contentType} contentId={item.id} userId={userId} contentTitle={item.title} compact />
+                        )}
                       </div>
                     </article>
                   )
@@ -1268,36 +1255,14 @@ export default function UserDashboardPage() {
           </section>
 
           </div>
-          </div>
 
-          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4 lg:min-h-0 lg:block lg:max-h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
-            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
-              <div className="border-b border-slate-100 px-2 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
-                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
-                  </div>
-                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
-                </div>
-              </div>
-            </div>
-
+          <aside className="hidden max-h-[calc(100vh-7rem)] min-w-0 space-y-4 overflow-y-auto pr-1 lg:block">
             <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p><Flame className="h-4 w-4 text-amber-500" /></div>
               <p className="mt-3 text-3xl font-black text-slate-950">{gamification.points}<span className="ml-1 text-sm font-semibold text-slate-500">pts</span></p>
               <p className="mt-1 text-xs text-slate-500">Level {gamification.level} · {gamification.streak}-day streak</p>
               <Link href="/user/rewards" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Star className="h-3.5 w-3.5 text-amber-300" />View rewards</Link>
             </div>
-
-            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
-              <section className="rounded-[16px] border border-sky-100 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
-                <div className="space-y-3">
-                  {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="block rounded-xl bg-sky-50 p-3 hover:bg-sky-100"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p><p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p></Link>}
-                  {suggestions.suggestedPeople.length > 0 && <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p><div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><UserProfileLink user={person} className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</UserProfileLink><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="shrink-0 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : 'Follow'}</button></div>)}</div></div>}
-                </div>
-              </section>
-            )}
 
             <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
@@ -1307,6 +1272,7 @@ export default function UserDashboardPage() {
           </aside>
         </div>
         <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
+        </div>
       </div>
     </main>
   )
