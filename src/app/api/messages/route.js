@@ -30,43 +30,60 @@ export async function GET(request) {
   if (settingsError) return NextResponse.json({ success: false, message: settingsError.message }, { status: 500 })
   const archivedByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting.is_archived]))
 
-  const participantIds = [...new Set((data || []).flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
+  const rows = data || []
+  const participantIds = [...new Set(rows.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
   const allUserIds = [...new Set([userId, ...participantIds])]
   const { data: users } = allUserIds.length
     ? await adminSupabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', allUserIds)
     : { data: [] }
-  const usersById = new Map((users || []).map((user) => [user.id, user]))
-  const conversations = []
-  const conversationIds = new Set()
 
-  for (const message of data || []) {
+  const usersById = new Map((users || []).map((user) => [user.id, user]))
+  const latestByConversation = new Map()
+
+  for (const message of rows) {
     const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
+    if (!otherUserId) continue
     if (Boolean(archivedByUser.get(otherUserId)) !== archived) continue
-    if (!otherUserId || conversationIds.has(otherUserId)) continue
-    conversationIds.add(otherUserId)
-    const unreadCount = (data || []).filter((candidate) => candidate.sender_id === otherUserId && candidate.recipient_id === userId && !candidate.read_at).length
-    conversations.push({
-      id: message.id,
-      other_user: usersById.get(otherUserId) || null,
-      body: message.body || (message.media_type === 'video' ? 'Video' : 'Photo'),
-      created_at: message.created_at,
-      sender_id: message.sender_id,
-      recipient_id: message.recipient_id,
-      unread_count: unreadCount,
-    })
+
+    const existing = latestByConversation.get(otherUserId)
+    if (!existing || new Date(message.created_at) > new Date(existing.created_at)) {
+      latestByConversation.set(otherUserId, message)
+    }
   }
+
+  const conversationRows = [...latestByConversation.entries()]
+    .map(([otherUserId, latestMessage]) => {
+      const unreadCount = rows.filter((candidate) => candidate.sender_id === otherUserId && candidate.recipient_id === userId && !candidate.read_at).length
+      const previewText = latestMessage.body?.trim()
+        || (latestMessage.media_type === 'gif' ? 'GIF'
+        : latestMessage.media_type === 'sticker' ? 'Sticker'
+        : latestMessage.media_type === 'video' ? 'Video'
+        : latestMessage.media_type === 'image' ? 'Photo'
+        : 'New message')
+
+      return {
+        id: otherUserId,
+        other_user: usersById.get(otherUserId) || null,
+        body: previewText,
+        created_at: latestMessage.created_at,
+        sender_id: latestMessage.sender_id,
+        recipient_id: latestMessage.recipient_id,
+        unread_count: unreadCount,
+      }
+    })
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
 
   return NextResponse.json({
     success: true,
-    conversations,
-    messages: (data || []).map((message) => ({
+    conversations: conversationRows,
+    messages: rows.map((message) => ({
       ...message,
       other_user: usersById.get(message.sender_id === userId ? message.recipient_id : message.sender_id) || null,
       sender_user: usersById.get(message.sender_id) || null,
       recipient_user: usersById.get(message.recipient_id) || null,
     })),
     current_user: usersById.get(userId) || { id: userId, full_name: 'You', profile_image_url: null },
-    unread_messages: (data || []).filter((message) => message.sender_id !== userId && message.recipient_id === userId && !message.read_at).length,
+    unread_messages: rows.filter((message) => message.sender_id !== userId && message.recipient_id === userId && !message.read_at).length,
   })
 }
 
@@ -79,8 +96,8 @@ export async function POST(request) {
   const recipientId = String(body.recipientId || '').trim()
   const messageBody = String(body.body || '').trim()
   const mediaUrl = String(body.mediaUrl || '').trim() || null
-  const mediaType = ['image', 'video'].includes(body.mediaType) ? body.mediaType : null
-  const messageType = ['text', 'image', 'video'].includes(body.messageType)
+  const mediaType = ['image', 'video', 'gif', 'sticker'].includes(body.mediaType) ? body.mediaType : null
+  const messageType = ['text', 'image', 'video', 'gif', 'sticker'].includes(body.messageType)
     ? body.messageType
     : mediaType || 'text'
   const replyToMessageId = String(body.replyToMessageId || '').trim() || null

@@ -96,9 +96,19 @@ export default function UserMessagingPage() {
       }
     }
 
-    if (getStoredSession()) loadMessages()
-    else queueMicrotask(() => setLoading(false))
+    if (getStoredSession()) {
+      void loadMessages()
+      const refreshTimer = window.setInterval(() => {
+        if (active) void loadMessages()
+      }, 5000)
 
+      return () => {
+        active = false
+        window.clearInterval(refreshTimer)
+      }
+    }
+
+    queueMicrotask(() => setLoading(false))
     return () => { active = false }
   }, [retryKey])
 
