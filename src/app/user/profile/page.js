@@ -139,6 +139,7 @@ export default function UserProfilePage() {
     points: 0,
   })
   const [saving, setSaving] = useState(false)
+  const levelName = `Level ${profile.level || 1}`
 
   useEffect(() => {
     const currentSession = readStoredSession()
@@ -433,7 +434,6 @@ export default function UserProfilePage() {
             <Link href="/user/profile/connections?tab=following" className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></Link>
           </div>
 
-<<<<<<< HEAD
           <div className="p-4 sm:p-6">
             <section className="mb-5 grid gap-4 sm:grid-cols-2">
               <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
@@ -474,17 +474,6 @@ export default function UserProfilePage() {
               </div>
 
             </section>
-=======
-          <section className="m-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:m-6 sm:mb-0 sm:p-5">
-            <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
-            <p className="max-w-3xl text-sm leading-6 text-slate-700">{profile.bio}</p>
-            <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-slate-600">
-              <span className="flex items-center gap-2"><MapPin className="h-4 w-4 text-slate-400" />{profile.location}</span>
-              <span className="flex items-center gap-2"><Globe className="h-4 w-4 text-slate-400" />{profile.email || 'No email available'}</span>
-              <span className="flex items-center gap-2"><Briefcase className="h-4 w-4 text-slate-400" />{profile.points || 0} points</span>
-            </div>
-          </section>
->>>>>>> d0984bcae7761afe714b0f2e896c8475e19f0dea
 
           <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0 p-4 sm:p-6 lg:pr-0">
@@ -700,6 +689,7 @@ export default function UserProfilePage() {
             <div className="rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_12px_30px_rgba(15,23,42,0.14)]"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200">Traveler snapshot</p><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/10 p-3"><p className="text-2xl font-black">{profile.points || 0}</p><p className="mt-1 text-[11px] text-slate-300">Points</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-2xl font-black">{stats.posts}</p><p className="mt-1 text-[11px] text-slate-300">Shared</p></div></div><p className="mt-4 text-xs leading-5 text-slate-300">Your Daet stories and community discoveries.</p></div>
             <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Profile details</p><div className="mt-4 space-y-3 text-sm text-slate-600"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</div><div className="flex items-center gap-2"><Users className="h-4 w-4 text-sky-600" />Community member</div></div></div>
           </aside>
+        </div>
         </div>
         </div>
 
