@@ -17,7 +17,7 @@ export async function GET(request) {
   const archived = new URL(request.url).searchParams.get('archived') === 'true'
   const { data, error } = await adminSupabase
     .from('direct_messages')
-    .select('id, sender_id, recipient_id, body, media_url, media_type, created_at, read_at')
+    .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
     .order('created_at', { ascending: false })
     .limit(200)
@@ -77,6 +77,7 @@ export async function POST(request) {
   const messageBody = String(body.body || '').trim()
   const mediaUrl = String(body.mediaUrl || '').trim() || null
   const mediaType = ['image', 'video'].includes(body.mediaType) ? body.mediaType : null
+  const replyToMessageId = String(body.replyToMessageId || '').trim() || null
   if (!recipientId || (!messageBody && !mediaUrl) || messageBody.length > 2000 || recipientId === senderId) {
     return NextResponse.json({ success: false, message: 'A valid recipient and message are required.' }, { status: 400 })
   }
@@ -84,10 +85,20 @@ export async function POST(request) {
   const { data: recipient } = await adminSupabase.from('info_users').select('id').eq('id', recipientId).eq('status', 'active').maybeSingle()
   if (!recipient) return NextResponse.json({ success: false, message: 'Recipient not found.' }, { status: 404 })
 
+  if (replyToMessageId) {
+    const { data: originalMessage } = await adminSupabase
+      .from('direct_messages')
+      .select('id')
+      .eq('id', replyToMessageId)
+      .or(`and(sender_id.eq.${senderId},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${senderId})`)
+      .maybeSingle()
+    if (!originalMessage) return NextResponse.json({ success: false, message: 'The message you are replying to was not found.' }, { status: 400 })
+  }
+
   const { data, error } = await adminSupabase
     .from('direct_messages')
-    .insert({ sender_id: senderId, recipient_id: recipientId, body: messageBody || null, media_url: mediaUrl, media_type: mediaType })
-    .select('id, sender_id, recipient_id, body, media_url, media_type, created_at, read_at')
+    .insert({ sender_id: senderId, recipient_id: recipientId, body: messageBody || null, media_url: mediaUrl, media_type: mediaType, reply_to_message_id: replyToMessageId })
+    .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
     .single()
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
 
