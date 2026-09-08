@@ -39,6 +39,7 @@ export default function ConversationPage() {
   const [swipeState, setSwipeState] = useState({ id: null, offset: 0 })
   const mediaInputRef = useRef(null)
   const messagesScrollRef = useRef(null)
+  const selectedMessageRef = useRef(null)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
 
   const clearGesture = () => {
@@ -48,6 +49,7 @@ export default function ConversationPage() {
 
   const handleMessagePointerDown = (event, messageId) => {
     clearGesture()
+    if (!event.target.closest('button, a, video, input, textarea')) event.preventDefault()
     event.currentTarget.setPointerCapture?.(event.pointerId)
     gestureRef.current = {
       id: messageId,
@@ -101,6 +103,17 @@ export default function ConversationPage() {
     setReplyTo(message)
     setActionMessageId(null)
   }
+
+  useEffect(() => {
+    const handleOutsidePointerDown = (event) => {
+      if (selectedMessageRef.current && !selectedMessageRef.current.contains(event.target)) {
+        setActionMessageId(null)
+      }
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
+  }, [])
 
   const scrollToMessage = (messageId) => {
     if (!messageId) return
@@ -296,6 +309,7 @@ export default function ConversationPage() {
                   <div id={`message-${message.id}`} key={message.id} className={`flex items-end gap-2 px-4 transition-colors duration-500 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'bg-amber-50' : ''}`}>
                     {!isOwnMessage && <Link href={`/user/profile/${otherUser.id}`} aria-label={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></Link>}
                     <div
+                      ref={isActionOpen ? selectedMessageRef : null}
                       data-message-id={message.id}
                       onContextMenu={(event) => { event.preventDefault(); setActionMessageId(message.id) }}
                       onPointerDown={(event) => handleMessagePointerDown(event, message.id)}
@@ -303,7 +317,7 @@ export default function ConversationPage() {
                       onPointerUp={(event) => handleMessagePointerUp(event, message.id)}
                       onPointerCancel={handleMessagePointerCancel}
                       style={{ touchAction: 'pan-y', transform: swipeState.id === message.id ? `translateX(${swipeState.offset}px)` : undefined }}
-                      className="relative max-w-[80%] transition-transform duration-150"
+                      className="message-wrapper relative max-w-[80%] transition-transform duration-150"
                     >
                       {swipeState.id === message.id && Math.abs(swipeState.offset) > 10 && <div className={`absolute inset-y-0 flex items-center text-[#147d75] ${swipeState.offset >= 0 ? '-left-9' : '-right-9'}`}><CornerUpLeft className="h-5 w-5" /></div>}
                       <div className={`rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
@@ -312,7 +326,7 @@ export default function ConversationPage() {
                         {message.body && <p>{message.body}</p>}
                         <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
                       </div>
-                      {isActionOpen && <div className={`absolute z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-lg ${isOwnMessage ? 'right-0' : 'left-0'} -top-11`}><button type="button" onClick={() => selectReply(message)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"><CornerUpLeft className="h-3.5 w-3.5" /> Reply</button><button type="button" onClick={() => { setMessageToDelete(message); setActionMessageId(null) }} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete</button></div>}
+                      {isActionOpen && <div onPointerDown={(event) => event.stopPropagation()} className={`message-action-menu absolute z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-lg ${isOwnMessage ? 'right-0' : 'left-0'} -top-11`}><button type="button" onClick={() => selectReply(message)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"><CornerUpLeft className="h-3.5 w-3.5" /> Reply</button><button type="button" onClick={() => { setMessageToDelete(message); setActionMessageId(null) }} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete</button></div>}
                     </div>
                     {isOwnMessage && <ProfileAvatar user={currentUser} size="h-8 w-8" />}
                   </div>
