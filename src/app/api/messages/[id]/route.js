@@ -75,12 +75,15 @@ export async function DELETE(request, { params }) {
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
   if (!otherUserId || otherUserId === userId) return NextResponse.json({ success: false, message: 'Invalid conversation.' }, { status: 400 })
 
+  const messageId = new URL(request.url).searchParams.get('messageId')
+  if (!messageId) return NextResponse.json({ success: false, message: 'A message ID is required.' }, { status: 400 })
+
   const { error } = await adminSupabase
     .from('direct_messages')
     .delete()
+    .eq('id', messageId)
     .or(`and(sender_id.eq.${userId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${userId})`)
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
 
-  await adminSupabase.from('message_conversation_settings').delete().eq('user_id', userId).eq('other_user_id', otherUserId)
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, message_id: messageId })
 }

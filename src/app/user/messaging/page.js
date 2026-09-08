@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, Mail, Plus, Search, Send, Trash2, UserRound, X } from 'lucide-react'
+import { Archive, Mail, Plus, Search, Send, UserRound, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession } from '@/lib/authCookies'
 
@@ -62,18 +62,6 @@ export default function UserMessagingPage() {
     const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ isArchived }) })
     const result = await response.json()
     if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update conversation.')
-    setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
-    setRevealedConversation(null)
-  }
-
-  const deleteConversation = async (conversationId) => {
-    if (!window.confirm('Delete this conversation permanently?')) return
-    const response = await fetch(`/api/messages/${conversationId}`, { method: 'DELETE', credentials: 'same-origin' })
-    const result = await response.json()
-    if (!response.ok || !result.success) {
-      window.alert(result.message || 'Unable to delete conversation.')
-      return
-    }
     setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
     setRevealedConversation(null)
   }
@@ -177,7 +165,7 @@ export default function UserMessagingPage() {
 
   return (
     <main className="min-h-screen bg-[#eef4f5] text-slate-900">
-      <div className="mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
+      <div className="mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
         <header className="mb-4 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <div>
@@ -226,7 +214,7 @@ export default function UserMessagingPage() {
         <div className="relative mb-4 flex items-center gap-2 border border-slate-200 bg-white px-4 py-3 shadow-sm">
           <Search className="h-4 w-4 text-slate-400" />
           <input value={recipientQuery} onChange={(event) => setRecipientQuery(event.target.value)} placeholder="Search a community member" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
-          {recipientResults.length > 0 && <div className="absolute left-3 right-3 top-[4.5rem] z-10 border border-slate-200 bg-white shadow-lg sm:left-auto sm:right-auto sm:w-[calc(100%-2rem)]">{recipientResults.map((person) => <Link key={person.id} href={`/user/messaging/${encodeURIComponent(person.id)}`} onClick={() => setRecipientResults([])} className="flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-3.5 w-3.5" />}</span><span className="text-xs font-semibold">{person.full_name || 'Community member'}</span></Link>)}</div>}
+          {recipientResults.length > 0 && <div className="absolute left-3 right-3 top-18 z-10 border border-slate-200 bg-white shadow-lg sm:left-auto sm:right-auto sm:w-[calc(100%-2rem)]">{recipientResults.map((person) => <Link key={person.id} href={`/user/messaging/${encodeURIComponent(person.id)}`} onClick={() => setRecipientResults([])} className="flex items-center gap-2 px-3 py-2 text-left hover:bg-slate-50"><span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-3.5 w-3.5" />}</span><span className="text-xs font-semibold">{person.full_name || 'Community member'}</span></Link>)}</div>}
         </div>
 
         <section className="border border-slate-200 bg-white shadow-sm">
@@ -258,7 +246,6 @@ export default function UserMessagingPage() {
                     <div key={conversationId} className="relative overflow-hidden" onTouchStart={(event) => handleTouchStart(event, conversationId)} onTouchMove={handleTouchMove} onTouchEnd={(event) => handleTouchEnd(event, conversationId)}>
                       <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
                         <button type="button" onClick={() => updateArchive(conversationId, true)} aria-label="Archive conversation" title="Archive" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700"><Archive className="h-4 w-4" /></button>
-                        {revealed && <button type="button" onClick={() => deleteConversation(conversationId)} aria-label="Delete conversation" title="Delete" className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-700"><Trash2 className="h-4 w-4" /></button>}
                       </div>
                       <Link key={conversationId} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 bg-white px-4 py-4 transition-transform duration-200 hover:bg-[#f5fbfa] sm:px-5 ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
