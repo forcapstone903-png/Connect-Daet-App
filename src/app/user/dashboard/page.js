@@ -41,6 +41,7 @@ import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDispla
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
 import DailyFeedback from '@/app/components/user/DailyFeedback'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 // Database table constants
 const TABLES = {
