@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CornerUpLeft, Paperclip, Send, Trash2, X } from 'lucide-react'
+import { ArrowLeft, CornerUpLeft, LoaderCircle, Plus, Search, Send, Smile, Trash2, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
+import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -15,6 +16,46 @@ function ProfileAvatar({ user, size = 'h-10 w-10' }) {
       {user?.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Profile'} className="h-full w-full object-cover" /> : getInitials(user?.full_name)}
     </span>
   )
+}
+
+const EMOJI_CATEGORIES = {
+  Recent: ['😀', '😂', '😍', '👍', '❤️', '🔥', '👏', '😭'],
+  Smileys: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😍', '🥰', '😘', '😎', '🤔', '😭', '😡'],
+  People: ['👋', '🙌', '👏', '👍', '👎', '🙏', '💪', '🤝', '👀', '💃', '🕺'],
+  Animals: ['🐶', '🐱', '🐭', '🐹', '🐰', '🦊', '🐻', '🐼', '🐨', '🐯', '🦁', '🐸'],
+  Food: ['🍎', '🍕', '🍔', '🍟', '🌮', '🍣', '🍩', '🍪', '🍰', '☕', '🍺', '🍓'],
+  Activities: ['⚽', '🏀', '🏈', '🎮', '🎵', '🎉', '🎂', '🏆', '🎨', '🎸'],
+  Travel: ['🚗', '🚌', '✈️', '🚀', '🏝️', '🏖️', '🌋', '🗺️', '🗽', '🏕️'],
+  Objects: ['💡', '📱', '💻', '📷', '🎁', '💌', '🔑', '📚', '💰', '☂️'],
+  Symbols: ['✅', '❌', '❗', '❓', '💯', '⭐', '✨', '❤️', '💔', '♻️'],
+}
+
+const STICKER_PHRASES = ['Nah, I\'m busy', 'Leave me alone', 'Not today', 'I\'m tired', 'Nope', 'LOL', 'HAHAHA', 'OMG', 'Seriously?', 'Bruh', 'Wait...', 'Good morning', 'Good night', 'Thank you', 'Sorry']
+
+function createStickerUrl(label) {
+  const palette = ['#147d75', '#f59e0b', '#ef4444', '#8b5cf6', '#2563eb', '#f43f5e']
+  const index = label.length % palette.length
+  const accent = palette[index]
+  const safeLabel = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="480" height="280" viewBox="0 0 480 280">
+      <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+          <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.18"/>
+        </filter>
+      </defs>
+      <g filter="url(#shadow)">
+        <rect x="18" y="20" width="444" height="240" rx="54" fill="#fff" stroke="${accent}" stroke-width="12"/>
+        <path d="M90 70 Q145 30 185 70" fill="none" stroke="${accent}" stroke-width="10" stroke-linecap="round" opacity="0.88"/>
+        <circle cx="120" cy="108" r="26" fill="${accent}" opacity="0.12"/>
+        <path d="M104 110 Q120 86 136 110" fill="none" stroke="${accent}" stroke-width="9" stroke-linecap="round"/>
+        <path d="M104 118 Q120 134 136 118" fill="none" stroke="${accent}" stroke-width="9" stroke-linecap="round"/>
+        <text x="240" y="158" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="800" fill="${accent}" letter-spacing="2">${safeLabel}</text>
+        <path d="M70 200 C138 180, 176 214, 240 210 C310 206, 340 182, 410 200" fill="none" stroke="${accent}" stroke-width="10" stroke-linecap="round" opacity="0.8"/>
+      </g>
+    </svg>
+  `
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
 
 export default function ConversationPage() {
@@ -32,12 +73,22 @@ export default function ConversationPage() {
   const [mediaPreview, setMediaPreview] = useState('')
   const [mediaType, setMediaType] = useState(null)
   const [videoTooLarge, setVideoTooLarge] = useState(null)
+  const [selectedMedia, setSelectedMedia] = useState(null)
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [pickerCategory, setPickerCategory] = useState('Smileys')
+  const [pickerSearch, setPickerSearch] = useState('')
+  const [gifs, setGifs] = useState([])
+  const [gifsLoading, setGifsLoading] = useState(false)
+  const [gifError, setGifError] = useState('')
   const [replyTo, setReplyTo] = useState(null)
   const [actionMessageId, setActionMessageId] = useState(null)
   const [highlightedMessageId, setHighlightedMessageId] = useState(null)
   const [messageToDelete, setMessageToDelete] = useState(null)
   const [swipeState, setSwipeState] = useState({ id: null, offset: 0 })
   const mediaInputRef = useRef(null)
+  const attachmentMenuRef = useRef(null)
+  const pickerRef = useRef(null)
   const messagesScrollRef = useRef(null)
   const selectedMessageRef = useRef(null)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
@@ -109,6 +160,12 @@ export default function ConversationPage() {
       if (selectedMessageRef.current && !selectedMessageRef.current.contains(event.target)) {
         setActionMessageId(null)
       }
+      if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target)) {
+        setAttachmentMenuOpen(false)
+      }
+      if (pickerRef.current && !pickerRef.current.contains(event.target)) {
+        setPickerOpen(false)
+      }
     }
 
     document.addEventListener('pointerdown', handleOutsidePointerDown)
@@ -117,7 +174,8 @@ export default function ConversationPage() {
 
   const scrollToMessage = (messageId) => {
     if (!messageId) return
-    document.getElementById(`message-${messageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const target = document.getElementById(`message-${messageId}`)
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     setHighlightedMessageId(messageId)
     window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1200)
   }
@@ -167,15 +225,56 @@ export default function ConversationPage() {
     return () => { active = false }
   }, [otherUserId])
 
+  const loadGifs = async (query = pickerSearch) => {
+    const controller = new AbortController()
+    setGifsLoading(true)
+    setGifError('')
+    try {
+      const response = await fetch(`/api/gifs?q=${encodeURIComponent(query || 'happy')}`, { signal: controller.signal, credentials: 'same-origin' })
+      const result = await response.json()
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to load GIFs.')
+      }
+      const items = Array.isArray(result.gifs) ? result.gifs : []
+      setGifs(items.filter((gif) => gif?.url))
+      if (items.length === 0) {
+        setGifError('No GIFs matched your search.')
+      }
+      return () => controller.abort()
+    } catch (loadError) {
+      if (loadError?.name !== 'AbortError') {
+        setGifError('Couldn\'t load GIFs')
+      }
+    } finally {
+      setGifsLoading(false)
+    }
+    return undefined
+  }
+
+  useEffect(() => {
+    if (!pickerOpen || pickerCategory !== 'GIFs') return undefined
+    const timer = window.setTimeout(() => {
+      void loadGifs(pickerSearch)
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [pickerOpen, pickerCategory, pickerSearch])
+
   const sendMessage = async (event) => {
     event.preventDefault()
     const trimmedBody = body.trim()
-    if ((!trimmedBody && !mediaFile) || videoTooLarge || !otherUserId) return
+    const hasInlineMedia = !!selectedMedia
+    if ((!trimmedBody && !mediaFile && !hasInlineMedia) || videoTooLarge || !otherUserId) return
 
     setSending(true)
     try {
       let uploadedMediaUrl = null
       let uploadedMediaType = null
+      let messageType = 'text'
+      if (selectedMedia) {
+        uploadedMediaUrl = selectedMedia.url
+        uploadedMediaType = selectedMedia.type
+        messageType = selectedMedia.type
+      }
       if (mediaFile) {
         const uploadData = new FormData()
         uploadData.append('file', mediaFile)
@@ -186,13 +285,14 @@ export default function ConversationPage() {
         if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.error || 'Unable to upload attachment.')
         uploadedMediaUrl = uploadResult.url
         uploadedMediaType = mediaType
+        messageType = mediaType || 'image'
       }
 
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
-        body: JSON.stringify({ recipientId: otherUserId, body: trimmedBody, mediaUrl: uploadedMediaUrl, mediaType: uploadedMediaType, replyToMessageId: replyTo?.id || null }),
+        body: JSON.stringify({ recipientId: otherUserId, body: trimmedBody || (messageType === 'gif' ? 'GIF' : messageType === 'sticker' ? 'Sticker' : ''), mediaUrl: uploadedMediaUrl, mediaType: uploadedMediaType, messageType, replyToMessageId: replyTo?.id || null }),
       })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send message.')
@@ -201,14 +301,28 @@ export default function ConversationPage() {
       setMediaFile(null)
       setMediaPreview('')
       setMediaType(null)
+      setSelectedMedia(null)
       setReplyTo(null)
       setActionMessageId(null)
+      setAttachmentMenuOpen(false)
+      setPickerOpen(false)
       if (mediaInputRef.current) mediaInputRef.current.value = ''
     } catch (sendError) {
       setError(sendError.message)
     } finally {
       setSending(false)
     }
+  }
+
+  const chooseEmoji = (emoji) => {
+    setBody((previous) => `${previous}${emoji}`)
+  }
+
+  const chooseMedia = (type, url) => {
+    setSelectedMedia({ type, url })
+    setAttachmentMenuOpen(false)
+    setPickerOpen(false)
+    setPickerSearch('')
   }
 
   const handleMediaChange = (event) => {
@@ -238,9 +352,30 @@ export default function ConversationPage() {
     if (mediaInputRef.current) mediaInputRef.current.value = ''
   }
 
+  const handleAttachmentAction = (action) => {
+    setAttachmentMenuOpen(false)
+    if (action === 'photo-video') {
+      mediaInputRef.current?.click()
+      return
+    }
+    if (action === 'gif') {
+      setPickerCategory('GIFs')
+      setPickerSearch('')
+      setPickerOpen(true)
+      return
+    }
+    if (action === 'sticker') {
+      setPickerCategory('Stickers')
+      setPickerSearch('')
+      setPickerOpen(true)
+    }
+  }
+
   const getReplyPreview = (message) => {
     if (!message) return 'Original message was deleted'
     if (message.body) return message.body
+    if (message.media_type === 'gif') return 'GIF'
+    if (message.media_type === 'sticker') return 'Sticker'
     if (message.media_type === 'video') return 'Video'
     if (message.media_type === 'image') return 'Photo'
     return 'Original message was deleted'
@@ -254,13 +389,13 @@ export default function ConversationPage() {
             <ArrowLeft className="h-5 w-5" />
           </button>
           {otherUser && (
-            <Link href={`/user/profile/${otherUser.id}`} className="flex min-w-0 items-center gap-3">
+            <UserProfileLink user={otherUser} className="flex min-w-0 items-center gap-3">
               <ProfileAvatar user={otherUser} size="h-10 w-10" />
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#147d75]">Conversation</p>
                 <h1 className="truncate text-base font-black text-slate-950">{otherUser.full_name || 'Community member'}</h1>
               </div>
-            </Link>
+            </UserProfileLink>
           )}
         </header>
 
@@ -307,7 +442,7 @@ export default function ConversationPage() {
                 const isHighlighted = highlightedMessageId === message.id
                 return (
                   <div id={`message-${message.id}`} key={message.id} className={`flex items-end gap-2 px-4 transition-colors duration-500 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'bg-amber-50' : ''}`}>
-                    {!isOwnMessage && <Link href={`/user/profile/${otherUser.id}`} aria-label={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></Link>}
+                    {!isOwnMessage && <UserProfileLink user={sender} ariaLabel={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></UserProfileLink>}
                     <div
                       ref={isActionOpen ? selectedMessageRef : null}
                       data-message-id={message.id}
@@ -322,7 +457,7 @@ export default function ConversationPage() {
                       {swipeState.id === message.id && Math.abs(swipeState.offset) > 10 && <div className={`absolute inset-y-0 flex items-center text-[#147d75] ${swipeState.offset >= 0 ? '-left-9' : '-right-9'}`}><CornerUpLeft className="h-5 w-5" /></div>}
                       <div className={`rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
                         {message.reply_to_message_id && <button type="button" onClick={() => scrollToMessage(message.reply_to_message_id)} className={`mb-2 block w-full border-l-2 pl-2 text-left text-xs ${isOwnMessage ? 'border-white/60 text-white/80' : 'border-[#147d75] text-slate-500'}`}><span className="block font-bold">↪ {originalMessage ? (originalMessage.sender_id === currentUser?.id ? currentUser?.full_name : otherUser?.full_name) || 'Community member' : 'Original message was deleted'}</span><span className="block truncate">{getReplyPreview(originalMessage)}</span></button>}
-                        {message.media_url && (message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
+                        {message.media_url && (message.message_type === 'video' || message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
                         {message.body && <p>{message.body}</p>}
                         <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
                       </div>
@@ -334,17 +469,49 @@ export default function ConversationPage() {
               }) : <p className="py-10 text-center text-sm text-slate-500">No messages yet. Start the conversation.</p>}
               </div>
             </div>
-            <div className="message-composer flex flex-[0_0_auto] w-full flex-col bg-white">
+            <div className="message-composer relative flex flex-[0_0_auto] w-full flex-col bg-white">
               {replyTo && <div className="flex items-start gap-3 border-t border-slate-200 bg-slate-50 px-3 py-2.5 sm:px-4"><CornerUpLeft className="mt-0.5 h-4 w-4 shrink-0 text-[#147d75]" /><div className="min-w-0 flex-1"><p className="text-xs font-bold text-slate-700">Replying to {replyTo.sender_id === currentUser?.id ? currentUser?.full_name || 'You' : otherUser?.full_name || 'Community member'}</p><p className="truncate text-xs text-slate-500">{getReplyPreview(replyTo)}</p></div><button type="button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"><X className="h-4 w-4" /></button></div>}
+              {selectedMedia && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2"><img src={selectedMedia.url} alt={selectedMedia.type === 'sticker' ? 'Sticker preview' : selectedMedia.type === 'gif' ? 'GIF preview' : 'Attachment preview'} className="max-h-32 max-w-full rounded object-contain" /><button type="button" onClick={() => setSelectedMedia(null)} aria-label="Remove selected media" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
               {mediaPreview && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2">{mediaType === 'video' ? <video src={mediaPreview} controls className="max-h-32 max-w-full rounded" /> : <img src={mediaPreview} alt="Attachment preview" className="max-h-32 max-w-full rounded object-contain" />}<button type="button" onClick={clearMedia} aria-label="Remove attachment" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
               <form onSubmit={sendMessage} className="message-composer-row relative flex shrink-0 items-center gap-2 border-t border-slate-200 p-3 sm:p-4">
                 <input ref={mediaInputRef} type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime" onChange={handleMediaChange} className="hidden" />
-                <button type="button" onClick={() => mediaInputRef.current?.click()} aria-label="Add photo or video" title="Add photo or video" className="attach-button flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><Paperclip className="h-5 w-5" /></button>
-                <div className="message-input-wrapper relative min-w-0 flex-1">
-                  <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message..." rows={1} className="message-input h-12 w-full resize-none border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#147d75]" />
+                <div className="relative flex shrink-0 items-center">
+                  <button type="button" onClick={() => setAttachmentMenuOpen((open) => !open)} aria-label="Open attachment menu" title="Add attachment" className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700 shadow-sm transition hover:bg-slate-100"> <Plus className="h-5 w-5" /> </button>
+                  {attachmentMenuOpen && <div ref={attachmentMenuRef} className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                    <button type="button" onClick={() => handleAttachmentAction('photo-video')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><span className="text-base">🖼️</span>Photo / Video</button>
+                    <button type="button" onClick={() => handleAttachmentAction('gif')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><span className="text-base">🎞️</span>GIF</button>
+                    <button type="button" onClick={() => handleAttachmentAction('sticker')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><span className="text-base">🏷️</span>Sticker</button>
+                  </div>}
                 </div>
-                <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile)} className="send-button inline-flex h-12 shrink-0 items-center justify-center gap-2 bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
+                <div className="message-input-wrapper relative min-w-0 flex-1">
+                  <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message..." rows={1} className="message-input h-12 w-full resize-none border border-slate-200 bg-slate-50 px-3 py-2.5 pr-11 text-sm outline-none focus:border-[#147d75]" />
+                  <button type="button" onClick={() => setPickerOpen((open) => !open)} aria-label="Open emoji picker" title="Emoji picker" className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"><Smile className="h-4 w-4" /></button>
+                </div>
+                <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile && !selectedMedia)} className="send-button inline-flex h-12 shrink-0 items-center justify-center gap-2 bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
               </form>
+              {pickerOpen && <div ref={pickerRef} className="absolute bottom-[calc(100%+1rem)] left-0 right-0 z-30 mx-2 flex max-h-[min(24rem,65dvh)] flex-col overflow-hidden border border-slate-200 bg-white shadow-xl sm:left-auto sm:w-[min(26rem,calc(100%-1rem))]">
+                {pickerCategory === 'GIFs' ? (
+                  <>
+                    <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                      {gifsLoading ? <div className="flex items-center justify-center py-10 text-sm text-slate-500"><LoaderCircle className="mr-2 h-4 w-4 animate-spin" />Loading GIFs...</div> : gifError ? <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 py-8 text-center text-sm text-slate-600"><p>Couldn&apos;t load GIFs</p><button type="button" onClick={() => void loadGifs(pickerSearch || 'happy')} className="rounded-full bg-[#147d75] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0f685f]">Try again</button></div> : gifs.length ? <div className="grid grid-cols-2 gap-2">{gifs.map((gif) => <button key={gif.id} type="button" onClick={() => chooseMedia('gif', gif.url)} className="overflow-hidden rounded-xl bg-slate-100 hover:ring-2 hover:ring-[#147d75]"><img src={gif.url} alt={gif.title} className="h-24 w-full object-cover" /></button>)}</div> : <p className="py-10 text-center text-sm text-slate-500">No GIFs found.</p>}
+                    </div>
+                  </>
+                ) : pickerCategory === 'Stickers' ? (
+                  <>
+                    <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} placeholder="Search stickers..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+                      <div className="grid grid-cols-2 gap-3">{STICKER_PHRASES.filter((sticker) => sticker.toLowerCase().includes(pickerSearch.toLowerCase())).map((sticker) => <button key={sticker} type="button" onClick={() => chooseMedia('sticker', createStickerUrl(sticker))} className="overflow-hidden rounded-2xl bg-slate-50 p-1 shadow-sm hover:ring-2 hover:ring-[#147d75]"><img src={createStickerUrl(sticker)} alt={sticker} className="w-full rounded-xl" /></button>)}</div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} placeholder="Search emoji" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
+                    <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-slate-200 px-2 py-2">{Object.keys(EMOJI_CATEGORIES).map((category) => <button key={category} type="button" onClick={() => { setPickerCategory(category); setPickerSearch('') }} className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold ${pickerCategory === category ? 'bg-[#147d75] text-white' : 'text-slate-500 hover:bg-slate-100'}`}>{category}</button>)}</div>
+                    <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3"><div className="grid grid-cols-7 gap-1">{(EMOJI_CATEGORIES[pickerCategory] || []).filter((emoji) => !pickerSearch || emoji.includes(pickerSearch)).map((emoji, index) => <button key={`${emoji}-${index}`} type="button" onClick={() => chooseEmoji(emoji)} className="flex aspect-square items-center justify-center rounded-lg text-2xl hover:bg-slate-100">{emoji}</button>)}</div></div>
+                  </>
+                )}
+              </div>}
             </div>
           </>
         )}

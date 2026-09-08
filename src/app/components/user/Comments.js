@@ -1,11 +1,13 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, CornerDownRight, Heart, MessageSquare, MoreHorizontal, Pin, SendHorizontal, SortDesc } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { buildCommentThreads } from '@/lib/commentThreads'
 import Reactions from './Reactions'
+import UserProfileLink from './UserProfileLink'
 
 const GIFS = ['🎉', '👍', '👏', '🔥', '💯', '😍', '🤣', '🙌']
 const STICKERS = ['😀', '😂', '😍', '😎', '🤔', '😢', '😡', '🥳', '🤝', '❤️']
@@ -218,6 +220,7 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
 
   const renderComment = (comment, depth = 0) => {
     const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
+    const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
     const isOwner = userId === comment.user_id
     const replyCount = countNestedReplies(comment)
     const likeCount = countCommentLikes(comment)
@@ -235,18 +238,20 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
           )}
 
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm">
+            <UserProfileLink user={authorProfileUser} className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
               {comment.info_users?.profile_image_url ? (
                 <img src={comment.info_users.profile_image_url} alt={authorName} className="h-full w-full object-cover" />
               ) : (
                 getInitials(authorName)
               )}
-            </div>
+            </UserProfileLink>
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <span className="text-sm font-bold text-slate-900">{authorName}</span>
+                  <UserProfileLink user={authorProfileUser} className="inline-flex items-center text-sm font-bold text-slate-900 hover:text-sky-700 active:text-sky-700">
+                    {authorName}
+                  </UserProfileLink>
                   <span className="ml-2 text-xs text-slate-500">{formatRelativeTime(comment.created_at)}</span>
                 </div>
 
@@ -378,13 +383,13 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
           <div className="mt-2 ml-4 sm:ml-8">
             <div className="rounded-[14px] border border-slate-200 bg-white p-2.5 shadow-sm">
               <div className="flex items-start gap-3">
-                <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-violet-600 text-[9px] font-bold text-white">
+                <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-8 w-8 flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-violet-600 text-[9px] font-bold text-white active:scale-[0.98]">
                   {currentUser?.profile_image_url ? (
                     <img src={currentUser.profile_image_url} alt={currentUser.full_name || 'User'} className="h-full w-full object-cover" />
                   ) : (
                     getInitials(currentUser?.full_name || 'You')
                   )}
-                </div>
+                </UserProfileLink>
                 <div className="flex-1">
                   <textarea
                     value={body}
@@ -450,13 +455,13 @@ export default function Comments({ contentType, contentId, userId, contentTitle,
 
       <div className={`${compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm">
+          <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-gradient-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
             {currentUser?.profile_image_url ? (
               <img src={currentUser.profile_image_url} alt={currentUser.full_name || 'You'} className="h-full w-full object-cover" />
             ) : (
               getInitials(currentUser?.full_name || 'You')
             )}
-          </div>
+          </UserProfileLink>
 
           <div className="flex-1">
             <textarea
