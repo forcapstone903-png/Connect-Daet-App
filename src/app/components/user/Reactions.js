@@ -80,15 +80,20 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
 
     setLoading(true)
     try {
-      if (userReaction === reactionType) {
-        // Remove reaction
-        const { error } = await supabase
-          .from('content_reactions')
-          .delete()
-          .eq('user_id', userId)
-          .eq('content_type', contentType)
-          .eq('content_id', contentId)
-        if (error) throw error
+      const alreadyLiked = userReaction === reactionType
+      const method = alreadyLiked ? 'DELETE' : 'POST'
+      const response = await fetch('/api/reactions', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType, contentId, reactionType }),
+      })
+
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to react to this content.' }))
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to react to this content.')
+      }
+
+      if (alreadyLiked) {
         setUserReaction(null)
         setReactionCounts((prev) => {
           const next = { ...prev }
@@ -97,15 +102,6 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
         })
       } else {
         const previous = userReaction
-        // Upsert new reaction
-        const { error } = await supabase
-          .from('content_reactions')
-          .upsert(
-            { user_id: userId, content_type: contentType, content_id: contentId, reaction_type: reactionType },
-            { onConflict: 'user_id,content_type,content_id' }
-          )
-        if (error) throw error
-
         setUserReaction(reactionType)
         setReactionCounts((prev) => {
           const next = { ...prev }
@@ -119,6 +115,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
 
       if (onReact) onReact(reactionType, userReaction === reactionType ? null : reactionType)
       window.dispatchEvent(new Event('daet-feed-refresh'))
+      window.dispatchEvent(new Event('daet-notifications-updated'))
       if (userId && userReaction !== reactionType) {
         trackUserActivity({
           userId,
@@ -135,7 +132,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       setShowPicker(false)
     } catch (err) {
       console.error('Reaction error:', err)
-      alert('Failed to react. Please try again.')
+      alert(err?.message || 'Failed to react. Please try again.')
     } finally {
       setLoading(false)
     }

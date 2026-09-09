@@ -6,6 +6,11 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
+const bucketAliases = {
+  'feedback-media': 'profile-media',
+  'user-profiles': 'profile-media',
+}
+
 export async function POST(request) {
   try {
     const userId = getServerSession(request)?.user_id
@@ -13,11 +18,29 @@ export async function POST(request) {
 
     const formData = await request.formData()
     const file = formData.get('file')
-    const requestedBucket = String(formData.get('bucket') || '')
-    const requestedFolder = String(formData.get('folder') || '')
-    const bucket = ['profile-media', 'blogs', 'announcements'].includes(requestedBucket) ? requestedBucket : null
-    const folderType = requestedFolder.startsWith('covers/') ? 'covers' : requestedFolder.startsWith('users/') ? 'users' : requestedFolder.startsWith('messages/') ? 'messages' : requestedFolder.startsWith('blog-media') ? 'blog-media' : requestedBucket === 'announcements' && ['images', 'videos'].includes(requestedFolder) ? requestedFolder : null
-    const folder = folderType ? `${folderType}/${userId}` : null
+    const requestedBucket = String(formData.get('bucket') || '').trim()
+    const requestedFolder = String(formData.get('folder') || '').trim()
+    const resolvedBucket = bucketAliases[requestedBucket] || requestedBucket
+    const allowedBuckets = new Set(['profile-media', 'blogs', 'announcements', 'events', 'tourist-spots'])
+
+    if (!allowedBuckets.has(resolvedBucket)) {
+      return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
+    }
+
+    const normalizedFolder = requestedFolder
+      .replace(/\\/g, '/')
+      .replace(/^\/+|\/+$/g, '')
+      .split('/')
+      .filter(Boolean)
+      .filter((part) => part !== '..' && part !== '.')
+      .join('/')
+
+    if (!normalizedFolder) {
+      return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
+    }
+
+    const bucket = resolvedBucket
+    const folder = normalizedFolder
 
     if (!bucket || !folder) return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
 
@@ -82,8 +105,16 @@ export async function DELETE(request) {
     if (!supabaseUrl || !supabaseServiceRoleKey) return NextResponse.json({ error: 'Storage is not configured.' }, { status: 500 })
 
     const { bucket, url } = await request.json()
+    const resolvedBucket = bucketAliases[bucket] || bucket
+    const allowedBuckets = new Set(['profile-media', 'blogs', 'announcements', 'events', 'tourist-spots'])
+    if (!allowedBuckets.has(resolvedBucket)) {
+      return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })
+    }
+
+    const normalizedBucket = resolvedBucket
+
     const parsedUrl = new URL(String(url || ''))
-    const marker = `/storage/v1/object/public/${bucket}/`
+    const marker = `/storage/v1/object/public/${normalizedBucket}/`
     const markerIndex = parsedUrl.pathname.indexOf(marker)
     const objectPath = markerIndex >= 0 ? decodeURIComponent(parsedUrl.pathname.slice(markerIndex + marker.length)) : ''
     const ownedPath = objectPath === `users/${userId}`
@@ -92,15 +123,19 @@ export async function DELETE(request) {
       || objectPath.startsWith(`blog-media/${userId}/`)
       || objectPath.startsWith(`images/${userId}/`)
       || objectPath.startsWith(`videos/${userId}/`)
+      || objectPath.startsWith(`feedback/${userId}/`)
+      || objectPath.startsWith(`featured/${userId}/`)
+      || objectPath.startsWith(`gallery/${userId}/`)
+      || objectPath.startsWith(`messages/${userId}/`)
 
-    if (!['profile-media', 'blogs', 'announcements'].includes(bucket) || !ownedPath || !objectPath) {
+    if (!allowedBuckets.has(normalizedBucket) || !ownedPath || !objectPath) {
       return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })
     }
 
     const client = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
-    const { error } = await client.storage.from(bucket).remove([objectPath])
+    const { error } = await client.storage.from(normalizedBucket).remove([objectPath])
     if (error) return NextResponse.json({ error: error.message || 'Unable to remove file.' }, { status: 500 })
 
     return NextResponse.json({ success: true })

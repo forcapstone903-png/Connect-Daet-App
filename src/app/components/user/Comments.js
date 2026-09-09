@@ -181,31 +181,42 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   }
 
   const handleSubmit = async () => {
-    if ((!body.trim() && !selectedGif && !selectedSticker) || !userId) return
+    if ((!body.trim() && !selectedGif && !selectedSticker)) return
+
+    const commentBody = body.trim() || (selectedGif ? 'GIF' : selectedSticker ? 'Sticker' : '')
+    if (!commentBody) return
+
     setSubmitting(true)
+
     try {
-      const commentBody = body.trim() || (selectedGif ? 'GIF' : 'Sticker')
-      const { error } = await supabase.from('content_comments').insert({
-        content_type: contentType,
-        content_id: contentId,
-        user_id: userId,
-        parent_id: replyTo || null,
-        body: commentBody,
-        gif_url: selectedGif || null,
-        sticker_url: selectedSticker || null,
-        relevance_score: 0,
-        status: 'active',
+      const response = await fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contentType,
+          contentId,
+          body: commentBody,
+          replyTo: replyTo || null,
+          gifUrl: selectedGif || null,
+          stickerUrl: selectedSticker || null,
+        }),
       })
-      if (error) throw error
+
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to post comment.' }))
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to post comment.')
+      }
+
       setBody('')
       setReplyTo(null)
       setSelectedGif(null)
       setSelectedSticker(null)
       setShowGifPicker(false)
       setShowStickerPicker(false)
-      // Record the activity + notify admins (fire-and-forget).
-      const contentOwner = contentType === 'blog' ? null : null
-      trackUserActivity({
+      await loadComments()
+      window.dispatchEvent(new Event('daet-feed-refresh'))
+
+      void trackUserActivity({
         userId,
         activityType: 'comment',
         entityType: contentType,
@@ -214,14 +225,12 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         metadata: {
           contentTitle: contentTitle || '',
           body: commentBody,
-          recipientUserId: contentOwner,
+          recipientUserId: null,
         },
       })
-      await loadComments()
-      window.dispatchEvent(new Event('daet-feed-refresh'))
     } catch (err) {
       console.error('Failed to post comment:', err)
-      alert('Failed to post comment. Please try again.')
+      alert(err?.message || 'Failed to post comment. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -256,23 +265,17 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
       : item))
 
     try {
-      if (wasLiked) {
-        const { error } = await supabase
-          .from('content_reactions')
-          .delete()
-          .eq('user_id', userId)
-          .eq('content_type', 'comment')
-          .eq('content_id', commentId)
-        if (error) throw error
-      } else {
-        const { error } = await supabase
-          .from('content_reactions')
-          .upsert(
-            { user_id: userId, content_type: 'comment', content_id: commentId, reaction_type: 'like' },
-            { onConflict: 'user_id,content_type,content_id' }
-          )
-        if (error) throw error
+      const response = await fetch('/api/comments/reactions', {
+        method: wasLiked ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentId }),
+      })
+
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to update the comment reaction right now.' }))
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to update the comment reaction right now.')
       }
+
       void trackUserActivity({
         userId,
         activityType: 'react_content',
@@ -282,11 +285,17 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         metadata: { contentTitle: contentTitle || contentType, contentType, contentId },
       })
     } catch (error) {
-      console.error('Failed to react to comment:', error)
+      console.error('Failed to react to comment:', {
+        code: error?.code,
+        message: error?.message,
+        details: error?.details,
+        hint: error?.hint,
+        raw: error,
+      })
       setComments((previous) => previous.map((item) => item.id === commentId
         ? { ...item, _liked_by_user: wasLiked, _like_count: countCommentLikes(item) + (wasLiked ? 1 : -1) }
         : item))
-      alert('Unable to update the comment reaction right now.')
+      alert(error?.message || 'Unable to update the comment reaction right now.')
     }
   }
 

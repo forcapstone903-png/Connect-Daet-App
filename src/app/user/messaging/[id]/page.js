@@ -415,6 +415,7 @@ export default function ConversationPage() {
       setAttachmentMenuOpen(false)
       setPickerOpen(false)
       window.dispatchEvent(new Event('daet-messages-updated'))
+      window.dispatchEvent(new Event('daet-notifications-updated'))
       if (mediaInputRef.current) mediaInputRef.current.value = ''
       requestAnimationFrame(scrollConversationToBottom)
     } catch (sendError) {

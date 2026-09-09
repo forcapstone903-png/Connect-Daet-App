@@ -102,9 +102,15 @@ export default function UserMessagingPage() {
         if (active) void loadMessages()
       }, 5000)
 
+      const refreshInbox = () => {
+        if (active) void loadMessages()
+      }
+      window.addEventListener('daet-messages-updated', refreshInbox)
+
       return () => {
         active = false
         window.clearInterval(refreshTimer)
+        window.removeEventListener('daet-messages-updated', refreshInbox)
       }
     }
 
@@ -269,14 +275,31 @@ export default function UserMessagingPage() {
                 {filteredConversations.map((conversation) => {
                   const conversationId = conversation.other_user?.id || conversation.id
                   const revealed = revealedConversation === conversationId
+                  const unreadCount = Number(conversation.unread_count || 0)
+                  const hasUnread = unreadCount > 0
+                  const previewText = String(conversation.body || 'New message')
                   return (
                     <div key={conversationId} className="relative overflow-hidden" onTouchStart={(event) => handleTouchStart(event, conversationId)} onTouchMove={handleTouchMove} onTouchEnd={(event) => handleTouchEnd(event, conversationId)}>
                       <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
                         <button type="button" onClick={() => updateArchive(conversationId, true)} aria-label="Archive conversation" title="Archive" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700"><Archive className="h-4 w-4" /></button>
                       </div>
-                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 bg-white px-4 py-4 transition-transform duration-200 hover:bg-[#f5fbfa] sm:px-5 ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
+                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</h3><div className="flex items-center gap-2"><time className="text-[11px] text-slate-400">{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time>{conversation.unread_count > 0 && <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{conversation.unread_count > 9 ? '9+' : conversation.unread_count}</span>}</div></div><p className="mt-1 line-clamp-2 text-sm leading-6 text-slate-600">{conversation.body}</p></div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h3 className={`truncate text-sm ${hasUnread ? 'font-black text-slate-950' : 'font-bold text-slate-900'}`}>{conversation.other_user?.full_name || 'Community member'}</h3>
+                            <div className="flex items-center gap-2">
+                              <time className={`text-[11px] ${hasUnread ? 'font-bold text-slate-700' : 'text-slate-400'}`}>{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time>
+                              {hasUnread && (
+                                <span className="flex items-center gap-1">
+                                  <span className="h-2 w-2 rounded-full bg-red-500" aria-label="Unread message" title="Unread message" />
+                                  <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <p className={`mt-1 line-clamp-2 text-sm leading-6 ${hasUnread ? 'font-extrabold text-slate-900' : 'text-slate-600'}`}>{previewText}</p>
+                        </div>
                       </UserProfileLink>
                     </div>
                   )

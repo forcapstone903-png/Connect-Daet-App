@@ -77,6 +77,45 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
+    const link = `/forum/${data.id}`
+    const contentType = 'forum'
+    const recipients = await adminSupabase
+      .from('info_users')
+      .select('id')
+      .eq('status', 'active')
+      .neq('user_type', 'admin')
+
+    if (!recipients.error && Array.isArray(recipients.data)) {
+      const rows = []
+      for (const recipient of recipients.data) {
+        if (!recipient?.id) continue
+
+        const { data: existing } = await adminSupabase
+          .from('info_notifications')
+          .select('id')
+          .eq('user_id', recipient.id)
+          .eq('link', link)
+          .limit(1)
+
+        if (existing && existing.length > 0) continue
+
+        rows.push({
+          user_id: recipient.id,
+          title: 'New forum post from Administrator',
+          message: title,
+          type: contentType,
+          is_read: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          link,
+        })
+      }
+
+      if (rows.length) {
+        await adminSupabase.from('info_notifications').insert(rows)
+      }
+    }
+
     return NextResponse.json({ success: true, thread: data })
   } catch (error) {
     console.error('Forum create error:', error)

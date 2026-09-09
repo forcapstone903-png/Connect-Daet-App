@@ -7,7 +7,7 @@ import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, M
 import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/components/MediaUpload'
 import MultiMediaUpload from '@/app/components/MultiMediaUpload'
-import { trackUserActivity } from '@/lib/trackActivity'
+import { normalizeErrorMessage, trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
 const categories = [
@@ -64,7 +64,6 @@ export default function CreateBlogPage() {
     }
 
     getSession()
-    if (new URLSearchParams(window.location.search).get('share') === 'media') setShareType('blog')
   }, [])
 
   const updateField = (field, value) => {
@@ -83,27 +82,47 @@ export default function CreateBlogPage() {
 
     try {
       if (shareType !== 'blog') {
-        let error = null
-
-        if (shareType === 'forum') {
-          if (!forumForm.title.trim() || !forumForm.content.trim()) throw new Error('Please add a discussion title and message.')
-          const tags = forumForm.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
-          const result = await supabase.from('forum_threads').insert({ title: forumForm.title.trim(), content: forumForm.content.trim(), tags, status: 'active', created_by: session.user.id })
-          error = result.error
-        } else if (shareType === 'event') {
-          if (!eventForm.title.trim() || !eventForm.description.trim() || !eventForm.start_date) throw new Error('Please add an event title, description, and date.')
-          const result = await supabase.from('info_events').insert({ title: eventForm.title.trim(), description: eventForm.description.trim(), location: eventForm.location.trim() || null, start_date: eventForm.start_date, category: eventForm.category, status: 'published', published_at: new Date().toISOString(), created_by: session.user.id })
-          error = result.error
-        } else {
-          if (!feedbackForm.message.trim()) throw new Error('Please add your feedback message.')
-          const result = await supabase.from('info_feedback').insert({ user_id: session.user.id, category: feedbackForm.category, rating: feedbackForm.rating, status: 'pending', comments: feedbackForm.message.trim(), target_type: 'system', target_id: session.user.id })
-          error = result.error
+        if (shareType === 'forum' && (!forumForm.title.trim() || !forumForm.content.trim())) {
+          throw new Error('Please add a discussion title and message.')
+        }
+        if (shareType === 'event' && (!eventForm.title.trim() || !eventForm.description.trim() || !eventForm.start_date)) {
+          throw new Error('Please add an event title, description, and date.')
+        }
+        if (shareType === 'feedback' && !feedbackForm.message.trim()) {
+          throw new Error('Please add your feedback message.')
         }
 
-        if (error) throw error
+        const forumPayload = {
+          title: forumForm.title.trim(),
+          content: forumForm.content.trim(),
+        }
+        const eventPayload = {
+          title: eventForm.title.trim(),
+          description: eventForm.description.trim(),
+          location: eventForm.location.trim() || null,
+          start_date: eventForm.start_date,
+          category: eventForm.category,
+        }
+        const feedbackPayload = {
+          category: feedbackForm.category,
+          rating: feedbackForm.rating,
+          message: feedbackForm.message.trim(),
+        }
+
+        const response = await fetch('/api/posts', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shareType, forumForm: forumPayload, eventForm: eventPayload, feedbackForm: feedbackPayload }),
+        })
+
+        const result = await response.json().catch(() => ({ success: false, message: 'Unable to create content.' }))
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to create content.')
+        }
+
         setSuccess(true)
-        const destination = shareType === 'forum' ? '/user/forums' : shareType === 'event' ? '/user/events' : '/user/feedback'
-        setTimeout(() => router.push(destination), 1200)
+        setTimeout(() => router.push(result.destination || '/user/feedback'), 1200)
         return
       }
 
@@ -144,10 +163,12 @@ export default function CreateBlogPage() {
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to create your blog article.')
 
       // Activity tracking is secondary; it must not block a successful post.
+      const createdBlogId = result?.blog?.id || null
       void trackUserActivity({
         userId: session.user.id,
         activityType: 'new_post',
         entityType: 'blog',
+        entityId: createdBlogId,
         description: `Published a new blog post: ${postTitle}`,
         metadata: {
           contentTitle: postTitle,
@@ -162,8 +183,9 @@ export default function CreateBlogPage() {
         router.push(form.status === 'published' ? '/user/blogs' : '/user/drafts')
       }, 1200)
     } catch (error) {
-      console.error('Error creating blog:', error)
-      alert(error.message || 'Unable to create your blog article right now.')
+      const errorMessage = normalizeErrorMessage(error)
+      console.warn('Error creating blog:', errorMessage)
+      alert(errorMessage)
     } finally {
       setSubmitting(false)
     }

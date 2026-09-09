@@ -322,18 +322,25 @@ export default function AdminAnnouncementPage() {
       } else {
         result = await supabase
           .from('info_announcements')
-          .insert([announcementData]);
+          .insert([announcementData])
+          .select('id');
       }
 
       if (result.error) throw result.error;
 
+      const insertedAnnouncement = Array.isArray(result.data) ? result.data[0] : null
+      if (!editingAnnouncement && resolvedStatus === 'published' && insertedAnnouncement?.id) {
+        await createPushNotification({
+          id: insertedAnnouncement.id,
+          title: formData.title.trim(),
+          message: formData.content.trim(),
+          link: `/user/announcements/${insertedAnnouncement.id}`,
+        })
+      }
+
       showToast(editingAnnouncement ? 'Announcement updated!' : formData.scheduled_for ? 'Announcement scheduled!' : 'Announcement published!', false);
       closeModal();
       await fetchAnnouncements();
-
-      if (resolvedStatus === 'published' && (formData.severity === 'critical' || formData.severity === 'warning')) {
-        await createPushNotification();
-      }
     } catch (err) {
       console.error('Save error:', err);
       showToast(`Failed to save: ${err.message}`, true);
@@ -342,14 +349,25 @@ export default function AdminAnnouncementPage() {
     }
   };
 
-  const createPushNotification = async () => {
+  const createPushNotification = async ({ id, title, message, link }) => {
     try {
-      // Would typically call an edge function or create notification records
-      console.log('Push notification would be sent:', {
-        title: formData.title,
-        message: formData.content,
-        severity: formData.severity,
-      });
+      const response = await fetch('/api/admin/content-notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          type: 'announcement',
+          contentType: 'announcement',
+          contentId: id,
+          title,
+          message,
+          link,
+        }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        console.warn('Announcement notification broadcast failed:', result.message || response.statusText)
+      }
     } catch (err) {
       console.error('Notification error:', err);
     }
