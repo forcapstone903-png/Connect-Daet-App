@@ -25,13 +25,14 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
+import { getAuthCookieFromDocument } from '@/lib/authCookies'
 
 const STORAGE_KEYS = {
   shareCounts: 'daet_blog_share_counts',
 }
 
-const INITIAL_COMMENTS = 5
-const COMMENTS_PER_PAGE = 5
+const INITIAL_COMMENTS = 3
+const COMMENTS_PER_PAGE = 3
 
 function formatDate(value) {
   if (!value) return 'Recently'
@@ -129,10 +130,12 @@ export default function PublicBlogDetailPage() {
       try {
         const sessionResult = await supabase.auth.getSession()
         const session = sessionResult?.data?.session
-        if (session) {
-          const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
+        const cookieSession = getAuthCookieFromDocument()
+        const currentUserId = session?.user?.id || cookieSession?.user_id || null
+        if (currentUserId) {
+          const fullName = session?.user?.user_metadata?.full_name || cookieSession?.user_name || session?.user?.email || cookieSession?.user_email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
-          setUserId(session.user.id)
+          setUserId(currentUserId)
         }
 
         if (!blogId) return
@@ -141,7 +144,7 @@ export default function PublicBlogDetailPage() {
 
         const { data: blogData, error: blogError } = await supabase
           .from('info_blogs')
-          .select('*, info_users(full_name, email)')
+          .select('*, info_users(full_name, email, profile_image_url)')
           .eq('id', blogId)
           .single()
 
@@ -161,13 +164,13 @@ export default function PublicBlogDetailPage() {
 
           await supabase.from('info_blogs').update({ views: (blogData.views || 0) + 1 }).eq('id', blogId)
 
-          const { data: commentsData } = await supabase
-            .from('info_comments')
-            .select('*, info_users(full_name, email)')
-            .eq('blog_id', blogId)
-            .order('created_at', { ascending: false })
+          const commentsResponse = await fetch(`/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, { credentials: 'same-origin', cache: 'no-store' })
+          const commentsPayload = await commentsResponse.json().catch(() => ({}))
+          if (!commentsResponse.ok || !commentsPayload.success) {
+            throw new Error(commentsPayload.message || 'Unable to load comments.')
+          }
 
-          setComments(commentsData || [])
+          setComments(commentsPayload.comments || [])
           setVisibleComments(INITIAL_COMMENTS)
 
           const { data: relatedData } = await supabase
@@ -308,14 +311,14 @@ export default function PublicBlogDetailPage() {
         return
       }
 
-      const { error } = await supabase.from('info_comments').insert({
-        blog_id: blogId,
-        user_id: userId,
-        content,
-        status: 'pending',
+      const response = await fetch('/api/blog-comments', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ blogId, content }),
       })
-
-      if (error) throw error
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to submit your comment.')
 
       trackUserActivity({
         userId,
@@ -331,10 +334,10 @@ export default function PublicBlogDetailPage() {
         blog_id: blogId,
         user_id: userId,
         content,
-        status: 'pending',
+        status: 'approved',
         created_at: new Date().toISOString(),
         likes: 0,
-        info_users: { full_name: userName, email: userName },
+        info_users: payload.comment?.info_users || { full_name: userName, email: userName, profile_image_url: null },
       }
 
       setComments((prev) => [createdComment, ...prev])
@@ -345,7 +348,7 @@ export default function PublicBlogDetailPage() {
       setBlog((prev) => ({ ...prev, comments_count: nextCommentCount }))
     } catch (error) {
       console.error('Error submitting comment:', error)
-      alert('An error occurred. Please try again.')
+      alert(error?.message || 'Unable to submit your comment. Please try again.')
     } finally {
       setSubmittingComment(false)
     }
@@ -653,9 +656,14 @@ export default function PublicBlogDetailPage() {
                 <div key={comment.id} className="rounded-[20px] border border-slate-200 bg-white p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-slate-900">
-                        {comment.info_users?.full_name || comment.info_users?.email || 'Anonymous'}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">
+                          {comment.info_users?.profile_image_url ? <img src={comment.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : String(comment.info_users?.full_name || comment.info_users?.email || 'Anonymous').charAt(0).toUpperCase()}
+                        </span>
+                        <p className="font-semibold text-slate-900">
+                          {comment.info_users?.full_name || comment.info_users?.email || 'Anonymous'}
+                        </p>
+                      </div>
                       <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                         <span>{formatDate(comment.created_at)}</span>
                         {comment.status && comment.status !== 'approved' && (

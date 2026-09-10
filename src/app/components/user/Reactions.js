@@ -110,10 +110,22 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       alert('Please log in to react to this content.')
       return
     }
+    if (loading) return
 
+    const previousReaction = userReaction
+    const nextReaction = previousReaction === reactionType ? null : reactionType
+    const previousCounts = reactionCounts
+
+    setUserReaction(nextReaction)
+    setReactionCounts((prev) => {
+      const next = { ...prev }
+      if (previousReaction) next[previousReaction] = Math.max(0, (next[previousReaction] || 0) - 1)
+      if (nextReaction) next[nextReaction] = (next[nextReaction] || 0) + 1
+      return next
+    })
     setLoading(true)
     try {
-      const alreadyLiked = userReaction === reactionType
+      const alreadyLiked = previousReaction === reactionType
       const method = alreadyLiked ? 'DELETE' : 'POST'
       const response = await fetch('/api/reactions', {
         method,
@@ -126,30 +138,9 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
         throw new Error(payload.message || 'Unable to react to this content.')
       }
 
-      if (alreadyLiked) {
-        setUserReaction(null)
-        setReactionCounts((prev) => {
-          const next = { ...prev }
-          next[reactionType] = Math.max(0, (next[reactionType] || 0) - 1)
-          return next
-        })
-      } else {
-        const previous = userReaction
-        setUserReaction(reactionType)
-        setReactionCounts((prev) => {
-          const next = { ...prev }
-          next[reactionType] = (next[reactionType] || 0) + 1
-          if (previous) {
-            next[previous] = Math.max(0, (next[previous] || 0) - 1)
-          }
-          return next
-        })
-      }
-
-      if (onReact) onReact(reactionType, userReaction === reactionType ? null : reactionType)
-      window.dispatchEvent(new Event('daet-feed-refresh'))
+      if (onReact) onReact(reactionType, nextReaction)
       window.dispatchEvent(new Event('daet-notifications-updated'))
-      if (userId && userReaction !== reactionType) {
+      if (userId && nextReaction) {
         trackUserActivity({
           userId,
           activityType: 'react_content',
@@ -164,6 +155,8 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       }
       setShowPicker(false)
     } catch (err) {
+      setUserReaction(previousReaction)
+      setReactionCounts(previousCounts)
       console.error('Reaction error:', err)
       alert(err?.message || 'Failed to react. Please try again.')
     } finally {

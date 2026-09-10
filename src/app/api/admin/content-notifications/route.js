@@ -44,15 +44,22 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Content title is required.' }, { status: 400 })
     }
 
-    const { data: recipients, error: recipientError } = await adminSupabase
-      .from('info_users')
-      .select('id, user_type, status')
-      .eq('status', 'active')
-      .neq('user_type', 'admin')
+    const { data: follows, error: recipientError } = await adminSupabase
+      .from('user_follows')
+      .select('follower_id')
+      .eq('following_id', currentUserId)
+      .neq('follower_id', currentUserId)
 
     if (recipientError) throw recipientError
 
     const notificationRows = []
+    const recipients = [...new Set((follows || []).map((follow) => follow.follower_id).filter(Boolean))].map((id) => ({ id }))
+    const { data: actor } = await adminSupabase
+      .from('info_users')
+      .select('full_name')
+      .eq('id', currentUserId)
+      .maybeSingle()
+    const actorName = actor?.full_name || 'Administrator'
 
     for (const recipient of recipients || []) {
       if (!recipient?.id) continue
@@ -74,7 +81,7 @@ export async function POST(request) {
       notificationRows.push({
         user_id: recipient.id,
         title: notificationTitleFor(contentType),
-        message,
+        message: `${actorName} published a new post: ${message}`,
         type: contentType,
         is_read: false,
         created_at: new Date().toISOString(),
@@ -90,8 +97,19 @@ export async function POST(request) {
       return NextResponse.json({ success: true, inserted: 0 })
     }
 
-    const { error } = await adminSupabase.from('info_notifications').insert(notificationRows)
-    if (error) throw error
+    let { error } = await adminSupabase.from('info_notifications').insert(notificationRows)
+    const optionalColumnError = error && (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist/i.test(error.message || ''))
+    if (optionalColumnError) {
+      const baseNotificationRows = notificationRows.map(({ post_id, post_owner_id, ...baseRow }) => baseRow)
+      const fallbackResult = await adminSupabase.from('info_notifications').insert(baseNotificationRows)
+      error = fallbackResult.error
+      if (error && (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist/i.test(error.message || ''))) {
+        const legacyNotificationRows = baseNotificationRows.map(({ actor_id, ...baseRow }) => baseRow)
+        const legacyResult = await adminSupabase.from('info_notifications').insert(legacyNotificationRows)
+        error = legacyResult.error
+      }
+    }
+    if (error && error.code !== '23505') throw error
 
     return NextResponse.json({ success: true, inserted: notificationRows.length })
   } catch (error) {

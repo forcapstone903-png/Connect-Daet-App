@@ -24,14 +24,17 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
+import { getAuthCookieFromDocument } from '@/lib/authCookies'
 
 const STORAGE_KEYS = {
   readHistory: 'daet_blog_read_history',
   shareCounts: 'daet_blog_share_counts',
 }
 
-const INITIAL_COMMENTS = 5
-const COMMENTS_PER_PAGE = 5
+const INITIAL_COMMENTS = 3
+const COMMENTS_PER_PAGE = 3
+const INITIAL_REPLIES = 3
+const REPLIES_PER_PAGE = 3
 
 function readLocalStorage(key, fallback) {
   if (typeof window === 'undefined') return fallback
@@ -87,6 +90,15 @@ function formatDate(value) {
   })
 }
 
+function getInitials(name = '') {
+  return String(name)
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() || '')
+    .join('') || 'U'
+}
+
 const categories = {
   travel_guides: 'Travel Guides',
   cultural_insights: 'Cultural Insights',
@@ -121,6 +133,19 @@ export default function BlogDetailPage() {
   const [commentModifying, setCommentModifying] = useState(false)
   const [menuCommentId, setMenuCommentId] = useState(null)
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENTS)
+  const [visibleReplies, setVisibleReplies] = useState({})
+  const [expandedReplies, setExpandedReplies] = useState({})
+  const [mentionUsers, setMentionUsers] = useState([])
+  const mentionSuggestions = useMemo(() => Object.fromEntries(
+    Object.entries(replyMap).map(([commentId, value]) => {
+      const match = String(value || '').match(/(?:^|\s)@([^@\s]*)$/)
+      if (!match) return [commentId, []]
+      const query = match[1].trim().toLowerCase()
+      return [commentId, mentionUsers
+        .filter((user) => String(user.full_name || user.email || '').toLowerCase().includes(query))
+        .slice(0, 5)]
+    }),
+  ), [mentionUsers, replyMap])
   const [lightboxImage, setLightboxImage] = useState(null)
 
   useEffect(() => {
@@ -141,16 +166,17 @@ export default function BlogDetailPage() {
       try {
         const sessionResult = await supabase.auth.getSession()
         const session = sessionResult?.data?.session
-        const currentUserId = session?.user?.id || null
-        if (session) {
-          const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
+        const cookieSession = getAuthCookieFromDocument()
+        const currentUserId = session?.user?.id || cookieSession?.user_id || null
+        if (currentUserId) {
+          const fullName = session?.user?.user_metadata?.full_name || cookieSession?.user_name || session?.user?.email || cookieSession?.user_email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
-          setUserId(session.user.id)
+          setUserId(currentUserId)
 
           const { data: userData } = await supabase
             .from('info_users')
             .select('points')
-            .eq('id', session.user.id)
+            .eq('id', currentUserId)
             .single()
 
           setUserReputation(userData?.points || 0)
@@ -158,10 +184,16 @@ export default function BlogDetailPage() {
           const { data: badgeData } = await supabase
             .from('user_badges')
             .select('badge_name')
-            .eq('user_id', session.user.id)
+            .eq('user_id', currentUserId)
             .limit(3)
 
           setUserBadges((badgeData || []).map((item) => item.badge_name))
+
+          const followingResponse = await fetch('/api/users/following', { credentials: 'same-origin', cache: 'no-store' })
+          const followingPayload = await followingResponse.json().catch(() => ({}))
+          if (followingResponse.ok && followingPayload.success) {
+            setMentionUsers(followingPayload.following_users || [])
+          }
         }
 
         if (!blogId) return
@@ -193,15 +225,11 @@ export default function BlogDetailPage() {
             await supabase.from('info_blogs').update({ views: (blogData.views || 0) + 1 }).eq('id', blogId)
           }
 
-          const commentsQuery = supabase
-            .from('info_comments')
-            .select('*, info_users(full_name, email)')
-            .eq('blog_id', blogId)
-            .order('created_at', { ascending: false })
-          const visibleCommentsQuery = currentUserId
-            ? commentsQuery.or(`status.eq.approved,user_id.eq.${currentUserId}`)
-            : commentsQuery.eq('status', 'approved')
-          const { data: commentsData } = await visibleCommentsQuery
+          const commentsResponse = await fetch(`/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, { credentials: 'same-origin', cache: 'no-store' })
+          const commentsPayload = await commentsResponse.json().catch(() => ({}))
+          const commentsData = commentsResponse.ok && commentsPayload.success ? commentsPayload.comments || [] : null
+          const commentsError = commentsData === null ? new Error(commentsPayload.message || 'Unable to load comments.') : null
+          if (commentsError) console.error('Blog comments load failed:', commentsError.message)
 
           const repliesByParent = {}
           ;(commentsData || []).forEach((comment) => {
@@ -211,7 +239,20 @@ export default function BlogDetailPage() {
             .filter((comment) => !comment.parent_id)
             .map((comment) => ({ ...comment, replies: repliesByParent[comment.id] || [] }))
 
-          setComments(mergedComments)
+          setComments((currentComments) => {
+            if (commentsError || !Array.isArray(commentsData)) return currentComments
+            const currentById = new Map(currentComments.map((comment) => [String(comment.id), comment]))
+            const mergedIds = new Set(mergedComments.map((comment) => String(comment.id)))
+            const preservedLocalComments = currentComments.filter((comment) => !mergedIds.has(String(comment.id)))
+            return mergedComments.map((comment) => {
+              const current = currentById.get(String(comment.id))
+              if (!current) return comment
+              return {
+                ...comment,
+                replies: current.replies?.length > comment.replies?.length ? current.replies : comment.replies,
+              }
+            }).concat(preservedLocalComments)
+          })
           setVisibleComments(INITIAL_COMMENTS)
           setModerationPending((commentsData || []).filter((item) => item.status !== 'approved').length)
 
@@ -352,35 +393,37 @@ export default function BlogDetailPage() {
       }
 
       if (parentId) {
-        const { data, error } = await supabase.from('info_comments').insert({
-          blog_id: blogId,
-          parent_id: parentId,
-          user_id: userId,
-          content,
-          status: 'pending',
-        }).select('*, info_users(full_name, email)').single()
-
-        if (error) throw error
+        const response = await fetch('/api/blog-comments', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blogId, parentId, content }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to submit your reply.')
+        const data = payload.comment
 
         const nextReply = { ...data, replies: [] }
-        setComments((prev) =>
-          prev.map((item) =>
-            item.id === parentId
-              ? { ...item, replies: [...(item.replies || []), nextReply] }
-              : item
-          )
-        )
+        setComments((prev) => prev.map((item) => {
+          if (String(item.id) !== String(parentId)) return item
+          const existingReplyIds = new Set((item.replies || []).map((reply) => String(reply.id)))
+          return existingReplyIds.has(String(nextReply.id))
+            ? item
+            : { ...item, replies: [...(item.replies || []), nextReply] }
+        }))
         setReplyMap((prev) => ({ ...prev, [parentId]: '' }))
+        setExpandedReplies((prev) => ({ ...prev, [parentId]: true }))
         setModerationPending((prev) => prev + 1)
       } else {
-        const { data, error } = await supabase.from('info_comments').insert({
-          blog_id: blogId,
-          user_id: userId,
-          content,
-          status: 'pending',
+        const response = await fetch('/api/blog-comments', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blogId, content }),
         })
-
-        if (error) throw error
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to submit your comment.')
+        const data = payload.comment
 
         trackUserActivity({
           userId,
@@ -392,7 +435,7 @@ export default function BlogDetailPage() {
         })
 
         const generatedCommentId =
-          data?.[0]?.id ||
+          data?.id ||
           (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `comment-${Date.now()}`)
 
         const createdComment = {
@@ -400,11 +443,11 @@ export default function BlogDetailPage() {
           blog_id: blogId,
           user_id: userId,
           content,
-          status: 'pending',
+          status: 'approved',
           created_at: new Date().toISOString(),
           likes: 0,
           replies: [],
-          info_users: { full_name: userName, email: userName },
+          info_users: data?.info_users || { full_name: userName, email: userName, profile_image_url: null },
         }
 
         setComments((prev) => [createdComment, ...prev])
@@ -417,10 +460,21 @@ export default function BlogDetailPage() {
       }
     } catch (error) {
       console.error('Error submitting comment:', error)
-      alert('An error occurred. Please try again.')
+      alert(error?.message || 'Unable to submit your comment. Please try again.')
     } finally {
       setSubmittingComment(false)
     }
+  }
+
+  const updateReplyDraft = (commentId, value) => {
+    setReplyMap((previous) => ({ ...previous, [commentId]: value }))
+  }
+
+  const selectMention = (commentId, user) => {
+    const currentValue = replyMap[commentId] || ''
+    const name = user.full_name || user.email || 'User'
+    const nextValue = currentValue.replace(/(?:^|\s)@([^@\s]*)$/, (match) => `${match.startsWith(' ') ? ' ' : ''}@${name} `)
+    setReplyMap((previous) => ({ ...previous, [commentId]: nextValue }))
   }
 
   const handleStartEditComment = (comment) => {
@@ -567,9 +621,14 @@ export default function BlogDetailPage() {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-slate-900">
-            {comment.info_users?.full_name || comment.info_users?.email || 'Anonymous'}
-          </p>
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">
+              {comment.info_users?.profile_image_url ? <img src={comment.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(comment.info_users?.full_name || comment.info_users?.email || 'Anonymous')}
+            </span>
+            <p className="font-semibold text-slate-900">
+              {comment.info_users?.full_name || comment.info_users?.email || 'Anonymous'}
+            </p>
+          </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
             <span>{formatDate(comment.created_at)}</span>
             {comment.status && comment.status !== 'approved' && (
@@ -675,7 +734,12 @@ export default function BlogDetailPage() {
         <button
           type="button"
           onClick={() => {
-            setReplyMap((prev) => ({ ...prev, [comment.id]: prev[comment.id] || '' }))
+            const authorName = comment.info_users?.full_name || comment.info_users?.email || 'there'
+            setReplyMap((prev) => ({
+              ...prev,
+              [comment.id]: prev[comment.id] || `@${authorName} `,
+            }))
+            setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }))
           }}
           className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100"
         >
@@ -714,15 +778,32 @@ export default function BlogDetailPage() {
 
       {replyMap[comment.id] !== undefined && (
         <div className="mt-3 space-y-2">
-          <textarea
-            value={replyMap[comment.id] || ''}
-            onChange={(event) =>
-              setReplyMap((prev) => ({ ...prev, [comment.id]: event.target.value }))
-            }
-            rows={3}
-            placeholder="Write a reply..."
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
-          />
+          <div className="relative">
+            <textarea
+              value={replyMap[comment.id] || ''}
+              onChange={(event) => updateReplyDraft(comment.id, event.target.value)}
+              rows={3}
+              placeholder="Write a reply or mention someone with @..."
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
+            />
+            {(mentionSuggestions[comment.id] || []).length > 0 && (
+              <div className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                {(mentionSuggestions[comment.id] || []).map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => selectMention(comment.id, user)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-sky-50"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">
+                      {user.profile_image_url ? <img src={user.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(user.full_name || user.email || 'User')}
+                    </span>
+                    <span className="truncate text-xs font-semibold text-slate-700">{user.full_name || user.email || 'User'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => handleCommentSubmit(comment.id)}
@@ -734,9 +815,40 @@ export default function BlogDetailPage() {
         </div>
       )}
 
-      {(comment.replies || []).length > 0 && (
+      {(comment.replies || []).length > 0 && !expandedReplies[comment.id] && (
+        <button
+          type="button"
+          onClick={() => setExpandedReplies((previous) => ({ ...previous, [comment.id]: true }))}
+          className="mt-3 inline-flex items-center gap-1 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+          View replies ({(comment.replies || []).length})
+        </button>
+      )}
+
+      {(comment.replies || []).length > 0 && expandedReplies[comment.id] && (
         <div className="mt-4 space-y-3">
-          {(comment.replies || []).map((reply) => renderComment(reply, true))}
+          {(comment.replies || []).slice(0, visibleReplies[comment.id] || INITIAL_REPLIES).map((reply) => renderComment(reply, true))}
+          {(comment.replies || []).length > (visibleReplies[comment.id] || INITIAL_REPLIES) && (
+            <button
+              type="button"
+              onClick={() => setVisibleReplies((previous) => ({
+                ...previous,
+                [comment.id]: (previous[comment.id] || INITIAL_REPLIES) + REPLIES_PER_PAGE,
+              }))}
+              className="ml-6 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+              See more replies ({(comment.replies || []).length - (visibleReplies[comment.id] || INITIAL_REPLIES)})
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setExpandedReplies((previous) => ({ ...previous, [comment.id]: false }))}
+            className="ml-6 inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+          >
+            Hide replies
+          </button>
         </div>
       )}
     </div>

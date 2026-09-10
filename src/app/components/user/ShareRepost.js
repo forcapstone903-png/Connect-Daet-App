@@ -21,14 +21,16 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
       return
     }
     try {
-      const { error } = await supabase.from('reposts').upsert({
-        user_id: userId,
-        original_content_type: contentType,
-        original_content_id: contentId,
-        quote_text: quote || null,
-      }, { onConflict: 'user_id,original_content_type,original_content_id' })
-
-      if (error) throw error
+      const response = await fetch('/api/reposts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ contentType, contentId, quoteText: quote }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to repost this content.')
+      }
 
       await trackShare('repost')
       setShowRepostModal(false)
@@ -36,8 +38,8 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
       setShowMenu(false)
       if (onShared) onShared('repost')
     } catch (err) {
-      console.error('Repost failed:', err)
-      alert('Failed to repost. Please try again.')
+      console.error('Repost failed:', err?.message || err)
+      alert(err?.message || 'Failed to repost. Please try again.')
     }
   }
 

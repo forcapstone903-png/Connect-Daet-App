@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { getServerSession } from '@/lib/serverAuth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -45,10 +46,14 @@ export async function POST(request) {
   if (!adminSupabase) return missingConfig()
 
   try {
+    const session = getServerSession(request)
+    const actorId = session?.user_id || null
+    if (!actorId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
+
     const body = await request.json()
     const title = (body.title || '').trim()
     const content = (body.content || '').trim()
-    const created_by = body.created_by || null
+    const created_by = actorId
     const status = body.status || 'published'
 
     if (!title || !content) {
@@ -77,30 +82,31 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    const link = `/forum/${data.id}`
+    const link = `/user/forums/${data.id}`
     const contentType = 'forum'
     const recipients = await adminSupabase
-      .from('info_users')
-      .select('id')
-      .eq('status', 'active')
-      .neq('user_type', 'admin')
+      .from('user_follows')
+      .select('follower_id')
+      .eq('following_id', actorId)
+      .neq('follower_id', actorId)
 
     if (!recipients.error && Array.isArray(recipients.data)) {
       const rows = []
-      for (const recipient of recipients.data) {
-        if (!recipient?.id) continue
+      for (const follow of recipients.data) {
+        const recipientId = follow?.follower_id
+        if (!recipientId) continue
 
         const { data: existing } = await adminSupabase
           .from('info_notifications')
           .select('id')
-          .eq('user_id', recipient.id)
+          .eq('user_id', recipientId)
           .eq('link', link)
           .limit(1)
 
         if (existing && existing.length > 0) continue
 
         rows.push({
-          user_id: recipient.id,
+          user_id: recipientId,
           title: 'New forum post from Administrator',
           message: title,
           type: contentType,
@@ -108,12 +114,17 @@ export async function POST(request) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           link,
-          actor_id: session?.user_id || null,
+          post_id: data.id,
+          post_owner_id: actorId,
+          actor_id: actorId,
         })
       }
 
       if (rows.length) {
-        await adminSupabase.from('info_notifications').insert(rows)
+        const { error: notificationError } = await adminSupabase.from('info_notifications').insert(rows)
+        if (notificationError && notificationError.code !== '23505') {
+          console.error('Forum follower notification insert failed:', notificationError.message || notificationError)
+        }
       }
     }
 

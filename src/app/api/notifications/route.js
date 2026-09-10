@@ -6,7 +6,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 
 async function attachActorProfiles(adminSupabase, notifications) {
-  const actorIds = [...new Set((notifications || []).map((notification) => notification.actor_id).filter(Boolean))]
+  const actorIds = [...new Set((notifications || []).map((notification) => notification.actor_id || notification.post_owner_id).filter(Boolean))]
   if (!actorIds.length) return notifications || []
 
   const { data: actors } = await adminSupabase
@@ -17,7 +17,8 @@ async function attachActorProfiles(adminSupabase, notifications) {
   const actorsById = new Map((actors || []).map((actor) => [actor.id, actor]))
   return (notifications || []).map((notification) => ({
     ...notification,
-    actor: notification.actor_id ? actorsById.get(notification.actor_id) || null : null,
+    actor_id: notification.actor_id || notification.post_owner_id || null,
+    actor: actorsById.get(notification.actor_id || notification.post_owner_id) || null,
   }))
 }
 
