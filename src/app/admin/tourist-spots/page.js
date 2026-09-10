@@ -11,6 +11,8 @@ import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/components/MediaUpload';
+import Comments from '@/app/components/user/Comments';
+import Reactions from '@/app/components/user/Reactions';
 
 const DEFAULT_SPOT_CATEGORIES = [
   { value: 'beach', label: 'Beach', color: 'bg-cyan-100 text-cyan-700' },
@@ -751,9 +753,7 @@ export default function TouristSpotsManagement() {
                 <div className="relative h-48 bg-gray-100">
                   {spot.image_url ? (
                     <img src={spot.image_url} alt={spot.name} className="w-full h-full object-cover" />
-                    ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>
-                  )}
+                  ) : null}
                   <div className="absolute top-3 left-3">
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${category.color}`}>
                       {category.label}
@@ -965,10 +965,10 @@ export default function TouristSpotsManagement() {
 
       {showPreviewModal && previewSpot && (
         <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden">
+          <div className="bg-white rounded-2xl w-full max-w-3xl overflow-hidden">
             <div className="relative h-64 bg-gray-100">
               {previewSpot.image_url ? <img src={previewSpot.image_url} alt={previewSpot.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>}
-              <button onClick={() => setShowPreviewModal(false)} className="absolute top-3 right-3 bg-white/90 px-3 py-1 rounded-full text-sm">Close</button>
+              <button onClick={closeModal} className="absolute top-3 right-3 bg-white/90 px-3 py-1 rounded-full text-sm shadow-sm hover:bg-white">Close</button>
             </div>
             <div className="p-5">
               <div className="flex justify-between items-center mb-2">
@@ -982,6 +982,21 @@ export default function TouristSpotsManagement() {
                 <div>Entrance Fee: {previewSpot.entrance_fee ? `₱${previewSpot.entrance_fee}` : 'Free'}</div>
                 <div>Rating: {previewSpot.rating ? `${previewSpot.rating}/5` : 'Not rated'}</div>
                 <div>Views: {previewSpot.view_count || 0}</div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold text-gray-800">Reactions</div>
+                  <div className="text-xs text-gray-500">Comments</div>
+                </div>
+                <div className="mt-2">
+                  <Reactions contentType="tourist_spot" contentId={previewSpot.id} userId={user?.id} contentTitle={previewSpot.name} fullWidth={true} />
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                <div className="text-sm font-semibold text-gray-800 mb-3">Comments</div>
+                <Comments contentType="tourist_spot" contentId={previewSpot.id} userId={user?.id} contentOwnerId={previewSpot.created_by || user?.id} contentTitle={previewSpot.name} compact={true} />
               </div>
             </div>
           </div>

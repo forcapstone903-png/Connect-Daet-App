@@ -1,1327 +1,2205 @@
-'use client'
+// app/admin/dashboard/page.js
+'use client';
 
-/**
- * Professional, secure dashboard for CONNECT Daet application
- * - Authentication guard & session validation
- * - Database-driven content (no hardcoded data)
- * - Social media feed layout
- * - RLS-protected queries
- * - Error handling with user feedback
- */
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Bell, MessageSquare } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import MediaUpload from '@/app/components/MediaUpload';
+import AdminSidebar from '@/app/components/AdminSidebar';
+import { Icon } from '@/app/components/Icon';
+import { hasAdminAccess, canAccessAdminDashboard } from '@/lib/adminRoles'
+import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies';
+import { performLogout } from '@/lib/clientLogout';
 
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { startTransition, useEffect, useMemo, useState } from 'react'
-import {
-  AlertCircle,
-  ArrowUp,
-  Flame,
-  Loader,
-  LogOut,
-  MessageCircle,
-  Menu,
-  MapPinned,
-  MoreHorizontal,
-  MapPin,
-  RefreshCw,
-  ShieldCheck,
-  Search,
-  Settings,
-  Sparkles,
-  Star,
-  Clock3,
-  TrendingUp,
-  UserPlus,
-  Zap,
-} from 'lucide-react'
-import { supabase } from '@/lib/supabase'
-import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import { performLogout } from '@/lib/clientLogout'
-import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
-import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
-import SocialActionBar from '@/app/components/user/SocialActionBar'
-import Comments from '@/app/components/user/Comments'
-import DailyFeedback from '@/app/components/user/DailyFeedback'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
+// Weather API configuration
+const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
+const DAET_COORDS = { lat: 14.1122, lon: 122.9553 };
 
-// Database table constants
-const TABLES = {
-  USERS: 'info_users',
-  BLOGS: 'info_blogs',
-  EVENTS: 'info_events',
-  ANNOUNCEMENTS: 'info_announcements',
-  FORUM_THREADS: 'forum_threads',
-  CATEGORIES: 'system_categories',
-  FEED_PREFERENCES: 'user_feed_preferences',
-  ACTIVITY_LOG: 'user_activity_log',
-}
+// Venues (fetched from DB) will populate location suggestions
+const EVENT_CATEGORIES = ['festival', 'concert', 'exhibition', 'workshop', 'sports', 'cultural'];
 
-const DASHBOARD_CACHE_TTL_MS = 120000
-const DASHBOARD_CACHE = new Map()
-const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
-const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
+// ---------------------------------------------------------------------------
+// Notification persistence (client-side dashboard notification bell)
+// ---------------------------------------------------------------------------
+// Notifications are kept in localStorage so they survive a page refresh, and
+// so that "Clear all" stays cleared even after reloading the page.
+const NOTIFICATIONS_STORAGE_KEY = 'admin_dashboard_notifications';
+const WELCOME_NOTIFICATION_SHOWN_KEY = 'admin_dashboard_welcome_shown';
+const SENT_EVENT_NOTIFICATIONS_KEY = 'sent_event_notifications';
+const SENT_WEATHER_ALERTS_KEY = 'sent_weather_alerts';
+const ERROR_COOLDOWNS_KEY = 'admin_dashboard_error_cooldowns';
+const MAX_NOTIFICATIONS = 20;
+const DASHBOARD_LOAD_TIMEOUT_MS = 15000;
 
-function readStoredSet(key) {
-  if (typeof window === 'undefined') return new Set()
-  try {
-    const values = JSON.parse(localStorage.getItem(key) || '[]')
-    return new Set(Array.isArray(values) ? values : [])
-  } catch {
-    return new Set()
-  }
-}
+const withTimeout = (promise, timeoutMs, label) => Promise.race([
+  promise,
+  new Promise((resolve) => {
+    setTimeout(() => {
+      console.warn(`${label} timed out after ${timeoutMs}ms`);
+      resolve();
+    }, timeoutMs);
+  }),
+]);
 
-function writeStoredSet(key, values) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(key, JSON.stringify([...values]))
-}
-
-function getDashboardCache(userId) {
-  const cacheEntry = DASHBOARD_CACHE.get(userId)
-  if (!cacheEntry) return null
-
-  if (Date.now() > cacheEntry.expiresAt) {
-    DASHBOARD_CACHE.delete(userId)
-    return null
-  }
-
-  return cacheEntry.data
-}
-
-function setDashboardCache(userId, data) {
-  DASHBOARD_CACHE.set(userId, {
-    data,
-    expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-  })
-}
-
-// Helper functions
-function formatDate(value) {
-  if (!value) return 'Recently'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Recently'
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function formatRelativeTime(value) {
-  if (!value) return 'Recently'
-  const timestamp = new Date(value).getTime()
-  if (Number.isNaN(timestamp)) return 'Recently'
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
-  if (seconds < 60) return 'Just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
-  return formatDate(value)
-}
-
-function getImageUrl(value, fallback = null) {
-  if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
-  if (typeof value === 'string' && value.trim()) return value
-  return fallback
-}
-
-function getInitials(name = '') {
-  return (name || 'T')
-    .split(' ')
+const getUserInitials = (user) => {
+  const name = user?.full_name || user?.email || 'User';
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() || '')
-    .join('') || 'T'
-}
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'U';
+};
 
-export default function UserDashboardPage() {
-  const router = useRouter()
+const loadStoredNotifications = () => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(NOTIFICATIONS_STORAGE_KEY) || '[]');
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((n) => ({ ...n, timestamp: n.timestamp ? new Date(n.timestamp) : new Date() }))
+      .slice(0, MAX_NOTIFICATIONS);
+  } catch (e) {
+    return [];
+  }
+};
 
-  // Auth & User state
-  const [authenticated, setAuthenticated] = useState(false)
-  const [authError, setAuthError] = useState(null)
-  const [userId, setUserId] = useState(null)
-  const [userName, setUserName] = useState('Traveler')
-  const [userAvatarUrl, setUserAvatarUrl] = useState('')
+const loadSentCache = (key) => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const value = JSON.parse(localStorage.getItem(key) || '{}');
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  } catch (e) {
+    return {};
+  }
+};
 
-  // Data state
-  const [feed, setFeed] = useState([])
-  const [categories, setCategories] = useState([])
-  const [stats, setStats] = useState({ blogs: 0, events: 0, announcements: 0 })
-  const [announcements, setAnnouncements] = useState([])
-  const [userSignals, setUserSignals] = useState({ activities: [], reactions: [], favorites: [], preferredCategories: [] })
+const saveSentCache = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // ignore storage write errors
+  }
+};
 
-  // UI state
-  const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [searchFocused, setSearchFocused] = useState(false)
-  const [recentSearches, setRecentSearches] = useState([])
-  const [profileSearchResults, setProfileSearchResults] = useState([])
-  const [activeCategory, setActiveCategory] = useState('all')
-  const [feedScope, setFeedScope] = useState('for-you')
-  const [error, setError] = useState(null)
+const addOneCalendarDay = (dateString) => {
+  if (!dateString) return null;
+  const base = new Date(dateString + 'T00:00:00');
+  if (Number.isNaN(base.getTime())) return null;
+  const next = new Date(base);
+  next.setDate(next.getDate() + 1);
+  const year = next.getFullYear();
+  const month = String(next.getMonth() + 1).padStart(2, '0');
+  const day = String(next.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
-  // Social engagement state (from feature spec: reactions, bookmarks, gamification)
-  const [reactions, setReactions] = useState(() => {
-    if (typeof window === 'undefined') return {}
-    try {
-      return JSON.parse(localStorage.getItem('daet_feed_reactions') || '{}')
-    } catch {
-      return {}
-    }
-  })
-  const [savedItems, setSavedItems] = useState(() => {
-    if (typeof window === 'undefined') return new Set()
-    try {
-      const raw = JSON.parse(localStorage.getItem('daet_saved_items') || '[]')
-      return new Set(raw)
-    } catch {
-      return new Set()
-    }
-  })
-  const [gamification, setGamification] = useState({ points: 0, level: 1, streak: 0 })
-  const [toastMessage, setToastMessage] = useState('')
-  const [showReactions, setShowReactions] = useState(null)
-  const [commentCounts, setCommentCounts] = useState({})
-  const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
-  const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
-  const [openPostMenu, setOpenPostMenu] = useState(null)
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
-  const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
-  const [feedRefreshKey, setFeedRefreshKey] = useState(0)
-  const [feedRefreshing, setFeedRefreshing] = useState(false)
-  const [feedNow, setFeedNow] = useState(() => Date.now())
-  const [feedVisibleCount, setFeedVisibleCount] = useState(10)
-  const [feedEndReached, setFeedEndReached] = useState(false)
+// FullCalendar treats `end` as exclusive (the day AFTER the last highlighted
+// day). Our DB stores an inclusive end_date, so this is the inverse of
+// addOneCalendarDay - used to convert exclusive dates coming back from
+// select()/eventClick() into the inclusive end_date the form/DB expect.
+const subtractOneCalendarDay = (dateString) => {
+  if (!dateString) return null;
+  const base = new Date(dateString + 'T00:00:00');
+  if (Number.isNaN(base.getTime())) return null;
+  const prev = new Date(base);
+  prev.setDate(prev.getDate() - 1);
+  const year = prev.getFullYear();
+  const month = String(prev.getMonth() + 1).padStart(2, '0');
+  const day = String(prev.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Rate-limit recurring error notifications so they do not repopulate the
+// notification bell on every page refresh.
+const markErrorNotified = (key, cooldownMs = 10 * 60 * 1000) => {
+  if (typeof window === 'undefined') return true;
+  try {
+    const cooldowns = JSON.parse(localStorage.getItem(ERROR_COOLDOWNS_KEY) || '{}');
+    const lastNotified = cooldowns[key] ? new Date(cooldowns[key]).getTime() : 0;
+    if (Date.now() - lastNotified < cooldownMs) return true;
+    cooldowns[key] = new Date().toISOString();
+    localStorage.setItem(ERROR_COOLDOWNS_KEY, JSON.stringify(cooldowns));
+    return false;
+  } catch (e) {
+    return false;
+  }
+};
+
+export default function AdminDashboard() {
+  const router = useRouter();
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Weather State
+  const [weather, setWeather] = useState({
+    current: null, forecast: [], loading: true, error: null, lastUpdated: null, alert: null
+  });
+  
+  // Analytics Stats
+  const [stats, setStats] = useState({
+    totalUsers: 0, totalTourists: 0, totalArtisans: 0, totalOperators: 0, onlineUsers: 0,
+    totalEvents: 0, totalSpots: 0, totalBlogs: 0
+  });
+  const [dailyFeedbackQuestion, setDailyFeedbackQuestion] = useState(null);
+  const [dailyFeedbackVotes, setDailyFeedbackVotes] = useState([]);
+  const [dailyFeedbackDraft, setDailyFeedbackDraft] = useState('');
+  const [publishingFeedback, setPublishingFeedback] = useState(false);
+  
+  const [recentUsers, setRecentUsers] = useState([]);
+  const [venues, setVenues] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [unreadInquiries, setUnreadInquiries] = useState([]);
+  const [activityFeed, setActivityFeed] = useState([]);
+  
+  // Modal States
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [showQuickPublishModal, setShowQuickPublishModal] = useState(false);
+  const [showInquiryModal, setShowInquiryModal] = useState(false);
+  const [selectedInquiry, setSelectedInquiry] = useState(null);
+  const [showWeatherAlertModal, setShowWeatherAlertModal] = useState(false);
+  const [weatherAlertMessage, setWeatherAlertMessage] = useState('');
+  
+  const [eventForm, setEventForm] = useState({
+    id: '', title: '', description: '', location: '', start_date: '', end_date: '',
+    start_time: '', end_time: '', category: '', is_free: true, ticket_price: '',
+    max_attendees: '', organizer: '', status: 'published', imageUrl: '', videoUrl: ''
+  });
+  
+  const [quickPublish, setQuickPublish] = useState({
+    type: 'announcement', title: '', message: '', severity: 'info', imageUrl: '', videoUrl: ''
+  });
+  
+  const [toastMessage, setToastMessage] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [notifications, setNotifications] = useState(() => loadStoredNotifications());
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showWeatherDetails, setShowWeatherDetails] = useState(false);
+  const [locationSuggestions, setLocationSuggestions] = useState([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [calendarKey, setCalendarKey] = useState(0);
+
+  const unreadNotificationCount = notifications.filter((notification) => !notification.read).length;
+
+  const calendarRef = useRef(null);
+  const eventsRef = useRef([]);
+  const eventElListenersRef = useRef(new Map());
+  const locationInputRef = useRef(null);
+  const weatherPopoverRef = useRef(null);
+  const notificationsPopoverRef = useRef(null);
 
   useEffect(() => {
-    const handleFeedRefresh = () => {
-      setFeedNow(Date.now())
-      setFeedRefreshing(true)
-      setFeedRefreshKey((value) => value + 1)
-    }
-    window.addEventListener('daet-feed-refresh', handleFeedRefresh)
-    return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
-  }, [])
+    if (!showWeatherDetails && !showNotifications) return undefined;
 
-  useEffect(() => {
-    const authorIds = [...new Set(
-      feed
-        .filter((item) => item.created_by && (!item.author || item.author.full_name === 'Administrator'))
-        .map((item) => item.created_by)
-    )]
-    if (!authorIds.length) return undefined
-
-    let active = true
-    const hydrateAuthors = async () => {
-      const profiles = await Promise.all(authorIds.map(async (authorId) => {
-        try {
-          const response = await fetch(`/api/users/${encodeURIComponent(authorId)}`, { credentials: 'same-origin' })
-          const result = await response.json()
-          return response.ok && result.success ? result.profile : null
-        } catch {
-          return null
-        }
-      }))
-      if (!active) return
-      const authorMap = new Map(profiles.filter(Boolean).map((profile) => [profile.id, profile]))
-      if (!authorMap.size) return
-      setFeed((currentFeed) => {
-        let changed = false
-        const nextFeed = currentFeed.map((item) => {
-          const author = item.created_by ? authorMap.get(item.created_by) : null
-          if (!author) return item
-          const nextAuthor = { ...author, user_type: author.user_type || 'admin' }
-          if (item.author?.id === nextAuthor.id && item.author?.full_name === nextAuthor.full_name && item.author?.profile_image_url === nextAuthor.profile_image_url) return item
-          changed = true
-          return { ...item, author: nextAuthor }
-        })
-        return changed ? nextFeed : currentFeed
-      })
-    }
-    void hydrateAuthors()
-    return () => { active = false }
-  }, [feed])
-
-  useEffect(() => {
-    const normalizedQuery = search.trim()
-    if (normalizedQuery.length < 2) {
-      startTransition(() => setProfileSearchResults([]))
-      return undefined
-    }
-
-    const controller = new AbortController()
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/search/users?q=${encodeURIComponent(normalizedQuery)}&limit=5`, {
-          credentials: 'same-origin',
-          signal: controller.signal,
-        })
-        const data = await response.json()
-        if (!controller.signal.aborted) setProfileSearchResults(data.success ? data.users || [] : [])
-      } catch (error) {
-        if (error.name !== 'AbortError') setProfileSearchResults([])
+    const handleOutsidePointerDown = (event) => {
+      if (showWeatherDetails && !weatherPopoverRef.current?.contains(event.target)) {
+        setShowWeatherDetails(false);
       }
-    }, 300)
+      if (showNotifications && !notificationsPopoverRef.current?.contains(event.target)) {
+        setShowNotifications(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown);
+  }, [showWeatherDetails, showNotifications]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    const loadDailyFeedback = async () => {
+      const response = await fetch('/api/daily-feedback', { credentials: 'same-origin' });
+      const result = await response.json();
+      const question = result.success ? result.question : null;
+      if (!active) return;
+      setDailyFeedbackQuestion(question || null);
+      setDailyFeedbackDraft(question?.question || '');
+      if (!question) {
+        setDailyFeedbackVotes([]);
+        return;
+      }
+      if (active) setDailyFeedbackVotes(result.votes || []);
+    };
+    void loadDailyFeedback();
+    return () => { active = false };
+  }, [user]);
+
+  const saveDailyFeedbackQuestion = async () => {
+    if (publishingFeedback) return;
+    const questionText = dailyFeedbackDraft.trim();
+    if (!questionText) return;
+    setPublishingFeedback(true);
+    try {
+      const response = await fetch('/api/daily-feedback', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', question: questionText }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        showToast(`Failed to save feedback question: ${result.message || 'Unable to publish'}`, true);
+        return;
+      }
+      setDailyFeedbackQuestion(result.question);
+      showToast('Daily feedback question published.', false);
+    } finally {
+      setPublishingFeedback(false);
+    }
+  };
+
+  const getCategoryColor = (category) => {
+    const colors = { 
+      'festival': '#8B5CF6', 
+      'concert': '#EF4444', 
+      'exhibition': '#F59E0B', 
+      'workshop': '#3B82F6', 
+      'sports': '#06B6D4', 
+      'cultural': '#EC4899' 
+    };
+    return colors[category] || '#0f3b2c';
+  };
+
+  const fetchEventsFromDB = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('info_events')
+        .select('*')
+        .order('start_date', { ascending: true });
+      
+      if (error) throw error;
+      
+      const formattedEvents = data.map(event => ({
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        location: event.location,
+        start: event.start_date,
+        end: event.end_date,
+        category: event.category,
+        is_free: event.is_free,
+        ticket_price: event.ticket_price,
+        max_attendees: event.max_attendees,
+        organizer: event.organizer,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        status: event.status,
+        image_url: event.featured_image || (event.images && event.images[0]) || null,
+        video_url: (event.videos && event.videos[0]) || null
+      }));
+      
+      setEvents(formattedEvents);
+      setCalendarKey(prev => prev + 1);
+      return formattedEvents;
+    } catch (err) {
+      console.error('Error fetching events:', err);
+      if (!supabase) {
+        if (!markErrorNotified('supabase_unhealthy')) {
+          addNotification('Supabase Unhealthy', 'Supabase data service is unavailable. Admin dashboard data could not be loaded.', 'error', null, 0);
+        }
+      } else if (!markErrorNotified('fetch_events_error')) {
+        addNotification('Database Error', `Failed to load events: ${err.message}`, 'error', null, 0);
+      }
+      return [];
+    }
+  };
+
+  const saveEventToDB = async (eventData) => {
+    setSaving(true);
+    try {
+      const dbEvent = {
+        title: eventData.title,
+        description: eventData.description || '',
+        location: eventData.location || '',
+        start_date: eventData.start_date,
+        end_date: eventData.end_date || eventData.start_date,
+        start_time: eventData.start_time || null,
+        end_time: eventData.end_time || null,
+        category: eventData.category || 'festival',
+        is_free: eventData.is_free === true || eventData.is_free === 'true',
+        ticket_price: eventData.is_free ? null : (eventData.ticket_price ? parseFloat(eventData.ticket_price) : null),
+        max_attendees: eventData.max_attendees ? parseInt(eventData.max_attendees) : null,
+        organizer: eventData.organizer || 'Daet Tourism Office',
+        created_by: user?.id || null,
+        status: eventData.status || 'published',
+          featured_image: eventData.imageUrl || null,
+          images: eventData.imageUrl ? [eventData.imageUrl] : [],
+          videos: eventData.videoUrl ? [eventData.videoUrl] : []
+      };
+
+      let data, error;
+      if (eventData.id) {
+        ({ data, error } = await supabase
+          .from('info_events')
+          .update(dbEvent)
+          .eq('id', eventData.id)
+          .select());
+      } else {
+        ({ data, error } = await supabase
+          .from('info_events')
+          .insert([dbEvent])
+          .select());
+      }
+
+      if (error) throw error;
+
+      await fetchEventsFromDB();
+
+      return Array.isArray(data) ? data[0] : data;
+    } catch (err) {
+      try { console.error('Error saving event:', err, JSON.stringify(err)); } catch (e) { console.error('Error saving event (stringify failed):', err); }
+      const msg = err?.message || err?.error || (typeof err === 'string' ? err : null) || JSON.stringify(err) || 'Unknown error';
+      addNotification('Save Error', `Failed to save event: ${msg}`, 'error', null, 0);
+      throw err;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteEventFromDB = async (eventId) => {
+    try {
+      const { error } = await supabase
+        .from('info_events')
+        .delete()
+        .eq('id', eventId);
+      
+      if (error) throw error;
+      await fetchEventsFromDB();
+      return true;
+    } catch (err) {
+      console.error('Error deleting event:', err);
+      addNotification('Delete Error', `Failed to delete event: ${err.message}`, 'error', null, 0);
+      return false;
+    }
+  };
+
+  const updateEventDates = async (eventId, newStartDate, newEndDate) => {
+    try {
+      const formatDate = (date) => {
+        if (!date) return null;
+
+        if (typeof date === 'string') {
+          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+          if (/^\d{4}-\d{2}-\d{2}T/.test(date)) return date.split('T')[0];
+
+          const d = new Date(date);
+          if (Number.isNaN(d.getTime())) return null;
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+
+        if (date instanceof Date) {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+
+        return null;
+      };
+
+      const formatInclusiveEndDate = (date) => {
+        const exclusive = formatDate(date);
+        if (!exclusive) return null;
+        const [year, month, day] = exclusive.split('-').map(Number);
+        const parsed = new Date(year, month - 1, day);
+        parsed.setDate(parsed.getDate() - 1);
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      };
+      
+      const formattedStart = formatDate(newStartDate);
+      const formattedEnd = formatInclusiveEndDate(newEndDate || newStartDate);
+      
+      if (!formattedStart) throw new Error('Invalid start date');
+      
+      const { error } = await supabase
+        .from('info_events')
+        .update({ start_date: formattedStart, end_date: formattedEnd || formattedStart })
+        .eq('id', eventId);
+      
+      if (error) throw error;
+      
+      await fetchEventsFromDB();
+      showToast('Event rescheduled successfully!', false);
+      addNotification('Event Rescheduled', `Event has been moved to ${formattedStart}`, 'info', null, 0);
+      return true;
+    } catch (err) {
+      console.error('Error updating event dates:', err);
+      showToast(`Failed to reschedule: ${err.message}`, true);
+      return false;
+    }
+  };
+
+  const generateNotificationId = () => Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+
+  const addNotification = (title, message, type = 'info', link = null, duration = 0) => {
+    const newNotification = {
+      id: generateNotificationId(), title, message, type, link,
+      timestamp: new Date(), read: false
+    };
+    
+    setNotifications(prev => [newNotification, ...prev].slice(0, MAX_NOTIFICATIONS));
+    showToast(message, type === 'error');
+    
+    return newNotification.id;
+  };
+  
+  const markAsRead = (id) => {
+    setNotifications(prev => prev.map(notif => notif.id === id ? { ...notif, read: true } : notif));
+    void fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+  };
+  
+  const markAllAsRead = () => {
+    setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
+    void fetch('/api/notifications', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markAllRead: true }),
+    });
+  };
+
+  const openNotification = (notification) => {
+    markAsRead(notification.id);
+    setShowNotifications(false);
+    if (notification.link) router.push(notification.link);
+  };
+  
+  const clearAllNotifications = () => {
+    setNotifications([]);
+    setShowNotifications(false);
+    try {
+      localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
+    } catch (e) {
+      // ignore storage errors
+    }
+    void fetch('/api/notifications', { method: 'DELETE' });
+    showToast('All notifications have been cleared', false);
+  };
+  
+  const removeNotification = (id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const checkUpcomingEvents = () => {
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(now.getDate() + 1);
+    const threeDaysLater = new Date(now);
+    threeDaysLater.setDate(now.getDate() + 3);
+    const sevenDaysLater = new Date(now);
+    sevenDaysLater.setDate(now.getDate() + 7);
+
+    const sentNotifications = loadSentCache(SENT_EVENT_NOTIFICATIONS_KEY);
+
+    events.forEach(event => {
+      if (event.status !== 'published') return;
+      const eventDate = new Date(event.start);
+      const eventTitle = event.title;
+      const notificationKey = `${event.id}_${eventDate.toDateString()}`;
+
+      if (!sentNotifications[notificationKey]) {
+        if (eventDate.toDateString() === now.toDateString()) {
+          addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          sentNotifications[notificationKey] = true;
+        } else if (eventDate.toDateString() === tomorrow.toDateString()) {
+          addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          sentNotifications[notificationKey] = true;
+        } else if (eventDate.toDateString() === threeDaysLater.toDateString()) {
+          addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          sentNotifications[notificationKey] = true;
+        } else if (eventDate > now && eventDate <= sevenDaysLater) {
+          const daysDiff = Math.ceil((eventDate - now) / (1000 * 60 * 60 * 24));
+          addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          sentNotifications[notificationKey] = true;
+        }
+      }
+    });
+
+    saveSentCache(SENT_EVENT_NOTIFICATIONS_KEY, sentNotifications);
+  };
+
+  const persistWeatherAnnouncement = async (alertType, alertMsg) => {
+    const sentAlerts = loadSentCache(SENT_WEATHER_ALERTS_KEY);
+    const alertCacheKey = `${new Date().toDateString()}_${alertType}_${alertMsg.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`;
+
+    if (sentAlerts[alertCacheKey]) return;
+
+    try {
+      const { error } = await supabase
+        .from('info_announcements')
+        .insert([{
+          title: 'Weather Advisory',
+          content: alertMsg,
+          announcement_type: 'weather',
+          severity: alertType === 'critical' ? 'critical' : 'warning',
+          audience: 'all',
+          priority: alertType === 'critical' ? 3 : 2,
+          created_by: user?.user_id || user?.id || null,
+          status: 'published',
+          published_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      sentAlerts[alertCacheKey] = true;
+      saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
+    } catch (err) {
+      console.error('Weather announcement persist error:', err);
+      addNotification('Weather Announcement Sync Failed', 'Weather advisory could not be stored in the announcement page.', 'error', '/admin/announcement', 0);
+    }
+  };
+
+  const checkWeatherNotifications = (weatherData) => {
+    if (!weatherData?.current) return;
+    const condition = weatherData.current.condition;
+    const temp = weatherData.current.temp;
+    const windSpeed = weatherData.current.windSpeed;
+    let alertType = null;
+    let alertMsg = '';
+    
+    if (condition === 'Thunderstorm') {
+      alertType = 'critical';
+      alertMsg = 'THUNDERSTORM WARNING: Postpone outdoor events. Advise tourists to stay safe indoors.';
+    } else if (condition === 'Rain' || condition === 'Drizzle') {
+      if (weatherData.current.rainAmount && weatherData.current.rainAmount > 10) {
+        alertType = 'warning';
+        alertMsg = 'HEAVY RAIN ADVISORY: Expect flooding in low-lying areas. Consider indoor alternatives for scheduled events.';
+      } else {
+        alertType = 'warning';
+        alertMsg = 'RAIN ADVISORY: Rain expected today. Bring umbrellas and prepare indoor alternatives.';
+      }
+    } else if (temp > 35) {
+      alertType = 'warning';
+      alertMsg = 'EXTREME HEAT ADVISORY: Temperature above 35°C. Remind tourists to stay hydrated and avoid midday sun exposure.';
+    } else if (temp > 32) {
+      alertType = 'warning';
+      alertMsg = 'HEAT ADVISORY: High temperature today. Stay hydrated and avoid prolonged sun exposure.';
+    } else if (windSpeed > 30) {
+      alertType = 'critical';
+      alertMsg = 'TYPHOON SIGNAL: Strong winds detected. Water activities are UNSAFE. Consider evacuating beach areas.';
+    } else if (windSpeed > 20) {
+      alertType = 'warning';
+      alertMsg = 'STRONG WIND WARNING: Water activities may be unsafe. Exercise caution at Bagasbas Beach.';
+    }
+    
+    if (alertType) {
+      setWeather(prev => ({ ...prev, alert: { type: alertType, message: alertMsg } }));
+
+      const sentAlerts = loadSentCache(SENT_WEATHER_ALERTS_KEY);
+      const alertCacheKey = `${new Date().toDateString()}_${alertType}_${alertMsg.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`;
+      const alreadyHaveWeatherNotification = notifications.some((n) => n.title === 'Weather Alert' && n.message === alertMsg);
+
+      if (!sentAlerts[alertCacheKey] && !alreadyHaveWeatherNotification) {
+        addNotification('Weather Alert', alertMsg, alertType === 'critical' ? 'error' : 'warning', null, 0);
+      }
+
+      sentAlerts[alertCacheKey] = true;
+      saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
+
+      void persistWeatherAnnouncement(alertType, alertMsg);
+    } else {
+      setWeather(prev => ({ ...prev, alert: null }));
+    }
+  };
+
+  const getWeatherIcon = (condition) => {
+    return null
+  };
+
+  const getWeatherRecommendation = (condition, temp) => {
+    if (condition.includes('Rain') || condition === 'Drizzle') return { text: 'Indoor activities recommended. Bring umbrella!', type: 'warning' };
+    if (condition === 'Thunderstorm') return { text: 'Severe weather! Avoid outdoor activities.', type: 'error' };
+    if (temp > 32) return { text: 'Heat advisory! Stay hydrated, avoid midday sun.', type: 'warning' };
+    if (temp < 24) return { text: 'Cool weather - perfect for outdoor tours!', type: 'success' };
+    if (condition === 'Clear' || condition === 'Clouds') return { text: 'Great weather for tourism activities!', type: 'success' };
+    return { text: 'Moderate conditions suitable for tourism.', type: 'info' };
+  };
+
+  const fetchWeather = async () => {
+    setWeather(prev => ({ ...prev, loading: true, error: null }));
+    try {
+      const currentRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${DAET_COORDS.lat}&lon=${DAET_COORDS.lon}&units=metric&appid=${WEATHER_API_KEY}`);
+      if (!currentRes.ok) throw new Error('Failed to fetch current weather');
+      const currentData = await currentRes.json();
+
+      const forecastRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${DAET_COORDS.lat}&lon=${DAET_COORDS.lon}&units=metric&appid=${WEATHER_API_KEY}`);
+      if (!forecastRes.ok) throw new Error('Failed to fetch forecast');
+      const forecastData = await forecastRes.json();
+
+      const dailyForecast = [];
+      const daysMap = new Map();
+      forecastData.list.forEach(item => {
+        const date = item.dt_txt.split(' ')[0];
+        if (!daysMap.has(date) && dailyForecast.length < 5) {
+          daysMap.set(date, {
+            date,
+            temp_min: item.main.temp_min,
+            temp_max: item.main.temp_max,
+            temp: item.main.temp,
+            condition: item.weather[0].main,
+            description: item.weather[0].description,
+            icon: item.weather[0].icon
+          });
+          dailyForecast.push(daysMap.get(date));
+        }
+      });
+
+      const weatherData = {
+        current: {
+          temp: Math.round(currentData.main.temp), feelsLike: Math.round(currentData.main.feels_like),
+          condition: currentData.weather[0].main, description: currentData.weather[0].description,
+          humidity: currentData.main.humidity, windSpeed: currentData.wind.speed,
+          pressure: currentData.main.pressure, sunrise: currentData.sys.sunrise, sunset: currentData.sys.sunset,
+          icon: currentData.weather[0].icon, rainAmount: currentData.rain ? currentData.rain['1h'] || 0 : 0
+        },
+        forecast: dailyForecast.slice(0, 5),
+        lastUpdated: new Date()
+      };
+      setWeather(prev => ({ ...weatherData, loading: false, error: null, alert: prev.alert }));
+      checkWeatherNotifications(weatherData);
+    } catch (err) {
+      console.error('Weather fetch error:', err);
+      const fallback = getFallbackWeatherData();
+      setWeather(prev => ({ ...fallback, loading: false, error: 'Weather feed unavailable — showing Daet fallback conditions.', alert: null }));
+      if (!markErrorNotified('weather_api_error')) {
+        addNotification('Weather API Disconnected', 'Weather API could not be reached. The dashboard is using the fallback forecast data.', 'error', null, 0);
+      }
+    }
+  };
+
+  const handleIssueWeatherAlert = () => {
+    if (weather.alert) {
+      setWeatherAlertMessage(weather.alert.message);
+      setShowWeatherAlertModal(true);
+      setShowWeatherDetails(false);
+    }
+  };
+
+  const publishWeatherAlert = async () => {
+    setSaving(true);
+    try {
+      const normalizedMessage = (weatherAlertMessage || '').trim();
+      const alertType = weather.alert?.type === 'critical' ? 'critical' : 'warning';
+      const { data, error } = await supabase
+        .from('info_announcements')
+        .insert([{
+          title: 'Weather Advisory',
+          content: normalizedMessage || weather.alert?.message || 'Weather advisory is active.',
+          announcement_type: 'weather',
+          severity: alertType,
+          audience: 'all',
+          priority: alertType === 'critical' ? 3 : 2,
+          created_by: user?.user_id || user?.id,
+          status: 'published',
+          published_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      showToast('Weather alert published!', false);
+      addNotification('Weather Alert Published', `"Weather Advisory" has been sent to all users.`, 'warning', null, 0);
+      setShowWeatherAlertModal(false);
+      setWeather(prev => ({ ...prev, alert: null }));
+    } catch (err) {
+      try {
+        console.error('Publish error:', err, JSON.stringify(err));
+      } catch (e) {
+        console.error('Publish error (stringify failed):', err);
+      }
+      const msg = err?.message || err?.error || (typeof err === 'string' ? err : null) || JSON.stringify(err) || 'Unknown error';
+      showToast(`Failed to publish alert: ${msg}`, true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    const loadWeather = async () => {
+      if (!active) return;
+      await fetchWeather();
+    };
+
+    void loadWeather();
+    const interval = setInterval(() => {
+      void loadWeather();
+    }, 30 * 60 * 1000);
 
     return () => {
-      controller.abort()
-      clearTimeout(timer)
-    }
-  }, [search])
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   useEffect(() => {
-    if (!userId) return
-    startTransition(() => {
-      setHiddenPosts(readStoredSet(`${HIDDEN_POSTS_KEY}_${userId}`))
-      setNotInterestedTopics(readStoredSet(`${NOT_INTERESTED_KEY}_${userId}`))
-    })
-  }, [userId])
+    if (events.length === 0) return undefined;
 
+    let active = true;
+    const runChecks = () => {
+      if (!active) return;
+      checkUpcomingEvents();
+    };
+
+    runChecks();
+    const eventCheckInterval = setInterval(runChecks, 60 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(eventCheckInterval);
+    };
+  }, [events]);
+
+  // Show the welcome notification only once per admin so it does not come
+  // back on every page refresh after the user clears their notifications.
   useEffect(() => {
-    if (!userId) return
-
-    let isMounted = true
-    const loadFollowedPeople = async () => {
+    if (user) {
+      const userId = user.id || user.user_id || user.sub || user.email || 'admin';
       try {
-        const response = await fetch('/api/users/following', { credentials: 'same-origin' })
-        const result = await response.json()
-        if (!isMounted || !response.ok || !result.success) return
-        setFollowedSuggestions(new Set(result.following_ids || []))
-      } catch (error) {
-        if (isMounted) console.error('Followed people load failed:', error)
+        const welcomeKey = `${WELCOME_NOTIFICATION_SHOWN_KEY}_${userId}`;
+        if (!localStorage.getItem(welcomeKey)) {
+          addNotification('Welcome to Admin Dashboard', `Hello ${user.full_name || user.user_name || 'Admin'}! You have full control over events and tourism activities.`, 'success', null, 0);
+          localStorage.setItem(welcomeKey, '1');
+        }
+      } catch (e) {
+        // ignore storage errors
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
-    void loadFollowedPeople()
-    return () => {
-      isMounted = false
+  // Persist the notification list whenever it changes so cleared / unread
+  // state is preserved across page refreshes.
+  useEffect(() => {
+    try {
+      localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(notifications));
+    } catch (e) {
+      // ignore storage errors
     }
-  }, [userId])
+  }, [notifications]);
+
+  const showToast = (message, isError = false) => {
+    setToastMessage({ message, isError });
+    setTimeout(() => setToastMessage(null), 2500);
+  };
+
+  const calendarStats = useMemo(() => {
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    const thirtyDaysLater = new Date(now); thirtyDaysLater.setDate(now.getDate() + 30);
+    const upcoming = events.filter(ev => new Date(ev.start) >= now && new Date(ev.start) <= thirtyDaysLater && ev.status === 'published').length;
+    const activities = events.filter(ev => (ev.category === 'workshop' || ev.category === 'exhibition') && ev.status === 'published').length;
+    return { upcomingEvents: upcoming, totalEvents: events.filter(ev => ev.status === 'published').length, totalActivities: activities };
+  }, [events]);
 
   useEffect(() => {
-    try {
-      const storedSearches = JSON.parse(localStorage.getItem('daet_recent_searches') || '[]')
-      startTransition(() => setRecentSearches(Array.isArray(storedSearches) ? storedSearches.slice(0, 5) : []))
-    } catch {
-      startTransition(() => setRecentSearches([]))
+    eventsRef.current = events;
+  }, [events]);
+
+  const openCreateModal = (startStr, endStr) => {
+    // FullCalendar's select() gives an EXCLUSIVE end date (the day after the
+    // last highlighted cell) - even for a single click, end = start + 1 day.
+    // Convert back to an inclusive end date so the form (and the resulting
+    // event highlight) matches exactly what the admin dragged/clicked.
+    const inclusiveEnd = endStr ? subtractOneCalendarDay(endStr) : startStr;
+    const normalizedEnd = (inclusiveEnd && inclusiveEnd >= startStr) ? inclusiveEnd : startStr;
+    setSelectedDate(startStr);
+    setEventForm({ 
+      id: '', title: '', description: '', location: '', start_date: startStr, end_date: normalizedEnd,
+      start_time: '', end_time: '', category: '', is_free: true, ticket_price: '', max_attendees: '', 
+      organizer: 'Daet Tourism Office', status: 'published', imageUrl: '', videoUrl: ''
+    });
+    setShowEventModal(true);
+    setLocationSuggestions([]);
+    setShowLocationSuggestions(false);
+  };
+
+  const openEditModal = (eventObj) => {
+    // Details can arrive two ways: a FullCalendar event object (details live
+    // under .extendedProps) or a raw canonical event record straight from the
+    // DB (details live as flat fields on the object itself). Support both so
+    // description/location/times/etc. are never lost depending on which UI
+    // path (single-click, double-click, upcoming-events list) opened the modal.
+    const props = eventObj.extendedProps || eventObj || {};
+    setEventForm({
+      id: eventObj.id, title: (eventObj.title || '').replace(/\s*\([^)]*\)\s*$/, ''), description: props.description || '',
+      location: props.location || '', start_date: eventObj.startStr || eventObj.start,
+      end_date: eventObj.endStr || eventObj.end || eventObj.startStr || eventObj.start, start_time: props.start_time || '',
+      end_time: props.end_time || '', category: props.category || '',
+      is_free: props.is_free !== undefined ? props.is_free : true,
+      ticket_price: props.ticket_price || '', max_attendees: props.max_attendees || '',
+      organizer: props.organizer || 'Daet Tourism Office', status: props.status || 'published',
+      imageUrl: props.image_url || '', videoUrl: props.video_url || ''
+    });
+    setShowEventModal(true);
+    setLocationSuggestions([]);
+    setShowLocationSuggestions(false);
+  };
+
+  const closeModal = () => {
+    setShowEventModal(false);
+    setShowQuickPublishModal(false);
+    setShowInquiryModal(false);
+    setShowWeatherAlertModal(false);
+    setSelectedInquiry(null);
+    setEventForm({ id: '', title: '', description: '', location: '', start_date: '', end_date: '', start_time: '', end_time: '', category: '', is_free: true, ticket_price: '', max_attendees: '', organizer: '', status: 'published', imageUrl: '', videoUrl: '' });
+    setLocationSuggestions([]);
+    setShowLocationSuggestions(false);
+  };
+
+  const deleteEventById = async (eventId) => {
+    const eventToDelete = eventsRef.current.find(e => e.id === eventId);
+    if (eventToDelete) {
+      if (confirm(`Delete "${eventToDelete.title}" permanently?`)) {
+        const success = await deleteEventFromDB(eventId);
+        if (success) {
+          showToast(`"${eventToDelete.title}" deleted`, true);
+          addNotification('Event Deleted', `"${eventToDelete.title}" has been removed.`, 'warning', null, 0);
+        }
+        return success;
+      }
     }
-  }, [])
+    return false;
+  };
 
-  const saveRecentSearch = (value) => {
-    const normalizedValue = value.trim()
-    if (!normalizedValue) return
-    const nextSearches = [normalizedValue, ...recentSearches.filter((entry) => entry.toLowerCase() !== normalizedValue.toLowerCase())].slice(0, 5)
-    setRecentSearches(nextSearches)
-    localStorage.setItem('daet_recent_searches', JSON.stringify(nextSearches))
-  }
-
-  const submitSearch = (event) => {
-    event?.preventDefault()
-    if (!search.trim()) return
-    saveRecentSearch(search)
-    router.push(`/search?q=${encodeURIComponent(search.trim())}`)
-    setSearchFocused(false)
-  }
-
-  // Persist reactions and saved items
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+  const saveEvent = async () => {
+    const { id, title, start_date, end_date, location, description, category, start_time, end_time, is_free, ticket_price, max_attendees, organizer, status, imageUrl, videoUrl } = eventForm;
+    if (!title.trim()) { showToast('Please enter an event title', true); return; }
+    if (!start_date) { showToast('Please select a start date', true); return; }
+    if (!category) { showToast('Please select a category', true); return; }
+    
     try {
-      localStorage.setItem('daet_feed_reactions', JSON.stringify(reactions))
-    } catch {}
-  }, [reactions])
+      const savedEvent = await saveEventToDB({ id, title, description, location, start_date, end_date: end_date || start_date, start_time, end_time, category, is_free, ticket_price, max_attendees, organizer, status, imageUrl, videoUrl });
+      if (savedEvent) {
+        if (id) {
+          showToast('Event updated!', false);
+          addNotification('Event Updated', `"${title}" has been modified.`, 'info', null, 0);
+        } else {
+          showToast('Event created!', false);
+          addNotification('New Event Created', `"${title}" has been added.`, 'success', null, 0);
+        }
+        closeModal();
+      }
+    } catch (err) {
+      try { console.error('Save failed:', err, JSON.stringify(err)); } catch (e) { console.error('Save failed (stringify failed):', err); }
+      const msg = err?.message || err?.error || (typeof err === 'string' ? err : null) || JSON.stringify(err) || 'Unknown error';
+      showToast(`Failed to save event: ${msg}`, true);
+    }
+  };
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return
+  const handleQuickPublish = async () => {
+    if (!quickPublish.title.trim() || !quickPublish.message.trim()) {
+      showToast('Please fill in all fields', true);
+      return;
+    }
+    
+    setSaving(true);
     try {
-      localStorage.setItem('daet_saved_items', JSON.stringify([...savedItems]))
-    } catch {}
-  }, [savedItems])
+      const announcementTypeByQuickType = {
+        announcement: 'info',
+        safety: quickPublish.severity === 'critical' ? 'urgent' : 'important',
+        traffic: 'important',
+        disaster: 'urgent',
+      }
+      const normalizedAnnouncementType = announcementTypeByQuickType[quickPublish.type] || 'info'
 
-  // Load gamification data
-  useEffect(() => {
-    if (!authenticated || !userId) return
-    let isMounted = true
+      const { error } = await supabase
+        .from('info_announcements')
+        .insert([{
+          title: quickPublish.title,
+          content: quickPublish.message,
+          announcement_type: normalizedAnnouncementType,
+          severity: quickPublish.severity || 'info',
+          audience: 'all',
+          priority: quickPublish.severity === 'critical' ? 3 : quickPublish.severity === 'warning' ? 2 : 1,
+          image_url: quickPublish.imageUrl || null,
+          video_url: quickPublish.videoUrl || null,
+          created_by: user?.user_id || user?.id,
+          status: 'published',
+          published_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
+      
+      showToast('Announcement published!', false);
+      addNotification('Announcement Published', `"${quickPublish.title}" has been sent to all users.`, 'success', null, 0);
+      setQuickPublish({ type: 'announcement', title: '', message: '', severity: 'info', imageUrl: '', videoUrl: '' });
+      closeModal();
+    } catch (err) {
+      console.error('Publish error:', err);
+      showToast('Failed to publish announcement', true);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const loadGamification = async () => {
-      try {
-        const [{ data: userData }, { data: activityRows }] = await Promise.all([
-          supabase.from(TABLES.USERS).select('points, level').eq('id', userId).maybeSingle(),
-          supabase.from('user_activity_log').select('created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(30),
-        ])
-
-        let streak = 0
-        try {
-          // Inline streak computation (same logic as lib/gamification.js getDailyStreak)
-          const dates = [...new Set((activityRows || []).map((entry) => entry.created_at?.slice(0, 10)).filter(Boolean))].sort()
-          if (dates.length > 0) {
-            const today = new Date().toISOString().slice(0, 10)
-            const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
-            const hasToday = dates.includes(today)
-            const hasYesterday = dates.includes(yesterday)
-            if (hasToday || hasYesterday) {
-              const lastDate = new Date(hasToday ? today : yesterday)
-              let count = 1
-              for (let i = dates.length - 1; i >= 0; i--) {
-                const prevDate = new Date(lastDate.getTime() - count * 86400000).toISOString().slice(0, 10)
-                if (dates.includes(prevDate)) {
-                  count += 1
-                } else {
-                  break
-                }
-              }
-              streak = count
-            }
-          }
-        } catch {}
-
-        if (!isMounted) return
-        setGamification({
-          points: Number(userData?.points || 0),
-          level: Number(userData?.level || 1),
-          streak,
+  const handleReplyToInquiry = async (inquiryId, reply) => {
+    if (!reply.trim()) {
+      showToast('Please enter a reply', true);
+      return;
+    }
+    
+    try {
+      const { error } = await supabase
+        .from('info_inquiries')
+        .update({ 
+          admin_response: reply, 
+          status: 'answered',
+          responded_at: new Date().toISOString(),
+          responded_by: user?.id
         })
-      } catch (error) {
-        console.error('Gamification load failed:', error)
-      }
+        .eq('id', inquiryId);
+      
+      if (error) throw error;
+      
+      showToast('Reply sent successfully!', false);
+      addNotification('Inquiry Answered', 'A tourist inquiry has been responded to.', 'success', null, 0);
+      closeModal();
+      fetchUnreadInquiries();
+    } catch (err) {
+      console.error('Reply error:', err);
+      showToast('Failed to send reply', true);
     }
+  };
 
-    loadGamification()
-    return () => {
-      isMounted = false
+  const handleLocationChange = (value) => {
+    setEventForm(p => ({ ...p, location: value }));
+    if (value.length > 0) {
+      const filtered = (venues || []).filter(venue => venue.toLowerCase().includes(value.toLowerCase())).slice(0, 8);
+      setLocationSuggestions(filtered);
+      setShowLocationSuggestions(true);
+    } else {
+      setLocationSuggestions([]);
+      setShowLocationSuggestions(false);
     }
-  }, [authenticated, userId])
+  };
 
-  const handleReact = async (e, item, reactionType) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!userId) return
-    const itemKey = `${item.type}-${item.id}`
-    const current = reactions[itemKey]
-    const nextReactions = { ...reactions }
-    const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'post' ? 'user_post' : item.type
+  const selectLocation = (location) => {
+    setEventForm(p => ({ ...p, location }));
+    setLocationSuggestions([]);
+    setShowLocationSuggestions(false);
+  };
 
+  const fetchUnreadInquiries = async () => {
     try {
-      const result = current === reactionType
-        ? await supabase.from('content_reactions').delete().eq('user_id', userId).eq('content_type', contentType).eq('content_id', item.id)
-        : await supabase.from('content_reactions').upsert({ user_id: userId, content_type: contentType, content_id: item.id, reaction_type: reactionType }, { onConflict: 'user_id,content_type,content_id' })
-      if (result.error) throw result.error
-
-      if (current === reactionType) {
-        delete nextReactions[itemKey]
-        setToastMessage('Reaction removed')
-      } else {
-        nextReactions[itemKey] = reactionType
-        const labels = { like: 'Thanks for the like!', love: 'Spread the love!', wow: 'Glad for the reaction!' }
-        setToastMessage(labels[reactionType] || 'Thanks for the reaction!')
-      }
-      setReactions(nextReactions)
-    } catch (error) {
-      console.error('Reaction update failed:', error)
-      setToastMessage('Unable to update reaction')
+      const { data, error } = await supabase
+        .from('info_inquiries')
+        .select('*')
+        .in('status', ['open', 'in_progress'])
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setUnreadInquiries(data || []);
+    } catch (err) {
+      console.error('Error fetching inquiries:', err);
     }
+  };
 
-    setShowReactions(null)
-    setTimeout(() => setToastMessage(''), 2500)
-
-    // Award points for engagement - async fire-and-forget
-    if (userId) {
-      void supabase.from(TABLES.ACTIVITY_LOG).insert({
-        user_id: userId,
-        activity_type: 'react_content',
-        description: `${reactionType} on ${item.type}`,
-      }).then(({ error }) => {
-        if (error && error.code !== '42501' && error.code !== 'PGRST301') {
-          console.error('Reaction log error:', error)
-        }
-      })
-    }
-  }
-
-  const handleBookmark = async (e, item) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!userId) return
-    const itemKey = `${item.type}-${item.id}`
-    const itemType = item.type === 'post' ? 'user_post' : item.type
-    const nextSaved = new Set(savedItems)
-
+  const fetchTouristSpotsCount = async () => {
     try {
-      const result = nextSaved.has(itemKey)
-        ? await supabase.from('user_favorites').delete().eq('user_id', userId).eq('item_type', itemType).eq('item_id', item.id)
-        : await supabase.from('user_favorites').upsert({ user_id: userId, item_type: itemType, item_id: item.id }, { onConflict: 'user_id,item_type,item_id' })
-      if (result.error) throw result.error
-
-      if (nextSaved.has(itemKey)) {
-        nextSaved.delete(itemKey)
-        setToastMessage('Removed from saved items')
-      } else {
-        nextSaved.add(itemKey)
-        setToastMessage('Saved for later!')
-      }
-      setSavedItems(nextSaved)
-    } catch (error) {
-      console.error('Save update failed:', error)
-      setToastMessage('Unable to update saved items')
+      const { count, error } = await supabase
+        .from('info_tourist_spots')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'active');
+      
+      if (error) throw error;
+      setStats(prev => ({ ...prev, totalSpots: count || 0 }));
+    } catch (err) {
+      console.error('Error fetching spots count:', err);
     }
+  };
 
-    setTimeout(() => setToastMessage(''), 2500)
-  }
-
-  const trendingTopics = useMemo(() => {
-    const topicMap = new Map()
-    feed.forEach((item) => {
-      const itemKey = `${item.type}-${item.id}`
-      const weight = savedItems.has(itemKey) ? 3 : 1
-      const hashtags = String(item.excerpt || item.description || '')
-        .match(/#[a-z0-9_]+/gi) || []
-      const topics = [item.category || item.type, ...(Array.isArray(item.tags) ? item.tags : []), ...hashtags]
-      topics.filter(Boolean).forEach((topic) => {
-        const name = String(topic).replace(/^#/, '').trim()
-        if (name) topicMap.set(name, (topicMap.get(name) || 0) + weight)
-      })
-    })
-    return [...topicMap.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name, count]) => ({ name, count }))
-  }, [feed, savedItems])
-
-  const searchSuggestions = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return []
-
-    const suggestions = new Map()
-    feed.forEach((item) => {
-      const values = [item.title, item.category, ...(Array.isArray(item.tags) ? item.tags : [])]
-      values.filter(Boolean).forEach((value) => {
-        const suggestion = String(value).replace(/^#/, '').trim()
-        if (suggestion.toLowerCase().startsWith(query)) suggestions.set(suggestion.toLowerCase(), suggestion)
-      })
-    })
-    return [...suggestions.values()].slice(0, 5)
-  }, [feed, search])
-
-  const suggestions = useMemo(() => {
-    const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId && !followedSuggestions.has(item.author.id))
-    const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
-    const suggestedLocations = [...new Set(feed.map((item) => item.location).filter(Boolean))].slice(0, 4)
-    const suggestedContent = feed.filter((item) => item.type === 'blog' || item.type === 'forum').slice(0, 2)
-    return {
-      suggestedPost: availableFeed[0] || feed[0] || null,
-      suggestedPeople,
-      suggestedContent,
-      suggestedLocations,
-    }
-  }, [feed, userId, followedSuggestions])
-
-  const followSuggestedPerson = async (personId) => {
-    if (!userId) return
+  const fetchBlogsCount = async () => {
     try {
-      const response = await fetch(`/api/users/${personId}/follow`, { method: 'POST', credentials: 'same-origin' })
-      const result = await response.json()
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this person right now')
-      setFollowedSuggestions((previous) => new Set([...previous, personId]))
-    } catch (followError) {
-      console.error('Suggested follow failed:', followError?.message || followError)
-      setToastMessage(followError?.message || 'Unable to follow this person right now')
-      setTimeout(() => setToastMessage(''), 2500)
+      const { count, error } = await supabase
+        .from('info_blogs')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'published');
+      
+      if (error) throw error;
+      setStats(prev => ({ ...prev, totalBlogs: count || 0 }));
+    } catch (err) {
+      console.error('Error fetching blogs count:', err);
     }
-  }
+  };
 
-  const hidePost = (itemKey) => {
-    setHiddenPosts((previous) => {
-      const next = new Set([...previous, itemKey])
-      writeStoredSet(`${HIDDEN_POSTS_KEY}_${userId}`, next)
-      return next
-    })
-    setOpenPostMenu(null)
-    setToastMessage('Post hidden from your feed')
-    setTimeout(() => setToastMessage(''), 2500)
-  }
-
-  const markNotInterested = (item) => {
-    const topicKeys = [
-      item.author?.id ? `author:${item.author.id}` : null,
-      item.category ? `category:${String(item.category).toLowerCase()}` : null,
-    ].filter(Boolean)
-    setNotInterestedTopics((previous) => {
-      const next = new Set([...previous, ...topicKeys])
-      writeStoredSet(`${NOT_INTERESTED_KEY}_${userId}`, next)
-      return next
-    })
-    setOpenPostMenu(null)
-    setToastMessage('We will show fewer posts like this')
-    setTimeout(() => setToastMessage(''), 2500)
-  }
-
-  const copyPostLink = async (item) => {
-    const url = `${window.location.origin}${item.href}`
+  const fetchVenues = async () => {
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url)
-      } else {
-        const textArea = document.createElement('textarea')
-        textArea.value = url
-        textArea.style.position = 'fixed'
-        textArea.style.opacity = '0'
-        document.body.appendChild(textArea)
-        textArea.select()
-        document.execCommand('copy')
-        textArea.remove()
-      }
-      setToastMessage('Post link copied')
-    } catch {
-      setToastMessage('Unable to copy the post link')
+      const spotsRes = await supabase
+        .from('info_tourist_spots')
+        .select('name')
+        .eq('status', 'active');
+
+      const spots = (spotsRes?.data || []).map(s => s.name).filter(Boolean);
+      setVenues(Array.from(new Set(spots)));
+    } catch (err) {
+      console.error('Error fetching venues:', err);
     }
-    setOpenPostMenu(null)
-    setTimeout(() => setToastMessage(''), 2500)
-  }
+  };
 
-  // Auth check on mount
-  useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const cookieSession = getAuthCookieFromDocument()
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession()
-
-        const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id, email: cookieSession.user_email, user_metadata: { full_name: cookieSession.user_name, user_type: cookieSession.role } } } : null)
-
-        if (sessionError) throw sessionError
-        if (!activeSession?.user) {
-          setAuthError('Please log in to continue')
-          router.push('/login')
-          return
-        }
-
-        const sessionUserId = activeSession.user.id
-        const sessionUserEmail = activeSession.user.email || cookieSession?.user_email || ''
-        const sessionUserName = activeSession.user.user_metadata?.full_name || cookieSession?.user_name || sessionUserEmail.split('@')[0] || 'Traveler'
-
-        setUserId(sessionUserId)
-        setUserName(sessionUserName)
-        setAuthenticated(true)
-
-        const { data: currentUserProfile } = await supabase
-          .from(TABLES.USERS)
-          .select('full_name, profile_image_url')
-          .eq('id', sessionUserId)
-          .maybeSingle()
-        setUserName(currentUserProfile?.full_name?.trim() || sessionUserName)
-        setUserAvatarUrl(currentUserProfile?.profile_image_url || activeSession.user.user_metadata?.avatar_url || '')
-
-        // Track page visit (async - don't block render)
-        void (async () => {
-          try {
-            const { error } = await supabase.from(TABLES.ACTIVITY_LOG).insert({
-              user_id: sessionUserId,
-              activity_type: 'visit_dashboard',
-              description: 'Viewed dashboard',
-            })
-
-            if (error) {
-              const isPermissionIssue = error?.code === '42501' || error?.code === 'PGRST301'
-              if (!isPermissionIssue) {
-                console.error('Activity log error:', error)
-              }
-            }
-          } catch (err) {
-            const isPermissionIssue = err?.code === '42501' || err?.code === 'PGRST301'
-            if (!isPermissionIssue) {
-              console.error('Activity log error:', err)
-            }
-          }
-        })()
-      } catch (err) {
-        console.error('Auth error:', err)
-        setAuthError(err.message || 'Authentication failed')
-        router.push('/login')
-      }
-    }
-
-    checkAuth()
-  }, [router])
-
-  // Load dashboard data
-  useEffect(() => {
-    if (!authenticated || !userId) return
-
-    let isMounted = true
-
-    const loadDashboardStats = async (currentUserId) => {
-      try {
-        const [blogStats, eventStats, announcementStats] = await Promise.all([
-          supabase.from(TABLES.BLOGS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
-          supabase.from(TABLES.EVENTS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
-          supabase.from(TABLES.ANNOUNCEMENTS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
-        ])
-
-        if (blogStats.error || eventStats.error || announcementStats.error) {
-          throw new Error('Failed to load statistics')
-        }
-
-        const nextStats = {
-          blogs: blogStats.count || 0,
-          events: eventStats.count || 0,
-          announcements: announcementStats.count || 0,
-        }
-
-        const cachedDashboard = getDashboardCache(currentUserId)
-        const nextDashboardData = {
-          ...(cachedDashboard || { categories: [], announcements: [], feed: [] }),
-          stats: nextStats,
-        }
-
-        setDashboardCache(currentUserId, nextDashboardData)
-
-        if (!isMounted) return
-        setStats(nextStats)
-      } catch (error) {
-        console.error('Dashboard stats load error:', error)
-      }
-    }
-
-    const loadDashboard = async () => {
-      const loadUserSignals = async (currentUserId) => {
-        try {
-          const [activityResult, reactionResult, favoriteResult, preferenceResult] = await Promise.all([
-            supabase
-              .from(TABLES.ACTIVITY_LOG)
-              .select('activity_type, entity_type, entity_id, metadata, created_at')
-              .eq('user_id', currentUserId)
-              .order('created_at', { ascending: false })
-              .limit(100),
-            supabase
-              .from('content_reactions')
-              .select('content_type, content_id, reaction_type, created_at')
-              .eq('user_id', currentUserId)
-              .limit(100),
-            supabase
-              .from('user_favorites')
-              .select('item_type, item_id, created_at')
-              .eq('user_id', currentUserId)
-              .limit(100),
-            supabase
-              .from(TABLES.FEED_PREFERENCES)
-              .select('preferred_categories')
-              .eq('user_id', currentUserId)
-              .maybeSingle(),
-          ])
-
-          if (!isMounted) return
-          setReactions(Object.fromEntries((reactionResult.data || []).map((reaction) => [
-            `${reaction.content_type === 'forum_thread' ? 'forum' : reaction.content_type === 'user_post' ? 'post' : reaction.content_type}-${reaction.content_id}`,
-            reaction.reaction_type,
-          ])))
-          setSavedItems(new Set((favoriteResult.data || []).map((favorite) => `${favorite.item_type}-${favorite.item_id}`)))
-          setUserSignals({
-            activities: activityResult.data || [],
-            reactions: reactionResult.data || [],
-            favorites: favoriteResult.data || [],
-            preferredCategories: Array.isArray(preferenceResult.data?.preferred_categories) ? preferenceResult.data.preferred_categories : [],
-          })
-        } catch (signalError) {
-          // Recommendations are optional; the chronological feed remains available.
-          console.error('Personalization signals load failed:', signalError)
-        }
-      }
-
-      void loadUserSignals(userId)
-
-      const fetchCommentCounts = async (items) => {
-        const counts = {}
-        await Promise.all(
-          (items || []).map(async (item) => {
-            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
-            const { count } = await supabase
-              .from('content_comments')
-              .select('id', { count: 'exact', head: true })
-              .eq('content_type', contentType)
-              .eq('content_id', item.id)
-            counts[`${item.type}-${item.id}`] = count || 0
-          })
-        )
-        if (isMounted) setCommentCounts(counts)
-      }
-
-      try {
-        const cachedDashboard = getDashboardCache(userId)
-        if (cachedDashboard && feedRefreshKey === 0) {
-          if (!isMounted) return
-          setCategories(cachedDashboard.categories || [])
-          setAnnouncements(cachedDashboard.announcements || [])
-          setStats(cachedDashboard.stats || { blogs: 0, events: 0, announcements: 0 })
-          setFeed(cachedDashboard.feed || [])
-          setLoading(false)
-          void loadDashboardStats(userId)
-          void fetchCommentCounts(cachedDashboard.feed || [])
-          return
-        }
-
-        setLoading(true)
-        setError(null)
-
-        const [categoriesResult, announcementsResult, feedResult] = await Promise.all([
-          supabase
-            .from(TABLES.CATEGORIES)
-            .select('id, name, icon_emoji, sort_order')
-            .eq('is_active', true)
-            .order('sort_order', { ascending: true })
-            .limit(6),
-          supabase
-            .from(TABLES.ANNOUNCEMENTS)
-            .select('id, title, announcement_type, audience, priority, published_at, expires_at, image_url, video_url, content, created_by, updated_at, status')
-            .eq('status', 'published')
-            .order('published_at', { ascending: false })
-            .limit(4),
-          Promise.all([
-            supabase
-              .from(TABLES.BLOGS)
-              .select('id, title, excerpt, category, tags, featured_image, images, videos, media_layout, published_at, updated_at, views, likes, comments_count, created_by')
-              .eq('status', 'published')
-              .order('published_at', { ascending: false })
-              .limit(20),
-            supabase
-              .from(TABLES.EVENTS)
-              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
-              .eq('status', 'published')
-              .order('start_date', { ascending: true })
-              .limit(20),
-            supabase
-              .from(TABLES.FORUM_THREADS)
-              .select('id, title, content, category_id, reply_count, last_activity_at, created_at, updated_at, created_by, status')
-              .eq('status', 'active')
-              .order('last_activity_at', { ascending: false })
-              .limit(20),
-            fetch('/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
+  const fetchDashboardData = async (adminUserId = user?.id) => {
+    try {
+      const [usersResult, notificationsResult] = await Promise.all([
+        supabase
+          .from('info_users')
+          .select('id, email, full_name, profile_image_url, user_type, status, is_online, created_at')
+          .order('created_at', { ascending: false }),
+        adminUserId
+          ? fetch('/api/notifications', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
-              if (!response.ok || !result.success) return { data: [], error: null }
-              return { data: (result.following_ids || []).map((followingId) => ({ following_id: followingId })), error: null }
-            }).catch((followingError) => {
-              console.error('Dashboard following list unavailable:', followingError)
-              return { data: [], error: null }
-            }),
-            supabase
-              .from('info_user_posts')
-              .select('id, user_id, title, content, created_at, updated_at, status')
-              .eq('status', 'published')
-              .order('created_at', { ascending: false })
-              .limit(50),
-          ]),
-        ])
+              return { data: response.ok && result.success ? result.notifications || [] : [], error: response.ok ? null : new Error(result.message || 'Unable to load notifications') }
+            })
+          : Promise.resolve({ data: [] })
+      ]);
 
-        if (categoriesResult.error) throw categoriesResult.error
-        if (announcementsResult.error) throw announcementsResult.error
+      const { data: users, error } = usersResult;
 
-        const [blogsFeed, eventsFeed, threadsFeed, followsFeed, userPostsFeed] = feedResult
-        if (blogsFeed.error || eventsFeed.error || threadsFeed.error) {
-          throw new Error('Failed to load feed content')
-        }
+      if (error) throw error;
+      const list = users || [];
+      setStats(prev => ({
+        ...prev,
+        totalUsers: list.length,
+        totalTourists: list.filter(u => u.user_type === 'tourist').length,
+        totalArtisans: list.filter(u => u.user_type === 'artisan').length,
+        totalOperators: list.filter(u => u.user_type === 'operator').length,
+        onlineUsers: list.filter(u => u.is_online === true).length
+      }));
+      setRecentUsers(list.filter(u => u.user_type !== 'admin').slice(0, 5));
 
-        const followedUserIds = new Set([
-          userId,
-          ...(followsFeed.data || []).map((row) => row.following_id).filter(Boolean),
-        ])
-        const followedPosts = (userPostsFeed.data || [])
-          .filter((post) => followedUserIds.has(post.user_id))
-          .map((post) => ({
-            ...post,
-            created_by: post.user_id,
-            excerpt: post.content,
-            published_at: post.created_at,
-            category: 'Community',
-          }))
+      if (!notificationsResult.error && Array.isArray(notificationsResult.data)) {
+        const serverNotifications = notificationsResult.data.map((notification) => ({
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type || 'info',
+          link: notification.link || null,
+          read: Boolean(notification.is_read),
+          timestamp: new Date(notification.created_at || Date.now()),
+        }));
 
-        const nextCategories = categoriesResult.data || []
-        const nextAnnouncements = (announcementsResult.data || []).map(normalizeAnnouncementRecord)
-        const authorIds = [
-          ...(blogsFeed.data || []).map((item) => item.created_by),
-          ...(eventsFeed.data || []).map((item) => item.created_by),
-          ...(threadsFeed.data || []).map((item) => item.created_by),
-          ...followedPosts.map((item) => item.created_by),
-          ...(nextAnnouncements || []).map((item) => item.created_by),
-        ].filter(Boolean)
-        const { data: authors } = authorIds.length
-          ? await supabase.from(TABLES.USERS).select('id, full_name, profile_image_url, user_type').in('id', [...new Set(authorIds)])
-          : { data: [] }
-        const authorMap = new Map((authors || []).map((author) => [author.id, author]))
-        const withAuthor = (item) => ({
-          ...item,
-          author: authorMap.get(item.created_by) || null,
-        })
-
-        const mixedFeed = [
-          ...(blogsFeed.data || []).map((blog) => ({
-            ...withAuthor(blog),
-            type: 'blog',
-            href: `/user/blogs/${blog.id}`,
-          })),
-          ...(eventsFeed.data || []).map((event) => ({
-            ...withAuthor(event),
-            type: 'event',
-            href: `/user/events/${event.id}`,
-          })),
-          ...(threadsFeed.data || []).map((thread) => ({
-            ...withAuthor(thread),
-            type: 'forum',
-            href: `/user/forums/${thread.id}`,
-          })),
-          ...followedPosts.map((post) => ({
-            ...withAuthor(post),
-            type: 'post',
-            href: `/user/profile/${post.user_id}`,
-          })),
-          ...(nextAnnouncements || []).map((announcement) => ({
-            ...withAuthor(announcement),
-            author: authorMap.get(announcement.created_by) || {
-              id: announcement.created_by,
-              full_name: 'Administrator',
-              user_type: 'admin',
-            },
-            type: 'announcement',
-            href: `/user/announcements/${announcement.id}`,
-          })),
-        ].sort((a, b) => new Date(b.published_at || b.last_activity_at || 0) - new Date(a.published_at || a.last_activity_at || 0))
-
-        const nextDashboardData = {
-          categories: nextCategories,
-          announcements: nextAnnouncements,
-          stats: { blogs: 0, events: 0, announcements: nextAnnouncements.length },
-          feed: mixedFeed,
-        }
-
-        setDashboardCache(userId, nextDashboardData)
-
-        if (!isMounted) return
-
-        setCategories(nextCategories)
-        setAnnouncements(nextAnnouncements)
-        setStats(nextDashboardData.stats)
-        setFeed(mixedFeed)
-        setLoading(false)
-        setFeedRefreshing(false)
-
-        void loadDashboardStats(userId)
-        void fetchCommentCounts(mixedFeed)
-      } catch (err) {
-        if (!isMounted) return
-        console.error('Dashboard load error:', err)
-        setError(err.message || 'Failed to load dashboard')
-        setFeedRefreshing(false)
-      } finally {
-        if (isMounted && !error) {
-          setLoading(false)
-          setFeedRefreshing(false)
-        }
-        if (isMounted) setLoading(false)
+        setNotifications((localNotifications) => {
+          const merged = new Map(localNotifications.map((notification) => [String(notification.id), notification]));
+          serverNotifications.forEach((notification) => {
+            merged.set(String(notification.id), notification);
+          });
+          return [...merged.values()]
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, MAX_NOTIFICATIONS);
+        });
       }
+    } catch (err) {
+      console.error('Error fetching data:', err);
     }
+  };
 
-    loadDashboard()
+  function formatActivityTime(value) {
+    if (!value) return 'Just now';
+    const diffMs = Date.now() - new Date(value).getTime();
+    const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+    if (diffMinutes < 1) return 'Now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
 
+  async function fetchRecentActivity() {
+    try {
+      const { data, error } = await supabase
+        .from('user_activity_log')
+        .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)')
+        .order('created_at', { ascending: false })
+        .limit(8);
+
+      if (error) throw error;
+
+      const normalized = (data || []).map((item) => {
+        const actorName = item.info_users?.full_name || item.info_users?.email?.split('@')[0] || 'A user';
+        const typeLabel = item.activity_type || 'activity';
+        const contentTitle = item.metadata?.contentTitle || item.entity_type || 'content';
+        const colorMap = {
+          comment: 'bg-sky-100 text-sky-700',
+          react_content: 'bg-violet-100 text-violet-700',
+          share_content: 'bg-emerald-100 text-emerald-700',
+          save_content: 'bg-amber-100 text-amber-700',
+        };
+
+        return {
+          id: item.id || `${item.user_id || 'user'}-${item.created_at || Date.now()}-${typeLabel}`,
+          title: `${actorName} ${typeLabel === 'comment' ? 'commented' : typeLabel === 'react_content' ? 'reacted' : typeLabel === 'share_content' ? 'shared' : typeLabel === 'save_content' ? 'saved' : 'interacted'}`,
+          detail: item.description || `${actorName} interacted with ${contentTitle}.`,
+          time: formatActivityTime(item.created_at),
+          color: colorMap[typeLabel] || 'bg-slate-100 text-slate-700',
+        };
+      });
+
+      setActivityFeed(normalized.length > 0 ? normalized : [
+        { id: 'no-recent-activity', title: 'No recent activity', detail: 'User engagement will appear here as actions happen.', time: 'Now', color: 'bg-slate-100 text-slate-700' },
+      ]);
+    } catch (err) {
+      console.error('Error fetching recent activity:', err);
+      setActivityFeed([{ id: 'recent-activity-unavailable', title: 'Recent activity unavailable', detail: 'The activity stream could not be loaded.', time: 'Now', color: 'bg-slate-100 text-slate-700' }]);
+    }
+  }
+
+  useEffect(() => {
+    let active = true;
+    const checkAuth = async () => {
+      const session = getStoredSession();
+      if (!session) {
+        if (active) {
+          setLoading(false);
+          router.push('/login');
+        }
+        return;
+      }
+
+      let userData = null;
+      try {
+        userData = JSON.parse(session);
+      } catch (error) {
+        if (active) {
+          setLoading(false);
+          router.push('/login');
+        }
+        return;
+      }
+
+      const sessionUser = getStoredSessionObject() || userData;
+      if (!canAccessAdminDashboard({ ...sessionUser, role: sessionUser.role || sessionUser.user_type })) {
+        if (active) {
+          setLoading(false);
+          router.push('/access-denied');
+        }
+        return;
+      }
+
+      if (active) setUser(sessionUser);
+
+      const loadDashboardData = async () => {
+        if (!active) return;
+        if (supabase?.auth) {
+          await withTimeout(supabase.auth.getSession(), 5000, 'Supabase admin session restore');
+        }
+        const loaders = [
+          fetchEventsFromDB(),
+          fetchUnreadInquiries(),
+          fetchTouristSpotsCount(),
+          fetchBlogsCount(),
+          fetchVenues(),
+          fetchRecentActivity(),
+          fetchDashboardData(sessionUser.user_id || sessionUser.id),
+        ];
+        await withTimeout(Promise.allSettled(loaders), DASHBOARD_LOAD_TIMEOUT_MS, 'Admin dashboard data load');
+      };
+
+      try {
+        await loadDashboardData();
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void checkAuth();
     return () => {
-      isMounted = false
-    }
-  }, [authenticated, userId, feedRefreshKey])
+      active = false;
+    };
+  }, [router]);
 
   const handleLogout = async () => {
-    try {
-      await performLogout()
-    } catch (err) {
-      console.error('User logout error:', err)
-    } finally {
-      router.push('/login')
+    addNotification('Logged Out', 'You have been logged out successfully.', 'info', null, 0);
+    await performLogout();
+    router.push('/login');
+  };
+
+  const getSeverityColor = (severity) => {
+    switch(severity) {
+      case 'critical': return 'bg-red-600';
+      case 'warning': return 'bg-yellow-500';
+      case 'info': return 'bg-blue-600';
+      default: return 'bg-blue-600';
     }
-  }
+  };
 
-  const filteredFeed = useMemo(() => {
-    let result = feed.filter((item) => {
-      if (hiddenPosts.has(`${item.type}-${item.id}`)) return false
-      if (item.author?.id && notInterestedTopics.has(`author:${item.author.id}`)) return false
-      if (item.category && notInterestedTopics.has(`category:${String(item.category).toLowerCase()}`)) return false
-      return true
-    })
+  const calendarEvents = events.filter(ev => ev.status === 'published').map(ev => {
+    const startDate = ev.start || ev.start_date;
+    const endDate = ev.end || ev.end_date || ev.start;
+    const eventEndDate = endDate ? addOneCalendarDay(endDate) : startDate;
 
-    if (activeCategory !== 'all') {
-      result = result.filter((item) => {
-        const topics = [
-          item.category,
-          item.type,
-          ...(Array.isArray(item.tags) ? item.tags : []),
-          ...(String(item.excerpt || item.description || '').match(/#[a-z0-9_]+/gi) || []),
-        ].filter(Boolean).map((topic) => String(topic).replace(/^#/, '').toLowerCase())
-        return topics.includes(activeCategory.replace(/^#/, '').toLowerCase())
-      })
+    return {
+      id: String(ev.id),
+      title: ev.title + (ev.category ? ` (${ev.category})` : ''),
+      start: startDate,
+      end: eventEndDate,
+      allDay: true,
+      extendedProps: {
+        location: ev.location || '', description: ev.description || '', category: ev.category || '',
+        start_time: ev.start_time, end_time: ev.end_time, is_free: ev.is_free, ticket_price: ev.ticket_price,
+        max_attendees: ev.max_attendees, organizer: ev.organizer, status: ev.status,
+        image_url: ev.image_url, video_url: ev.video_url
+      },
+      backgroundColor: getCategoryColor(ev.category), borderColor: '#ffffff', textColor: '#ffffff',
+    };
+  });
+
+  const getNotificationIcon = (type) => {
+    switch(type) {
+      case 'success': return 'Success';
+      case 'warning': return 'Warning';
+      case 'error': return 'Error';
+      case 'weather': return 'Weather';
+      case 'event': return 'Event';
+      case 'user': return 'User';
+      default: return 'Info';
     }
-
-    if (search.trim()) {
-      const query = search.toLowerCase()
-      result = result.filter((item) => {
-        const haystack = [item.title, item.excerpt, item.description, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean).join(' ').toLowerCase()
-        return haystack.includes(query)
-      })
+  };
+  
+  const getNotificationColor = (type) => {
+    switch(type) {
+      case 'success': return 'bg-emerald-50 border-emerald-200';
+      case 'warning': return 'bg-amber-50 border-amber-200';
+      case 'error': return 'bg-rose-50 border-rose-200';
+      case 'weather': return 'bg-sky-50 border-sky-200';
+      case 'event': return 'bg-violet-50 border-violet-200';
+      case 'user': return 'bg-indigo-50 border-indigo-200';
+      default: return 'bg-slate-50 border-slate-200';
     }
+  };
 
-    if (feedScope === 'latest') {
-      result = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
-    }
+  const getFallbackWeatherData = () => ({
+    current: {
+      temp: 27,
+      feelsLike: 27,
+      condition: 'Rain',
+      description: 'moderate rain',
+      humidity: 92,
+      windSpeed: 2,
+      pressure: 1007,
+      icon: '10d',
+      rainAmount: 2,
+    },
+    forecast: [
+      { date: new Date().toISOString().slice(0, 10), temp: 27, temp_min: 25, temp_max: 29, condition: 'Rain', description: 'moderate rain', icon: '10d' },
+      { date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), temp: 26, temp_min: 24, temp_max: 28, condition: 'Rain', description: 'light rain', icon: '10d' },
+      { date: new Date(Date.now() + 172800000).toISOString().slice(0, 10), temp: 28, temp_min: 25, temp_max: 30, condition: 'Clouds', description: 'partly cloudy', icon: '03d' },
+    ],
+    lastUpdated: new Date(),
+    alert: null,
+  });
 
-    const categoryWeights = new Map()
-    const typeWeights = new Map()
-    const interactedIds = new Set()
-    const reactionIds = new Set(userSignals.reactions.map((signal) => {
-      const contentType = signal.content_type === 'forum_thread' ? 'forum' : signal.content_type
-      return `${contentType}-${signal.content_id}`
-    }))
-    const favoriteIds = new Set(userSignals.favorites.map((favorite) => `${favorite.item_type}-${favorite.item_id}`))
+  const getUpcomingEvents = () => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
 
-    const addWeight = (map, key, amount) => {
-      if (!key) return
-      const normalizedKey = String(key).toLowerCase()
-      map.set(normalizedKey, (map.get(normalizedKey) || 0) + amount)
-    }
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-    userSignals.preferredCategories.forEach((category) => addWeight(categoryWeights, category, 8))
-    userSignals.activities.forEach((activity) => {
-      const entityType = activity.entity_type === 'forum_thread' ? 'forum' : activity.entity_type
-      addWeight(typeWeights, entityType, activity.activity_type === 'visit_dashboard' ? 0 : 2)
-      if (activity.entity_id) interactedIds.add(`${entityType}-${activity.entity_id}`)
-      if (activity.metadata?.category) addWeight(categoryWeights, activity.metadata.category, 4)
-    })
+    return events.filter(ev => {
+      const evDate = new Date(ev.start);
+      return ev.status === 'published' && evDate >= now && evDate >= monthStart && evDate <= monthEnd;
+    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+  };
 
-    userSignals.reactions.forEach((reaction) => {
-      const normalizedType = reaction.content_type === 'forum_thread' ? 'forum' : reaction.content_type
-      addWeight(typeWeights, normalizedType, 5)
-      interactedIds.add(`${normalizedType}-${reaction.content_id}`)
-    })
+  const quickStats = [
+    { label: 'Total Attractions', value: stats.totalSpots || 0, tone: 'sky', icon: 'attractions' },
+    { label: 'Events', value: calendarStats.totalEvents || 0, tone: 'emerald', icon: 'events' },
+    { label: 'Users', value: stats.totalUsers || 0, tone: 'amber', icon: 'users' },
+    { label: 'Complaints', value: unreadInquiries.length || 0, tone: 'rose', icon: 'warning' },
+  ];
 
-    userSignals.favorites.forEach((favorite) => {
-      addWeight(typeWeights, favorite.item_type, 6)
-      interactedIds.add(`${favorite.item_type}-${favorite.item_id}`)
-    })
+  const popularAttractions = [
+    { name: 'Bagasbas Beach', value: 92 },
+    { name: 'Calaguas', value: 86 },
+    { name: 'Parang Beach', value: 74 },
+    { name: 'Daet Plaza', value: 68 },
+    { name: 'Capitol Park', value: 58 },
+  ];
 
-    let rankedResult
-    if (feedScope === 'trending') {
-      rankedResult = result.sort((left, right) => (Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0)) - (Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0)))
-    } else {
-      rankedResult = result
-      .map((item, index) => {
-        const itemKey = `${item.type}-${item.id}`
-        const category = String(item.category || '').toLowerCase()
-        const itemType = String(item.type || '').toLowerCase()
-        const ageInDays = Math.max(0, (feedNow - new Date(item.published_at || item.start_date || item.last_activity_at || 0).getTime()) / 86400000)
-        const recencyScore = Number.isFinite(ageInDays) ? Math.max(0, 8 - ageInDays) : 0
-        const refreshVariation = feedRefreshKey > 0
-          ? ((String(item.id).charCodeAt(0) + feedRefreshKey) % 7) / 100
-          : 0
-        const score = recencyScore
-          + (categoryWeights.get(category) || 0)
-          + (typeWeights.get(itemType) || 0)
-          + (interactedIds.has(itemKey) ? 18 : 0)
-          + (reactionIds.has(itemKey) ? 22 : 0)
-          + (favoriteIds.has(itemKey) ? 20 : 0)
-          + refreshVariation
+  const visitorStats = [52, 70, 88, 76, 92, 108, 114];
+  const feedbackTotal = dailyFeedbackVotes.length;
+  const feedbackTrend = [
+    { label: 'Positive', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'positive').length / feedbackTotal) * 100) : 0, color: 'bg-emerald-500' },
+    { label: 'Neutral', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'neutral').length / feedbackTotal) * 100) : 0, color: 'bg-sky-500' },
+    { label: 'Concern', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'concern').length / feedbackTotal) * 100) : 0, color: 'bg-amber-500' },
+  ];
 
-        return { item, index, score }
-      })
-        .sort((left, right) => right.score - left.score || left.index - right.index)
-      .map(({ item }) => item)
-    }
+  const systemStatus = useMemo(() => {
+    const websiteState = weather?.error ? 'Offline' : 'Online';
+    const websiteColor = weather?.error ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700';
 
-    if (feedRefreshKey === 0 || rankedResult.length < 2) return rankedResult
+    const supabaseState = supabase ? 'Healthy' : 'Unhealthy';
+    const supabaseColor = supabase ? 'bg-sky-100 text-sky-700' : 'bg-rose-100 text-rose-700';
 
-    const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
-    return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-      }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
+    const weatherState = weather?.error ? 'Disconnected' : 'Connected';
+    const weatherColor = weather?.error ? 'bg-rose-100 text-rose-700' : 'bg-violet-100 text-violet-700';
 
-  useEffect(() => {
-    setFeedVisibleCount(10)
-    setFeedEndReached(false)
-  }, [activeCategory, feedScope, search, feedRefreshKey, hiddenPosts, notInterestedTopics])
+    const notificationsState = notifications.length ? 'Active' : 'Idle';
+    const notificationsColor = notifications.length ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700';
 
-  const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
-  const hasMoreFeed = feedVisibleCount < filteredFeed.length
+    return [
+      { name: 'Website', status: websiteState, color: websiteColor },
+      { name: 'Supabase', status: supabaseState, color: supabaseColor },
+      { name: 'Weather API', status: weatherState, color: weatherColor },
+      { name: 'Notifications', status: notificationsState, color: notificationsColor },
+    ];
+  }, [weather?.error, notifications.length, supabase]);
 
-  useEffect(() => {
-    const handleDocumentScroll = () => {
-      if (window.innerHeight + window.scrollY < document.documentElement.scrollHeight - 180) return
-
-      if (hasMoreFeed) {
-        setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))
-      } else if (filteredFeed.length > 0) {
-        setFeedEndReached(true)
-      }
-    }
-
-    window.addEventListener('scroll', handleDocumentScroll, { passive: true })
-    return () => window.removeEventListener('scroll', handleDocumentScroll)
-  }, [filteredFeed.length, hasMoreFeed])
-
-  if (!authenticated) {
+  if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
-          <p className="text-slate-600">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
+          <p className="mt-4 text-slate-600 font-medium">Loading dashboard...</p>
         </div>
-      </main>
-    )
-  }
-
-  if (authError) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
-        <div className="rounded-[24px] border border-red-200 bg-red-50 p-6 text-center shadow-sm">
-          <AlertCircle className="mx-auto mb-4 text-red-600" />
-          <p className="text-red-700">{authError}</p>
-        </div>
-      </main>
-    )
+      </div>
+    );
   }
 
   return (
-    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      {toastMessage && (
-        <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
-          {toastMessage}
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
+      <AdminSidebar user={user} roleLabel="System Administrator" />
+
+      {/* Main Content */}
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
+        {/* Header */}
+        <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-5 shadow-[0_25px_60px_rgba(15,23,42,0.04)] backdrop-blur-sm">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-sky-700">Dashboard Home</p>
+              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">Administrator Command Center</h1>
+              <p className="mt-2 text-sm text-slate-600">Welcome back, {user?.full_name || user?.user_name || 'Administrator'} — here’s a live view of your Daet tourism operations.</p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button onClick={() => setShowQuickPublishModal(true)} className="rounded-full bg-gradient-to-r from-sky-600 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_15px_30px_rgba(14,165,233,0.25)] transition hover:-translate-y-0.5">
+                Quick Publish
+              </button>
+
+              {/* Weather Widget */}
+              <div ref={weatherPopoverRef} className="relative">
+                <button onClick={() => setShowWeatherDetails(!showWeatherDetails)} className="bg-white p-2 rounded-2xl shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 border border-gray-200">
+                  {weather.loading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                  ) : weather.current ? (
+                    <>
+                      <img src={`https://openweathermap.org/img/wn/${weather.current.icon}@2x.png`} alt={weather.current.condition} className="w-6 h-6" />
+                      <span className="font-semibold text-gray-700">{weather.current.temp}°C</span>
+                      <span className="text-gray-400">|</span>
+                      <span className="text-gray-600">{getWeatherIcon(weather.current.condition)}</span>
+                    </>
+                  ) : (<span className="text-gray-400">Weather</span>)}
+                </button>
+
+                {showWeatherDetails && (
+                  <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
+                    <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
+                      <div><h3 className="font-bold">Daet Weather Center</h3><p className="text-blue-100 text-xs">Real-time conditions & forecasts</p></div>
+                      <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white" aria-label="Close weather details"><Icon name="close" className="w-4 h-4" /></button>
+                    </div>
+                    
+                    {weather.alert && (
+                      <div className={`mx-4 mt-3 p-3 rounded-2xl ${weather.alert.type === 'critical' ? 'bg-red-100 border border-red-300' : 'bg-yellow-100 border border-yellow-300'}`}>
+                        <div className="flex items-start gap-2">
+                          <span className="text-xl">{weather.alert.type === 'critical' ? 'Warning' : 'Rain'}</span>
+                          <div className="flex-1">
+                            <p className={`text-xs font-medium ${weather.alert.type === 'critical' ? 'text-red-700' : 'text-yellow-700'}`}>{weather.alert.message}</p>
+                            <button onClick={handleIssueWeatherAlert} className="mt-2 text-xs bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-700 flex items-center gap-2">
+                              Issue Safety Alert <Icon name="arrow" className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {weather.current ? (
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <img src={`https://openweathermap.org/img/wn/${weather.current.icon}@4x.png`} className="w-14 h-14" />
+                            <div>
+                              <div className="text-2xl font-bold text-gray-800">{weather.current.temp}°C</div>
+                              <div className="text-gray-500 capitalize text-sm">{weather.current.description}</div>
+                              <div className="text-xs text-gray-400">Feels like {weather.current.feelsLike}°C</div>
+                            </div>
+                          </div>
+                          <div className="text-right text-xs text-gray-400">
+                            Updated {weather.lastUpdated?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-2 mb-4">
+                          <div className="bg-gray-50 rounded-2xl p-2 text-center">
+                            <div className="text-lg">Humidity</div>
+                            <div className="font-semibold">{weather.current.humidity}%</div>
+                            <div className="text-xs text-gray-500">Humidity</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-2xl p-2 text-center">
+                            <div className="text-lg">Wind</div>
+                            <div className="font-semibold">{weather.current.windSpeed} m/s</div>
+                            <div className="text-xs text-gray-500">Wind Speed</div>
+                          </div>
+                          <div className="bg-gray-50 rounded-2xl p-2 text-center">
+                            <div className="text-lg">Stats</div>
+                            <div className="font-semibold">{weather.current.pressure} hPa</div>
+                            <div className="text-xs text-gray-500">Pressure</div>
+                          </div>
+                        </div>
+                        
+                        <div className="mb-4">
+                          <p className="text-xs font-semibold text-gray-600 mb-2">3-Day Forecast</p>
+                          <div className="grid grid-cols-3 gap-2">
+                            {weather.forecast.slice(0, 3).map((day, idx) => (
+                              <div key={idx} className="bg-gray-50 rounded-2xl p-2 text-center">
+                                <p className="text-xs font-medium text-gray-600">
+                                  {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}
+                                </p>
+                                <img src={`https://openweathermap.org/img/wn/${day.icon}.png`} className="w-8 h-8 mx-auto" />
+                                <p className="text-xs font-semibold">{Math.round(day.temp)}°C</p>
+                                <p className="text-xs text-gray-500 capitalize">{day.condition}</p>
+                                <p className="text-xs text-gray-400">{Math.round(day.temp_min)}°/{Math.round(day.temp_max)}°</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        
+                        <div className={`p-2 rounded-2xl text-center text-xs font-medium ${
+                          getWeatherRecommendation(weather.current.condition, weather.current.temp).type === 'success' ? 'bg-green-100 text-green-800' : 
+                          getWeatherRecommendation(weather.current.condition, weather.current.temp).type === 'warning' ? 'bg-yellow-100 text-yellow-800' : 
+                          getWeatherRecommendation(weather.current.condition, weather.current.temp).type === 'error' ? 'bg-red-100 text-red-800' : 
+                          'bg-sky-100 text-sky-800'
+                        }`}>
+                          {getWeatherRecommendation(weather.current.condition, weather.current.temp).text}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+
+              {/* Notification Bell */}
+              <div ref={notificationsPopoverRef} className="relative">
+                <button type="button" onClick={() => setShowNotifications(!showNotifications)} className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
+                  <Bell className="h-5 w-5 stroke-[2.25]" />
+                  {unreadNotificationCount > 0 && (<span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-none text-white shadow-sm">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>)}
+                </button>
+                
+                {showNotifications && (
+                  <div className="absolute right-0 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl z-50 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12"><Icon name="notifications" className="w-4 h-4" /></span>
+                        <h3 className="font-black text-sm">Notifications</h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {unreadNotificationCount > 0 && <button type="button" onClick={markAllAsRead} className="text-xs font-bold text-sky-200 hover:text-white">Mark all read</button>}
+                        {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="text-xs font-bold text-rose-200 hover:text-white">Clear all</button>}
+                      </div>
+                    </div>
+                    <div className="max-h-[22rem] overflow-y-auto bg-slate-50">
+                      {notifications.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center gap-2 py-8 text-slate-400">
+                          <Icon name="notifications" className="w-6 h-6" />
+                          <p className="text-sm font-semibold">No notifications</p>
+                        </div>
+                      ) : (
+                        notifications.map(notif => (
+                          <div key={notif.id} className={`border-b border-slate-100 px-4 py-3 cursor-pointer transition ${!notif.read ? 'bg-sky-50/70' : 'bg-white'} ${getNotificationColor(notif.type)}`} onClick={() => openNotification(notif)}>
+                            <div className="flex items-start gap-3">
+                              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-black text-white">{getNotificationIcon(notif.type).slice(0, 2).toUpperCase()}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <h4 className="font-black text-sm text-slate-900">{notif.title}</h4>
+                                  <button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="rounded-full px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600">Remove</button>
+                                </div>
+                                <p className="mt-1 text-xs leading-5 text-slate-600">{notif.message}</p>
+                                <p className="mt-2 text-[11px] font-semibold text-slate-400">{notif.timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
+                              </div>
+                              {!notif.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sky-600"></span>}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
-        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
-              <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
-                <span className="block truncate text-[10px] font-medium text-slate-500 sm:text-xs">Daet community</span>
-              </span>
-            </Link>
+        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {quickStats.map((stat) => (
+            <div key={stat.label} className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{stat.label}</p>
+                  <p className="mt-3 text-3xl font-black text-slate-900">{stat.value}</p>
+                </div>
+                <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${stat.tone === 'sky' ? 'bg-sky-100 text-sky-700' : stat.tone === 'emerald' ? 'bg-emerald-100 text-emerald-700' : stat.tone === 'amber' ? 'bg-amber-100 text-amber-700' : stat.tone === 'violet' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}`}>
+                  <Icon name={stat.icon} className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
 
-            <div className="relative hidden min-w-0 flex-1 px-4 lg:hidden">
-              <form onSubmit={submitSearch} className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
-                <Search className="h-4 w-4 shrink-0" />
-                <input value={search} onFocus={() => setSearchFocused(true)} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-              </form>
-              {searchFocused && (
-                <div className="absolute left-4 right-4 top-[calc(100%+0.5rem)] z-40 mx-auto max-w-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{search.trim() ? 'Suggestions' : 'Recent searches'}</p>
-                  {(search.trim() ? searchSuggestions : recentSearches).length ? (
-                    <div className="space-y-1">{(search.trim() ? searchSuggestions : recentSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setSearch(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`); setSearchFocused(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><Search className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>
-                  ) : <p className="px-3 py-2 text-sm text-slate-500">{search.trim() ? 'No suggestions yet.' : 'No recent searches yet.'}</p>}
-                  {search.trim() && profileSearchResults.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>{profileSearchResults.map((person) => <UserProfileLink key={person.id} user={person} href={`/user/profile/${person.id}`} onClick={() => setSearchFocused(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-sky-50"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>{person.mutual_friends?.length > 0 && <span className="shrink-0 text-[10px] font-semibold text-sky-700">{person.mutual_friends.length} mutual</span>}</UserProfileLink>)}</div>}
-                  <Link href="/search" className="mt-1 block border-t border-slate-100 px-3 pt-3 text-xs font-bold text-sky-700 hover:text-sky-800">View search history</Link>
+        <div className="mb-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Popular Attractions</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Most viewed destinations</h3>
+              </div>
+            </div>
+            <div className="flex h-56 items-end gap-3 border-b border-slate-100 pb-8">
+              {popularAttractions.map((item) => (
+                <div key={item.name} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                  <div className="w-full max-w-16 rounded-t-[1rem] bg-gradient-to-t from-sky-600 to-emerald-400 shadow-[0_8px_18px_rgba(14,165,233,0.18)]" style={{ height: `${Math.max(24, Math.round((item.value / 100) * 150))}px` }} />
+                  <span className="line-clamp-2 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">Visitor Statistics</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Traffic overview</h3>
+              </div>
+            </div>
+            <div className="flex h-56 items-end gap-3 border-b border-slate-100 pb-8">
+              {visitorStats.map((value, index) => (
+                <div key={index} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
+                  <div className="w-full max-w-10 rounded-t-[1rem] bg-gradient-to-t from-amber-500 to-orange-300 shadow-[0_8px_18px_rgba(245,158,11,0.18)]" style={{ height: `${Math.max(24, Math.round((value / 114) * 150))}px` }} />
+                  <span className="text-[10px] font-medium text-slate-500">{['M','T','W','T','F','S','S'][index]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Calendar and Upcoming Events Side by Side (moved up under analytics) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          {/* Calendar Section */}
+          <div className="lg:col-span-2 bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)] admin-calendar-panel">
+            <div className="flex flex-wrap justify-between items-center mb-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Calendar</p>
+                <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  Event Calendar
+                </h2>
+              </div>
+              <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
+                Click any date to create event • Drag to reschedule
+              </div>
+            </div>
+
+            <FullCalendar
+              key={calendarKey}
+              ref={calendarRef}
+              plugins={[dayGridPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
+              selectable={true}
+              editable={true}
+              eventStartEditable={true}
+              eventDurationEditable={true}
+              eventResizableFromStart={true}
+              events={calendarEvents}
+              fixedWeekCount={false}
+              dayMaxEvents={true}
+              height="auto"
+              contentHeight="auto"
+              select={(info) => openCreateModal(info.startStr, info.endStr)}
+              eventClick={(info) => {
+                // Look up the canonical event record (real inclusive start/end
+                // straight from the DB) rather than FullCalendar's internal
+                // event object, whose endStr is exclusive (one day past the
+                // true end date) and would otherwise leak into the form.
+                const rawEvent = eventsRef.current.find(e => String(e.id) === String(info.event.id));
+                if (rawEvent) {
+                  openEditModal(rawEvent);
+                } else {
+                  openEditModal({ id: info.event.id, title: info.event.title, startStr: info.event.startStr, endStr: info.event.endStr, extendedProps: info.event.extendedProps });
+                }
+              }}
+              eventDidMount={(info) => {
+                try {
+                  const handler = () => {
+                    const event = events.find(e => String(e.id) === String(info.event.id));
+                    if (event) openEditModal(event);
+                  };
+                  info.el.addEventListener('dblclick', handler);
+                  eventElListenersRef.current.set(info.event.id, handler);
+                } catch (err) {}
+              }}
+              eventWillUnmount={(info) => {
+                try {
+                  const handler = eventElListenersRef.current.get(info.event.id);
+                  if (handler) info.el.removeEventListener('dblclick', handler);
+                  eventElListenersRef.current.delete(info.event.id);
+                } catch (err) {}
+              }}
+              eventDrop={async (info) => {
+                const eventEl = info.el;
+                const originalOpacity = eventEl.style.opacity;
+                eventEl.style.opacity = '0.5';
+                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr);
+                eventEl.style.opacity = originalOpacity;
+                if (!success) { info.revert(); showToast('Failed to reschedule event. Please try again.', true); }
+              }}
+              eventResize={async (info) => {
+                const eventEl = info.el;
+                const originalOpacity = eventEl.style.opacity;
+                eventEl.style.opacity = '0.5';
+                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr);
+                eventEl.style.opacity = originalOpacity;
+                if (!success) { info.revert(); showToast('Failed to resize event. Please try again.', true); }
+              }}
+              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth' }}
+              buttonText={{ today: 'Today', month: 'Month' }}
+              nowIndicator={true}
+              weekends={true}
+            />
+          </div>
+
+          {/* Upcoming Events Widget */}
+          <div className="bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)] admin-upcoming-panel">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Upcoming</p>
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <><Icon name="events" className="inline-block w-4 h-4 mr-2" />Upcoming Events</>
+                </h3>
+              </div>
+            </div>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {getUpcomingEvents().length > 0 ? (
+                getUpcomingEvents().map((ev, idx) => {
+                  const eventDate = new Date(ev.start);
+                  const today = new Date();
+                  const daysDiff = Math.ceil((eventDate - today) / (1000 * 60 * 60 * 24));
+                  let badgeColor = 'bg-blue-100 text-blue-700';
+                  if (daysDiff === 0) badgeColor = 'bg-red-100 text-red-700';
+                  else if (daysDiff === 1) badgeColor = 'bg-orange-100 text-orange-700';
+                  else if (daysDiff <= 3) badgeColor = 'bg-yellow-100 text-yellow-700';
+                  
+                  return (
+                    <div key={ev.id} className="p-3 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800 text-sm">{ev.title}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                          {ev.location && (
+                            <p className="text-xs text-gray-400 mt-0.5">Location: {ev.location}</p>
+                          )}
+                          {ev.image_url && (
+                            <img src={ev.image_url} alt={ev.title} className="w-full h-24 object-cover rounded-xl mt-2" />
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor}`}>
+                            {daysDiff === 0 ? 'Today' : daysDiff === 1 ? 'Tomorrow' : `${daysDiff} days`}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button 
+                          onClick={() => openEditModal({ id: ev.id, title: ev.title, startStr: ev.start, endStr: ev.end, extendedProps: ev })} 
+                          className="text-xs bg-blue-600 text-white px-3 py-1 rounded-full hover:bg-blue-700"
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          onClick={() => deleteEventById(ev.id)} 
+                          className="text-xs bg-red-50 text-red-600 px-3 py-1 rounded-full hover:bg-red-100"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <p className="mt-2 text-sm">No upcoming events</p>
+                  <p className="text-xs">Click on any date in the calendar to create one</p>
                 </div>
               )}
             </div>
-
-            <div className="flex items-center gap-2 lg:hidden">
-              <Link href="/user/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white transition hover:bg-sky-800">
-                {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
-              </Link>
-              <div className="relative">
-                <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
-                  <Menu className="h-5 w-5" />
-                </button>
-                {showProfileMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                  <Link href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile settings</Link>
-                  <Link href="/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />Messages</Link>
-                  <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
-                </div>}
-              </div>
-            </div>
-          </div>
-
-        </header>
-
-        {error && (
-          <div className="mb-4 flex gap-3 rounded-[18px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <div><p className="font-semibold">Could not load your feed</p><p>{error}</p></div>
-          </div>
-        )}
-
-        <section
-          className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-900/20 bg-cover bg-center px-6 py-5 text-white shadow-[0_10px_28px_rgba(14,116,144,0.14)] lg:block"
-          style={{ backgroundImage: "linear-gradient(90deg, rgba(2, 25, 45, 0.86), rgba(2, 25, 45, 0.48)), url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85')" }}
-        >
-          <div className="flex items-center justify-between gap-6">
-            <div className="max-w-[620px]">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">Daet community journal</p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight text-white">Stories, places, and people worth knowing.</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-100">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
-            </div>
-            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
-          </div>
-        </section>
-
-        <div className="dashboard-feed-layout lg:h-[calc(100vh-11rem)] lg:min-h-0 lg:overflow-hidden">
-          <div className="dashboard-feed-main min-w-0 lg:min-h-0 lg:max-h-full lg:overflow-y-auto lg:pr-3 lg:overscroll-contain">
-        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
-            <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
-            <Link href="/user/blogs/new" className="flex min-h-11 flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-sky-300">
-              Share something with Daet...
-            </Link>
-            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600">
-              <Zap className="h-4 w-4" />
-            </Link>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
-            <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-white">Write a story</Link>
-            <Link href="/user/blogs/new?share=media" className="rounded-xl py-2 hover:bg-white">Post a photo or video</Link>
           </div>
         </div>
 
-        <div>
-          <section className="min-w-0 space-y-4">
-            <div className="flex items-end justify-between px-1">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
-              <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} aria-label="Refresh your feed" title="Refresh your feed" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-700" disabled={feedRefreshing}><RefreshCw className={`h-4 w-4 ${feedRefreshing ? 'animate-spin' : ''}`} /></button>
+        <div className="mb-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Feedback Trends</p>
+              <h3 className="mt-2 text-xl font-black text-slate-900">Visitor sentiment</h3>
+              <p className="mt-1 text-xs text-slate-500">{dailyFeedbackQuestion ? dailyFeedbackQuestion.question : 'No daily question published'} · {feedbackTotal} responses</p>
             </div>
-
-            <div className="hidden items-center border-b border-slate-200 lg:flex">
-              {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
-            </div>
-
-            <DailyFeedback userId={userId} />
-
-            {!loading && false && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
-              <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {suggestions.suggestedPost && (
-                    <Link href={suggestions.suggestedPost.href} className="rounded-xl bg-sky-50 p-3 transition hover:bg-sky-100">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p>
-                      <p className="mt-1 line-clamp-2 text-[13px] font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p>
-                      <p className="mt-1 text-[11px] text-slate-500">From {suggestions.suggestedPost.author?.full_name || 'the Daet community'}</p>
-                    </Link>
-                  )}
-
-                  {suggestions.suggestedPeople.length > 0 && (
-                    <div className="rounded-xl bg-emerald-50 p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
-                      <div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><UserProfileLink user={person} className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[10px] font-bold text-white">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span></UserProfileLink><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : <><UserPlus className="h-3 w-3" />Follow</>}</button></div>)}</div>
-                    </div>
-                  )}
-
-                  {suggestions.suggestedContent.length > 0 && (
-                    <div className="rounded-xl bg-amber-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Suggested content</p><div className="mt-2 space-y-1">{suggestions.suggestedContent.map((item) => <Link key={`${item.type}-${item.id}`} href={item.href} className="block truncate text-[13px] font-bold leading-5 text-slate-800 hover:text-amber-700">{item.title}</Link>)}</div></div>
-                  )}
-
-                  {suggestions.suggestedLocations.length > 0 && (
-                    <div className="rounded-xl bg-violet-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Suggested locations</p><div className="mt-2 flex flex-wrap gap-2">{suggestions.suggestedLocations.map((location) => <Link key={location} href={`/search?q=${encodeURIComponent(location)}`} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-violet-700"><MapPinned className="h-3 w-3 text-violet-600" />{location}</Link>)}</div></div>
-                  )}
-                </div>
-              </section>
-            )}
-
-            {loading ? (
-              <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className="animate-pulse rounded-[22px] border border-slate-200 bg-white p-4"><div className="h-4 w-1/2 rounded bg-slate-200" /><div className="mt-4 h-3 w-full rounded bg-slate-200" /><div className="mt-2 h-3 w-4/5 rounded bg-slate-200" /></div>)}</div>
-            ) : filteredFeed.length === 0 ? (
-              <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No posts found. Try another topic or search.</div>
-            ) : (
-              <div className="space-y-4 lg:space-y-6">
-                {visibleFeed.map((item) => {
-                  const itemKey = `${item.type}-${item.id}`
-                  const isSaved = savedItems.has(itemKey)
-                  const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
-                  const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
-                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
-                  const authorRoleLabel = getAuthorRoleLabel(author || {})
-                  const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
-                  const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
-                  const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
-                  const postGallery = item.type === 'blog' ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
-                  const postImageUrl = item.type === 'blog' ? item.featured_image || (item.images || [])[0] : item.type === 'announcement' ? item.image_url : eventMediaUrl
-                  const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
-                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
-                  return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-[16px] lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
-                      <div className="p-4 sm:p-5 lg:p-6">
-                        <div className="flex items-start gap-3">
-                          <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
-                            {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
-                          </Link>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                              <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
-                              {authorRoleLabel && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">{authorRoleLabel}</span>}
-                              {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
-                              <span className="text-slate-400">·</span>
-                              <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{item.type}</span>{item.category && <><span className="text-slate-300">•</span><span className="normal-case tracking-normal text-slate-500">{item.category}</span></>}</div>
-                            <Link href={item.href} className="block"><h2 className="mt-1 break-words text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:mt-2 lg:text-lg lg:leading-7">{item.title}</h2></Link>
-                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}{item.start_date && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}{item.reply_count !== undefined && <span>{item.reply_count} replies</span>}</div>
-                          </div>
-                          <div className="relative shrink-0">
-                            <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
-                            {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              <button type="button" onClick={() => hidePost(itemKey)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
-                              <button type="button" onClick={() => markNotInterested(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
-                              <button type="button" onClick={() => void copyPostLink(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
-                            </div>}
-                          </div>
-                        </div>
-
-                        {(item.excerpt || item.description) && <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{item.excerpt || item.description}</p>}
-                        {item.type === 'forum' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Discussion</span>{item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span></div>}
-                        {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
-                        {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
-                        {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
-
-                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => router.push(item.href)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
-                      </div>
-                    </article>
-                  )
-                })}
-              </div>
-            )}
-            {!loading && filteredFeed.length > 0 && (hasMoreFeed || feedEndReached) && <div className="mt-5 rounded-[16px] border border-dashed border-slate-300 bg-white p-4 text-center"><p className="text-xs text-slate-500">{hasMoreFeed ? 'More community posts are ready.' : 'You have reached the end of this feed.'}</p>{hasMoreFeed ? <button type="button" onClick={() => setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))} className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700">Load more</button> : <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-3.5 w-3.5" />Refresh feed</button>}</div>}
-          </section>
-
-          </div>
-          </div>
-
-          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4 lg:min-h-0 lg:block lg:max-h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
-            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
-              <div className="border-b border-slate-100 px-2 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
-                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
+            <div className="space-y-3">
+              {feedbackTrend.map((item) => (
+                <div key={item.label}>
+                  <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
+                    <span>{item.label}</span>
+                    <span className="font-semibold">{item.pct}%</span>
                   </div>
-                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
+                  <div className="h-2.5 rounded-full bg-slate-100">
+                    <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} />
+                  </div>
                 </div>
+              ))}
+            </div>
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="daily-feedback-question">Daily question</label>
+              <div className="mt-2 flex gap-2">
+                <input id="daily-feedback-question" value={dailyFeedbackDraft} onChange={(event) => setDailyFeedbackDraft(event.target.value)} placeholder="Ask visitors a question..." className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
+                <button type="button" onClick={saveDailyFeedbackQuestion} disabled={publishingFeedback} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">{publishingFeedback ? 'Publishing...' : 'Publish'}</button>
               </div>
             </div>
+          </div>
 
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p><Flame className="h-4 w-4 text-amber-500" /></div>
-              <p className="mt-3 text-3xl font-black text-slate-950">{gamification.points}<span className="ml-1 text-sm font-semibold text-slate-500">pts</span></p>
-              <p className="mt-1 text-xs text-slate-500">Level {gamification.level} · {gamification.streak}-day streak</p>
-              <Link href="/user/rewards" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Star className="h-3.5 w-3.5 text-amber-300" />View rewards</Link>
+          <section className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">System Status</p>
+                <h3 className="mt-2 text-xl font-black text-slate-900">Operational health</h3>
+              </div>
             </div>
-
-            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
-              <section className="rounded-[16px] border border-sky-100 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
-                <div className="space-y-3">
-                  {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="block rounded-xl bg-sky-50 p-3 hover:bg-sky-100"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p><p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p></Link>}
-                  {suggestions.suggestedPeople.length > 0 && <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p><div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><UserProfileLink user={person} className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</UserProfileLink><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="shrink-0 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : 'Follow'}</button></div>)}</div></div>}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {systemStatus.map((item) => (
+                <div key={item.name} className="flex min-h-[84px] items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-800">{item.name}</p>
+                    <p className="text-xs text-slate-500">Status</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${item.color}`}>{item.status}</span>
                 </div>
-              </section>
-            )}
-
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
-              <div className="space-y-2">{trendingTopics.map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-sky-50 px-3 text-left text-sm font-semibold text-slate-700 hover:bg-sky-100"><span>#{topic.name}</span><span className="text-xs text-sky-700">{topic.count}</span></button>)}</div>
+              ))}
             </div>
-
-          </aside>
+          </section>
         </div>
-        <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
+
+        
+
+        {/* Recent Users Table */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <><Icon name="users" className="inline-block w-4 h-4 mr-2" />Recent Registrations</>
+            </h3>
+            <Link href="/admin/users" className="text-xs text-blue-600 hover:underline font-medium">View all users <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 rounded-2xl">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Joined</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {recentUsers.map((u) => (
+                  <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        {u.profile_image_url ? (
+                          <img src={u.profile_image_url} alt={u.full_name || 'User'} className="h-9 w-9 rounded-full object-cover ring-2 ring-white" />
+                        ) : (
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-700 ring-2 ring-white">
+                            {getUserInitials(u)}
+                          </div>
+                        )}
+                        <span className="text-sm font-medium text-gray-900">{u.full_name || u.user_name || 'Unnamed user'}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{u.email}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                        u.user_type === 'tourist' ? 'bg-blue-100 text-blue-800' : 
+                        u.user_type === 'artisan' ? 'bg-yellow-100 text-yellow-800' : 
+                        u.user_type === 'operator' ? 'bg-purple-100 text-purple-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {u.user_type}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
+                        u.status === 'active' ? 'bg-green-100 text-green-800' : 
+                        u.status === 'suspended' ? 'bg-red-100 text-red-800' :
+                        u.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {u.status || 'active'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(u.created_at).toLocaleDateString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
-    </main>
-  )
+
+      {/* Floating Message Envelope for Inquiries - opens a separate page */}
+      <button 
+        onClick={() => router.push('/admin/feedback')}
+        className="fixed bottom-5 right-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all duration-200 z-30 group"
+      >
+        <div className="relative">
+          <MessageSquare className="h-7 w-7" />
+          {unreadInquiries.length > 0 && (
+            <span className="absolute -top-2 -right-2 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+              {unreadInquiries.length > 9 ? '9+' : unreadInquiries.length}
+            </span>
+          )}
+        </div>
+        <span className="absolute right-full mr-2 top-1/2 -translate-y-1/2 bg-gray-800 text-white text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+          {unreadInquiries.length > 0 
+            ? `${unreadInquiries.length} unread ${unreadInquiries.length === 1 ? 'inquiry' : 'inquiries'}`
+            : 'View inquiries'}
+        </span>
+      </button>
+
+      {/* Event Modal */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-xl font-bold text-gray-800 mb-4">{eventForm.id ? 'Edit Event' : 'Create New Event'}</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
+                <input autoFocus type="text" value={eventForm.title} onChange={e => setEventForm(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500" placeholder="e.g., Pinyasan Festival" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                <select value={eventForm.category} onChange={e => setEventForm(p => ({ ...p, category: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500">
+                  <option value="">Select category</option>
+                  {EVENT_CATEGORIES.map(cat => (<option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date *</label>
+                  <input type="date" value={eventForm.start_date} onChange={e => setEventForm(p => ({ ...p, start_date: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                  <input type="date" value={eventForm.end_date} onChange={e => setEventForm(p => ({ ...p, end_date: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl" />
+                </div>
+              </div>
+              <div className="relative">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Location / Venue</label>
+                <input type="text" ref={locationInputRef} value={eventForm.location} onChange={e => handleLocationChange(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500" placeholder="Type to search venues in Daet..." autoComplete="off" />
+                {showLocationSuggestions && locationSuggestions.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-2xl shadow-lg max-h-40 overflow-y-auto">
+                    {locationSuggestions.map((venue, idx) => (
+                      <button key={idx} type="button" onClick={() => selectLocation(venue)} className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 flex items-center gap-2">
+                        <span className="text-gray-400"><Icon name="attractions" className="inline-block w-4 h-4 mr-1" /></span> {venue}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Time</label>
+                  <input type="time" value={eventForm.start_time} onChange={e => setEventForm(p => ({ ...p, start_time: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                  <input type="time" value={eventForm.end_time} onChange={e => setEventForm(p => ({ ...p, end_time: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl" />
+                </div>
+              </div>
+              
+              {/* Featured Image Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Featured Image</label>
+                <MediaUpload
+                  bucket="events"
+                  folder="featured"
+                  mediaType="image"
+                  existingMediaUrl={eventForm.imageUrl}
+                  onUploadComplete={(url) => setEventForm(p => ({ ...p, imageUrl: url || '' }))}
+                  onUploadError={(error) => showToast(error, true)}
+                  buttonText="Upload Featured Image"
+                  maxSizeMB={5}
+                />
+              </div>
+              
+              {/* Promo Video Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Promo Video (Optional)</label>
+                <MediaUpload
+                  bucket="events"
+                  folder="videos"
+                  mediaType="video"
+                  existingMediaUrl={eventForm.videoUrl}
+                  onUploadComplete={(url) => setEventForm(p => ({ ...p, videoUrl: url || '' }))}
+                  onUploadError={(error) => showToast(error, true)}
+                  buttonText="Upload Promo Video"
+                  maxSizeMB={20}
+                />
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={eventForm.is_free} onChange={e => setEventForm(p => ({ ...p, is_free: e.target.checked, ticket_price: e.target.checked ? '' : p.ticket_price }))} className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-700">Free Event</span>
+                </label>
+                {!eventForm.is_free && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Price (PHP)</label>
+                    <input type="number" value={eventForm.ticket_price} onChange={e => setEventForm(p => ({ ...p, ticket_price: e.target.value }))} className="w-28 px-3 py-2 border border-gray-300 rounded-2xl" placeholder="0.00" />
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select value={eventForm.status} onChange={e => setEventForm(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
+                  <option value="published">Published</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea value={eventForm.description} onChange={e => setEventForm(p => ({ ...p, description: e.target.value }))} rows="2" className="w-full px-3 py-2 border border-gray-300 rounded-2xl resize-none" placeholder="Brief description..." />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50 text-sm">Cancel</button>
+              {eventForm.id && <button onClick={() => deleteEventById(eventForm.id)} className="px-4 py-2 bg-red-50 text-red-600 rounded-full hover:bg-red-100 text-sm">Delete</button>}
+              <button onClick={saveEvent} disabled={saving} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 text-sm disabled:opacity-50">{saving ? 'Saving...' : (eventForm.id ? 'Update' : 'Create')}</button>
+            </div>
+            <div className="mt-4 pt-3 border-t border-gray-100">
+              <p className="text-xs text-gray-400 text-center">Tip: Drag events on the calendar to reschedule. Drag edges to resize multi-day events.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Publish Modal */}
+      {showQuickPublishModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[24px] bg-white p-6 shadow-2xl sm:p-7">
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-2xl">!</div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-800">Quick Publish</h3>
+                  <p className="text-xs text-gray-500">Broadcast to all users instantly</p>
+                </div>
+              </div>
+              <button type="button" onClick={closeModal} className="rounded-full p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700" aria-label="Close quick publish dialog">X</button>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
+                <select value={quickPublish.type} onChange={e => setQuickPublish(p => ({ ...p, type: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
+                  <option value="announcement">General Announcement</option>
+                  <option value="safety">Safety Advisory</option>
+                  <option value="traffic">Traffic Update</option>
+                  <option value="disaster">Disaster Warning</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Severity</label>
+                <select value={quickPublish.severity} onChange={e => setQuickPublish(p => ({ ...p, severity: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl">
+                  <option value="info">Informational (Blue)</option>
+                  <option value="warning">Caution (Yellow)</option>
+                  <option value="critical">Critical (Red)</option>
+                </select>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                <input type="text" value={quickPublish.title} onChange={e => setQuickPublish(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl" maxLength="60" placeholder="Short title..." />
+              </div>
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                <textarea value={quickPublish.message} onChange={e => setQuickPublish(p => ({ ...p, message: e.target.value }))} rows="3" className="w-full px-3 py-2 border border-gray-300 rounded-2xl" maxLength="200" placeholder="Your announcement message..." />
+              </div>
+              
+              {/* Announcement Image Upload */}
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Announcement Image (Optional)</label>
+                <MediaUpload
+                  bucket="announcements"
+                  folder="images"
+                  mediaType="image"
+                  existingMediaUrl={quickPublish.imageUrl}
+                  onUploadComplete={(url) => setQuickPublish(p => ({ ...p, imageUrl: url || '' }))}
+                  onUploadError={(error) => showToast(error, true)}
+                  buttonText="Add Image"
+                  maxSizeMB={5}
+                />
+              </div>
+              
+              {/* Announcement Video Upload */}
+              <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Announcement Video (Optional)</label>
+                <MediaUpload
+                  bucket="announcements"
+                  folder="videos"
+                  mediaType="video"
+                  existingMediaUrl={quickPublish.videoUrl}
+                  onUploadComplete={(url) => setQuickPublish(p => ({ ...p, videoUrl: url || '' }))}
+                  onUploadError={(error) => showToast(error, true)}
+                  buttonText="Add Video (max 30 sec)"
+                  maxSizeMB={20}
+                />
+                <p className="text-xs text-gray-400 mt-1">Videos will be embedded in the announcement</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50 text-sm">Cancel</button>
+              <button onClick={handleQuickPublish} disabled={saving} className="px-5 py-2 bg-green-500 text-white rounded-full hover:bg-green-600 text-sm disabled:opacity-50">{saving ? 'Publishing...' : 'Publish Now'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Weather Alert Modal */}
+      {showWeatherAlertModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-yellow-100 p-3 rounded-2xl">
+                <span className="text-2xl">Alert</span>
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">Issue Weather Alert</h3>
+                <p className="text-xs text-gray-500">Pre-filled advisory based on conditions</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Alert Message</label>
+                <textarea value={weatherAlertMessage} onChange={e => setWeatherAlertMessage(e.target.value)} rows="4" className="w-full px-3 py-2 border border-gray-300 rounded-2xl" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50 text-sm">Cancel</button>
+              <button onClick={publishWeatherAlert} disabled={saving} className="px-5 py-2 bg-red-600 text-white rounded-full hover:bg-red-700 text-sm disabled:opacity-50">{saving ? 'Publishing...' : 'Issue Alert'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Inquiry Reply Modal */}
+      {showInquiryModal && selectedInquiry && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-5 shadow-xl max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Respond to Inquiry</h3>
+              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">Close</button>
+            </div>
+            <div className="bg-gray-50 rounded-2xl p-4 mb-4">
+              <p className="font-medium text-gray-800">{selectedInquiry.title}</p>
+              <p className="text-sm text-gray-600 mt-2">{selectedInquiry.message}</p>
+              <p className="text-xs text-gray-400 mt-2">From: {selectedInquiry.user_name || 'Anonymous'} • {new Date(selectedInquiry.created_at).toLocaleString()}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Your Response</label>
+              <textarea rows="4" className="w-full px-3 py-2 border border-gray-300 rounded-2xl" placeholder="Type your official response here..." id="inquiryReply"></textarea>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600">Cancel</button>
+              <button onClick={() => {
+                const reply = document.getElementById('inquiryReply').value;
+                handleReplyToInquiry(selectedInquiry.id, reply);
+              }} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700">Send Reply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2">
+          <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm shadow-lg max-w-[90vw] animate-toast-in ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
+            <span className="shrink-0 inline-flex items-center">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span>
+            <span className="break-words">{toastMessage.message}</span>
+          </div>
+        </div>
+      )}
+
+      <style jsx global>{`
+        @keyframes toast-in {
+          from { transform: translateY(-12px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-toast-in {
+          animation: toast-in 0.25s ease-out;
+        }
+        .fc-event {
+          cursor: grab !important;
+          border-radius: 12px !important;
+          border: none !important;
+          padding: 2px 6px !important;
+          font-weight: 500 !important;
+          font-size: 0.75rem !important;
+        }
+        .fc-event:active {
+          cursor: grabbing !important;
+        }
+        .fc-daygrid-day-frame:hover {
+          background-color: #eff6ff !important;
+        }
+        .fc-day-today {
+          background-color: #fefce8 !important;
+        }
+        .fc .fc-button-primary {
+          background-color: #2563eb !important;
+          border-color: #2563eb !important;
+          border-radius: 9999px !important;
+        }
+        .fc .fc-button-primary:hover {
+          background-color: #1d4ed8 !important;
+          border-color: #1d4ed8 !important;
+        }
+        .fc .fc-button {
+          border-radius: 9999px !important;
+        }
+        .fc .fc-toolbar-title {
+          font-size: 1.25rem !important;
+          font-weight: 600 !important;
+        }
+        .line-clamp-1 {
+          display: -webkit-box;
+          -webkit-line-clamp: 1;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+        }
+      `}</style>
+    </div>
+  );
 }

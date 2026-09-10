@@ -243,6 +243,38 @@ select {
   }
 }
 
+/* Admin route radius flattening -- all Tailwind radius utilities underneath the admin route are reduced to a sharp professional console style. */
+.admin-page-shell [class*='rounded-'] {
+  border-radius: 0 !important;
+}
+
+.admin-page-shell [class*='rounded-full'] {
+  border-radius: 9999px !important;
+}
+
+.admin-page-shell .fc-daygrid-day-frame {
+  min-height: 96px !important;
+  height: 96px !important;
+  border-radius: 0 !important;
+  overflow: hidden;
+}
+
+.admin-page-shell .fc-daygrid-event {
+  border-radius: 0 !important;
+}
+
+.admin-page-shell .fc .fc-scroller {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  overflow-y: auto !important;
+}
+
+.admin-page-shell .fc .fc-scroller::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .dashboard-sharp * {
   border-radius: 0 !important;
 }
