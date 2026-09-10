@@ -2,14 +2,13 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, CornerDownRight, Heart, MessageSquare, MoreHorizontal, Pin, SendHorizontal, SortDesc } from 'lucide-react'
+import { ChevronDown, ChevronUp, CornerDownRight, Heart, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { buildCommentThreads } from '@/lib/commentThreads'
 import Reactions from './Reactions'
 import UserProfileLink from './UserProfileLink'
 
-const GIFS = ['🎉', '👍', '👏', '🔥', '💯', '😍', '🤣', '🙌']
 const STICKERS = ['😀', '😂', '😍', '😎', '🤔', '😢', '😡', '🥳', '🤝', '❤️']
 
 function formatRelativeTime(value) {
@@ -52,6 +51,10 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   const [showStickerPicker, setShowStickerPicker] = useState(false)
   const [selectedGif, setSelectedGif] = useState(null)
   const [selectedSticker, setSelectedSticker] = useState(null)
+  const [gifQuery, setGifQuery] = useState('')
+  const [gifResults, setGifResults] = useState([])
+  const [gifLoading, setGifLoading] = useState(false)
+  const [gifError, setGifError] = useState('')
   const [showAllComments, setShowAllComments] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
   const [editingCommentId, setEditingCommentId] = useState(null)
@@ -135,6 +138,43 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   const totalReplyCount = comments.filter((comment) => comment.parent_id).length
   const totalLikeCount = comments.reduce((sum, comment) => sum + countCommentLikes(comment), 0)
   const visibleThreads = showAllComments ? threads : threads.slice(0, compact ? 2 : INITIAL_VISIBLE_COMMENTS)
+
+  const loadGifs = useCallback(async (query = gifQuery) => {
+    setGifLoading(true)
+    setGifError('')
+
+    try {
+      const response = await fetch(`/api/gifs?q=${encodeURIComponent(query || 'happy')}`, { credentials: 'same-origin' })
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to load GIFs.' }))
+
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to load GIFs.')
+      }
+
+      const items = Array.isArray(payload.gifs) ? payload.gifs : []
+      const gifs = items.filter((gif) => gif?.url)
+      setGifResults(gifs)
+      if (gifs.length === 0) {
+        setGifError('No GIFs matched your search.')
+      }
+    } catch (error) {
+      console.error('Failed to load GIFs:', error)
+      setGifError('Could not load GIFs.')
+      setGifResults([])
+    } finally {
+      setGifLoading(false)
+    }
+  }, [gifQuery])
+
+  useEffect(() => {
+    if (!showGifPicker) return undefined
+
+    const timer = window.setTimeout(() => {
+      void loadGifs(gifQuery)
+    }, 175)
+
+    return () => window.clearTimeout(timer)
+  }, [showGifPicker, gifQuery, loadGifs])
 
   const handleEditComment = async (commentId) => {
     const trimmed = editedCommentText.trim()
@@ -587,17 +627,41 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             </div>
 
             {showGifPicker && (
-              <div className="mt-2 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-2">
-                {GIFS.map((gif) => (
-                  <button
-                    key={gif}
-                    type="button"
-                    onClick={() => { setSelectedGif(`https://api.dicebear.com/7.x/emoji/svg?seed=${encodeURIComponent(gif)}`); setShowGifPicker(false) }}
-                    className="flex h-10 w-10 items-center justify-center rounded-lg text-xl transition hover:bg-slate-100"
-                  >
-                    {gif}
-                  </button>
-                ))}
+              <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+                  <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                  <input
+                    value={gifQuery}
+                    onChange={(event) => setGifQuery(event.target.value)}
+                    placeholder="Search Giphy GIFs..."
+                    className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                  />
+                </div>
+
+                {gifLoading ? (
+                  <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-slate-500">
+                    <LoaderCircle className="h-4 w-4 animate-spin" /> Loading GIFs...
+                  </div>
+                ) : gifError ? (
+                  <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">
+                    {gifError}
+                  </div>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto p-2">
+                    <div className="grid grid-cols-3 gap-2">
+                      {gifResults.map((gif) => (
+                        <button
+                          key={gif.id || gif.url}
+                          type="button"
+                          onClick={() => { setSelectedGif(gif.url); setShowGifPicker(false); setGifQuery('') }}
+                          className="overflow-hidden rounded-lg border border-slate-100 bg-slate-50 transition hover:ring-2 hover:ring-sky-500"
+                        >
+                          <img src={gif.url} alt={gif.title || 'Giphy GIF'} className="h-20 w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
