@@ -11,7 +11,6 @@ import FullCalendar from '@fullcalendar/react';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import dayGridPlugin from '@fullcalendar/daygrid';
-import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/components/MediaUpload';
 
@@ -49,6 +48,36 @@ const getCategoryColor = (category) => {
     'cultural': '#EC4899',
   };
   return colors[category] || '#0f3b2c';
+};
+
+const addOneCalendarDay = (dateString) => {
+  if (!dateString) return null;
+  const base = new Date(dateString + 'T00:00:00');
+  if (Number.isNaN(base.getTime())) return null;
+  const next = new Date(base);
+  next.setDate(next.getDate() + 1);
+  const year = next.getFullYear();
+  const month = String(next.getMonth() + 1).padStart(2, '0');
+  const day = String(next.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// FullCalendar's `select` callback reports the end date EXCLUSIVE (the day
+// after the last highlighted cell), but our form/DB store an INCLUSIVE end
+// date (the actual last day of the event). Any date coming straight out of
+// a calendar date-highlight must be shifted back one day before it's used
+// as `end_date`, otherwise every event created by highlighting dates ends
+// up one day longer than what the admin actually selected.
+const subtractOneCalendarDay = (dateString) => {
+  if (!dateString) return null;
+  const base = new Date(dateString + 'T00:00:00');
+  if (Number.isNaN(base.getTime())) return null;
+  const prev = new Date(base);
+  prev.setDate(prev.getDate() - 1);
+  const year = prev.getFullYear();
+  const month = String(prev.getMonth() + 1).padStart(2, '0');
+  const day = String(prev.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
 export default function AdminEventsPage() {
@@ -405,23 +434,49 @@ export default function AdminEventsPage() {
     try {
       const formatDate = (date) => {
         if (!date) return null;
-        let d = date;
+
         if (typeof date === 'string') {
-          if (date.match(/^\d{4}-\d{2}-\d{2}/)) return date.split('T')[0];
-          d = new Date(date);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+          if (/^\d{4}-\d{2}-\d{2}T/.test(date)) return date.split('T')[0];
+
+          const d = new Date(date);
+          if (Number.isNaN(d.getTime())) return null;
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
         }
-        if (isNaN(d.getTime())) return null;
-        return d.toISOString().split('T')[0];
+
+        if (date instanceof Date) {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+
+        return null;
+      };
+
+      const formatInclusiveEndDate = (date) => {
+        const exclusive = formatDate(date);
+        if (!exclusive) return null;
+        const [year, month, day] = exclusive.split('-').map(Number);
+        const parsed = new Date(year, month - 1, day);
+        parsed.setDate(parsed.getDate() - 1);
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
       };
       
       const formattedStart = formatDate(newStartDate);
-      const formattedEnd = formatDate(newEndDate || newStartDate);
+      const formattedEnd = formatInclusiveEndDate(newEndDate || newStartDate);
       
       if (!formattedStart) throw new Error('Invalid start date');
       
       const { error } = await supabase
         .from('info_events')
-        .update({ start_date: formattedStart, end_date: formattedEnd })
+        .update({ start_date: formattedStart, end_date: formattedEnd || formattedStart })
         .eq('id', eventId);
       
       if (error) throw error;
@@ -560,12 +615,17 @@ export default function AdminEventsPage() {
     }));
   };
 
-  const openCreateModal = (startStr = null) => {
+  // startStr/endStr come from FullCalendar's `select` info (info.startStr /
+  // info.endStr), which uses an EXCLUSIVE end date (the day after the last
+  // highlighted cell). Shift it back one day so the form's end_date matches
+  // the actual last day the admin highlighted.
+  const openCreateModal = (startStr = null, endStr = null) => {
     setSelectedEvent(null);
     setSelectedEventDetails(null);
     setEventDetailsSearch('');
+    const inclusiveEnd = endStr ? subtractOneCalendarDay(endStr) : (startStr || '');
     setEventForm({
-      id: '', title: '', description: '', location: '', start_date: startStr || '', end_date: startStr || '',
+      id: '', title: '', description: '', location: '', start_date: startStr || '', end_date: inclusiveEnd || startStr || '',
       start_time: '', end_time: '', category: 'festival', is_free: true, ticket_price: '',
       max_attendees: '', current_attendees: 0, organizer: 'Daet Tourism Office', status: 'draft',
       imageUrl: '', videoUrl: '', galleryImages: [], galleryVideos: [],
@@ -574,6 +634,11 @@ export default function AdminEventsPage() {
     setShowEventModal(true);
     setLocationSuggestions([]);
     setShowLocationSuggestions(false);
+    // Clear the drag/click highlight left behind on the calendar now that
+    // the create-event popup has taken over.
+    try {
+      calendarRef.current?.getApi()?.unselect();
+    } catch (err) {}
   };
 
   const openEditModal = (eventObj) => {
@@ -605,6 +670,9 @@ export default function AdminEventsPage() {
     setShowBulkModal(false);
     setShowMediaPreviewModal(false);
     setSelectedEvent(null);
+    try {
+      calendarRef.current?.getApi()?.unselect();
+    } catch (err) {}
     setSelectedMedia(null);
     setBulkAction('');
     setTagInput('');
@@ -778,29 +846,33 @@ export default function AdminEventsPage() {
     );
   };
 
-  const calendarEvents = events.filter(ev => ev.status !== 'cancelled').map(ev => ({
-    id: String(ev.id),
-    title: ev.title,
-    start: ev.start,
-    end: ev.end,
-    allDay: true,
-    extendedProps: {
-      description: ev.description || '',
-      location: ev.location || '',
-      category: ev.category || '',
-      status: ev.status,
-      organizer: ev.organizer,
-      image_url: ev.image_url,
-      video_url: ev.video_url,
-      recurrence: ev.recurrence || '',
-      tags: ev.tags || [],
-      featured: !!ev.featured
-    },
-    backgroundColor: getCategoryColor(ev.category),
-    borderColor: '#ffffff',
-    textColor: '#ffffff',
-    className: ev.status === 'cancelled' ? 'opacity-50 line-through' : ''
-  }));
+  const calendarEvents = events.filter(ev => ev.status !== 'cancelled').map(ev => {
+    const start = ev.start || ev.start_date;
+    const end = ev.end || ev.end_date || ev.start;
+    return {
+      id: String(ev.id),
+      title: ev.title,
+      start,
+      end: addOneCalendarDay(end),
+      allDay: true,
+      extendedProps: {
+        description: ev.description || '',
+        location: ev.location || '',
+        category: ev.category || '',
+        status: ev.status,
+        organizer: ev.organizer,
+        image_url: ev.image_url,
+        video_url: ev.video_url,
+        recurrence: ev.recurrence || '',
+        tags: ev.tags || [],
+        featured: !!ev.featured
+      },
+      backgroundColor: getCategoryColor(ev.category),
+      borderColor: '#ffffff',
+      textColor: '#ffffff',
+      className: ev.status === 'cancelled' ? 'opacity-50 line-through' : ''
+    };
+  });
 
   const filteredEvents = events.filter(ev => {
     if (filters.status !== 'all' && ev.status !== filters.status) return false;
@@ -858,9 +930,18 @@ export default function AdminEventsPage() {
   }, [events, getRegistrationsForEvent]);
 
   const upcomingEvents = events
-    .filter(ev => ev.status === 'published' && new Date(ev.start) >= new Date())
-    .sort((a, b) => new Date(a.start) - new Date(b.start))
-    .slice(0, 10);
+    .filter(ev => {
+      if (ev.status !== 'published') return false;
+
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      const evDate = new Date(ev.start);
+
+      return evDate >= now && evDate >= monthStart && evDate <= monthEnd;
+    })
+    .sort((a, b) => new Date(a.start) - new Date(b.start));
 
   useEffect(() => {
     const fetchVenues = async () => {
@@ -1106,15 +1187,18 @@ export default function AdminEventsPage() {
             <FullCalendar
               key={calendarKey}
               ref={calendarRef}
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+              plugins={[dayGridPlugin, interactionPlugin]}
               initialView="dayGridMonth"
-              height={550}
               selectable={true}
               editable={true}
               eventStartEditable={true}
               eventDurationEditable={true}
               events={calendarEvents}
-              select={(info) => openCreateModal(info.startStr)}
+              fixedWeekCount={false}
+              dayMaxEvents={true}
+              height="auto"
+              contentHeight="auto"
+              select={(info) => openCreateModal(info.startStr, info.endStr)}
               eventClick={(info) => {
                 const event = events.find(e => e.id === info.event.id);
                 if (event) {
@@ -1140,12 +1224,17 @@ export default function AdminEventsPage() {
                 } catch (err) {}
               }}
               dayCellDidMount={(info) => {
+                const frame = info.el;
+                frame.style.borderRadius = '0';
+                frame.style.background = '#ffffff';
+                frame.style.border = '1px solid #e2e8f0';
+                frame.style.boxShadow = 'inset 0 0 0 1px rgba(15, 23, 42, 0.03)';
                 const hasEvents = info.el.querySelector('.fc-daygrid-day-events') &&
                   info.el.querySelector('.fc-daygrid-day-events')?.childElementCount > 0;
                 if (hasEvents) {
-                  info.el.style.background = '#dbeafe';
-                  info.el.style.border = '1px solid #93c5fd';
-                  info.el.style.boxShadow = 'inset 0 0 0 1px rgba(59,130,246,0.15)';
+                  frame.style.background = '#dbeafe';
+                  frame.style.borderColor = '#93c5fd';
+                  frame.style.boxShadow = 'inset 0 0 0 1px rgba(59,130,246,0.18)';
                 }
               }}
               eventDragStart={handleEventDragStart}
@@ -1161,11 +1250,13 @@ export default function AdminEventsPage() {
               headerToolbar={{
                 left: 'prev,next today',
                 center: 'title',
-                right: 'dayGridMonth,dayGridWeek,timeGridDay'
+                right: ''
               }}
-              buttonText={{ today: 'Today', month: 'Month', week: 'Week', day: 'Day' }}
+              buttonText={{ today: 'Today' }}
               nowIndicator={true}
               weekends={true}
+              selectMirror={true}
+              unselectAuto={false}
             />
           </div>
 
@@ -1664,7 +1755,7 @@ export default function AdminEventsPage() {
       {/* Event Modal */}
       {showEventModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-2xl p-5 shadow-xl max-h-[90vh] overflow-y-auto">
+          <div className="admin-event-modal bg-white w-full max-w-2xl p-5 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-gray-800">
                 {eventForm.id ? 'Edit Event' : 'Create New Event'}
@@ -1679,7 +1770,7 @@ export default function AdminEventsPage() {
                   type="text"
                   value={eventForm.title}
                   onChange={e => setEventForm(p => ({ ...p, title: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500"
+                  className="event-title-input w-full px-3 py-2 border border-gray-300 focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Pinyasan Festival 2025"
                 />
               </div>
@@ -1786,18 +1877,21 @@ export default function AdminEventsPage() {
                 />
               </div>
               
-              <div>
+              <div className="featured-upload-wrap">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Featured Image</label>
-                <MediaUpload
-                  bucket="events"
-                  folder="featured"
-                  mediaType="image"
-                  existingMediaUrl={eventForm.imageUrl}
-                  onUploadComplete={(url) => setEventForm(p => ({ ...p, imageUrl: url || '' }))}
-                  onUploadError={(error) => showToast(error, true)}
-                  buttonText="Upload Featured Image"
-                  maxSizeMB={5}
-                />
+                <div className="media-upload-row">
+                  <MediaUpload
+                    bucket="events"
+                    folder="featured"
+                    mediaType="image"
+                    existingMediaUrl={eventForm.imageUrl}
+                    onUploadComplete={(url) => setEventForm(p => ({ ...p, imageUrl: url || '' }))}
+                    onUploadError={(error) => showToast(error, true)}
+                    buttonText="Upload Featured Image"
+                    maxSizeMB={5}
+                    className="media-upload-inline"
+                  />
+                </div>
                 <p className="text-xs text-gray-400 mt-1">This image will appear as the event thumbnail (max 5MB)</p>
               </div>
               
@@ -2153,7 +2247,7 @@ export default function AdminEventsPage() {
         }
         .fc-event {
           cursor: grab !important;
-          border-radius: 12px !important;
+          border-radius: 0 !important;
           border: none !important;
           padding: 2px 6px !important;
           font-weight: 500 !important;
@@ -2173,13 +2267,69 @@ export default function AdminEventsPage() {
           padding: 0.2rem 0.4rem 0.4rem;
         }
         .fc-daygrid-event {
-          border-radius: 10px !important;
+          border-radius: 0 !important;
           box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
           font-weight: 600 !important;
         }
         .fc .fc-daygrid-day-frame {
           background: rgba(255, 255, 255, 0.75);
-          border-radius: 12px;
+          border-radius: 0;
+          min-height: 108px;
+        }
+        .fc .fc-view-harness {
+          min-height: auto;
+        }
+        .fc .fc-scroller {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          overflow: visible !important;
+        }
+        .fc .fc-daygrid-day-frame {
+          min-height: 70px !important;
+          height: 70px;
+          background: #fff;
+          border-radius: 0 !important;
+          overflow: hidden;
+        }
+        .fc .fc-daygrid-day-number {
+          width: 100%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 24px;
+          border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+          background: rgba(248, 250, 252, 0.85);
+        }
+        .fc .fc-daygrid-day-events {
+          min-height: 44px;
+          padding: 4px 6px !important;
+        }
+        .admin-event-modal {
+          border-radius: 0 !important;
+          border: 1px solid rgba(30, 41, 59, 0.08);
+          box-shadow: 0 24px 80px rgba(15, 23, 42, 0.15);
+        }
+        .admin-event-modal .event-title-input {
+          border-radius: 0 !important;
+          border-color: #2563eb !important;
+          background: #fff;
+          box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.4);
+          outline: none;
+        }
+        .admin-event-modal .featured-upload-wrap {
+          margin-top: 12px;
+        }
+        .admin-event-modal .media-upload-inline > div:first-child {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: nowrap;
+        }
+        .admin-event-modal .media-upload-inline button {
+          border-radius: 0 !important;
+          min-height: 40px;
+          padding: 0.5rem 1rem;
+          font-weight: 700;
         }
         .fc .fc-button-primary {
           background-color: #2563eb !important;

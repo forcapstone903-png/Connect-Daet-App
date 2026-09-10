@@ -91,6 +91,16 @@ export default function UserNotificationsPage() {
   }
 
   useEffect(() => {
+    if (!session) return undefined
+
+    const refreshTimer = window.setInterval(() => {
+      setRetryKey((value) => value + 1)
+    }, 15000)
+
+    return () => window.clearInterval(refreshTimer)
+  }, [session])
+
+  useEffect(() => {
     if (!session) {
       return undefined
     }

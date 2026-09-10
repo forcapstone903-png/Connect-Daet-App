@@ -87,6 +87,34 @@ const saveSentCache = (key, value) => {
   }
 };
 
+const addOneCalendarDay = (dateString) => {
+  if (!dateString) return null;
+  const base = new Date(dateString + 'T00:00:00');
+  if (Number.isNaN(base.getTime())) return null;
+  const next = new Date(base);
+  next.setDate(next.getDate() + 1);
+  const year = next.getFullYear();
+  const month = String(next.getMonth() + 1).padStart(2, '0');
+  const day = String(next.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// FullCalendar treats `end` as exclusive (the day AFTER the last highlighted
+// day). Our DB stores an inclusive end_date, so this is the inverse of
+// addOneCalendarDay - used to convert exclusive dates coming back from
+// select()/eventClick() into the inclusive end_date the form/DB expect.
+const subtractOneCalendarDay = (dateString) => {
+  if (!dateString) return null;
+  const base = new Date(dateString + 'T00:00:00');
+  if (Number.isNaN(base.getTime())) return null;
+  const prev = new Date(base);
+  prev.setDate(prev.getDate() - 1);
+  const year = prev.getFullYear();
+  const month = String(prev.getMonth() + 1).padStart(2, '0');
+  const day = String(prev.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Rate-limit recurring error notifications so they do not repopulate the
 // notification bell on every page refresh.
 const markErrorNotified = (key, cooldownMs = 10 * 60 * 1000) => {
@@ -161,6 +189,7 @@ export default function AdminDashboard() {
 
   const calendarRef = useRef(null);
   const eventsRef = useRef([]);
+  const eventElListenersRef = useRef(new Map());
   const locationInputRef = useRef(null);
   const weatherPopoverRef = useRef(null);
   const notificationsPopoverRef = useRef(null);
@@ -270,7 +299,11 @@ export default function AdminDashboard() {
       return formattedEvents;
     } catch (err) {
       console.error('Error fetching events:', err);
-      if (!markErrorNotified('fetch_events_error')) {
+      if (!supabase) {
+        if (!markErrorNotified('supabase_unhealthy')) {
+          addNotification('Supabase Unhealthy', 'Supabase data service is unavailable. Admin dashboard data could not be loaded.', 'error', null, 0);
+        }
+      } else if (!markErrorNotified('fetch_events_error')) {
         addNotification('Database Error', `Failed to load events: ${err.message}`, 'error', null, 0);
       }
       return [];
@@ -350,23 +383,49 @@ export default function AdminDashboard() {
     try {
       const formatDate = (date) => {
         if (!date) return null;
-        let d = date;
+
         if (typeof date === 'string') {
-          if (date.match(/^\d{4}-\d{2}-\d{2}/)) return date.split('T')[0];
-          d = new Date(date);
+          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+          if (/^\d{4}-\d{2}-\d{2}T/.test(date)) return date.split('T')[0];
+
+          const d = new Date(date);
+          if (Number.isNaN(d.getTime())) return null;
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
         }
-        if (isNaN(d.getTime())) return null;
-        return d.toISOString().split('T')[0];
+
+        if (date instanceof Date) {
+          const year = date.getFullYear();
+          const month = String(date.getMonth() + 1).padStart(2, '0');
+          const day = String(date.getDate()).padStart(2, '0');
+          return `${year}-${month}-${day}`;
+        }
+
+        return null;
+      };
+
+      const formatInclusiveEndDate = (date) => {
+        const exclusive = formatDate(date);
+        if (!exclusive) return null;
+        const [year, month, day] = exclusive.split('-').map(Number);
+        const parsed = new Date(year, month - 1, day);
+        parsed.setDate(parsed.getDate() - 1);
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
       };
       
       const formattedStart = formatDate(newStartDate);
-      const formattedEnd = formatDate(newEndDate || newStartDate);
+      const formattedEnd = formatInclusiveEndDate(newEndDate || newStartDate);
       
       if (!formattedStart) throw new Error('Invalid start date');
       
       const { error } = await supabase
         .from('info_events')
-        .update({ start_date: formattedStart, end_date: formattedEnd })
+        .update({ start_date: formattedStart, end_date: formattedEnd || formattedStart })
         .eq('id', eventId);
       
       if (error) throw error;
@@ -474,6 +533,40 @@ export default function AdminDashboard() {
     saveSentCache(SENT_EVENT_NOTIFICATIONS_KEY, sentNotifications);
   };
 
+  const persistWeatherAnnouncement = async (alertType, alertMsg) => {
+    const sentAlerts = loadSentCache(SENT_WEATHER_ALERTS_KEY);
+    const alertCacheKey = `${new Date().toDateString()}_${alertType}_${alertMsg.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`;
+
+    if (sentAlerts[alertCacheKey]) return;
+
+    try {
+      const { error } = await supabase
+        .from('info_announcements')
+        .insert([{
+          title: 'Weather Advisory',
+          content: alertMsg,
+          announcement_type: 'weather',
+          severity: alertType === 'critical' ? 'critical' : 'warning',
+          audience: 'all',
+          priority: alertType === 'critical' ? 3 : 2,
+          created_by: user?.user_id || user?.id || null,
+          status: 'published',
+          published_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      sentAlerts[alertCacheKey] = true;
+      saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
+    } catch (err) {
+      console.error('Weather announcement persist error:', err);
+      addNotification('Weather Announcement Sync Failed', 'Weather advisory could not be stored in the announcement page.', 'error', '/admin/announcement', 0);
+    }
+  };
+
   const checkWeatherNotifications = (weatherData) => {
     if (!weatherData?.current) return;
     const condition = weatherData.current.condition;
@@ -509,14 +602,19 @@ export default function AdminDashboard() {
     
     if (alertType) {
       setWeather(prev => ({ ...prev, alert: { type: alertType, message: alertMsg } }));
-      
+
       const sentAlerts = loadSentCache(SENT_WEATHER_ALERTS_KEY);
-      const todayKey = new Date().toDateString();
-      if (!sentAlerts[todayKey + '_weather']) {
+      const alertCacheKey = `${new Date().toDateString()}_${alertType}_${alertMsg.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`;
+      const alreadyHaveWeatherNotification = notifications.some((n) => n.title === 'Weather Alert' && n.message === alertMsg);
+
+      if (!sentAlerts[alertCacheKey] && !alreadyHaveWeatherNotification) {
         addNotification('Weather Alert', alertMsg, alertType === 'critical' ? 'error' : 'warning', null, 0);
-        sentAlerts[todayKey + '_weather'] = true;
-        saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
       }
+
+      sentAlerts[alertCacheKey] = true;
+      saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
+
+      void persistWeatherAnnouncement(alertType, alertMsg);
     } else {
       setWeather(prev => ({ ...prev, alert: null }));
     }
@@ -551,14 +649,14 @@ export default function AdminDashboard() {
       forecastData.list.forEach(item => {
         const date = item.dt_txt.split(' ')[0];
         if (!daysMap.has(date) && dailyForecast.length < 5) {
-          daysMap.set(date, { 
-            date, 
-            temp_min: item.main.temp_min, 
+          daysMap.set(date, {
+            date,
+            temp_min: item.main.temp_min,
             temp_max: item.main.temp_max,
-            temp: item.main.temp, 
-            condition: item.weather[0].main, 
-            description: item.weather[0].description, 
-            icon: item.weather[0].icon 
+            temp: item.main.temp,
+            condition: item.weather[0].main,
+            description: item.weather[0].description,
+            icon: item.weather[0].icon
           });
           dailyForecast.push(daysMap.get(date));
         }
@@ -579,9 +677,10 @@ export default function AdminDashboard() {
       checkWeatherNotifications(weatherData);
     } catch (err) {
       console.error('Weather fetch error:', err);
-      setWeather(prev => ({ ...prev, error: 'Unable to fetch weather data', loading: false }));
-      if (!markErrorNotified('weather_fetch_error')) {
-        addNotification('Weather Service Error', 'Failed to fetch weather data.', 'error', null, 0);
+      const fallback = getFallbackWeatherData();
+      setWeather(prev => ({ ...fallback, loading: false, error: 'Weather feed unavailable — showing Daet fallback conditions.', alert: null }));
+      if (!markErrorNotified('weather_api_error')) {
+        addNotification('Weather API Disconnected', 'Weather API could not be reached. The dashboard is using the fallback forecast data.', 'error', null, 0);
       }
     }
   };
@@ -597,24 +696,29 @@ export default function AdminDashboard() {
   const publishWeatherAlert = async () => {
     setSaving(true);
     try {
+      const normalizedMessage = (weatherAlertMessage || '').trim();
+      const alertType = weather.alert?.type === 'critical' ? 'critical' : 'warning';
       const { data, error } = await supabase
         .from('info_announcements')
         .insert([{
           title: 'Weather Advisory',
-          content: weatherAlertMessage,
-          announcement_type: weather.alert?.type === 'critical' ? 'urgent' : 'important',
-          severity: weather.alert?.type === 'critical' ? 'critical' : 'warning',
+          content: normalizedMessage || weather.alert?.message || 'Weather advisory is active.',
+          announcement_type: 'weather',
+          severity: alertType,
           audience: 'all',
-          priority: weather.alert?.type === 'critical' ? 3 : 2,
+          priority: alertType === 'critical' ? 3 : 2,
           created_by: user?.user_id || user?.id,
           status: 'published',
-          published_at: new Date().toISOString()
-        }]);
+          published_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+        }])
+        .select()
+        .single();
 
       if (error) throw error;
 
       showToast('Weather alert published!', false);
-      addNotification('Weather Alert Published', 'A weather advisory has been sent to all users.', 'warning', null, 0);
+      addNotification('Weather Alert Published', `"Weather Advisory" has been sent to all users.`, 'warning', null, 0);
       setShowWeatherAlertModal(false);
       setWeather(prev => ({ ...prev, alert: null }));
     } catch (err) {
@@ -711,9 +815,15 @@ export default function AdminDashboard() {
   }, [events]);
 
   const openCreateModal = (startStr, endStr) => {
+    // FullCalendar's select() gives an EXCLUSIVE end date (the day after the
+    // last highlighted cell) - even for a single click, end = start + 1 day.
+    // Convert back to an inclusive end date so the form (and the resulting
+    // event highlight) matches exactly what the admin dragged/clicked.
+    const inclusiveEnd = endStr ? subtractOneCalendarDay(endStr) : startStr;
+    const normalizedEnd = (inclusiveEnd && inclusiveEnd >= startStr) ? inclusiveEnd : startStr;
     setSelectedDate(startStr);
     setEventForm({ 
-      id: '', title: '', description: '', location: '', start_date: startStr, end_date: endStr || startStr,
+      id: '', title: '', description: '', location: '', start_date: startStr, end_date: normalizedEnd,
       start_time: '', end_time: '', category: '', is_free: true, ticket_price: '', max_attendees: '', 
       organizer: 'Daet Tourism Office', status: 'published', imageUrl: '', videoUrl: ''
     });
@@ -723,15 +833,21 @@ export default function AdminDashboard() {
   };
 
   const openEditModal = (eventObj) => {
+    // Details can arrive two ways: a FullCalendar event object (details live
+    // under .extendedProps) or a raw canonical event record straight from the
+    // DB (details live as flat fields on the object itself). Support both so
+    // description/location/times/etc. are never lost depending on which UI
+    // path (single-click, double-click, upcoming-events list) opened the modal.
+    const props = eventObj.extendedProps || eventObj || {};
     setEventForm({
-      id: eventObj.id, title: eventObj.title.replace(/\s*\([^)]*\)\s*$/, ''), description: eventObj.extendedProps?.description || '',
-      location: eventObj.extendedProps?.location || '', start_date: eventObj.startStr || eventObj.start,
-      end_date: eventObj.endStr || eventObj.end || eventObj.startStr, start_time: eventObj.extendedProps?.start_time || '',
-      end_time: eventObj.extendedProps?.end_time || '', category: eventObj.extendedProps?.category || '',
-      is_free: eventObj.extendedProps?.is_free !== undefined ? eventObj.extendedProps.is_free : true,
-      ticket_price: eventObj.extendedProps?.ticket_price || '', max_attendees: eventObj.extendedProps?.max_attendees || '',
-      organizer: eventObj.extendedProps?.organizer || 'Daet Tourism Office', status: eventObj.extendedProps?.status || 'published',
-      imageUrl: eventObj.extendedProps?.image_url || '', videoUrl: eventObj.extendedProps?.video_url || ''
+      id: eventObj.id, title: (eventObj.title || '').replace(/\s*\([^)]*\)\s*$/, ''), description: props.description || '',
+      location: props.location || '', start_date: eventObj.startStr || eventObj.start,
+      end_date: eventObj.endStr || eventObj.end || eventObj.startStr || eventObj.start, start_time: props.start_time || '',
+      end_time: props.end_time || '', category: props.category || '',
+      is_free: props.is_free !== undefined ? props.is_free : true,
+      ticket_price: props.ticket_price || '', max_attendees: props.max_attendees || '',
+      organizer: props.organizer || 'Daet Tourism Office', status: props.status || 'published',
+      imageUrl: props.image_url || '', videoUrl: props.video_url || ''
     });
     setShowEventModal(true);
     setLocationSuggestions([]);
@@ -1125,17 +1241,26 @@ export default function AdminDashboard() {
     }
   };
 
-  const calendarEvents = events.filter(ev => ev.status === 'published').map(ev => ({
-    id: String(ev.id), title: ev.title + (ev.category ? ` (${ev.category})` : ''),
-    start: ev.start, end: ev.end, allDay: true,
-    extendedProps: { 
-      location: ev.location || '', description: ev.description || '', category: ev.category || '', 
-      start_time: ev.start_time, end_time: ev.end_time, is_free: ev.is_free, ticket_price: ev.ticket_price, 
-      max_attendees: ev.max_attendees, organizer: ev.organizer, status: ev.status,
-      image_url: ev.image_url, video_url: ev.video_url
-    },
-    backgroundColor: getCategoryColor(ev.category), borderColor: '#ffffff', textColor: '#ffffff',
-  }));
+  const calendarEvents = events.filter(ev => ev.status === 'published').map(ev => {
+    const startDate = ev.start || ev.start_date;
+    const endDate = ev.end || ev.end_date || ev.start;
+    const eventEndDate = endDate ? addOneCalendarDay(endDate) : startDate;
+
+    return {
+      id: String(ev.id),
+      title: ev.title + (ev.category ? ` (${ev.category})` : ''),
+      start: startDate,
+      end: eventEndDate,
+      allDay: true,
+      extendedProps: {
+        location: ev.location || '', description: ev.description || '', category: ev.category || '',
+        start_time: ev.start_time, end_time: ev.end_time, is_free: ev.is_free, ticket_price: ev.ticket_price,
+        max_attendees: ev.max_attendees, organizer: ev.organizer, status: ev.status,
+        image_url: ev.image_url, video_url: ev.video_url
+      },
+      backgroundColor: getCategoryColor(ev.category), borderColor: '#ffffff', textColor: '#ffffff',
+    };
+  });
 
   const getNotificationIcon = (type) => {
     switch(type) {
@@ -1151,20 +1276,47 @@ export default function AdminDashboard() {
   
   const getNotificationColor = (type) => {
     switch(type) {
-      case 'success': return 'bg-green-50 border-green-200'; case 'warning': return 'bg-yellow-50 border-yellow-200';
-      case 'error': return 'bg-red-50 border-red-200'; case 'weather': return 'bg-sky-50 border-sky-200';
-      case 'event': return 'bg-violet-50 border-violet-200'; case 'user': return 'bg-indigo-50 border-indigo-200';
-      default: return 'bg-gray-50 border-gray-200';
+      case 'success': return 'bg-emerald-50 border-emerald-200';
+      case 'warning': return 'bg-amber-50 border-amber-200';
+      case 'error': return 'bg-rose-50 border-rose-200';
+      case 'weather': return 'bg-sky-50 border-sky-200';
+      case 'event': return 'bg-violet-50 border-violet-200';
+      case 'user': return 'bg-indigo-50 border-indigo-200';
+      default: return 'bg-slate-50 border-slate-200';
     }
   };
 
+  const getFallbackWeatherData = () => ({
+    current: {
+      temp: 27,
+      feelsLike: 27,
+      condition: 'Rain',
+      description: 'moderate rain',
+      humidity: 92,
+      windSpeed: 2,
+      pressure: 1007,
+      icon: '10d',
+      rainAmount: 2,
+    },
+    forecast: [
+      { date: new Date().toISOString().slice(0, 10), temp: 27, temp_min: 25, temp_max: 29, condition: 'Rain', description: 'moderate rain', icon: '10d' },
+      { date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), temp: 26, temp_min: 24, temp_max: 28, condition: 'Rain', description: 'light rain', icon: '10d' },
+      { date: new Date(Date.now() + 172800000).toISOString().slice(0, 10), temp: 28, temp_min: 25, temp_max: 30, condition: 'Clouds', description: 'partly cloudy', icon: '03d' },
+    ],
+    lastUpdated: new Date(),
+    alert: null,
+  });
+
   const getUpcomingEvents = () => {
     const now = new Date();
-    const sevenDaysLater = new Date(now);
-    sevenDaysLater.setDate(now.getDate() + 7);
+    now.setHours(0, 0, 0, 0);
+
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
     return events.filter(ev => {
       const evDate = new Date(ev.start);
-      return ev.status === 'published' && evDate >= now && evDate <= sevenDaysLater;
+      return ev.status === 'published' && evDate >= now && evDate >= monthStart && evDate <= monthEnd;
     }).sort((a, b) => new Date(a.start) - new Date(b.start));
   };
 
@@ -1191,12 +1343,26 @@ export default function AdminDashboard() {
     { label: 'Concern', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'concern').length / feedbackTotal) * 100) : 0, color: 'bg-amber-500' },
   ];
 
-  const systemStatus = [
-    { name: 'Website', status: 'Online', color: 'bg-emerald-100 text-emerald-700' },
-    { name: 'Supabase', status: 'Healthy', color: 'bg-sky-100 text-sky-700' },
-    { name: 'Weather API', status: 'Connected', color: 'bg-violet-100 text-violet-700' },
-    { name: 'Notifications', status: 'Active', color: 'bg-amber-100 text-amber-700' },
-  ];
+  const systemStatus = useMemo(() => {
+    const websiteState = weather?.error ? 'Offline' : 'Online';
+    const websiteColor = weather?.error ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700';
+
+    const supabaseState = supabase ? 'Healthy' : 'Unhealthy';
+    const supabaseColor = supabase ? 'bg-sky-100 text-sky-700' : 'bg-rose-100 text-rose-700';
+
+    const weatherState = weather?.error ? 'Disconnected' : 'Connected';
+    const weatherColor = weather?.error ? 'bg-rose-100 text-rose-700' : 'bg-violet-100 text-violet-700';
+
+    const notificationsState = notifications.length ? 'Active' : 'Idle';
+    const notificationsColor = notifications.length ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700';
+
+    return [
+      { name: 'Website', status: websiteState, color: websiteColor },
+      { name: 'Supabase', status: supabaseState, color: supabaseColor },
+      { name: 'Weather API', status: weatherState, color: weatherColor },
+      { name: 'Notifications', status: notificationsState, color: notificationsColor },
+    ];
+  }, [weather?.error, notifications.length, supabase]);
 
   if (loading) {
     return (
@@ -1338,28 +1504,37 @@ export default function AdminDashboard() {
                 </button>
                 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
-                    <div className="flex justify-between items-center px-4 py-3 bg-gray-50 border-b">
-                      <h3 className="font-semibold text-gray-800 flex items-center gap-2 text-sm"><Icon name="notifications" /> Notifications</h3>
-                      <div className="flex gap-3">
-                        {unreadNotificationCount > 0 && <button type="button" onClick={markAllAsRead} className="text-xs text-blue-600">Mark all read</button>}
-                        {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="text-xs text-red-600">Clear all</button>}
+                  <div className="absolute right-0 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl z-50 overflow-hidden">
+                    <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12"><Icon name="notifications" className="w-4 h-4" /></span>
+                        <h3 className="font-black text-sm">Notifications</h3>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {unreadNotificationCount > 0 && <button type="button" onClick={markAllAsRead} className="text-xs font-bold text-sky-200 hover:text-white">Mark all read</button>}
+                        {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="text-xs font-bold text-rose-200 hover:text-white">Clear all</button>}
                       </div>
                     </div>
-                    <div className="max-h-96 overflow-y-auto">
+                    <div className="max-h-[22rem] overflow-y-auto bg-slate-50">
                       {notifications.length === 0 ? (
-                        <div className="text-center py-8 text-gray-400"><p className="mt-1 text-sm">No notifications</p></div>
+                        <div className="flex flex-col items-center justify-center gap-2 py-8 text-slate-400">
+                          <Icon name="notifications" className="w-6 h-6" />
+                          <p className="text-sm font-semibold">No notifications</p>
+                        </div>
                       ) : (
                         notifications.map(notif => (
-                          <div key={notif.id} className={`p-3 border-b cursor-pointer ${!notif.read ? 'bg-blue-50/30' : ''} ${getNotificationColor(notif.type)}`} onClick={() => openNotification(notif)}>
-                            <div className="flex items-start gap-2">
-                              <div className="text-xl">{getNotificationIcon(notif.type)}</div>
-                              <div className="flex-1">
-                                <div className="flex justify-between"><h4 className="font-semibold text-gray-800 text-sm">{notif.title}</h4><button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="text-gray-400 text-xs">Remove</button></div>
-                                <p className="text-gray-600 text-xs mt-1">{notif.message}</p>
-                                <p className="text-xs text-gray-400 mt-1">{notif.timestamp.toLocaleTimeString()}</p>
+                          <div key={notif.id} className={`border-b border-slate-100 px-4 py-3 cursor-pointer transition ${!notif.read ? 'bg-sky-50/70' : 'bg-white'} ${getNotificationColor(notif.type)}`} onClick={() => openNotification(notif)}>
+                            <div className="flex items-start gap-3">
+                              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-black text-white">{getNotificationIcon(notif.type).slice(0, 2).toUpperCase()}</span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-start justify-between gap-2">
+                                  <h4 className="font-black text-sm text-slate-900">{notif.title}</h4>
+                                  <button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="rounded-full px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600">Remove</button>
+                                </div>
+                                <p className="mt-1 text-xs leading-5 text-slate-600">{notif.message}</p>
+                                <p className="mt-2 text-[11px] font-semibold text-slate-400">{notif.timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
                               </div>
-                              {!notif.read && <div className="w-2 h-2 bg-blue-500 rounded-full mt-1"></div>}
+                              {!notif.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sky-600"></span>}
                             </div>
                           </div>
                         ))
@@ -1427,13 +1602,16 @@ export default function AdminDashboard() {
         {/* Calendar and Upcoming Events Side by Side (moved up under analytics) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
           {/* Calendar Section */}
-          <div className="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
+          <div className="lg:col-span-2 bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)] admin-calendar-panel">
             <div className="flex flex-wrap justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                Interactive Event Calendar
-              </h2>
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Calendar</p>
+                <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  Event Calendar
+                </h2>
+              </div>
               <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
-                Tip: Click any date to create event
+                Click any date to create event • Drag to reschedule
               </div>
             </div>
 
@@ -1442,15 +1620,46 @@ export default function AdminDashboard() {
               ref={calendarRef}
               plugins={[dayGridPlugin, interactionPlugin]}
               initialView="dayGridMonth"
-              height={500}
               selectable={true}
               editable={true}
               eventStartEditable={true}
               eventDurationEditable={true}
               eventResizableFromStart={true}
               events={calendarEvents}
+              fixedWeekCount={false}
+              dayMaxEvents={true}
+              height="auto"
+              contentHeight="auto"
               select={(info) => openCreateModal(info.startStr, info.endStr)}
-              eventClick={(info) => { openEditModal({ id: info.event.id, title: info.event.title, startStr: info.event.startStr, endStr: info.event.endStr, extendedProps: info.event.extendedProps }); }}
+              eventClick={(info) => {
+                // Look up the canonical event record (real inclusive start/end
+                // straight from the DB) rather than FullCalendar's internal
+                // event object, whose endStr is exclusive (one day past the
+                // true end date) and would otherwise leak into the form.
+                const rawEvent = eventsRef.current.find(e => String(e.id) === String(info.event.id));
+                if (rawEvent) {
+                  openEditModal(rawEvent);
+                } else {
+                  openEditModal({ id: info.event.id, title: info.event.title, startStr: info.event.startStr, endStr: info.event.endStr, extendedProps: info.event.extendedProps });
+                }
+              }}
+              eventDidMount={(info) => {
+                try {
+                  const handler = () => {
+                    const event = events.find(e => String(e.id) === String(info.event.id));
+                    if (event) openEditModal(event);
+                  };
+                  info.el.addEventListener('dblclick', handler);
+                  eventElListenersRef.current.set(info.event.id, handler);
+                } catch (err) {}
+              }}
+              eventWillUnmount={(info) => {
+                try {
+                  const handler = eventElListenersRef.current.get(info.event.id);
+                  if (handler) info.el.removeEventListener('dblclick', handler);
+                  eventElListenersRef.current.delete(info.event.id);
+                } catch (err) {}
+              }}
               eventDrop={async (info) => {
                 const eventEl = info.el;
                 const originalOpacity = eventEl.style.opacity;
@@ -1467,18 +1676,23 @@ export default function AdminDashboard() {
                 eventEl.style.opacity = originalOpacity;
                 if (!success) { info.revert(); showToast('Failed to resize event. Please try again.', true); }
               }}
-              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,dayGridWeek,dayGridDay' }}
-              buttonText={{ today: 'Today', month: 'Month', week: 'Week', day: 'Day' }}
+              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth' }}
+              buttonText={{ today: 'Today', month: 'Month' }}
               nowIndicator={true}
+              weekends={true}
             />
           </div>
 
           {/* Upcoming Events Widget */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <h3 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
-              <><Icon name="events" className="inline-block w-4 h-4 mr-2" />Upcoming Events</>
-              <span className="text-xs font-normal text-gray-400">(Next 7 days)</span>
-            </h3>
+          <div className="bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)] admin-upcoming-panel">
+            <div className="flex justify-between items-center mb-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Upcoming</p>
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <><Icon name="events" className="inline-block w-4 h-4 mr-2" />Upcoming Events</>
+                </h3>
+              </div>
+            </div>
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {getUpcomingEvents().length > 0 ? (
                 getUpcomingEvents().map((ev, idx) => {
@@ -1567,7 +1781,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+          <section className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">System Status</p>
@@ -1576,16 +1790,16 @@ export default function AdminDashboard() {
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               {systemStatus.map((item) => (
-                <div key={item.name} className="flex items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 p-3">
-                  <div>
+                <div key={item.name} className="flex min-h-[84px] items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-slate-800">{item.name}</p>
                     <p className="text-xs text-slate-500">Status</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${item.color}`}>{item.status}</span>
+                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${item.color}`}>{item.status}</span>
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         </div>
 
         

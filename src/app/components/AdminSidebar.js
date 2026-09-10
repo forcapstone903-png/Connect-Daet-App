@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter } from 'next/navigation'
@@ -131,8 +131,9 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
     hub.requiredRoles.includes(userRole)
   )
 
-  const isActive = (href) => pathname === href || pathname.startsWith(`${href}/`)
-  const isItemActive = (item) => (item.exact ? pathname === item.href : isActive(item.href))
+  const normalizeHref = (href) => href.split('?')[0]
+  const isActive = (href) => normalizeHref(pathname) === normalizeHref(href) || normalizeHref(pathname).startsWith(`${normalizeHref(href)}/`)
+  const isItemActive = (item) => (item.exact ? normalizeHref(pathname) === normalizeHref(item.href) : isActive(item.href))
 
   const toggleItem = (id) => {
     setExpandedItems((prev) => ({
@@ -158,6 +159,47 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
   }
 
   const sidebarWidth = isCollapsed ? 'w-20' : 'w-72'
+
+  useEffect(() => {
+    const openHubByPath = () => {
+      const nextExpanded = {
+        content: false,
+        community: false,
+        analytics: false,
+        settings: false,
+        data: false,
+        notifications: false,
+        account: false,
+      }
+
+      const route = normalizeHref(pathname)
+      if (['/admin/tourist-spots', '/admin/events', '/admin/blog', '/admin/announcement'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.content = true
+      }
+      if (['/admin/forum', '/admin/engagement', '/admin/feedback', '/admin/users', '/admin/moderation'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.community = true
+      }
+      if (['/admin/analytics'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.analytics = true
+      }
+      if (['/admin/settings/general', '/admin/settings/email', '/admin/settings/security', '/admin/settings/maintenance'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.settings = true
+      }
+      if (['/admin/file-management', '/admin/data', '/admin/data-management'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.data = true
+      }
+      if (['/admin/announcement', '/admin/announcement-settings'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.notifications = true
+      }
+      if (['/admin/account'].some((entry) => route.startsWith(entry))) {
+        nextExpanded.account = true
+      }
+
+      setExpandedItems((previous) => ({ ...previous, ...nextExpanded }))
+    }
+
+    openHubByPath()
+  }, [pathname])
 
   useEffect(() => {
     const applyWidth = () => {
