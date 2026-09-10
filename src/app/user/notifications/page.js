@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Bell, BellRing, CheckCheck, MessageCircle, ShieldAlert, Sparkles, Trash2, Volume2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -46,6 +47,21 @@ function formatDate(dateValue) {
     hour: 'numeric',
     minute: '2-digit',
   })
+}
+
+function getInitials(name = '') {
+  return String(name).split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
+}
+
+function getNotificationActorId(notification) {
+  if (notification?.actor_id) return notification.actor_id
+
+  const link = String(notification?.link || notification?.action_url || notification?.href || '')
+  const profileMatch = link.match(/\/user\/profile\/([^/?#]+)/)
+  if (profileMatch?.[1]) return profileMatch[1]
+
+  const messageMatch = link.match(/\/user\/messaging\/([^/?#]+)/)
+  return messageMatch?.[1] || null
 }
 
 export default function UserNotificationsPage() {
@@ -148,10 +164,22 @@ export default function UserNotificationsPage() {
           const incoming = payload?.new || null
           if (!incoming || !incoming.id) return
 
-          setNotifications((previous) => {
+          const actorId = getNotificationActorId(incoming)
+          const addNotification = (actor) => setNotifications((previous) => {
             if (previous.some((item) => item.id === incoming.id)) return previous
-            return [incoming, ...previous]
+            return [{ ...incoming, actor_id: actor?.id || incoming.actor_id || null, actor: actor || null }, ...previous]
           })
+
+          if (actorId && supabase) {
+            void supabase
+              .from('info_users')
+              .select('id, full_name, profile_image_url')
+              .eq('id', actorId)
+              .maybeSingle()
+              .then(({ data: actor }) => addNotification(actor))
+          } else {
+            addNotification(null)
+          }
           syncUnreadBadge()
         },
       )
@@ -193,25 +221,120 @@ export default function UserNotificationsPage() {
   }
 
   const getNotificationHref = (notification) => {
-    if (notification.action_url) return notification.action_url
-
     const metadata = notification.metadata && typeof notification.metadata === 'object' ? notification.metadata : {}
-    if (metadata.href) return metadata.href
-    if (metadata.action_url) return metadata.action_url
-    if (metadata.entityType && metadata.entityId) {
-      const routes = {
-        blog: `/user/blogs/${metadata.entityId}`,
-        event: `/user/events/${metadata.entityId}`,
-        forum: `/user/forums/${metadata.entityId}`,
-        forum_thread: `/user/forums/${metadata.entityId}`,
-        post: `/user/posts/${metadata.entityId}`,
-        user_post: `/user/posts/${metadata.entityId}`,
-        announcement: `/user/announcements/${metadata.entityId}`,
-      }
-      return routes[metadata.entityType] || null
+    const routeCandidate = notification.link || notification.action_url || notification.href || metadata.link || metadata.href || metadata.action_url || null
+    const postId = notification.post_id || metadata.post_id || metadata.entityId || null
+    const notificationType = String(notification.type || metadata.type || '').toLowerCase()
+
+    if (notificationType === 'message' && routeCandidate && userId) {
+      const messagePath = String(routeCandidate).split('?')[0].replace(/\/+$/, '')
+      if (messagePath === `/user/messaging/${userId}`) return '/user/messaging'
     }
 
-    return null
+    if (routeCandidate?.startsWith('/user/announcements/')) {
+      return routeCandidate
+    }
+
+    if (routeCandidate?.startsWith('/user/posts/')) {
+      return postId ? `/user/posts/${postId}` : routeCandidate
+    }
+
+    if (routeCandidate?.startsWith('/admin/')) {
+      return routeCandidate
+    }
+
+    if (!routeCandidate && postId) {
+      if (notificationType === 'announcement') {
+        return `/user/announcements/${postId}`
+      }
+
+      return `/user/posts/${postId}`
+    }
+
+    return routeCandidate || null
+  }
+
+  const parseProfileActorId = (notification) => {
+    try {
+      const link = notification?.link || notification?.action_url || notification?.href || ''
+      const cleaned = String(link).split('?')[0]
+      const match = cleaned.match(/\/user\/profile\/([^/?#]+)/)
+      return match?.[1] || notification?.actor_id || null
+    } catch {
+      return null
+    }
+  }
+
+  const getActorProfileHref = (notification) => {
+    const actorId = getNotificationActorId(notification)
+    return actorId ? `/user/profile/${encodeURIComponent(actorId)}` : null
+  }
+
+  const getFollowActionCompletedFromNotification = (notification) => {
+    const link = notification?.link || notification?.action_url || notification?.href || ''
+    const query = String(link).includes('?') ? String(link).split('?')[1] : ''
+    const params = new URLSearchParams(query)
+    return params.get('action_completed') === 'true'
+  }
+
+  const appendFollowActionCompletion = (notification, actionType) => {
+    const baseLink = notification?.link || notification?.action_url || notification?.href || ''
+    const hasQuery = String(baseLink).includes('?')
+    const suffix = hasQuery ? `&action_completed=true&action_type=${encodeURIComponent(actionType)}` : `?action_completed=true&action_type=${encodeURIComponent(actionType)}`
+    return `${baseLink}${suffix}`
+  }
+
+  const sendFollowSideAction = async (notification, actionType) => {
+    const actorId = parseProfileActorId(notification)
+    if (!actorId) {
+      setActionNotice('That follow-back notification is missing the related profile link.')
+      return
+    }
+
+    if (getFollowActionCompletedFromNotification(notification)) {
+      router.push(`/user/messaging/${actorId}`)
+      return
+    }
+
+    const messageBody = actionType === 'wave' ? '👋 Wave from the app' : 'Hi there! 👋'
+
+    try {
+      const response = await fetch('/api/messages', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ recipientId: actorId, body: messageBody, messageType: 'text' }),
+      })
+
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to send the follow-back message.')
+      }
+
+      const nextLink = appendFollowActionCompletion(notification, actionType)
+      const patchResponse = await fetch('/api/notifications', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: notification.id, link: nextLink, is_read: false }),
+      })
+
+      const patchResult = await patchResponse.json().catch(() => ({}))
+      if (!patchResponse.ok || !patchResult.success) {
+        throw new Error(patchResult.message || 'Unable to persist the follow-back action state.')
+      }
+
+      setNotifications((previous) => previous.map((item) => item.id === notification.id ? {
+        ...item,
+        link: nextLink,
+      } : item))
+
+      setActionNotice(actionType === 'wave' ? 'Wave sent.' : 'Hi sent.')
+      syncUnreadBadge()
+    } catch (error) {
+      console.error('Send follow action failed:', error)
+      setActionNotice(error.message || 'Unable to send the follow-back action.')
+    }
   }
 
   const markAsRead = async (id) => {
@@ -260,9 +383,31 @@ export default function UserNotificationsPage() {
     }
   }
 
+  const deleteNotification = async (id) => {
+    if (!id) return
+
+    try {
+      const response = await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to delete notification')
+      }
+
+      setNotifications((previous) => previous.filter((item) => item.id !== id))
+      syncUnreadBadge()
+    } catch (error) {
+      console.error('Delete notification failed:', error)
+      setActionNotice(error.message || 'Unable to delete notification.')
+    }
+  }
+
   const openNotification = async (notification) => {
-    if (!notification.is_read) await markAsRead(notification.id)
     const href = getNotificationHref(notification)
+    if (!notification.is_read) await markAsRead(notification.id)
     if (href) router.push(href)
   }
 
@@ -394,38 +539,67 @@ export default function UserNotificationsPage() {
                   <div className="space-y-2">
                   {groupItems.map((notification) => {
                     const NotificationIcon = getNotificationIcon(notification)
-                    return <button type="button" key={notification.id} onClick={() => openNotification(notification)} className={`relative block w-full text-left rounded-[18px] border p-4 transition active:scale-[0.99] ${notification.is_read ? 'border-slate-200 bg-white' : 'border-emerald-200 bg-[#eefdf7]'}`}>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex gap-3">
-                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${TYPE_STYLES[notification.type] || 'bg-slate-100 text-slate-700'}`}>
-                        <NotificationIcon className="h-4 w-4" />
-                      </div>
+                    const actor = notification.actor || null
+                    const actorName = actor?.full_name || (String(notification.message || '').split(/\s+(?:started following you|followed you back|commented|reacted|liked|sent you)/i)[0] || '').trim() || 'Community member'
+                    const actorProfileHref = getActorProfileHref(notification)
+                    const isFollowType = String(notification.type || '').toLowerCase() === 'follow'
+                    const messageText = String(notification.message || '')
+                    const isFollowBack = isFollowType && messageText.toLowerCase().includes('followed you back')
+                    const isStartedFollowing = isFollowType && messageText.toLowerCase().includes('started following you')
+                    const followActionCompleted = getFollowActionCompletedFromNotification(notification)
+                    const followActionMode = followActionCompleted ? 'message' : 'say-hi'
+                    return <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`relative block w-full text-left rounded-[18px] border p-4 transition active:scale-[0.99] ${notification.is_read ? 'border-slate-200 bg-white' : 'border-emerald-200 bg-[#eefdf7]'}`}>
+                      <div className="flex items-start gap-3">
+                        {actorProfileHref ? <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-xs font-black text-slate-600" aria-label={`Open ${actorName}'s profile`}>{actor?.profile_image_url ? <img src={actor.profile_image_url} alt={actorName} className="h-full w-full object-cover" /> : getInitials(actorName)}</Link> : <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${TYPE_STYLES[notification.type] || 'bg-slate-100 text-slate-700'}`}><NotificationIcon className="h-4 w-4" /></div>}
 
-                      <div>
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-bold text-slate-900">{notification.title}</h3>
-                          {!notification.is_read && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="Unread" />}
-                          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${PRIORITY_STYLES[notification.priority] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                            {notification.priority || 'normal'}
-                          </span>
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${TYPE_STYLES[notification.type] || 'bg-slate-100 text-slate-700'}`}>
-                            {notification.type}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">{notification.message}</p>
-                        <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-                          <span>{formatDate(notification.created_at)}</span>
-                          {getNotificationHref(notification) ? <span className="font-medium text-violet-700">Open related content</span> : null}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-start justify-between gap-3">
+                            {actorProfileHref ? <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="block min-w-0 text-sm font-black text-slate-900 hover:text-sky-700">{actorName}</Link> : <span className="min-w-0 text-sm font-black text-slate-900">{actorName}</span>}
+                            <button type="button" onClick={(event) => { event.stopPropagation(); void deleteNotification(notification.id) }} aria-label="Delete notification" title="Delete notification" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600">
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          {isFollowType && isFollowBack ? (
+                            <div className="min-w-0">
+                              <div className="mt-2 flex items-center justify-between gap-3">
+                                <p className="text-sm leading-6 text-slate-600">Followed you back</p>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  {followActionMode === 'message' ? (
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); const actorId = parseProfileActorId(notification); if (actorId) router.push(`/user/messaging/${actorId}`) }} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">Message</button>
+                                  ) : (
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); void sendFollowSideAction(notification, 'hi') }} className="rounded-full bg-sky-700 px-3 py-1 text-xs font-bold text-white hover:bg-sky-800">Say Hi</button>
+                                  )}
+                                  <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); markAsRead(notification.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); markAsRead(notification.id) } }} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
+                                    <CheckCheck className="h-3.5 w-3.5" />
+                                    {notification.is_read ? 'Read' : 'Mark read'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : isFollowType && isStartedFollowing ? (
+                            <div className="min-w-0">
+                              <div className="mt-2 flex items-start justify-between gap-3">
+                                <p className="text-sm leading-6 text-slate-600">Started following you</p>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h3 className="text-sm font-bold text-slate-900">{notification.title}</h3>
+                                {!notification.is_read && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="Unread" />}
+                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${PRIORITY_STYLES[notification.priority] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{notification.priority || 'normal'}</span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${TYPE_STYLES[notification.type] || 'bg-slate-100 text-slate-700'}`}>{notification.type}</span>
+                              </div>
+                              <p className="mt-2 text-sm leading-6 text-slate-600">{notification.message}</p>
+                              <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+                                <span>{formatDate(notification.created_at)}</span>
+                                {getNotificationHref(notification) ? <span className="font-medium text-violet-700">Open related content</span> : null}
+                              </div>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
-
-                    <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); markAsRead(notification.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); markAsRead(notification.id) } }} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
-                      <CheckCheck className="h-3.5 w-3.5" />
-                      {notification.is_read ? 'Read' : 'Mark read'}
-                    </span>
-                  </div>
-                    </button>
                   })}
                   </div>
                 </section>

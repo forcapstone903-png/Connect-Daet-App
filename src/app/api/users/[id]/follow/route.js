@@ -51,6 +51,33 @@ async function getFollowSummary(viewerId, targetUserId) {
   }
 }
 
+async function notifyFollowEvent({ recipientId, actorId, actorName, message, link, type = 'follow' }) {
+  if (!adminSupabase || !recipientId || !actorId) return
+
+  const { data: existing } = await adminSupabase
+    .from('info_notifications')
+    .select('id')
+    .eq('user_id', recipientId)
+    .eq('message', message)
+    .eq('type', type)
+    .eq('link', link)
+    .limit(1)
+
+  if (existing && existing.length > 0) return
+
+  await adminSupabase.from('info_notifications').insert({
+    user_id: recipientId,
+    title: message.includes('followed you back') ? 'Followed you back' : 'New follower',
+    message,
+    type,
+    is_read: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    link,
+    actor_id: actorId,
+  })
+}
+
 export async function POST(request, { params }) {
   if (!adminSupabase) return getMissingConfigResponse()
 
@@ -60,16 +87,34 @@ export async function POST(request, { params }) {
   if (!viewerId) return NextResponse.json({ success: false, message: 'Please log in to follow this user.' }, { status: 401 })
   if (!targetUserId || viewerId === targetUserId) return NextResponse.json({ success: false, message: 'You cannot follow this user.' }, { status: 400 })
 
-  const { error } = await adminSupabase
-    .from('user_follows')
-    .insert({ follower_id: viewerId, following_id: targetUserId })
-
-  if (error && error.code !== '23505') {
-    console.error('Follow insert failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to follow this user.' }, { status: 500 })
-  }
-
   try {
+    const { data: existingRow } = await adminSupabase
+      .from('user_follows')
+      .select('id')
+      .eq('follower_id', viewerId)
+      .eq('following_id', targetUserId)
+      .maybeSingle()
+
+    if (existingRow?.id) {
+      return NextResponse.json({ success: true, ...(await getFollowSummary(viewerId, targetUserId)) })
+    }
+
+    const { data: originalFollowRow } = await adminSupabase
+      .from('user_follows')
+      .select('id')
+      .eq('follower_id', targetUserId)
+      .eq('following_id', viewerId)
+      .maybeSingle()
+
+    const { error } = await adminSupabase
+      .from('user_follows')
+      .insert({ follower_id: viewerId, following_id: targetUserId })
+
+    if (error && error.code !== '23505') {
+      console.error('Follow insert failed:', error)
+      return NextResponse.json({ success: false, message: error.message || 'Unable to follow this user.' }, { status: 500 })
+    }
+
     const { data: targetUser } = await adminSupabase
       .from('info_users')
       .select('id, full_name, user_type')
@@ -83,24 +128,27 @@ export async function POST(request, { params }) {
       .maybeSingle()
 
     const actorName = actor?.full_name || 'Someone'
-    const targetLink = `/user/profile/${targetUserId}`
-    const existing = await adminSupabase
-      .from('info_notifications')
-      .select('id')
-      .eq('user_id', targetUserId)
-      .eq('link', targetLink)
-      .limit(1)
+    const actorProfileLink = `/user/profile/${viewerId}`
 
-    if (!existing.error && (!Array.isArray(existing.data) || existing.data.length === 0) && targetUser?.user_type !== 'admin') {
-      await adminSupabase.from('info_notifications').insert({
-        user_id: targetUserId,
-        title: 'New follower',
+    if (originalFollowRow?.id) {
+      if (!targetUser?.user_type || targetUser.user_type !== 'admin') {
+        await notifyFollowEvent({
+          recipientId: targetUserId,
+          actorId: viewerId,
+          actorName,
+          message: `${actorName} followed you back.`,
+          link: actorProfileLink,
+          type: 'follow',
+        })
+      }
+    } else if (!targetUser?.user_type || targetUser.user_type !== 'admin') {
+      await notifyFollowEvent({
+        recipientId: targetUserId,
+        actorId: viewerId,
+        actorName,
         message: `${actorName} started following you.`,
+        link: actorProfileLink,
         type: 'follow',
-        is_read: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        link: targetLink,
       })
     }
 

@@ -33,7 +33,7 @@ export default function UserPostDetailPage() {
         .eq('status', 'published')
         .maybeSingle()
 
-      if (loadError || !data) setError('Post not found.')
+      if (loadError || !data) setError('This post is no longer available.')
       else setPost(data)
       setLoading(false)
     }

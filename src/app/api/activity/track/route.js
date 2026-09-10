@@ -84,13 +84,12 @@ async function resolveOwnerUserId(entityType, entityId) {
 
         if (!comment) return { data: null }
 
-        if (comment.user_id) {
-          return { data: { created_by: comment.user_id } }
+        if (comment.content_type && comment.content_id) {
+          const contentOwner = await resolveOwnerUserId(comment.content_type, comment.content_id)
+          if (contentOwner) return { data: { created_by: contentOwner } }
         }
 
-        return comment.content_type && comment.content_id
-          ? { data: { created_by: await resolveOwnerUserId(comment.content_type, comment.content_id) } }
-          : { data: null }
+        return comment.user_id ? { data: { created_by: comment.user_id } } : { data: null }
       },
       article: () => adminSupabase.from('info_blogs').select('created_by, user_id').eq('id', entityId).maybeSingle(),
       announcement: () => adminSupabase.from('info_announcements').select('created_by, user_id').eq('id', entityId).maybeSingle(),
@@ -175,8 +174,13 @@ export async function POST(request) {
     const meta = buildActivityMeta(activityType)
     const message = buildActivityMessage({ actorName, activityType, contentTitle, entityType })
 
-    const explicitOwnerId = metadata.ownerUserId || metadata.postOwnerId || metadata.recipientUserId || null
-    const resolvedOwnerId = explicitOwnerId || await resolveOwnerUserId(entityType, entityId)
+    const explicitOwnerId = metadata.ownerUserId || metadata.postOwnerId || metadata.recipientUserId || metadata.contentOwnerId || null
+    const explicitOwnerIds = [metadata.ownerUserId, metadata.postOwnerId, metadata.recipientUserId, metadata.contentOwnerId]
+      .filter((value) => value && String(value).trim() !== '')
+      .map((value) => String(value))
+    const resolvedOwnerId = explicitOwnerIds[0] || await resolveOwnerUserId(entityType, entityId)
+    const notificationPostId = metadata.postId || metadata.contentId || entityId || null
+    const notificationPostOwnerId = resolvedOwnerId || metadata.ownerUserId || metadata.postOwnerId || metadata.contentOwnerId || userId || null
     let ownerIsAdmin = false
 
     let targetLink = metadata.link || metadata.href || metadata.action_url || routeForEntity(entityType, entityId)
@@ -194,6 +198,7 @@ export async function POST(request) {
     }
 
     if (ownerIsAdmin && resolvedOwnerId !== userId) {
+      const adminNotificationPostId = metadata.postId || metadata.contentId || entityId || null
       const { error: notifError } = await adminSupabase.from('info_notifications').insert({
         user_id: resolvedOwnerId,
         title: meta.title,
@@ -201,6 +206,8 @@ export async function POST(request) {
         type: 'activity',
         is_read: false,
         link: buildAdminLink(entityType, entityId, metadata),
+        post_id: adminNotificationPostId,
+        actor_id: userId,
       })
       if (notifError) console.error('Admin notification insert error:', notifError)
     }
@@ -218,15 +225,19 @@ export async function POST(request) {
         if (followerIds.length) {
           const { data: followerUsers } = await adminSupabase
             .from('info_users')
-            .select('id, user_type')
+            .select('id')
             .in('id', followerIds)
+
           ;(followerUsers || []).forEach((follower) => {
-            if (follower.user_type !== 'admin') recipientUserIds.add(follower.id)
+            recipientUserIds.add(follower.id)
           })
         }
       }
     } else {
-      if (explicitOwnerId && !ownerIsAdmin) recipientUserIds.add(explicitOwnerId)
+      for (const ownerCandidate of explicitOwnerIds) {
+        if (ownerCandidate && ownerCandidate !== userId && !ownerIsAdmin) recipientUserIds.add(ownerCandidate)
+      }
+
       if (resolvedOwnerId && resolvedOwnerId !== userId && !ownerIsAdmin) recipientUserIds.add(resolvedOwnerId)
     }
 
@@ -260,6 +271,9 @@ export async function POST(request) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           link: targetLink,
+          post_id: notificationPostId,
+          post_owner_id: notificationPostOwnerId,
+          actor_id: userId,
         })
       }
 

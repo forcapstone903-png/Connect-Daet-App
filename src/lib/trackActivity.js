@@ -31,7 +31,7 @@ const ACTIVITY_DETAILS = {
   new_post: {
     title: 'New Post',
     verb: 'published a new post',
-    userTitle: 'New post from admin',
+    userTitle: 'New Post',
     userVerb: 'published a new post',
   },
   follow: {
@@ -89,6 +89,24 @@ function buildUserNotificationMessage({ actorName = 'A user', activityType, cont
   return `${actorName} ${meta.userVerb || meta.verb} "${targetName}".`
 }
 
+function routeForEntity(entityType, entityId) {
+  if (!entityType || !entityId) return null
+
+  const normalized = String(entityType).toLowerCase()
+  const map = {
+    blog: `/user/blogs/${entityId}`,
+    article: `/user/blogs/${entityId}`,
+    event: `/user/events/${entityId}`,
+    forum: `/user/forums/${entityId}`,
+    forum_thread: `/user/forums/${entityId}`,
+    post: `/user/posts/${entityId}`,
+    user_post: `/user/posts/${entityId}`,
+    announcement: `/user/announcements/${entityId}`,
+  }
+
+  return map[normalized] || null
+}
+
 function normalizeErrorMessage(error) {
   if (error instanceof Error) return error.message || 'Unable to create your blog article right now.'
   if (typeof error === 'string') return error.trim() || 'Unable to create your blog article right now.'
@@ -136,6 +154,7 @@ module.exports = {
   buildActivityMessage,
   buildUserNotificationTitle,
   buildUserNotificationMessage,
+  routeForEntity,
   normalizeErrorMessage,
   trackUserActivity,
 }

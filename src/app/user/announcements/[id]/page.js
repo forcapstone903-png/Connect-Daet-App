@@ -44,7 +44,7 @@ export default function AnnouncementDetailPage() {
         setAnnouncement(data)
       } catch (err) {
         console.error('Error loading announcement:', err)
-        setError('Announcement not found or unavailable')
+        setError('Post not found.')
       } finally {
         setLoading(false)
       }
