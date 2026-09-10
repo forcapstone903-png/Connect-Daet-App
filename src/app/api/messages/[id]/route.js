@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
   const [{ data: messages, error: messagesError }, { data: users, error: usersError }] = await Promise.all([
     adminSupabase
       .from('direct_messages')
-      .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
+      .select('id, sender_id, recipient_id, body, media_url, media_type, message_type, reply_to_message_id, created_at, read_at')
       .or(`and(sender_id.eq.${currentUserId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${currentUserId})`)
       .order('created_at', { ascending: true }),
     adminSupabase
@@ -30,12 +30,32 @@ export async function GET(request, { params }) {
       .in('id', [currentUserId, otherUserId]),
   ])
 
-  if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
   if (usersError) return NextResponse.json({ success: false, message: usersError.message }, { status: 500 })
-
   const usersById = new Map((users || []).map((user) => [user.id, user]))
   const otherUser = usersById.get(otherUserId)
   if (!otherUser || otherUser.status !== 'active') return NextResponse.json({ success: false, message: 'User not found.' }, { status: 404 })
+
+  if (messagesError && messagesError.message?.toLowerCase().includes('column') && messagesError.message.toLowerCase().includes('message_type')) {
+    const { data: messagesFallback, error: messagesFallbackError } = await adminSupabase
+      .from('direct_messages')
+      .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
+      .or(`and(sender_id.eq.${currentUserId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${currentUserId})`)
+      .order('created_at', { ascending: true })
+
+    if (messagesFallbackError) return NextResponse.json({ success: false, message: messagesFallbackError.message }, { status: 500 })
+    return NextResponse.json({
+      success: true,
+      current_user: usersById.get(currentUserId) || { id: currentUserId, full_name: 'You', profile_image_url: null },
+      other_user: otherUser,
+      messages: (messagesFallback || []).map((message) => ({
+        ...message,
+        sender_user: usersById.get(message.sender_id) || null,
+        recipient_user: usersById.get(message.recipient_id) || null,
+      })),
+    })
+  }
+
+  if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
 
   return NextResponse.json({
     success: true,

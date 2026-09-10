@@ -695,8 +695,8 @@ export default function VisitorPage() {
             <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-300">Live from the community</p>
             <div className="mt-4 space-y-4 text-sm">
               <p><span className="font-bold text-emerald-300">Maria</span> just asked about getting to Bagasbas Beach.</p>
-              <p><span className="font-bold text-amber-300">John</span> rated a Camarines Norte landmark 5 stars.</p>
               <p><span className="font-bold text-sky-300">Local guides</span> are sharing new weekend ideas.</p>
+              <p><span className="font-bold text-amber-300">Community notes</span> are updating the weekend itinerary list.</p>
             </div>
             <button type="button" onClick={() => handleAuthRequired('plan_trip')} className="mt-6 flex w-full items-center justify-between rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-left text-sm font-semibold transition hover:bg-white/15">
               <span><span className="block text-white">Trip planner</span><span className="mt-1 block text-xs font-normal text-slate-300">Drop a spot here to build your itinerary.</span></span>
@@ -1249,18 +1249,22 @@ export default function VisitorPage() {
 
       {/* Footer */}
       <footer className="mt-6 border-t border-slate-200 bg-slate-950 text-slate-300 sm:mt-8">
-        <div className="mx-auto grid max-w-7xl gap-4 px-4 py-5 sm:px-6 sm:py-7 sm:gap-6 lg:grid-cols-[1.2fr_0.8fr_0.8fr] lg:gap-10 lg:py-10 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-4 px-4 py-5 sm:px-6 sm:py-7 sm:gap-6 lg:grid-cols-[1.2fr_0.8fr_0.8fr_1fr] lg:gap-10 lg:py-10 lg:px-8">
           <div>
             <div className="flex items-center gap-2 sm:gap-3">
-              <img src="/logo.png" alt="Daet tourism logo" className="h-8 w-8 rounded-xl sm:h-11 sm:w-11 sm:rounded-2xl" />
+              <img src="/logo.png" alt="DAET Connect logo" className="h-8 w-8 rounded-xl sm:h-11 sm:w-11 sm:rounded-2xl" />
               <div>
                 <p className="text-xs font-bold tracking-[0.2em] text-white sm:text-sm">DAET</p>
                 <p className="text-[7px] uppercase tracking-[0.2em] text-slate-400 sm:text-[10px]">Camarines Norte</p>
               </div>
             </div>
             <p className="mt-2 max-w-md text-xs leading-5 text-slate-300 sm:mt-3 sm:text-sm sm:leading-6">
-              Discover local culture, scenic escapes, and community stories that make Camarines Norte a destination worth returning to.
+              DAET Connect is a tourism and community platform serving Daet, Camarines Norte, Philippines. It provides local discovery, event updates, community discussions, and practical travel information.
             </p>
+            <div className="mt-3 text-[10px] leading-5 text-slate-400 sm:text-xs">
+              <p><span className="font-semibold text-slate-200">Business details:</span> DAET Connect · tourism and community services · Daet, Camarines Norte, Philippines.</p>
+              <p>Contact details and operator information should be confirmed with the local business entity before public commercial launch.</p>
+            </div>
           </div>
 
           <div>
@@ -1288,10 +1292,23 @@ export default function VisitorPage() {
               )}
             </ul>
           </div>
+
+          <div>
+            <h3 className="text-xs font-bold uppercase tracking-[0.2em] text-white sm:text-sm">Legal</h3>
+            <ul className="mt-2 space-y-1.5 text-xs text-slate-300 sm:mt-3 sm:space-y-2 sm:text-sm">
+              <li><Link href="/legal/privacy-policy" className="transition hover:text-white">Privacy policy</Link></li>
+              <li><Link href="/legal/terms-and-conditions" className="transition hover:text-white">Terms and conditions</Link></li>
+              <li><Link href="/legal/cookie-policy" className="transition hover:text-white">Cookie policy</Link></li>
+              <li><Link href="/legal/refund-policy" className="transition hover:text-white">Refund policy</Link></li>
+              <li><Link href="/legal/form-consent" className="transition hover:text-white">Form consent</Link></li>
+              <li><Link href="/legal/accessibility" className="transition hover:text-white">Accessibility</Link></li>
+              <li><Link href="/legal/risk-assessment" className="transition hover:text-white">Risk assessment</Link></li>
+            </ul>
+          </div>
         </div>
 
         <div className="border-t border-slate-800 py-2.5 text-center text-[8px] text-slate-400 sm:text-[10px]">
-          © 2026 Daet Connect.
+          © 2026 DAET Connect. Review all legal notices before public commercial launch and confirm local compliance with the applicable Philippine rules.
         </div>
       </footer>
 

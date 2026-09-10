@@ -19,8 +19,20 @@ const FALLBACK_GIFS = [
 ]
 
 function normalizeGiphyResult(item) {
-  const url = item?.images?.original?.url || item?.images?.downsized?.url || item?.images?.fixed_height?.url || item?.images?.preview_gif?.url
+  const images = item?.images || {}
+  const url = images?.original?.url
+    || images?.downsized?.url
+    || images?.downsized_medium?.url
+    || images?.fixed_height?.url
+    || images?.fixed_width?.url
+    || images?.preview_gif?.url
+    || item?.images?.fixed_height_downsampled?.url
+    || item?.embed_url
+    || item?.url
+    || null
+
   if (!url) return null
+
   return {
     id: item?.id || `${item?.title || 'gif'}-${Math.random().toString(36).slice(2, 8)}`,
     title: item?.title || 'GIF',

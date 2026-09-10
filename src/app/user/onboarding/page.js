@@ -2,14 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, ArrowRight, Check, ImagePlus, MapPin, UserPlus } from 'lucide-react'
+import {
+  ArrowLeft,
+  ArrowRight,
+  Bell,
+  Camera,
+  Check,
+  Compass,
+  ImagePlus,
+  MapPin,
+  ShieldCheck,
+  Sparkles,
+  Star,
+  UserPlus,
+} from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import MediaUpload from '@/app/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
-
-const FALLBACK_TOPICS = ['Beaches', 'Food', 'History', 'Culture', 'Events', 'Nature']
-const FALLBACK_PLACES = ['Bagasbas Beach', 'Daet Elevated Town Plaza', 'First Rizal Monument', 'Morga House', 'Vinzons Watersports']
+import { FALLBACK_PLACES, FALLBACK_TOPICS, getOnboardingStepMeta, getRequiredSelectionCount } from '@/lib/onboardingUtils'
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -65,9 +76,32 @@ export default function OnboardingPage() {
   }, [router])
 
   const progressLabel = useMemo(() => `Step ${step} of 4`, [step])
-  const requiredTopics = Math.min(3, topics.length || 3)
-  const requiredPlaces = Math.min(3, places.length || 3)
+  const requiredTopics = getRequiredSelectionCount(topics.length || FALLBACK_TOPICS.length, 3)
+  const requiredPlaces = getRequiredSelectionCount(places.length || FALLBACK_PLACES.length, 3)
   const canContinue = step === 1 ? selectedTopics.length >= requiredTopics : step === 2 ? selectedPlaces.length >= requiredPlaces : true
+  const stepMeta = getOnboardingStepMeta(step)
+
+  const getPlaceHighlight = (place) => {
+    const category = (place.category || place.location || '').toString().toLowerCase()
+
+    if (category.includes('beach') || category.includes('coast') || place.name?.toLowerCase().includes('beach')) {
+      return 'Beach escape'
+    }
+
+    if (category.includes('food') || category.includes('cuisine') || category.includes('restaurant')) {
+      return 'Food trail'
+    }
+
+    if (category.includes('heritage') || category.includes('history') || category.includes('museum')) {
+      return 'Heritage stop'
+    }
+
+    if (category.includes('nature') || category.includes('hike') || category.includes('park')) {
+      return 'Nature ride'
+    }
+
+    return 'Local favorite'
+  }
 
   const toggleSelection = (value, selected, setSelected, limit) => {
     setSelected((current) => current.includes(value) ? current.filter((item) => item !== value) : current.length < limit ? [...current, value] : current)
@@ -115,17 +149,214 @@ export default function OnboardingPage() {
 
   if (loading) return <main className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">Preparing your welcome setup...</main>
 
+  const accentStyles = {
+    sky: 'border-sky-200 bg-sky-50 text-sky-700',
+    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    amber: 'border-amber-200 bg-amber-50 text-amber-700',
+    violet: 'border-violet-200 bg-violet-50 text-violet-700',
+  }
+
+  const stepAccent = accentStyles[stepMeta.accent] || accentStyles.sky
+
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] px-3 py-6 text-slate-900 sm:px-6 sm:py-10">
-      <div className="mx-auto max-w-2xl">
-        <header className="mb-5 flex items-center justify-between"><Link href="/user/dashboard" className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700"><ArrowLeft className="h-4 w-4" />Skip setup</Link><span className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700">{progressLabel}</span></header>
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] sm:p-8">
-          {step === 1 && <><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Make your feed yours</p><h1 className="mt-2 text-2xl font-black sm:text-3xl">Choose {requiredTopics} favorite topic{requiredTopics === 1 ? '' : 's'}</h1><p className="mt-2 text-sm leading-6 text-slate-500">We’ll use these to shape your Daet community feed.</p><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3">{topics.map((topic) => <button key={topic.id} type="button" onClick={() => toggleSelection(topic.name, selectedTopics, setSelectedTopics, requiredTopics)} className={`rounded-2xl border p-4 text-left transition ${selectedTopics.includes(topic.name) ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-100' : 'border-slate-200 bg-slate-50 hover:border-sky-300'}`}><span className="text-xl">{topic.icon_emoji || '✦'}</span><span className="mt-2 block text-sm font-bold">{topic.name}</span>{selectedTopics.includes(topic.name) && <Check className="mt-2 h-4 w-4 text-sky-700" />}</button>)}</div><p className="mt-4 text-xs text-slate-500">{selectedTopics.length} of {requiredTopics} selected</p></>}
-          {step === 2 && <><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-700">Discover local favorites</p><h1 className="mt-2 text-2xl font-black sm:text-3xl">Choose {requiredPlaces} place{requiredPlaces === 1 ? '' : 's'} in Daet</h1><p className="mt-2 text-sm leading-6 text-slate-500">Pick the places you want to see more often.</p><div className="mt-6 space-y-2">{places.map((place) => <button key={place.id} type="button" onClick={() => toggleSelection(place.name, selectedPlaces, setSelectedPlaces, requiredPlaces)} className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${selectedPlaces.includes(place.name) ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-slate-50 hover:border-emerald-300'}`}><span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-emerald-100 text-emerald-700">{place.featured_image ? <img src={place.featured_image} alt="" className="h-full w-full object-cover" /> : <MapPin className="h-4 w-4" />}</span><span className="flex-1"><span className="block text-sm font-bold">{place.name}</span><span className="block text-xs text-slate-500">{place.location || place.category || 'Daet destination'}</span></span>{selectedPlaces.includes(place.name) && <Check className="h-4 w-4 text-emerald-700" />}</button>)}</div><p className="mt-4 text-xs text-slate-500">{selectedPlaces.length} of {requiredPlaces} selected</p></>}
-          {step === 3 && <><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Find your people</p><h1 className="mt-2 text-2xl font-black sm:text-3xl">People you may want to follow</h1><p className="mt-2 text-sm leading-6 text-slate-500">Follow local voices and community members. You can skip this.</p><div className="mt-6 space-y-2">{people.map((person) => <button key={person.id} type="button" onClick={() => setFollowedPeople((current) => current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id])} className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left ${followedPeople.includes(person.id) ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-slate-50'}`}><span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-amber-500 text-xs font-bold text-white">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : person.full_name?.slice(0, 2).toUpperCase()}</span><span className="flex-1 text-sm font-bold">{person.full_name || 'Community member'}</span>{followedPeople.includes(person.id) ? <Check className="h-4 w-4 text-amber-700" /> : <UserPlus className="h-4 w-4 text-slate-400" />}</button>)}</div><button type="button" onClick={() => setStep(4)} className="mt-4 text-sm font-bold text-slate-500 hover:text-sky-700">Skip for now</button></>}
-          {step === 4 && <><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-700">Make it yours</p><h1 className="mt-2 text-2xl font-black sm:text-3xl">Add a profile photo and cover</h1><p className="mt-2 text-sm leading-6 text-slate-500">Both are optional. You can add them later from Edit profile.</p><div className="mt-6 grid gap-4 sm:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-3 flex items-center gap-2 text-sm font-bold"><ImagePlus className="h-4 w-4 text-sky-600" />Profile photo</div><MediaUpload bucket="profile-media" folder={`users/${userId}`} mediaType="image" existingMediaUrl={avatarUrl} onUploadComplete={setAvatarUrl} onUploadError={setError} buttonText="Add photo" maxSizeMB={5} /></div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><div className="mb-3 flex items-center gap-2 text-sm font-bold"><ImagePlus className="h-4 w-4 text-emerald-600" />Cover photo</div><MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" existingMediaUrl={coverUrl} previewClassName="h-32 w-full aspect-[3/1]" onUploadComplete={setCoverUrl} onUploadError={setError} buttonText="Add cover" maxSizeMB={8} /></div></div><button type="button" onClick={completeOnboarding} className="mt-4 text-sm font-bold text-slate-500 hover:text-sky-700">Skip photos and finish</button></>}
-          {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-          <div className="mt-8 flex justify-end gap-2 border-t border-slate-100 pt-5"><button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || saving} className="rounded-full px-4 py-2.5 text-sm font-semibold text-slate-600 disabled:opacity-40">Back</button>{step < 4 && <button type="button" onClick={nextStep} disabled={!canContinue} className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-40">{step === 3 ? 'Continue' : 'Next'}<ArrowRight className="h-4 w-4" /></button>}{step === 4 && <button type="button" onClick={completeOnboarding} disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">{saving ? 'Saving...' : 'Finish setup'}<Check className="h-4 w-4" /></button>}</div>
+      <div className="mx-auto max-w-5xl">
+        <header className="mb-5 flex items-center justify-between gap-3">
+          <Link href="/user/dashboard" className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700">
+            <ArrowLeft className="h-4 w-4" />
+            Skip setup
+          </Link>
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600 shadow-sm backdrop-blur">
+            <Sparkles className="h-3.5 w-3.5 text-sky-600" />
+            {progressLabel}
+          </div>
+        </header>
+
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_25px_70px_rgba(15,23,42,0.08)]">
+          <div className="border-b border-slate-100 bg-slate-50 px-5 py-4 sm:px-8">
+            <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${stepAccent}`}>
+              <Compass className="h-3.5 w-3.5" />
+              {stepMeta.kicker}
+            </div>
+            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">{stepMeta.title}</h1>
+                <p className="mt-2 text-sm leading-6 text-slate-500">
+                  {step === 1 && 'Choose the experiences you love so we can shape your Daet community feed.'}
+                  {step === 2 && 'Add the destinations you want to revisit, explore, and share with others.'}
+                  {step === 3 && 'Follow creators, locals, and travelers who match your interests.'}
+                  {step === 4 && 'Finish your profile with a photo so people can recognize you in the community.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                <Bell className="h-4 w-4 text-sky-600" />
+                Personalized for you
+              </div>
+            </div>
+          </div>
+
+          <div className="p-5 sm:p-8">
+            {step === 1 && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {topics.map((topic) => {
+                    const topicHint = {
+                      Beaches: 'Sun-soaked escapes',
+                      Food: 'Flavor-filled stops',
+                      History: 'Stories from the past',
+                      Culture: 'Creative local life',
+                      Events: 'Live community moments',
+                      Nature: 'Fresh-air adventures',
+                    }[topic.name] || 'Tailored for you'
+
+                    return (
+                      <button
+                        key={topic.id}
+                        type="button"
+                        onClick={() => toggleSelection(topic.name, selectedTopics, setSelectedTopics, requiredTopics)}
+                        className={`rounded-[1.5rem] border p-4 text-left transition ${selectedTopics.includes(topic.name) ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-100' : 'border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50/50'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-2xl">{topic.icon_emoji || '✦'}</span>
+                          {selectedTopics.includes(topic.name) && <Check className="h-4 w-4 text-sky-700" />}
+                        </div>
+                        <span className="mt-3 block text-sm font-bold text-slate-800">{topic.name}</span>
+                        <span className="mt-1 block text-[11px] text-slate-500">{topicHint}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="mt-4 text-xs text-slate-500">{selectedTopics.length} of {requiredTopics} selected</p>
+              </>
+            )}
+
+            {step === 2 && (
+              <>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {places.map((place) => {
+                    const highlight = getPlaceHighlight(place)
+                    const backgroundImage = place.featured_image || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80'
+
+                    return (
+                      <button
+                        key={place.id}
+                        type="button"
+                        onClick={() => toggleSelection(place.name, selectedPlaces, setSelectedPlaces, requiredPlaces)}
+                        className={`overflow-hidden rounded-[1.5rem] border text-left transition ${selectedPlaces.includes(place.name) ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-slate-200 bg-slate-50 hover:border-emerald-300 hover:bg-emerald-50/50'}`}
+                      >
+                        <div className="relative h-28 w-full overflow-hidden">
+                          <img src={backgroundImage} alt="" className="h-full w-full object-cover" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/70 via-slate-900/15 to-transparent" />
+                          <div className="absolute left-3 top-3 inline-flex items-center rounded-full border border-white/30 bg-slate-950/40 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-white">
+                            {highlight}
+                          </div>
+                          {selectedPlaces.includes(place.name) && (
+                            <div className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md">
+                              <Check className="h-4 w-4" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-start gap-3 p-3">
+                          <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                            <MapPin className="h-4 w-4" />
+                          </span>
+
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="block text-sm font-bold text-slate-800">{place.name}</span>
+                              <Star className="h-4 w-4 text-amber-500" />
+                            </div>
+                            <span className="mt-1 block text-xs text-slate-500">{place.location || place.category || 'Daet destination'}</span>
+                          </div>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="mt-4 text-xs text-slate-500">{selectedPlaces.length} of {requiredPlaces} selected</p>
+              </>
+            )}
+
+            {step === 3 && (
+              <>
+                <div className="space-y-3">
+                  {people.map((person) => (
+                    <button
+                      key={person.id}
+                      type="button"
+                      onClick={() => setFollowedPeople((current) => current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id])}
+                      className={`flex w-full items-center gap-3 rounded-[1.5rem] border p-3 text-left transition ${followedPeople.includes(person.id) ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 bg-slate-50 hover:border-amber-300 hover:bg-amber-50/50'}`}
+                    >
+                      <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-xs font-bold text-white">
+                        {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : person.full_name?.slice(0, 2).toUpperCase()}
+                      </span>
+
+                      <span className="flex-1 text-left">
+                        <span className="block text-sm font-bold text-slate-800">{person.full_name || 'Community member'}</span>
+                        <span className="block text-xs text-slate-500">Local travel insider</span>
+                      </span>
+
+                      {followedPeople.includes(person.id) ? <Check className="h-4 w-4 text-amber-700" /> : <UserPlus className="h-4 w-4 text-slate-400" />}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setStep(4)} className="mt-5 text-sm font-bold text-slate-500 hover:text-sky-700">Skip for now</button>
+              </>
+            )}
+
+            {step === 4 && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700">
+                      <Camera className="h-4 w-4 text-sky-600" />
+                      Profile photo
+                    </div>
+                    <MediaUpload bucket="profile-media" folder={`users/${userId}`} mediaType="image" existingMediaUrl={avatarUrl} onUploadComplete={setAvatarUrl} onUploadError={setError} buttonText="Add photo" maxSizeMB={5} />
+                  </div>
+
+                  <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700">
+                      <ImagePlus className="h-4 w-4 text-violet-600" />
+                      Cover photo
+                    </div>
+                    <MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" existingMediaUrl={coverUrl} previewClassName="h-32 w-full aspect-[3/1]" onUploadComplete={setCoverUrl} onUploadError={setError} buttonText="Add cover" maxSizeMB={8} />
+                  </div>
+                </div>
+
+                <div className="mt-5 flex items-center gap-3 rounded-[1.25rem] border border-emerald-200 bg-emerald-50/80 p-3 text-sm text-emerald-800">
+                  <ShieldCheck className="h-4 w-4" />
+                  Your profile is private by default until you choose to share more.
+                </div>
+
+                <button type="button" onClick={completeOnboarding} className="mt-4 text-sm font-bold text-slate-500 hover:text-sky-700">Skip photos and finish</button>
+              </>
+            )}
+
+            {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+
+            <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || saving} className="rounded-full px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40">
+                Back
+              </button>
+
+              <div className="flex items-center gap-2">
+                {step < 4 ? (
+                  <button type="button" onClick={nextStep} disabled={!canContinue} className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-700 disabled:opacity-40">
+                    {stepMeta.nextLabel}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                ) : (
+                  <button type="button" onClick={completeOnboarding} disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-700 disabled:opacity-50">
+                    {saving ? 'Saving...' : stepMeta.nextLabel}
+                    <Check className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </section>
       </div>
     </main>
