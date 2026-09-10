@@ -128,8 +128,8 @@ export async function POST(request) {
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
     const replyTo = body.replyTo ? String(body.replyTo) : null
-    const gifUrl = body.gifUrl || null
-    const stickerUrl = body.stickerUrl || null
+    const gifUrl = typeof body.gifUrl === 'string' && body.gifUrl.trim().length > 0 ? body.gifUrl.trim() : null
+    const stickerUrl = typeof body.stickerUrl === 'string' && body.stickerUrl.trim().length > 0 ? body.stickerUrl.trim() : null
 
     const { data, error } = await adminSupabase
       .from('content_comments')

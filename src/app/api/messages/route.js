@@ -15,12 +15,20 @@ export async function GET(request) {
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
 
   const archived = new URL(request.url).searchParams.get('archived') === 'true'
-  const { data, error } = await adminSupabase
+  let { data, error } = await adminSupabase
     .from('direct_messages')
-    .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
+    .select('id, sender_id, recipient_id, body, media_url, media_type, message_type, reply_to_message_id, created_at, read_at')
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
     .order('created_at', { ascending: false })
     .limit(1000)
+  if (error?.message?.toLowerCase().includes('column') && error.message.toLowerCase().includes('message_type')) {
+    ({ data, error } = await adminSupabase
+      .from('direct_messages')
+      .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
+      .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+      .order('created_at', { ascending: false })
+      .limit(1000))
+  }
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
 
   const { data: settings, error: settingsError } = await adminSupabase
@@ -61,11 +69,12 @@ export async function GET(request) {
           && !candidate.read_at
       }).length
 
+      const typeHint = latestMessage.message_type || latestMessage.media_type
       const previewText = latestMessage.body?.trim()
-        || (latestMessage.media_type === 'gif' ? 'GIF'
-        : latestMessage.media_type === 'sticker' ? 'Sticker'
-        : latestMessage.media_type === 'video' ? 'Video'
-        : latestMessage.media_type === 'image' ? 'Photo'
+        || (typeHint === 'gif' ? 'GIF'
+        : typeHint === 'sticker' ? 'Sticker'
+        : typeHint === 'video' ? 'Video'
+        : typeHint === 'image' ? 'Photo'
         : 'New message')
 
       return {
@@ -105,11 +114,19 @@ export async function POST(request) {
   const body = await request.json()
   const recipientId = String(body.recipientId || '').trim()
   const messageBody = String(body.body || '').trim()
-  const mediaUrl = String(body.mediaUrl || '').trim() || null
-  const mediaType = ['image', 'video', 'gif', 'sticker'].includes(body.mediaType) ? body.mediaType : null
-  const messageType = ['text', 'image', 'video', 'gif', 'sticker'].includes(body.messageType)
+  const mediaUrl = typeof body.mediaUrl === 'string' && body.mediaUrl.trim().length > 0 ? body.mediaUrl.trim() : null
+  const requestedMediaType = ['image', 'video', 'gif', 'sticker'].includes(body.mediaType) ? body.mediaType : null
+  const requestedMessageType = ['text', 'image', 'video', 'gif', 'sticker'].includes(body.messageType)
     ? body.messageType
-    : mediaType || 'text'
+    : requestedMediaType || 'text'
+
+  // Keep the compatibility constraint of older direct_messages tables happy.
+  // GIF and sticker posts are stored as image media payloads, while the
+  // message_type column preserves the semantic type (`gif` / `sticker`).
+  const mediaType = requestedMediaType === 'gif' || requestedMediaType === 'sticker'
+    ? 'image'
+    : requestedMediaType
+  const messageType = requestedMessageType
   const replyToMessageId = String(body.replyToMessageId || '').trim() || null
   if (!recipientId || (!messageBody && !mediaUrl) || messageBody.length > 2000 || recipientId === senderId) {
     return NextResponse.json({ success: false, message: 'A valid recipient and message are required.' }, { status: 400 })
@@ -143,7 +160,7 @@ export async function POST(request) {
     const insertResult = await adminSupabase
       .from('direct_messages')
       .insert({ ...insertPayload, message_type: messageType })
-      .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
+      .select('id, sender_id, recipient_id, body, media_url, media_type, message_type, reply_to_message_id, created_at, read_at')
       .single()
     messageRecord = insertResult.data
     insertError = insertResult.error

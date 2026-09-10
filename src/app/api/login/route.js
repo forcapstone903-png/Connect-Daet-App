@@ -168,6 +168,7 @@ export async function POST(request) {
         user_type: userProfile?.user_type || normalizedRole || 'tourist',
         points: userProfile?.points || 0,
         profile_image_url: userProfile?.profile_image_url || null,
+        onboarding_completed: !!userProfile?.onboarding_completed,
       },
       session: {
         access_token: authData.session?.access_token,

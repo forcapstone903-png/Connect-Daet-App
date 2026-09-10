@@ -71,6 +71,7 @@ function LoginContent() {
       }
 
       const user = data.user
+      const shouldStartOnboarding = searchParams.get('onboarding') === '1' || user.onboarding_completed === false
       const sessionData = {
         user_id: user.id,
         user_name: user.full_name,
@@ -78,6 +79,7 @@ function LoginContent() {
         role: user.user_type,
         avatar_url: user.profile_image_url || '',
         profile_image_url: user.profile_image_url || '',
+        onboarding_completed: !!user.onboarding_completed,
         logged_in: true,
         login_time: new Date().toISOString(),
       }
@@ -119,7 +121,7 @@ function LoginContent() {
 
       if (user.user_type === 'admin') {
         router.push('/admin/dashboard')
-      } else if (searchParams.get('onboarding') === '1') {
+      } else if (shouldStartOnboarding) {
         router.push('/user/onboarding')
       } else {
         router.push('/user/dashboard')

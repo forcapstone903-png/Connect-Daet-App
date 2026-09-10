@@ -1,24 +1,60 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight, CheckCircle2, Eye, EyeOff, MapPin, ShieldCheck, Sparkles, XCircle } from 'lucide-react'
 
 export default function RegisterPage() {
   const router = useRouter()
+  const [mounted, setMounted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '', color: '' })
+  const [acceptsConsent, setAcceptsConsent] = useState(false)
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
     password: '',
     confirm_password: '',
   })
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <>
+        <style>{`
+          @keyframes authFadeSlide {
+            0% {
+              opacity: 0;
+              transform: translateY(14px) scale(0.98);
+            }
+            100% {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
+        `}</style>
+        <div className="min-h-screen w-full bg-slate-100">
+          <div className="grid min-h-dvh w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="relative hidden overflow-hidden lg:block">
+              <div className="absolute inset-0 bg-cover bg-center bg-[url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80')]" />
+              <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 via-sky-900/75 to-emerald-900/70" />
+            </div>
+            <div className="flex min-h-dvh items-center justify-center px-3 py-5 sm:px-5 sm:py-8 lg:px-8 xl:px-12">
+              <div className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:rounded-[1.75rem] sm:p-8 xl:p-10" style={{ animationFillMode: 'forwards' }} />
+            </div>
+          </div>
+        </div>
+      </>
+    )
+  }
 
   const getPasswordRequirements = (password) => {
     const checks = [
@@ -94,6 +130,12 @@ export default function RegisterPage() {
       return
     }
 
+    if (!acceptsConsent) {
+      setError('Please accept the privacy policy, terms, and cookie notice before creating your account.')
+      setLoading(false)
+      return
+    }
+
     const missingRequirements = passwordStrength.checks.filter((item) => !item.valid).map((item) => item.label)
     if (missingRequirements.length > 0) {
       setError(`Your password needs: ${missingRequirements.join(', ')}.`)
@@ -134,7 +176,7 @@ export default function RegisterPage() {
       })
 
       setTimeout(() => {
-        router.push('/login?message=Please check your email to confirm your account before logging in.')
+        router.push('/login?message=Please check your email to confirm your account before logging in.&onboarding=1')
       }, 5000)
     } catch (error) {
       setError(error.message || 'An error occurred during registration')
@@ -362,6 +404,24 @@ export default function RegisterPage() {
                   {formData.confirm_password && formData.password !== formData.confirm_password && (
                     <p className="mt-1 text-xs text-red-500">Passwords do not match</p>
                   )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <label className="flex items-start gap-3 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={acceptsConsent}
+                      onChange={(event) => setAcceptsConsent(event.target.checked)}
+                      className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                      aria-label="I agree to the privacy policy, terms and conditions, and cookie notice"
+                    />
+                    <span className="leading-6">
+                      I agree to the{' '}
+                      <Link href="/legal/privacy-policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Privacy Policy</Link>,{' '}
+                      <Link href="/legal/terms-and-conditions" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Terms and Conditions</Link>, and{' '}
+                      <Link href="/legal/cookie-policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Cookie Policy</Link>.
+                    </span>
+                  </label>
                 </div>
 
                 <button
