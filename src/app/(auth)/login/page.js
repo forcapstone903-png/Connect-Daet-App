@@ -13,6 +13,8 @@ function LoginContent() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [verificationSent, setVerificationSent] = useState(false)
+  const [resending, setResending] = useState(false)
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
@@ -47,11 +49,44 @@ function LoginContent() {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
+  const handleResendVerification = async () => {
+    if (!formData.email.trim()) {
+      setError('Enter your email address before requesting a new verification email.')
+      return
+    }
+
+    setResending(true)
+    setError('')
+    setMessage('')
+
+    try {
+      const response = await fetch('/api/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: formData.email.trim() }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Failed to resend verification email')
+      }
+
+      setVerificationSent(true)
+      setMessage('A new verification email has been sent.')
+    } catch (err) {
+      setError(err.message || 'Unable to resend the verification email right now.')
+    } finally {
+      setResending(false)
+    }
+  }
+
   const handleLogin = async (e) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     setMessage('')
+    setVerificationSent(false)
 
     try {
       const response = await fetch('/api/login', {
@@ -229,6 +264,23 @@ function LoginContent() {
                     <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>{error}</span>
                   </div>
+
+                  {error.toLowerCase().includes('confirm') && (
+                    <button
+                      type="button"
+                      onClick={handleResendVerification}
+                      disabled={resending}
+                      className="mt-3 inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {resending ? 'Sending...' : 'Resend verification email'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {verificationSent && !message && (
+                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                  A new verification email has been sent.
                 </div>
               )}
 
