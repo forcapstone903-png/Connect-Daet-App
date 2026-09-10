@@ -170,6 +170,23 @@ export default function AdminEventsPage() {
     localStorage.setItem('admin_notifications', JSON.stringify(notifications.slice(0, 50)));
   };
 
+  const createContentNotifications = async ({ type, title, message, link, contentId }) => {
+    try {
+      const response = await fetch('/api/admin/content-notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ type, title, message, link, contentId }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        console.warn('Content notification creation failed:', result.message || response.statusText)
+      }
+    } catch (error) {
+      console.error('Content notification creation failed:', error)
+    }
+  }
+
   const updateStats = (eventsList) => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -306,6 +323,17 @@ export default function AdminEventsPage() {
       }
 
       if (error) throw error;
+
+      const createdEvent = data?.[0] || null
+      if (!id && createdEvent?.id) {
+        await createContentNotifications({
+          type: 'event',
+          title,
+          message: title,
+          link: `/user/events/${createdEvent.id}`,
+          contentId: createdEvent.id,
+        })
+      }
       
       await fetchEvents();
       showToast(id ? 'Event updated successfully!' : 'Event created successfully!', false);
@@ -2150,7 +2178,7 @@ export default function AdminEventsPage() {
               </div>
               <h3 className="text-xl font-bold text-gray-800 mb-2">Delete Event</h3>
               <p className="text-gray-600 mb-4">
-                Are you sure you want to delete <strong>"{selectedEvent.title}"</strong>? 
+                Are you sure you want to delete <strong>&quot;{selectedEvent.title}&quot;</strong>? 
                 This action cannot be undone and will remove all associated media.
               </p>
               <div className="flex justify-center gap-3">

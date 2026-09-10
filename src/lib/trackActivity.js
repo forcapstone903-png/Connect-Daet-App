@@ -34,6 +34,30 @@ const ACTIVITY_DETAILS = {
     userTitle: 'New post from admin',
     userVerb: 'published a new post',
   },
+  follow: {
+    title: 'New Follower',
+    verb: 'followed you',
+    userTitle: 'You have a new follower',
+    userVerb: 'followed you',
+  },
+  mention: {
+    title: 'You were mentioned',
+    verb: 'mentioned you',
+    userTitle: 'You were mentioned',
+    userVerb: 'mentioned you',
+  },
+  message: {
+    title: 'New Message',
+    verb: 'sent you a message',
+    userTitle: 'New message',
+    userVerb: 'sent you a message',
+  },
+  event: {
+    title: 'New Event',
+    verb: 'published an event',
+    userTitle: 'Event update',
+    userVerb: 'posted an event update',
+  },
 }
 
 function buildActivityMeta(activityType) {
@@ -58,7 +82,21 @@ function buildUserNotificationMessage({ actorName = 'A user', activityType, cont
     return `${actorName} ${meta.userVerb || meta.verb}: "${targetName}".`
   }
 
+  if (activityType === 'react_content' && entityType === 'comment') {
+    return `${actorName} reacted to your comment "${targetName}".`
+  }
+
   return `${actorName} ${meta.userVerb || meta.verb} "${targetName}".`
+}
+
+function normalizeErrorMessage(error) {
+  if (error instanceof Error) return error.message || 'Unable to create your blog article right now.'
+  if (typeof error === 'string') return error.trim() || 'Unable to create your blog article right now.'
+  if (error && typeof error === 'object') {
+    if (typeof error.message === 'string' && error.message.trim()) return error.message
+    return 'Unable to create your blog article right now.'
+  }
+  return 'Unable to create your blog article right now.'
 }
 
 async function trackUserActivity({
@@ -77,9 +115,17 @@ async function trackUserActivity({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, activityType, entityType, entityId, description, metadata }),
     })
-    return await response.json()
+
+    if (!response.ok) {
+      return { success: false }
+    }
+
+    try {
+      return await response.json()
+    } catch {
+      return { success: false }
+    }
   } catch (err) {
-    console.error('Failed to track user activity:', err)
     return { success: false }
   }
 }
@@ -90,5 +136,6 @@ module.exports = {
   buildActivityMessage,
   buildUserNotificationTitle,
   buildUserNotificationMessage,
+  normalizeErrorMessage,
   trackUserActivity,
 }

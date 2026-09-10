@@ -53,7 +53,14 @@ export async function GET(request) {
 
   const conversationRows = [...latestByConversation.entries()]
     .map(([otherUserId, latestMessage]) => {
-      const unreadCount = rows.filter((candidate) => candidate.sender_id === otherUserId && candidate.recipient_id === userId && !candidate.read_at).length
+      const unreadCount = rows.filter((candidate) => {
+        const candidateOtherUserId = candidate.sender_id === userId ? candidate.recipient_id : candidate.sender_id
+        return candidateOtherUserId === otherUserId
+          && candidate.sender_id === otherUserId
+          && candidate.recipient_id === userId
+          && !candidate.read_at
+      }).length
+
       const previewText = latestMessage.body?.trim()
         || (latestMessage.media_type === 'gif' ? 'GIF'
         : latestMessage.media_type === 'sticker' ? 'Sticker'
@@ -71,7 +78,10 @@ export async function GET(request) {
         unread_count: unreadCount,
       }
     })
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+    .sort((a, b) => {
+      if (a.unread_count !== b.unread_count) return b.unread_count - a.unread_count
+      return new Date(b.created_at) - new Date(a.created_at)
+    })
 
   return NextResponse.json({
     success: true,
@@ -160,6 +170,27 @@ export async function POST(request) {
     .select('id, full_name, profile_image_url')
     .eq('id', senderId)
     .maybeSingle()
+
+  const displayLink = `/user/messaging/${recipientId}`
+  const { data: existing } = await adminSupabase
+    .from('info_notifications')
+    .select('id')
+    .eq('user_id', recipientId)
+    .eq('link', displayLink)
+    .limit(1)
+
+  if (!existing || existing.length === 0) {
+    await adminSupabase.from('info_notifications').insert({
+      user_id: recipientId,
+      title: 'New message',
+      message: `${sender?.full_name || 'Someone'} sent you a message.`,
+      type: 'message',
+      is_read: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      link: displayLink,
+    })
+  }
 
   return NextResponse.json({
     success: true,

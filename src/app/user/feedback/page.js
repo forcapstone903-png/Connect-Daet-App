@@ -129,72 +129,35 @@ export default function UserFeedbackPage() {
 
     try {
       const payload = {
-        user_id: userId,
-        category: form.category,
-        rating: form.rating,
-        image_urls: form.images,
-        status: 'pending',
-        comments: form.message,
-        target_type: 'system',
-        target_id: userId,
+        shareType: kind === 'feedback' ? 'feedback' : 'complaint',
+        feedbackForm: kind === 'feedback'
+          ? {
+              title: form.title || 'General feedback',
+              message: form.message,
+              category: form.category,
+              rating: form.rating,
+            }
+          : null,
+        complaintForm: kind === 'complaint'
+          ? {
+              title: form.title || 'Complaint submission',
+              message: form.message,
+              category: form.category,
+              images: Array.isArray(form.images) ? form.images : [],
+            }
+          : null,
       }
 
-      if (kind === 'feedback') {
-        if (editingId && editingTable === 'info_feedback') {
-          const { error } = await supabase.from('info_feedback').update({
-            category: form.category,
-            comments: form.message,
-            rating: form.rating,
-            image_urls: form.images,
-            updated_at: new Date().toISOString(),
-          }).eq('id', editingId)
-          if (error) throw error
-        } else {
-          const { error } = await supabase.from('info_feedback').insert([payload])
-          if (error) throw error
-        }
-      } else {
-        const complaintPayload = {
-          user_id: userId,
-          title: form.title || 'Complaint submission',
-          message: form.message,
-          category: form.category,
-          image_urls: form.images,
-          status: 'open',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }
+      const response = await fetch('/api/posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
 
-        if (editingId && editingTable === 'info_inquiries') {
-          const { error } = await supabase.from('info_inquiries').update({
-            title: complaintPayload.title,
-            message: complaintPayload.message,
-            category: complaintPayload.category,
-            image_urls: complaintPayload.image_urls,
-            status: 'open',
-            updated_at: complaintPayload.updated_at,
-          }).eq('id', editingId)
-          if (error) throw error
-        } else {
-          const { error } = await supabase.from('info_inquiries').insert([complaintPayload])
-          if (error) throw error
-        }
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Unable to save the form right now.')
       }
-
-      await supabase.from('info_notifications').insert([
-        {
-          user_id: userId,
-          title: kind === 'feedback' ? 'Feedback received' : 'Complaint submitted',
-          message: kind === 'feedback'
-            ? 'Thanks for sharing your feedback. Our team will review it soon.'
-            : 'Your complaint has been logged and is being reviewed.',
-          type: kind === 'feedback' ? 'info' : 'warning',
-          priority: kind === 'complaint' ? 'high' : 'normal',
-          action_url: '/user/feedback',
-          is_read: false,
-          data: { source: kind },
-        },
-      ])
 
       setNotice(kind === 'feedback' ? 'Feedback saved successfully.' : 'Complaint submitted successfully.')
       setForm({ category: kind === 'feedback' ? FEEDBACK_CATEGORIES[0] : COMPLAINT_CATEGORIES[0], title: '', message: '', rating: 5, images: [] })
@@ -375,7 +338,7 @@ export default function UserFeedbackPage() {
                   ))}
                   <div className="flex h-20 w-20 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50">
                     <MediaUpload
-                      bucket="feedback-media"
+                      bucket="profile-media"
                       folder={userId ? `feedback/${userId}` : 'feedback'}
                       mediaType="image"
                       buttonText="Upload"

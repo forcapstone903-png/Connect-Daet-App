@@ -119,6 +119,23 @@ export default function BlogManagement() {
     }));
   };
 
+  const createContentNotifications = async ({ type, title, message, link, contentId }) => {
+    try {
+      const response = await fetch('/api/admin/content-notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ type, title, message, link, contentId }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        console.warn('Content notification creation failed:', result.message || response.statusText)
+      }
+    } catch (error) {
+      console.error('Content notification creation failed:', error)
+    }
+  }
+
   const saveBlog = async () => {
     if (!blogForm.title.trim() || !blogForm.content.trim() || !blogForm.category) {
       showToast('Please complete the required fields', true);
@@ -167,6 +184,17 @@ export default function BlogManagement() {
       if (result.error) throw result.error;
 
       if (!editingBlog && savedBlogId && user?.id) {
+        const blogLink = `/user/blogs/${savedBlogId}`
+        await createContentNotifications({
+          type: 'blog',
+          title: blogForm.title.trim(),
+          message: blogForm.content.trim(),
+          link: blogLink,
+          contentId: savedBlogId,
+        })
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('daet-notifications-updated'))
+        }
         trackUserActivity({
           userId: user.id,
           activityType: 'new_post',
@@ -176,6 +204,7 @@ export default function BlogManagement() {
           metadata: {
             contentTitle: blogForm.title.trim(),
             ownerUserId: user.id,
+            link: blogLink,
           },
         });
       }

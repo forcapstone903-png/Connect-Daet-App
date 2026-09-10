@@ -70,6 +70,40 @@ export async function POST(request, { params }) {
   }
 
   try {
+    const { data: targetUser } = await adminSupabase
+      .from('info_users')
+      .select('id, full_name, user_type')
+      .eq('id', targetUserId)
+      .maybeSingle()
+
+    const { data: actor } = await adminSupabase
+      .from('info_users')
+      .select('id, full_name, user_type')
+      .eq('id', viewerId)
+      .maybeSingle()
+
+    const actorName = actor?.full_name || 'Someone'
+    const targetLink = `/user/profile/${targetUserId}`
+    const existing = await adminSupabase
+      .from('info_notifications')
+      .select('id')
+      .eq('user_id', targetUserId)
+      .eq('link', targetLink)
+      .limit(1)
+
+    if (!existing.error && (!Array.isArray(existing.data) || existing.data.length === 0) && targetUser?.user_type !== 'admin') {
+      await adminSupabase.from('info_notifications').insert({
+        user_id: targetUserId,
+        title: 'New follower',
+        message: `${actorName} started following you.`,
+        type: 'follow',
+        is_read: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        link: targetLink,
+      })
+    }
+
     return NextResponse.json({ success: true, ...(await getFollowSummary(viewerId, targetUserId)) })
   } catch (summaryError) {
     console.error('Follow summary failed:', summaryError)

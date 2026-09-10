@@ -70,6 +70,10 @@ export default function UserNotificationsPage() {
     })
   }, [])
 
+  const syncUnreadBadge = () => {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('daet-notifications-updated'))
+  }
+
   useEffect(() => {
     if (!session) return undefined
 
@@ -82,8 +86,10 @@ export default function UserNotificationsPage() {
 
   useEffect(() => {
     if (!session) {
-      return
+      return undefined
     }
+
+    const userIdForRealtime = userId || session?.user_id || session?.id || session?.userId || session?.sub || ''
 
     const loadNotifications = async () => {
       setLoadError('')
@@ -122,6 +128,46 @@ export default function UserNotificationsPage() {
     }
 
     loadNotifications()
+
+    const pollTimer = window.setInterval(() => {
+      void loadNotifications()
+    }, 8000)
+
+    let realtimeChannel = null
+    if (supabase?.channel && userIdForRealtime) {
+      realtimeChannel = supabase.channel(`notifications-realtime-${userIdForRealtime}`)
+      realtimeChannel.on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'info_notifications',
+          filter: `user_id=eq.${userIdForRealtime}`,
+        },
+        (payload) => {
+          const incoming = payload?.new || null
+          if (!incoming || !incoming.id) return
+
+          setNotifications((previous) => {
+            if (previous.some((item) => item.id === incoming.id)) return previous
+            return [incoming, ...previous]
+          })
+          syncUnreadBadge()
+        },
+      )
+      realtimeChannel.subscribe()
+    }
+
+    return () => {
+      window.clearInterval(pollTimer)
+      if (realtimeChannel) {
+        try {
+          supabase.removeChannel(realtimeChannel)
+        } catch {
+          // ignore realtime channel teardown failures
+        }
+      }
+    }
   }, [session, userId, retryKey])
 
   const unreadCount = notifications.filter((item) => !item.is_read).length
@@ -166,10 +212,6 @@ export default function UserNotificationsPage() {
     }
 
     return null
-  }
-
-  const syncUnreadBadge = () => {
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event('daet-notifications-updated'))
   }
 
   const markAsRead = async (id) => {

@@ -129,6 +129,9 @@ export default function PublicProfilePage() {
         setIsMutual(Boolean(result.is_mutual))
         setFollowerCount(result.followers_count ?? 0)
         setFollowingCount(result.following_count ?? 0)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('daet-notifications-updated'))
+        }
       }
     } catch (followError) {
       console.error('Follow update failed:', followError?.message || followError)

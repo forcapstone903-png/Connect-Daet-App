@@ -13,6 +13,50 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 const adminSupabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
+function activityNotificationType(activityType) {
+  return {
+    comment: 'comment',
+    react_content: 'reaction',
+    share_content: 'share',
+    save_content: 'save',
+    new_post: 'post',
+    follow: 'follow',
+    mention: 'mention',
+    message: 'message',
+    event: 'event',
+  }[activityType] || 'info'
+}
+
+function routeForEntity(entityType, entityId) {
+  if (!entityType || !entityId) return null
+  const normalized = String(entityType).toLowerCase()
+  const map = {
+    blog: `/user/blogs/${entityId}`,
+    article: `/user/blogs/${entityId}`,
+    event: `/user/events/${entityId}`,
+    forum: `/user/forums/${entityId}`,
+    forum_thread: `/user/forums/${entityId}`,
+    user_post: `/user/posts/${entityId}`,
+    post: `/user/posts/${entityId}`,
+    announcement: `/user/announcements/${entityId}`,
+    comment: `/user/comments/${entityId}`,
+  }
+  return map[normalized] || null
+}
+
+async function shouldSkipNotification(userId, link) {
+  if (!userId || !link) return false
+  const { data, error } = await adminSupabase
+    .from('info_notifications')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('link', link)
+    .limit(1)
+
+  if (error) return false
+  return Array.isArray(data) && data.length > 0
+}
+
 function missingConfig() {
   return NextResponse.json(
     { success: false, message: 'Server is not configured for activity tracking.' },
@@ -32,8 +76,21 @@ async function resolveOwnerUserId(entityType, entityId) {
       forum: () => adminSupabase.from('forum_threads').select('created_by').eq('id', entityId).maybeSingle(),
       forum_thread: () => adminSupabase.from('forum_threads').select('created_by').eq('id', entityId).maybeSingle(),
       comment: async () => {
-        const { data: comment } = await adminSupabase.from('content_comments').select('content_type, content_id').eq('id', entityId).maybeSingle()
-        return comment ? { data: { created_by: await resolveOwnerUserId(comment.content_type, comment.content_id) } } : { data: null }
+        const { data: comment } = await adminSupabase
+          .from('content_comments')
+          .select('user_id, content_type, content_id')
+          .eq('id', entityId)
+          .maybeSingle()
+
+        if (!comment) return { data: null }
+
+        if (comment.user_id) {
+          return { data: { created_by: comment.user_id } }
+        }
+
+        return comment.content_type && comment.content_id
+          ? { data: { created_by: await resolveOwnerUserId(comment.content_type, comment.content_id) } }
+          : { data: null }
       },
       article: () => adminSupabase.from('info_blogs').select('created_by, user_id').eq('id', entityId).maybeSingle(),
       announcement: () => adminSupabase.from('info_announcements').select('created_by, user_id').eq('id', entityId).maybeSingle(),
@@ -122,6 +179,11 @@ export async function POST(request) {
     const resolvedOwnerId = explicitOwnerId || await resolveOwnerUserId(entityType, entityId)
     let ownerIsAdmin = false
 
+    let targetLink = metadata.link || metadata.href || metadata.action_url || routeForEntity(entityType, entityId)
+    if (!targetLink && entityType === 'comment' && metadata.contentType && metadata.contentId) {
+      targetLink = routeForEntity(metadata.contentType, metadata.contentId)
+    }
+
     if (resolvedOwnerId) {
       const { data: owner } = await adminSupabase
         .from('info_users')
@@ -165,22 +227,47 @@ export async function POST(request) {
       }
     } else {
       if (explicitOwnerId && !ownerIsAdmin) recipientUserIds.add(explicitOwnerId)
-
       if (resolvedOwnerId && resolvedOwnerId !== userId && !ownerIsAdmin) recipientUserIds.add(resolvedOwnerId)
     }
 
+    if (metadata?.mentionedUserIds?.length) {
+      for (const mentionedId of metadata.mentionedUserIds) {
+        if (mentionedId && mentionedId !== userId) recipientUserIds.add(mentionedId)
+      }
+    }
+
     if (recipientUserIds.size > 0) {
-      const userNotifications = [...recipientUserIds].map((recipientUserId) => ({
-        user_id: recipientUserId,
+      const userNotifications = []
+      const baseNotificationRow = {
         title: buildUserNotificationTitle(activityType),
         message: buildUserNotificationMessage({ actorName, activityType, contentTitle, entityType }),
-        type: 'info',
+        type: activityNotificationType(activityType),
         is_read: false,
-      }))
+      }
 
-      const { error: userNotifError } = await adminSupabase.from('info_notifications').insert(userNotifications)
-      if (userNotifError) {
-        console.error('User notification insert error:', userNotifError)
+      for (const recipientUserId of recipientUserIds) {
+        const targetLink = metadata.link || metadata.href || metadata.action_url || routeForEntity(entityType, entityId)
+        if (!targetLink) continue
+
+        if (await shouldSkipNotification(recipientUserId, targetLink)) continue
+
+        userNotifications.push({
+          user_id: recipientUserId,
+          title: baseNotificationRow.title,
+          message: baseNotificationRow.message,
+          type: baseNotificationRow.type,
+          is_read: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          link: targetLink,
+        })
+      }
+
+      if (userNotifications.length > 0) {
+        const { error: userNotifError } = await adminSupabase.from('info_notifications').insert(userNotifications)
+        if (userNotifError) {
+          console.error('User notification insert error:', userNotifError)
+        }
       }
     }
 
