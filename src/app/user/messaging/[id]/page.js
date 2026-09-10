@@ -235,14 +235,21 @@ export default function ConversationPage() {
       }
       setError('')
 
-      const response = await fetch(`/api/messages/${otherUserId}`, { credentials: 'same-origin' })
+      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (response.status === 401) {
+        router.replace('/login?message=Please%20sign%20in%20again%20to%20view%20messages.')
+        return
+      }
       if (!response.ok) {
-        throw new Error('Unable to load messages. Tap to retry.')
+        throw new Error(result?.message || `Unable to load messages (${response.status}).`)
       }
 
-      const result = await response.json()
       if (!result?.success) {
-        throw new Error(result?.message || 'Unable to load messages. Tap to retry.')
+        throw new Error(result?.message || 'Unable to load messages.')
       }
 
       setCurrentUser(result.current_user)
@@ -279,8 +286,8 @@ export default function ConversationPage() {
       }
     } catch (loadError) {
       const errorMessage = loadError?.message === 'Failed to fetch'
-        ? 'Unable to load messages. Tap to retry.'
-        : loadError?.message || 'Unable to load messages. Tap to retry.'
+        ? 'The messaging service could not be reached. Check your connection and try again.'
+        : loadError?.message || 'Unable to load messages.'
       setError(errorMessage)
       setLoading(false)
     } finally {

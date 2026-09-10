@@ -171,7 +171,7 @@ export async function POST(request) {
     .eq('id', senderId)
     .maybeSingle()
 
-  const displayLink = `/user/messaging/${recipientId}`
+  const displayLink = `/user/messaging/${senderId}`
   const { data: existing } = await adminSupabase
     .from('info_notifications')
     .select('id')
@@ -189,6 +189,7 @@ export async function POST(request) {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       link: displayLink,
+      actor_id: senderId,
     })
   }
 

@@ -7,6 +7,7 @@ const {
   buildUserNotificationMessage,
   trackUserActivity,
   normalizeErrorMessage,
+  routeForEntity,
 } = require('./trackActivity')
 
 test('activity metadata is mapped to the correct admin labels', () => {
@@ -37,7 +38,7 @@ test('activity metadata is mapped to the correct admin labels', () => {
   assert.deepEqual(buildActivityMeta('new_post'), {
     title: 'New Post',
     verb: 'published a new post',
-    userTitle: 'New post from admin',
+    userTitle: 'New Post',
     userVerb: 'published a new post',
   })
 })
@@ -91,6 +92,7 @@ test('follow activity metadata is exposed as a real notification vocabulary entr
 
 test('user notification title and message include the actor and post details', () => {
   assert.equal(buildUserNotificationTitle('comment'), 'New comment on your post')
+  assert.equal(buildUserNotificationTitle('new_post'), 'New Post')
   assert.equal(
     buildUserNotificationMessage({
       actorName: 'Jane Doe',
@@ -107,6 +109,14 @@ test('user notification title and message include the actor and post details', (
     }),
     'Admin Team published a new post: "Island Festival Highlights".'
   )
+})
+
+test('routeForEntity resolves the canonical post destination that notification links should carry', () => {
+  assert.equal(routeForEntity('blog', 'blog-123'), '/user/blogs/blog-123')
+  assert.equal(routeForEntity('post', 'post-123'), '/user/posts/post-123')
+  assert.equal(routeForEntity('user_post', 'post-456'), '/user/posts/post-456')
+  assert.equal(routeForEntity('event', 'event-123'), '/user/events/event-123')
+  assert.equal(routeForEntity('announcement', 'announcement-123'), '/user/announcements/announcement-123')
 })
 
 test('normalizeErrorMessage turns a thrown object or route payload into a safe user text', () => {

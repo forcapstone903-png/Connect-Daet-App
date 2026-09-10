@@ -108,6 +108,7 @@ export async function POST(request) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           link,
+          actor_id: session?.user_id || null,
         })
       }
 

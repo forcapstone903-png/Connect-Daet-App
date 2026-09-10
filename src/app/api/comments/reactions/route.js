@@ -5,6 +5,42 @@ import { getServerSession } from '@/lib/serverAuth'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+async function resolveOwnerId(adminSupabase, contentType, contentId) {
+  const tableMap = {
+    blog: ['info_blogs', 'created_by'],
+    event: ['info_events', 'created_by'],
+    announcement: ['info_announcements', 'created_by'],
+    user_post: ['info_user_posts', 'user_id'],
+    post: ['info_user_posts', 'user_id'],
+    forum_thread: ['forum_threads', 'created_by'],
+    forum: ['forum_threads', 'created_by'],
+  }
+
+  const map = tableMap[String(contentType || '').toLowerCase()]
+  if (!map) return null
+
+  const [table, fk] = map
+  const { data } = await adminSupabase.from(table).select(`id, ${fk}`).eq('id', contentId).maybeSingle()
+  return data?.[fk] || null
+}
+
+function routeForEntity(entityType, entityId) {
+  if (!entityType || !entityId) return null
+  const normalized = String(entityType).toLowerCase()
+  const map = {
+    blog: `/user/blogs/${entityId}`,
+    article: `/user/blogs/${entityId}`,
+    event: `/user/events/${entityId}`,
+    forum: `/user/forums/${entityId}`,
+    forum_thread: `/user/forums/${entityId}`,
+    post: `/user/posts/${entityId}`,
+    user_post: `/user/posts/${entityId}`,
+    announcement: `/user/announcements/${entityId}`,
+    comment: `/user/comments/${entityId}`,
+  }
+  return map[normalized] || null
+}
+
 export async function POST(request) {
   try {
     const session = getServerSession(request)
@@ -58,6 +94,9 @@ export async function POST(request) {
       const ownerLink = commentRow.content_type && commentRow.content_id
         ? routeForEntity(commentRow.content_type, commentRow.content_id)
         : '/user/notifications'
+      const parentOwnerId = commentRow.content_type && commentRow.content_id
+        ? await resolveOwnerId(adminSupabase, commentRow.content_type, commentRow.content_id)
+        : null
 
       const { data: existing } = await adminSupabase
         .from('info_notifications')
@@ -70,12 +109,15 @@ export async function POST(request) {
         await adminSupabase.from('info_notifications').insert({
           user_id: commentRow.user_id,
           title: 'New reaction',
-          message: `${session.user_id ? 'Someone' : 'A user'} reacted to your comment`,
+          message: 'Someone reacted to your comment',
           type: 'reaction',
           is_read: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           link: ownerLink,
+          post_id: commentRow.content_id,
+          post_owner_id: parentOwnerId,
+          actor_id: session.user_id,
         })
       }
     }

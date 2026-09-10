@@ -60,6 +60,39 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   }, [loadReactions])
 
   useEffect(() => {
+    if (!contentType || !contentId || !supabase) return undefined
+
+    const channel = supabase.channel(`content-reactions-${contentType}-${contentId}`)
+    const subscription = channel
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'content_reactions',
+          filter: `content_type=eq.${contentType} AND content_id=eq.${contentId}`,
+        },
+        () => {
+          void loadReactions()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      try {
+        channel.unsubscribe?.()
+      } catch {
+        // ignore channel cleanup edge cases
+      }
+      try {
+        supabase.removeChannel(channel)
+      } catch {
+        // ignore channel cleanup edge cases
+      }
+    }
+  }, [contentType, contentId, loadReactions])
+
+  useEffect(() => {
     const handleClickOutside = (e) => {
       if (pickerRef.current && !pickerRef.current.contains(e.target)) {
         setShowPicker(false)

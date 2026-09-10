@@ -45,7 +45,7 @@ function extractMentions(text) {
   return names
 }
 
-async function mentionNotificationTargets(adminSupabase, mentions, actorName, contentType, contentId) {
+async function mentionNotificationTargets(adminSupabase, mentions, actorId, actorName, contentType, contentId) {
   if (!mentions.length) return []
 
   const rows = []
@@ -70,6 +70,9 @@ async function mentionNotificationTargets(adminSupabase, mentions, actorName, co
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       link,
+      post_id: contentId,
+      post_owner_id: await resolveOwnerId(adminSupabase, contentType, contentId),
+      actor_id: actorId,
     })
   }
 
@@ -176,12 +179,15 @@ export async function POST(request) {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           link: ownerLink,
+          post_id: contentId,
+          post_owner_id: ownerId,
+          actor_id: session.user_id,
         })
       }
     }
 
     const mentions = extractMentions(commentBody)
-    const mentionRows = await mentionNotificationTargets(adminSupabase, mentions, actorName, contentType, contentId)
+    const mentionRows = await mentionNotificationTargets(adminSupabase, mentions, session.user_id, actorName, contentType, contentId)
     rows.push(...mentionRows)
 
     if (rows.length > 0) {

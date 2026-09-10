@@ -80,6 +80,9 @@ export async function POST(request) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         link,
+        post_id: contentId || null,
+        post_owner_id: currentUserId || null,
+        actor_id: currentUserId,
       })
     }
 
