@@ -1,20 +1,22 @@
 'use client'
 
 import { useEffect } from 'react'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 
 const ADMIN_SCROLL_KEY_PREFIX = 'admin-scroll-position:'
 
 export default function AdminLayout({ children }) {
   const pathname = usePathname()
-  const searchParams = useSearchParams()
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
 
     window.history.scrollRestoration = 'manual'
 
-    const query = searchParams?.toString?.() || ''
+    const query = window.location.search.startsWith('?')
+      ? window.location.search.slice(1)
+      : window.location.search
+
     const routeKey = `${pathname}${query ? `?${query}` : ''}`
     const storageKey = `${ADMIN_SCROLL_KEY_PREFIX}${routeKey}`
     const savedY = Number(sessionStorage.getItem(storageKey) || '0')
@@ -41,7 +43,7 @@ export default function AdminLayout({ children }) {
       window.removeEventListener('scroll', savePosition)
       cancelAnimationFrame(frame)
     }
-  }, [pathname, searchParams])
+  }, [pathname])
 
   return <div className="admin-page-shell">{children}</div>
 }
