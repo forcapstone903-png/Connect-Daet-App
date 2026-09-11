@@ -86,8 +86,17 @@ export default function UserNotificationsPage() {
     })
   }, [])
 
-  const syncUnreadBadge = () => {
-    if (typeof window !== 'undefined') window.dispatchEvent(new Event('daet-notifications-updated'))
+  const syncUnreadBadge = (nextNotifications = notifications) => {
+    if (typeof window === 'undefined') return
+
+    const unreadCount = (nextNotifications || []).filter((item) => !item.is_read).length
+    queueMicrotask(() => {
+      window.dispatchEvent(
+        new CustomEvent('daet-notifications-updated', {
+          detail: { unreadCount },
+        }),
+      )
+    })
   }
 
   useEffect(() => {
@@ -155,8 +164,14 @@ export default function UserNotificationsPage() {
 
           const actorId = getNotificationActorId(incoming)
           const addNotification = (actor) => setNotifications((previous) => {
-            if (previous.some((item) => item.id === incoming.id)) return previous
-            return [{ ...incoming, actor_id: actor?.id || incoming.actor_id || null, actor: actor || null }, ...previous]
+            if (previous.some((item) => item.id === incoming.id)) {
+              syncUnreadBadge(previous)
+              return previous
+            }
+
+            const next = [{ ...incoming, actor_id: actor?.id || incoming.actor_id || null, actor: actor || null }, ...previous]
+            syncUnreadBadge(next)
+            return next
           })
 
           if (actorId && supabase) {
@@ -180,8 +195,11 @@ export default function UserNotificationsPage() {
       }, (payload) => {
         const updated = payload?.new
         if (!updated?.id) return
-        setNotifications((previous) => previous.map((item) => item.id === updated.id ? { ...item, ...updated } : item))
-        syncUnreadBadge()
+        setNotifications((previous) => {
+          const next = previous.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
+          syncUnreadBadge(next)
+          return next
+        })
       })
       realtimeChannel.on('postgres_changes', {
         event: 'DELETE',
@@ -191,8 +209,11 @@ export default function UserNotificationsPage() {
       }, (payload) => {
         const deletedId = payload?.old?.id
         if (!deletedId) return
-        setNotifications((previous) => previous.filter((item) => item.id !== deletedId))
-        syncUnreadBadge()
+        setNotifications((previous) => {
+          const next = previous.filter((item) => item.id !== deletedId)
+          syncUnreadBadge(next)
+          return next
+        })
       })
       realtimeChannel.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -377,8 +398,11 @@ export default function UserNotificationsPage() {
         throw new Error(result.message || 'Unable to mark notification as read')
       }
 
-      setNotifications((previous) => previous.map((item) => item.id === id ? { ...item, is_read: true } : item))
-      syncUnreadBadge()
+      setNotifications((previous) => {
+        const next = previous.map((item) => item.id === id ? { ...item, is_read: true } : item)
+        syncUnreadBadge(next)
+        return next
+      })
     } catch (error) {
       console.error('Update read state failed:', error)
     }
@@ -400,8 +424,11 @@ export default function UserNotificationsPage() {
         throw new Error(result.message || 'Unable to mark notifications as read')
       }
 
-      setNotifications((previous) => previous.map((item) => ({ ...item, is_read: true })))
-      syncUnreadBadge()
+      setNotifications((previous) => {
+        const next = previous.map((item) => ({ ...item, is_read: true }))
+        syncUnreadBadge(next)
+        return next
+      })
     } catch (error) {
       console.error('Mark all notifications read failed:', error)
     }
@@ -421,8 +448,11 @@ export default function UserNotificationsPage() {
         throw new Error(result.message || 'Unable to delete notification')
       }
 
-      setNotifications((previous) => previous.filter((item) => item.id !== id))
-      syncUnreadBadge()
+      setNotifications((previous) => {
+        const next = previous.filter((item) => item.id !== id)
+        syncUnreadBadge(next)
+        return next
+      })
     } catch (error) {
       console.error('Delete notification failed:', error)
       setActionNotice(error.message || 'Unable to delete notification.')
@@ -454,6 +484,7 @@ export default function UserNotificationsPage() {
       setNotifications([])
       setShowDeleteConfirm(false)
       setActionNotice('Notification history deleted.')
+      syncUnreadBadge([])
     } catch (error) {
       console.error('Delete notification history failed:', error)
       setActionNotice(error.message || 'Unable to delete notification history.')

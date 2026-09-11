@@ -53,7 +53,17 @@ export default function MobileNav() {
     }
 
     loadUnreadAlerts()
-    const updateUnreadAlerts = () => loadUnreadAlerts()
+    const updateUnreadAlerts = (event) => {
+      const detailUnreadCount = Number(event?.detail?.unreadCount)
+
+      if (Number.isFinite(detailUnreadCount)) {
+        setUnreadAlerts(detailUnreadCount)
+        return
+      }
+
+      void loadUnreadAlerts()
+    }
+
     window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
     window.addEventListener('daet-messages-updated', updateUnreadAlerts)
     let realtimeChannel = null
