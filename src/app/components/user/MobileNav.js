@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { Bell, Bookmark, CalendarDays, FileText, Home, LogOut, Mail, Menu, MessageCircle, PlusCircle, Search, Settings, UserRound } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
+import { supabase } from '@/lib/supabase'
+import { getStoredSessionObject } from '@/lib/authCookies'
 
 const navItems = [
   { href: '/user/dashboard', label: 'Feed', icon: Home },
@@ -32,6 +34,8 @@ export default function MobileNav() {
 
   useEffect(() => {
     let active = true
+    const session = getStoredSessionObject()
+    const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
 
     const loadUnreadAlerts = async () => {
       try {
@@ -52,13 +56,24 @@ export default function MobileNav() {
     const updateUnreadAlerts = () => loadUnreadAlerts()
     window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
     window.addEventListener('daet-messages-updated', updateUnreadAlerts)
-    const refreshTimer = window.setInterval(loadUnreadAlerts, 30000)
+    let realtimeChannel = null
+    if (userId && supabase?.channel) {
+      realtimeChannel = supabase.channel(`navigation-realtime-${userId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'info_notifications', filter: `user_id=eq.${userId}` }, () => {
+          if (active) void loadUnreadAlerts()
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, (payload) => {
+          const message = payload?.new || payload?.old
+          if (active && message && (message.sender_id === userId || message.recipient_id === userId)) void loadUnreadAlerts()
+        })
+        .subscribe()
+      }
 
     return () => {
       active = false
       window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
       window.removeEventListener('daet-messages-updated', updateUnreadAlerts)
-      window.clearInterval(refreshTimer)
+      if (realtimeChannel) supabase.removeChannel(realtimeChannel)
     }
   }, [])
 

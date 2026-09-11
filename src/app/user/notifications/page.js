@@ -91,16 +91,6 @@ export default function UserNotificationsPage() {
   }
 
   useEffect(() => {
-    if (!session) return undefined
-
-    const refreshTimer = window.setInterval(() => {
-      setRetryKey((value) => value + 1)
-    }, 15000)
-
-    return () => window.clearInterval(refreshTimer)
-  }, [session])
-
-  useEffect(() => {
     if (!session) {
       return undefined
     }
@@ -145,11 +135,10 @@ export default function UserNotificationsPage() {
 
     loadNotifications()
 
-    const pollTimer = window.setInterval(() => {
-      void loadNotifications()
-    }, 8000)
-
     let realtimeChannel = null
+    let active = true
+    let reconnectTimeout = null
+    let reconnectAttempt = 0
     if (supabase?.channel && userIdForRealtime) {
       realtimeChannel = supabase.channel(`notifications-realtime-${userIdForRealtime}`)
       realtimeChannel.on(
@@ -183,12 +172,47 @@ export default function UserNotificationsPage() {
           syncUnreadBadge()
         },
       )
-      realtimeChannel.subscribe()
+      realtimeChannel.on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'info_notifications',
+        filter: `user_id=eq.${userIdForRealtime}`,
+      }, (payload) => {
+        const updated = payload?.new
+        if (!updated?.id) return
+        setNotifications((previous) => previous.map((item) => item.id === updated.id ? { ...item, ...updated } : item))
+        syncUnreadBadge()
+      })
+      realtimeChannel.on('postgres_changes', {
+        event: 'DELETE',
+        schema: 'public',
+        table: 'info_notifications',
+        filter: `user_id=eq.${userIdForRealtime}`,
+      }, (payload) => {
+        const deletedId = payload?.old?.id
+        if (!deletedId) return
+        setNotifications((previous) => previous.filter((item) => item.id !== deletedId))
+        syncUnreadBadge()
+      })
+      realtimeChannel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          reconnectAttempt = 0
+          return
+        }
+        if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return
+        if (reconnectTimeout) window.clearTimeout(reconnectTimeout)
+        const delay = Math.min(5000, 1000 * (2 ** reconnectAttempt))
+        reconnectAttempt += 1
+        reconnectTimeout = window.setTimeout(() => {
+          if (active) realtimeChannel?.subscribe()
+        }, delay)
+      })
     }
 
     return () => {
-      window.clearInterval(pollTimer)
       if (realtimeChannel) {
+        active = false
+        if (reconnectTimeout) window.clearTimeout(reconnectTimeout)
         try {
           supabase.removeChannel(realtimeChannel)
         } catch {
@@ -459,8 +483,8 @@ export default function UserNotificationsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-slate-900">
-      <div className="mx-auto max-w-[1200px] px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#ecfeff_0%,#f8fafc_35%,#f1f5f9_100%)] text-slate-900">
+      <div className="mx-auto max-w-300 px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
         <section className="mb-4 rounded-[28px] border border-white/70 bg-white/80 px-3 py-4 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur md:px-5">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
@@ -531,7 +555,7 @@ export default function UserNotificationsPage() {
           ) : notifications.length ? (
             <div className="space-y-6">
               {groupedNotifications.map(([groupLabel, groupItems]) => (
-                <section key={groupLabel} className="rounded-[24px] border border-white/70 bg-white/70 p-3 shadow-sm backdrop-blur sm:p-4">
+                <section key={groupLabel} className="rounded-3xl border border-white/70 bg-white/70 p-3 shadow-sm backdrop-blur sm:p-4">
                   <div className="mb-3 flex items-center justify-between px-1">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">{groupLabel}</h2>
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{groupItems.length}</span>

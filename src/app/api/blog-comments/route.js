@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { parseMentionCandidates } from '@/lib/mentions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -40,18 +41,19 @@ function isMissingNotificationColumn(error) {
   return error && (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist/i.test(error.message || ''))
 }
 
-async function createBlogCommentNotification(adminSupabase, { recipientId, actorId, blogId, blogOwnerId, actorName, content, isReply }) {
+async function createBlogCommentNotification(adminSupabase, { recipientId, actorId, blogId, blogOwnerId, actorName, content, commentId, isReply }) {
   if (!recipientId || recipientId === actorId) return
 
   const actionText = isReply ? 'replied to your comment' : 'commented on your post'
   const notificationMessage = `${actorName} ${actionText}: ${content.slice(0, 120)}`
-  const link = `/user/blogs/${blogId}`
+  const link = `/user/blogs/${blogId}#comment-${commentId || ''}`
   const { data: existing } = await adminSupabase
     .from('info_notifications')
     .select('id')
     .eq('user_id', recipientId)
-    .eq('message', notificationMessage)
+    .eq('link', link)
     .eq('type', 'comment')
+    .eq('actor_id', actorId)
     .limit(1)
 
   if (existing?.length) return
@@ -66,6 +68,8 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
     updated_at: new Date().toISOString(),
     link,
     post_id: blogId,
+    comment_id: commentId || null,
+    reply_id: isReply ? commentId || null : null,
     post_owner_id: blogOwnerId,
     actor_id: actorId,
   }
@@ -85,6 +89,46 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
   if (notificationError && notificationError.code !== '23505') {
     console.error('Blog comment notification failed:', notificationError.message || notificationError)
   }
+}
+
+async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId) {
+  const mentions = []
+  for (const candidate of parseMentionCandidates(text)) {
+    const exactResult = await adminSupabase
+      .from('info_users')
+      .select('id, full_name')
+      .ilike('full_name', candidate.displayName)
+      .limit(2)
+    let user = (exactResult.data || []).length === 1 ? exactResult.data[0] : null
+    if (!user) {
+      const prefixResult = await adminSupabase
+        .from('info_users')
+        .select('id, full_name')
+        .ilike('full_name', `${candidate.displayName}%`)
+        .limit(2)
+      const prefixMatches = prefixResult.data || []
+      user = prefixMatches.length === 1 ? prefixMatches[0] : null
+    }
+
+    if (!user?.id || user.id === actorId || mentions.some((mention) => mention.mentioned_user_id === user.id)) continue
+    mentions.push({
+      mentioned_user_id: user.id,
+      display_name: candidate.displayName,
+      mentioned_by_user_id: actorId,
+      content_type: 'comment',
+      content_id: commentId,
+      mention_text: candidate.displayName,
+    })
+  }
+
+  if (mentions.length) {
+    await adminSupabase.from('mentions').upsert(mentions, {
+      onConflict: 'mentioned_user_id,content_type,content_id,mentioned_by_user_id',
+      ignoreDuplicates: true,
+    })
+  }
+
+  return mentions
 }
 
 export async function POST(request) {
@@ -134,13 +178,14 @@ export async function POST(request) {
 
     if (error) throw error
 
+    const { data: actor } = await adminSupabase
+      .from('info_users')
+      .select('full_name, email')
+      .eq('id', userId)
+      .maybeSingle()
+    const actorName = actor?.full_name || actor?.email || 'Someone'
+
     if (blog.created_by) {
-      const { data: actor } = await adminSupabase
-        .from('info_users')
-        .select('full_name, email')
-        .eq('id', userId)
-        .maybeSingle()
-      const actorName = actor?.full_name || actor?.email || 'Someone'
       const { data: parentComment } = parentId
         ? await adminSupabase.from('info_comments').select('user_id').eq('id', parentId).maybeSingle()
         : { data: null }
@@ -154,9 +199,29 @@ export async function POST(request) {
           blogOwnerId: blog.created_by,
           actorName,
           content,
+          commentId: data.id,
           isReply: Boolean(parentId && recipientId === parentComment?.user_id),
         })
       }
+    }
+
+    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id)
+    const mentionData = mentionRows.map((mention) => ({ mentioned_user_id: mention.mentioned_user_id, display_name: mention.display_name || mention.mention_text }))
+    if (mentionData.length) {
+      await adminSupabase.from('info_comments').update({ mention_data: mentionData }).eq('id', data.id)
+      data.mention_data = mentionData
+    }
+    for (const mention of mentionRows) {
+      await createBlogCommentNotification(adminSupabase, {
+        recipientId: mention.mentioned_user_id,
+        actorId: userId,
+        blogId,
+        blogOwnerId: blog.created_by,
+        actorName,
+        content,
+        commentId: data.id,
+        isReply: false,
+      })
     }
 
     return NextResponse.json({ success: true, comment: data })

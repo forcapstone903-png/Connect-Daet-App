@@ -2,12 +2,14 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, CornerDownRight, Heart, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc } from 'lucide-react'
+import { ChevronDown, ChevronUp, CornerDownRight, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { buildCommentThreads } from '@/lib/commentThreads'
 import Reactions from './Reactions'
 import UserProfileLink from './UserProfileLink'
+import MentionText from './MentionText'
+import MentionsAutoSuggest from './MentionsAutoSuggest'
 
 const STICKERS = ['😀', '😂', '😍', '😎', '🤔', '😢', '😡', '🥳', '🤝', '❤️']
 
@@ -45,6 +47,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
   const [body, setBody] = useState('')
+  const [mentionRefs, setMentionRefs] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [sortMode, setSortMode] = useState(sortBy)
   const [showGifPicker, setShowGifPicker] = useState(false)
@@ -109,6 +112,27 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
     return () => window.clearTimeout(timer)
   }, [loadComments, sortMode])
+
+  useEffect(() => {
+    if (!contentType || !contentId || !supabase) return undefined
+
+    const channel = supabase.channel(`content-comments-${contentType}-${contentId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'content_comments',
+        filter: `content_type=eq.${contentType}`,
+      }, (payload) => {
+        const changed = payload?.new || payload?.old
+        if (!changed || changed.content_id !== contentId) return
+        void loadComments()
+      })
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [contentType, contentId, loadComments])
 
   useEffect(() => {
     const loadCurrentUser = async () => {
@@ -239,6 +263,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           replyTo: replyTo || null,
           gifUrl: selectedGif || null,
           stickerUrl: selectedSticker || null,
+          mentionRefs,
         }),
       })
 
@@ -248,12 +273,27 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
       }
 
       setBody('')
+      setMentionRefs([])
       setReplyTo(null)
       setSelectedGif(null)
       setSelectedSticker(null)
       setShowGifPicker(false)
       setShowStickerPicker(false)
-      await loadComments()
+      const createdComment = payload.comment
+        ? {
+            ...payload.comment,
+            info_users: {
+              full_name: currentUser?.full_name || 'You',
+              profile_image_url: currentUser?.profile_image_url || null,
+            },
+          }
+        : null
+      if (createdComment) {
+        setComments((previous) => previous.some((comment) => comment.id === createdComment.id)
+          ? previous
+          : [...previous, createdComment])
+      }
+      void loadComments()
       window.dispatchEvent(new Event('daet-feed-refresh'))
 
       void trackUserActivity({
@@ -290,68 +330,18 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     await loadComments()
   }
 
-  const handleLikeComment = async (commentId) => {
-    if (!userId) {
-      alert('Please log in to like comments.')
-      return
-    }
-
-    const comment = comments.find((item) => item.id === commentId)
-    if (!comment) return
-
-    const wasLiked = Boolean(comment._liked_by_user)
-    setComments((previous) => previous.map((item) => item.id === commentId
-      ? { ...item, _liked_by_user: !wasLiked, _like_count: Math.max(0, countCommentLikes(item) + (wasLiked ? -1 : 1)) }
-      : item))
-
-    try {
-      const response = await fetch('/api/comments/reactions', {
-        method: wasLiked ? 'DELETE' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commentId }),
-      })
-
-      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to update the comment reaction right now.' }))
-      if (!response.ok || !payload.success) {
-        throw new Error(payload.message || 'Unable to update the comment reaction right now.')
-      }
-
-      void trackUserActivity({
-        userId,
-        activityType: 'react_content',
-        entityType: 'comment',
-        entityId: commentId,
-        description: `Liked a comment on ${contentTitle || contentType}`,
-        metadata: { contentTitle: contentTitle || contentType, contentType, contentId },
-      })
-    } catch (error) {
-      console.error('Failed to react to comment:', {
-        code: error?.code,
-        message: error?.message,
-        details: error?.details,
-        hint: error?.hint,
-        raw: error,
-      })
-      setComments((previous) => previous.map((item) => item.id === commentId
-        ? { ...item, _liked_by_user: wasLiked, _like_count: countCommentLikes(item) + (wasLiked ? 1 : -1) }
-        : item))
-      alert(error?.message || 'Unable to update the comment reaction right now.')
-    }
-  }
-
   const renderComment = (comment, depth = 0) => {
     const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
     const isOwner = userId === comment.user_id
     const canPin = userId && contentOwnerId && userId === contentOwnerId
     const replyCount = countNestedReplies(comment)
-    const likeCount = countCommentLikes(comment)
     const isMenuOpen = openMenuId === comment.id
     const isEditing = editingCommentId === comment.id
     const isReplyExpanded = Boolean(expandedReplyIds[comment.id])
 
     return (
-      <div key={comment.id} className={`${depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''}`}>
+      <div id={`comment-${comment.id}`} key={comment.id} className={`scroll-mt-24 ${depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''}`}>
         <div className={`rounded-[18px] border p-3 shadow-sm transition-all duration-200 hover:shadow-md ${comment.is_pinned ? 'border-amber-200 bg-amber-50/60' : 'border-slate-200 bg-slate-50/80'}`}>
           {comment.is_pinned && (
             <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
@@ -464,19 +454,21 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                   </div>
                 </div>
               ) : (
-                <p className="mt-1.5 text-sm leading-relaxed text-slate-700">{comment.body}</p>
+                <MentionText text={comment.body} mentions={comment.mention_data} className="mt-1.5 text-sm leading-relaxed text-slate-700" />
               )}
 
               {!isEditing && (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void handleLikeComment(comment.id)}
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1.5 text-[10px] font-semibold transition hover:bg-slate-200 active:scale-[0.98] ${comment._liked_by_user ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-600'}`}
-                  >
-                    <Heart className={`h-3.5 w-3.5 ${comment._liked_by_user ? 'fill-current' : ''}`} />
-                    {likeCount > 0 ? `${likeCount} like${likeCount === 1 ? '' : 's'}` : 'Like'}
-                  </button>
+                  <div className="min-w-42.5 max-w-full">
+                    <Reactions
+                      contentType="comment"
+                      contentId={comment.id}
+                      userId={userId}
+                      contentTitle={contentTitle || contentType}
+                      compact
+                      label="reactions"
+                    />
+                  </div>
 
                   <button
                     type="button"
@@ -514,12 +506,15 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                   )}
                 </UserProfileLink>
                 <div className="flex-1">
-                  <textarea
+                  <MentionsAutoSuggest
                     value={body}
-                    onChange={(e) => setBody(e.target.value)}
+                    onChange={setBody}
                     placeholder={`Reply to ${authorName}...`}
                     rows={2}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:bg-white"
+                    userId={userId}
+                    onMentionAdded={(user) => setMentionRefs((previous) => previous.some((item) => item.id === user.id)
+                      ? previous
+                      : [...previous, { id: user.id, displayName: user.full_name || user.email }])}
                   />
                 </div>
               </div>
@@ -587,12 +582,15 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           </UserProfileLink>
 
           <div className="flex-1">
-            <textarea
+            <MentionsAutoSuggest
               value={body}
-              onChange={(e) => setBody(e.target.value)}
+              onChange={setBody}
               placeholder="Write a comment…"
-                  rows={compact ? 1 : 2}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              rows={compact ? 1 : 2}
+              userId={userId}
+              onMentionAdded={(user) => setMentionRefs((previous) => previous.some((item) => item.id === user.id)
+                ? previous
+                : [...previous, { id: user.id, displayName: user.full_name || user.email }])}
             />
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">

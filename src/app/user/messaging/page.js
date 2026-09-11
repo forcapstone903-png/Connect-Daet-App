@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Archive, Mail, Plus, Search, Send, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import { getStoredSession } from '@/lib/authCookies'
+import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
+import { supabase } from '@/lib/supabase'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
@@ -98,9 +99,17 @@ export default function UserMessagingPage() {
 
     if (getStoredSession()) {
       void loadMessages()
-      const refreshTimer = window.setInterval(() => {
-        if (active) void loadMessages()
-      }, 5000)
+      const session = getStoredSessionObject()
+      const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
+      let realtimeChannel = null
+      if (userId && supabase?.channel) {
+        realtimeChannel = supabase.channel(`inbox-realtime-${userId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, (payload) => {
+            const message = payload?.new || payload?.old
+            if (active && message && (message.sender_id === userId || message.recipient_id === userId)) void loadMessages()
+          })
+          .subscribe()
+          }
 
       const refreshInbox = () => {
         if (active) void loadMessages()
@@ -109,8 +118,8 @@ export default function UserMessagingPage() {
 
       return () => {
         active = false
-        window.clearInterval(refreshTimer)
         window.removeEventListener('daet-messages-updated', refreshInbox)
+        if (realtimeChannel) supabase.removeChannel(realtimeChannel)
       }
     }
 

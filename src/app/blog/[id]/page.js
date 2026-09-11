@@ -26,6 +26,8 @@ import {
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import Reactions from '@/app/components/user/Reactions'
+import MentionText from '@/app/components/user/MentionText'
 
 const STORAGE_KEYS = {
   shareCounts: 'daet_blog_share_counts',
@@ -105,7 +107,6 @@ export default function PublicBlogDetailPage() {
   const blogId = params?.id
   const [blog, setBlog] = useState(null)
   const [comments, setComments] = useState([])
-  const [relatedBlogs, setRelatedBlogs] = useState([])
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState(null)
   const [userName, setUserName] = useState('Guest')
@@ -172,17 +173,6 @@ export default function PublicBlogDetailPage() {
 
           setComments(commentsPayload.comments || [])
           setVisibleComments(INITIAL_COMMENTS)
-
-          const { data: relatedData } = await supabase
-            .from('info_blogs')
-            .select('*, info_users(full_name, email)')
-            .eq('status', 'published')
-            .eq('category', blogData.category)
-            .neq('id', blogId)
-            .order('views', { ascending: false })
-            .limit(3)
-
-          setRelatedBlogs(relatedData || [])
 
           if (session?.user?.id) {
             const { data: saveData } = await supabase
@@ -744,7 +734,7 @@ export default function PublicBlogDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    <p className="mt-2 text-sm text-slate-700">{comment.content}</p>
+                    <MentionText text={comment.content} mentions={comment.mention_data} className="mt-2 text-sm text-slate-700" />
                   )}
 
                   {deletingCommentId === comment.id && (
@@ -772,10 +762,16 @@ export default function PublicBlogDetailPage() {
                   )}
 
                   <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-                    <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
-                      <Heart className="h-3.5 w-3.5" />
-                      <span className="font-semibold">{comment.likes || 0} Likes</span>
-                    </button>
+                    <div className="min-w-42.5 max-w-full">
+                      <Reactions
+                        contentType="comment"
+                        contentId={comment.id}
+                        userId={userId}
+                        contentTitle={blog?.title || 'article'}
+                        compact
+                        label="reactions"
+                      />
+                    </div>
                     {(comment.replies || []).length > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600">
                         <MessageSquare className="h-3.5 w-3.5" />
@@ -807,34 +803,6 @@ export default function PublicBlogDetailPage() {
           )}
         </section>
 
-        {relatedBlogs.length > 0 && (
-          <section>
-            <h2 className="mb-6 text-2xl font-bold text-slate-900">Related Articles</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {relatedBlogs.map((relatedBlog) => (
-                <Link key={relatedBlog.id} href={`/blog/${relatedBlog.id}`} className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:shadow-lg hover:border-sky-200">
-                  <div className="relative h-40 w-full overflow-hidden bg-gradient-to-br from-sky-400 to-blue-600">
-                    {relatedBlog.featured_image ? (
-                      <img alt={relatedBlog.title} src={relatedBlog.featured_image} className="h-full w-full object-cover transition group-hover:scale-105" />
-                    ) : (
-                      <div className="flex h-full items-center justify-center"><span className="text-3xl opacity-50">📰</span></div>
-                    )}
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition" />
-                  </div>
-
-                  <div className="p-4">
-                    <h3 className="text-base font-bold text-slate-900 line-clamp-2 group-hover:text-sky-700">{relatedBlog.title}</h3>
-                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{relatedBlog.excerpt}</p>
-                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-500">
-                      <Eye className="h-3.5 w-3.5" />
-                      {relatedBlog.views || 0} views
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        )}
       </div>
     </main>
   )

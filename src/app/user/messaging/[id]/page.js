@@ -5,6 +5,12 @@ import Link from 'next/link'
 import { ArrowLeft, CornerUpLeft, LoaderCircle, Plus, Search, Send, Smile, Trash2, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
+import { supabase } from '@/lib/supabase'
+import { getStoredSessionObject } from '@/lib/authCookies'
+
+const TYPING_START_DELAY_MS = 180
+const TYPING_STOP_DELAY_MS = 1800
+const SEEN_UPDATE_DELAY_MS = 250
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -66,6 +72,7 @@ export default function ConversationPage() {
   const [otherUser, setOtherUser] = useState(null)
   const [messages, setMessages] = useState([])
   const [body, setBody] = useState('')
+  const [otherUserTyping, setOtherUserTyping] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
@@ -96,6 +103,16 @@ export default function ConversationPage() {
   const selectedMessageRef = useRef(null)
   const isNearBottomRef = useRef(true)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
+  const realtimeChannelRef = useRef(null)
+  const typingStartTimeoutRef = useRef(null)
+  const typingTimeoutRef = useRef(null)
+  const seenTimeoutRef = useRef(null)
+  const reconnectTimeoutRef = useRef(null)
+  const reconnectAttemptRef = useRef(0)
+  const currentUserRef = useRef(null)
+  const otherUserRef = useRef(null)
+  const scrollIntentRef = useRef(null)
+  const initialMessagesLoadedRef = useRef(false)
 
   useEffect(() => {
     const syncViewport = () => {
@@ -204,13 +221,27 @@ export default function ConversationPage() {
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
   }, [])
 
-  const scrollConversationToBottom = () => {
+  const scrollConversationToBottom = (behavior = 'auto') => {
     const messagesScroller = messagesScrollRef.current
     if (!messagesScroller) return
     requestAnimationFrame(() => {
-      messagesScroller.scrollTop = messagesScroller.scrollHeight
+      messagesScroller.scrollTo({ top: messagesScroller.scrollHeight, behavior })
+      isNearBottomRef.current = true
+      setIsNearBottom(true)
+      setShowNewMessageIndicator(false)
     })
   }
+
+  useEffect(() => {
+    if (loading || !messages.length) return
+
+    const intent = scrollIntentRef.current
+    if (!intent) return
+    scrollIntentRef.current = null
+
+    const behavior = intent === 'realtime' ? 'smooth' : 'auto'
+    requestAnimationFrame(() => scrollConversationToBottom(behavior))
+  }, [messages, loading])
 
   const retryConversation = () => {
     setError('')
@@ -254,6 +285,8 @@ export default function ConversationPage() {
 
       setCurrentUser(result.current_user)
       setOtherUser(result.other_user)
+      currentUserRef.current = result.current_user
+      otherUserRef.current = result.other_user
 
       const incomingMessages = Array.isArray(result.messages) ? result.messages : []
       setMessages((previousMessages) => {
@@ -268,21 +301,9 @@ export default function ConversationPage() {
         return merged
       })
 
-      await fetch(`/api/messages/${otherUserId}`, {
-        method: 'PATCH',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ markRead: true }),
-      })
-
-      window.dispatchEvent(new Event('daet-messages-updated'))
-      const scroller = messagesScrollRef.current
-      if (scroller && isNearBottomRef.current) {
-        requestAnimationFrame(() => {
-          scroller.scrollTop = scroller.scrollHeight
-        })
-      } else if (scroller && !isNearBottomRef.current) {
-        setShowNewMessageIndicator(true)
+      if (!initialMessagesLoadedRef.current && incomingMessages.length > 0) {
+        initialMessagesLoadedRef.current = true
+        scrollIntentRef.current = 'initial'
       }
     } catch (loadError) {
       const errorMessage = loadError?.message === 'Failed to fetch'
@@ -295,22 +316,147 @@ export default function ConversationPage() {
     }
   }
 
+  const markConversationRead = async () => {
+    if (!otherUserId || document.visibilityState !== 'visible') return
+
+    const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ markRead: true }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) return
+
+    const seenAt = new Date().toISOString()
+    setMessages((previous) => previous.map((message) => (
+      message.sender_id === otherUserId && message.recipient_id === currentUserRef.current?.id && !message.read_at
+        ? { ...message, read_at: seenAt }
+        : message
+    )))
+    window.dispatchEvent(new Event('daet-messages-updated'))
+  }
+
+  const scheduleMarkConversationRead = () => {
+    if (seenTimeoutRef.current) window.clearTimeout(seenTimeoutRef.current)
+    seenTimeoutRef.current = window.setTimeout(() => {
+      void markConversationRead()
+    }, SEEN_UPDATE_DELAY_MS)
+  }
+
+  const trackTyping = async (typing) => {
+    const channel = realtimeChannelRef.current
+    if (!channel || !currentUserRef.current?.id) return
+    try {
+      await channel.track({ user_id: currentUserRef.current.id, typing: Boolean(typing), updated_at: Date.now() })
+    } catch {
+      // Presence is best-effort and never blocks message sending.
+    }
+  }
+
+  const handleBodyChange = (event) => {
+    const nextBody = event.target.value
+    setBody(nextBody)
+    if (typingStartTimeoutRef.current) window.clearTimeout(typingStartTimeoutRef.current)
+    if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
+    if (nextBody.trim()) {
+      typingStartTimeoutRef.current = window.setTimeout(() => {
+        void trackTyping(true)
+      }, TYPING_START_DELAY_MS)
+      typingTimeoutRef.current = window.setTimeout(() => {
+        void trackTyping(false)
+      }, TYPING_STOP_DELAY_MS)
+    } else {
+      void trackTyping(false)
+    }
+  }
+
   useEffect(() => {
     if (!otherUserId) return undefined
 
     let active = true
-    let pollTimer = null
+    const storedSession = getStoredSessionObject()
+    const currentUserId = storedSession?.user_id || storedSession?.id || ''
+    void loadConversation(false).then(() => {
+      if (active) scheduleMarkConversationRead()
+    })
 
-    void loadConversation(false)
-    pollTimer = window.setInterval(() => {
-      if (active) void loadConversation(true)
-    }, 5000)
+    let channel = null
+    const channelName = `conversation-${[currentUserId, otherUserId].sort().join('-')}`
+    const createConversationChannel = () => {
+      if (!active || !supabase?.channel) return
+
+      const nextChannel = supabase.channel(channelName)
+      channel = nextChannel
+      realtimeChannelRef.current = nextChannel
+      nextChannel
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, (payload) => {
+          if (!active) return
+          const message = payload?.new || payload?.old
+          if (!message || ![message.sender_id, message.recipient_id].includes(otherUserId) || ![message.sender_id, message.recipient_id].includes(currentUserId)) return
+
+          if (payload.eventType === 'INSERT') {
+            const shouldFollow = isNearBottomRef.current
+            setMessages((previous) => previous.some((item) => item.id === message.id)
+              ? previous
+              : [...previous, { ...message, sender_user: message.sender_id === currentUserId ? currentUserRef.current : otherUserRef.current, recipient_user: message.recipient_id === currentUserId ? currentUserRef.current : otherUserRef.current }].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)))
+            if (shouldFollow) {
+              scrollIntentRef.current = 'realtime'
+            } else {
+              setShowNewMessageIndicator(true)
+            }
+            if (message.sender_id === otherUserId && document.visibilityState === 'visible') scheduleMarkConversationRead()
+            window.dispatchEvent(new Event('daet-messages-updated'))
+          } else if (payload.eventType === 'UPDATE') {
+            setMessages((previous) => previous.map((item) => item.id === message.id ? { ...item, ...message } : item))
+          } else if (payload.eventType === 'DELETE') {
+            setMessages((previous) => previous.filter((item) => item.id !== message.id))
+          }
+        })
+        .on('presence', { event: 'sync' }, () => {
+          const states = nextChannel.presenceState()
+          const otherState = Object.values(states).flat().find((state) => state.user_id === otherUserId)
+          setOtherUserTyping(Boolean(otherState?.typing))
+        })
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            reconnectAttemptRef.current = 0
+            return
+          }
+          if (!active || !['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return
+          if (channel !== nextChannel) return
+          if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current)
+          const delay = Math.min(5000, 1000 * (2 ** reconnectAttemptRef.current))
+          reconnectAttemptRef.current += 1
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            if (!active || channel !== nextChannel) return
+            supabase.removeChannel(nextChannel)
+            createConversationChannel()
+          }, delay)
+        })
+    }
+    createConversationChannel()
 
     return () => {
       active = false
-      if (pollTimer) window.clearInterval(pollTimer)
+      if (typingStartTimeoutRef.current) window.clearTimeout(typingStartTimeoutRef.current)
+      if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
+      if (seenTimeoutRef.current) window.clearTimeout(seenTimeoutRef.current)
+      if (reconnectTimeoutRef.current) window.clearTimeout(reconnectTimeoutRef.current)
+      void trackTyping(false)
+      setOtherUserTyping(false)
+      if (channel) supabase.removeChannel(channel)
+      realtimeChannelRef.current = null
     }
   }, [otherUserId])
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') scheduleMarkConversationRead()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [otherUserId, currentUser?.id])
 
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow
@@ -412,7 +558,11 @@ export default function ConversationPage() {
         const ordered = [...seen.values()].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
         return ordered
       })
+      scrollIntentRef.current = 'send'
       setBody('')
+      if (typingStartTimeoutRef.current) window.clearTimeout(typingStartTimeoutRef.current)
+      if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current)
+      void trackTyping(false)
       setMediaFile(null)
       setMediaPreview('')
       setMediaType(null)
@@ -424,7 +574,6 @@ export default function ConversationPage() {
       window.dispatchEvent(new Event('daet-messages-updated'))
       window.dispatchEvent(new Event('daet-notifications-updated'))
       if (mediaInputRef.current) mediaInputRef.current.value = ''
-      requestAnimationFrame(scrollConversationToBottom)
     } catch (sendError) {
       setError(sendError.message)
     } finally {
@@ -555,7 +704,7 @@ export default function ConversationPage() {
           </div>
         ) : (
           <>
-            <div className="messages-container min-h-0 flex-1 w-full overflow-hidden bg-white">
+            <div className="messages-container relative min-h-0 flex-1 w-full overflow-hidden bg-white">
               <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="messages-scroll h-full min-h-0 w-full space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain">
               {messages.length ? messages.map((message) => {
                 const isOwnMessage = message.sender_id === currentUser?.id
@@ -582,7 +731,7 @@ export default function ConversationPage() {
                         {message.reply_to_message_id && <button type="button" onClick={() => scrollToMessage(message.reply_to_message_id)} className={`mb-2 block w-full border-l-2 pl-2 text-left text-xs ${isOwnMessage ? 'border-white/60 text-white/80' : 'border-[#147d75] text-slate-500'}`}><span className="block font-bold">↪ {originalMessage ? (originalMessage.sender_id === currentUser?.id ? currentUser?.full_name : otherUser?.full_name) || 'Community member' : 'Original message was deleted'}</span><span className="block truncate">{getReplyPreview(originalMessage)}</span></button>}
                         {message.media_url && (message.message_type === 'video' || message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
                         {message.body && <p>{message.body}</p>}
-                        <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}</time>
+                        <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}{isOwnMessage && message.read_at ? ' · Seen' : ''}</time>
                       </div>
                       {isActionOpen && <div onPointerDown={(event) => event.stopPropagation()} className={`message-action-menu absolute z-10 flex items-center gap-1 rounded-full border border-slate-200 bg-white p-1 shadow-lg ${isOwnMessage ? 'right-0' : 'left-0'} -top-11`}><button type="button" onClick={() => selectReply(message)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"><CornerUpLeft className="h-3.5 w-3.5" /> Reply</button><button type="button" onClick={() => { setMessageToDelete(message); setActionMessageId(null) }} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete</button></div>}
                     </div>
@@ -591,8 +740,18 @@ export default function ConversationPage() {
                 )
               }) : <p className="py-10 text-center text-sm text-slate-500">No messages yet. Start the conversation.</p>}
               </div>
+              {showNewMessageIndicator && !isNearBottom && (
+                <button
+                  type="button"
+                  onClick={() => scrollConversationToBottom('smooth')}
+                  className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full bg-[#147d75] px-3 py-1.5 text-xs font-bold text-white shadow-lg transition hover:bg-[#0f685f]"
+                >
+                  New messages
+                </button>
+              )}
             </div>
             <div className="message-composer relative flex flex-[0_0_auto] w-full flex-col bg-white">
+              {otherUserTyping && <p className="border-t border-slate-100 px-4 pt-2 text-left text-xs font-semibold text-slate-500">{otherUser?.full_name || 'Community member'} is typing...</p>}
               {replyTo && <div className="flex items-start gap-3 border-t border-slate-200 bg-slate-50 px-3 py-2.5 sm:px-4"><CornerUpLeft className="mt-0.5 h-4 w-4 shrink-0 text-[#147d75]" /><div className="min-w-0 flex-1"><p className="text-xs font-bold text-slate-700">Replying to {replyTo.sender_id === currentUser?.id ? currentUser?.full_name || 'You' : otherUser?.full_name || 'Community member'}</p><p className="truncate text-xs text-slate-500">{getReplyPreview(replyTo)}</p></div><button type="button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"><X className="h-4 w-4" /></button></div>}
               {selectedMedia && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2"><img src={selectedMedia.url} alt={selectedMedia.type === 'sticker' ? 'Sticker preview' : selectedMedia.type === 'gif' ? 'GIF preview' : 'Attachment preview'} className="max-h-32 max-w-full rounded object-contain" /><button type="button" onClick={() => setSelectedMedia(null)} aria-label="Remove selected media" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
               {mediaPreview && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2">{mediaType === 'video' ? <video src={mediaPreview} controls className="max-h-32 max-w-full rounded" /> : <img src={mediaPreview} alt="Attachment preview" className="max-h-32 max-w-full rounded object-contain" />}<button type="button" onClick={clearMedia} aria-label="Remove attachment" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
@@ -607,7 +766,7 @@ export default function ConversationPage() {
                   </div>}
                 </div>
                 <div className="message-input-wrapper relative min-w-0 flex-1">
-                  <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write a message..." rows={1} className="message-input h-12 w-full resize-none border border-slate-200 bg-slate-50 px-3 py-2.5 pr-11 text-sm outline-none focus:border-[#147d75]" />
+                  <textarea value={body} onChange={handleBodyChange} placeholder="Write a message..." rows={1} className="message-input h-12 w-full resize-none border border-slate-200 bg-slate-50 px-3 py-2.5 pr-11 text-sm outline-none focus:border-[#147d75]" />
                   <button type="button" onClick={() => setPickerOpen((open) => !open)} aria-label="Open emoji picker" title="Emoji picker" className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"><Smile className="h-4 w-4" /></button>
                 </div>
                 <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile && !selectedMedia)} className="send-button inline-flex h-12 shrink-0 items-center justify-center gap-2 bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
@@ -617,7 +776,7 @@ export default function ConversationPage() {
                   <>
                     <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
                     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-                      {gifsLoading ? <div className="flex items-center justify-center py-10 text-sm text-slate-500"><LoaderCircle className="mr-2 h-4 w-4 animate-spin" />Loading GIFs...</div> : gifError ? <div className="flex min-h-[180px] flex-col items-center justify-center gap-3 py-8 text-center text-sm text-slate-600"><p>Couldn&apos;t load GIFs</p><button type="button" onClick={() => void loadGifs(pickerSearch || 'happy')} className="rounded-full bg-[#147d75] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0f685f]">Try again</button></div> : gifs.length ? <div className="grid grid-cols-2 gap-2">{gifs.map((gif) => <button key={gif.id} type="button" onClick={() => chooseMedia('gif', gif.url)} className="overflow-hidden rounded-xl bg-slate-100 hover:ring-2 hover:ring-[#147d75]"><img src={gif.url} alt={gif.title} className="h-24 w-full object-cover" /></button>)}</div> : <p className="py-10 text-center text-sm text-slate-500">No GIFs found.</p>}
+                      {gifsLoading ? <div className="flex items-center justify-center py-10 text-sm text-slate-500"><LoaderCircle className="mr-2 h-4 w-4 animate-spin" />Loading GIFs...</div> : gifError ? <div className="flex min-h-45 flex-col items-center justify-center gap-3 py-8 text-center text-sm text-slate-600"><p>Couldn&apos;t load GIFs</p><button type="button" onClick={() => void loadGifs(pickerSearch || 'happy')} className="rounded-full bg-[#147d75] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0f685f]">Try again</button></div> : gifs.length ? <div className="grid grid-cols-2 gap-2">{gifs.map((gif) => <button key={gif.id} type="button" onClick={() => chooseMedia('gif', gif.url)} className="overflow-hidden rounded-xl bg-slate-100 hover:ring-2 hover:ring-[#147d75]"><img src={gif.url} alt={gif.title} className="h-24 w-full object-cover" /></button>)}</div> : <p className="py-10 text-center text-sm text-slate-500">No GIFs found.</p>}
                     </div>
                   </>
                 ) : pickerCategory === 'Stickers' ? (

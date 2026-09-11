@@ -22,6 +22,12 @@ CREATE TABLE IF NOT EXISTS public.daily_feedback_votes (
 ALTER TABLE public.daily_feedback_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.daily_feedback_votes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "daily_feedback_questions_select_active" ON public.daily_feedback_questions;
+DROP POLICY IF EXISTS "daily_feedback_questions_manage_admin" ON public.daily_feedback_questions;
+DROP POLICY IF EXISTS "daily_feedback_votes_select_all" ON public.daily_feedback_votes;
+DROP POLICY IF EXISTS "daily_feedback_votes_insert_own" ON public.daily_feedback_votes;
+DROP POLICY IF EXISTS "daily_feedback_votes_update_own" ON public.daily_feedback_votes;
+
 CREATE POLICY "daily_feedback_questions_select_active" ON public.daily_feedback_questions
   FOR SELECT USING (is_active = TRUE OR public.is_admin(auth.uid()));
 CREATE POLICY "daily_feedback_questions_manage_admin" ON public.daily_feedback_questions

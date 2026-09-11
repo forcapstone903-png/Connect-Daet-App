@@ -20,9 +20,11 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   const [showPicker, setShowPicker] = useState(false)
   const [loading, setLoading] = useState(false)
   const pickerRef = useRef(null)
+  const mutationVersionRef = useRef(0)
 
   const loadReactions = useCallback(async () => {
     if (!contentId) return
+    const requestVersion = mutationVersionRef.current
     try {
       const [allResult, userResult] = await Promise.all([
         supabase
@@ -45,6 +47,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
       ;(allResult.data || []).forEach((row) => {
         counts[row.reaction_type] = (counts[row.reaction_type] || 0) + 1
       })
+      if (requestVersion !== mutationVersionRef.current) return
       setReactionCounts(counts)
       setUserReaction(userResult.data?.reaction_type || null)
     } catch (err) {
@@ -70,9 +73,11 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
           event: '*',
           schema: 'public',
           table: 'content_reactions',
-          filter: `content_type=eq.${contentType} AND content_id=eq.${contentId}`,
+          filter: `content_type=eq.${contentType}`,
         },
-        () => {
+        (payload) => {
+          const changed = payload?.new || payload?.old
+          if (!changed || changed.content_id !== contentId) return
           void loadReactions()
         }
       )
@@ -115,6 +120,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
     const previousReaction = userReaction
     const nextReaction = previousReaction === reactionType ? null : reactionType
     const previousCounts = reactionCounts
+    mutationVersionRef.current += 1
 
     setUserReaction(nextReaction)
     setReactionCounts((prev) => {
