@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, BellRing, CheckCheck, MessageCircle, ShieldAlert, Sparkles, Trash2, Volume2 } from 'lucide-react'
+import { Angry, Bell, BellRing, CheckCheck, Frown, Heart, Laugh, MessageCircle, Repeat2, Search, ShieldAlert, Sparkles, ThumbsUp, Trash2, UserRoundPlus, Volume2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 
@@ -49,8 +49,56 @@ function formatDate(dateValue) {
   })
 }
 
+function formatRelativeTime(dateValue) {
+  if (!dateValue) return 'Just now'
+
+  const date = new Date(dateValue)
+  if (Number.isNaN(date.getTime())) return 'Just now'
+
+  const diffSeconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+
+  if (diffSeconds < 60) return `${diffSeconds}s`
+  if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m`
+  if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h`
+
+  return `${Math.floor(diffSeconds / 86400)}d`
+}
+
 function getInitials(name = '') {
   return String(name).split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
+}
+
+function getNotificationMessageText(notification, actorName) {
+  const rawMessage = String(notification?.message || notification?.title || '')
+  const actorPrefix = String(actorName || '').trim()
+
+  let normalizedMessage = rawMessage
+
+  if (actorPrefix) {
+    normalizedMessage = normalizedMessage.replace(new RegExp(`^${actorPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+`, 'i'), '')
+  }
+
+  normalizedMessage = normalizedMessage.replace(/\s*\((?:like|love|laugh|wow|sad|angry)\)\.?\s*$/i, '').trim()
+
+  const commentMatch = normalizedMessage.match(/^(commented on your (?:post|comment)|replied to your comment)\s*:\s*(.+)$/i)
+  if (commentMatch?.[1] && commentMatch[2]) {
+    const trailing = commentMatch[2].trim()
+    const quotedTrailing = trailing.startsWith('"') ? trailing : `"${trailing.replace(/"+$/, '')}"`
+    return `${commentMatch[1].trim()}: ${quotedTrailing}`
+  }
+
+  return normalizedMessage || rawMessage
+}
+
+function getNotificationReactionType(notification) {
+  const directReactionType = String(notification?.reaction_type || notification?.metadata?.reaction_type || '')
+  if (directReactionType) return directReactionType.toLowerCase()
+
+  const rawMessage = String(notification?.message || notification?.title || '')
+  const match = rawMessage.match(/\(([^)]+)\)\.?\s*$/)
+  if (match?.[1]) return match[1].trim().toLowerCase()
+
+  return ''
 }
 
 function getNotificationActorId(notification) {
@@ -246,14 +294,13 @@ export default function UserNotificationsPage() {
   const unreadCount = notifications.filter((item) => !item.is_read).length
 
   const groupedNotifications = useMemo(() => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const groups = { Today: [], Earlier: [] }
+    const groups = { New: [], Earlier: [] }
+
     notifications.forEach((notification) => {
-      const createdAt = new Date(notification.created_at || 0)
-      if (!Number.isNaN(createdAt.getTime()) && createdAt >= today) groups.Today.push(notification)
-      else groups.Earlier.push(notification)
+      if (notification.is_read) groups.Earlier.push(notification)
+      else groups.New.push(notification)
     })
+
     return Object.entries(groups).filter(([, items]) => items.length)
   }, [notifications])
 
@@ -263,6 +310,43 @@ export default function UserNotificationsPage() {
     if (notification.type === 'activity') return MessageCircle
     if (notification.type === 'warning' || notification.type === 'error') return ShieldAlert
     return Bell
+  }
+
+  const getNotificationActionIcon = (notification) => {
+    const normalizedType = String(notification?.type || '').toLowerCase()
+    const reactionType = getNotificationReactionType(notification)
+
+    if (normalizedType === 'reaction' || reactionType) {
+      switch (reactionType) {
+        case 'love':
+          return { emoji: '❤️', className: 'text-rose-500' }
+        case 'laugh':
+          return { emoji: '😂', className: 'text-amber-500' }
+        case 'wow':
+          return { emoji: '😮', className: 'text-violet-500' }
+        case 'sad':
+          return { emoji: '😢', className: 'text-sky-500' }
+        case 'angry':
+          return { emoji: '😡', className: 'text-red-500' }
+        case 'like':
+        default:
+          return { emoji: '👍', className: 'text-sky-500' }
+      }
+    }
+
+    if (normalizedType === 'comment' || normalizedType === 'reply') {
+      return { emoji: '💬', className: 'text-sky-600' }
+    }
+
+    if (normalizedType === 'follow') {
+      return { emoji: '👤', className: 'text-indigo-500' }
+    }
+
+    if (normalizedType === 'repost' || normalizedType === 'share') {
+      return { emoji: '🔁', className: 'text-emerald-500' }
+    }
+
+    return { emoji: '🔔', className: 'text-slate-500' }
   }
 
   const getNotificationHref = (notification) => {
@@ -313,6 +397,42 @@ export default function UserNotificationsPage() {
   const getActorProfileHref = (notification) => {
     const actorId = getNotificationActorId(notification)
     return actorId ? `/user/profile/${encodeURIComponent(actorId)}` : null
+  }
+
+  const NotificationAvatar = ({ notification, actor, actorName, actorProfileHref }) => {
+    const { emoji, className } = getNotificationActionIcon(notification)
+    const normalizedType = String(notification?.type || '').toLowerCase()
+    const isCommentType = normalizedType === 'comment' || normalizedType === 'reply'
+    const avatarContent = actor?.profile_image_url ? (
+      <img src={actor.profile_image_url} alt={actorName} className="h-full w-full object-cover" />
+    ) : (
+      <span className="text-xs font-black text-slate-600">{getInitials(actorName)}</span>
+    )
+
+    const avatarElement = actorProfileHref ? (
+      <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-xs font-black text-slate-600" aria-label={`Open ${actorName}'s profile`}>
+        {avatarContent}
+      </Link>
+    ) : (
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-xs font-black text-slate-600">
+        {avatarContent}
+      </div>
+    )
+
+    return (
+      <div className="relative shrink-0">
+        {avatarElement}
+        {isCommentType ? (
+          <span className="absolute -bottom-2 -right-1 flex h-7 w-7 items-center justify-center rounded-[14px] bg-sky-500 shadow-sm" aria-label="Notification action">
+            <MessageCircle className="h-4 w-4 text-white" fill="white" />
+          </span>
+        ) : (
+          <span className={`absolute -bottom-2 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[1.25rem] leading-none shadow-none ${className}`} aria-label="Notification action">
+            {emoji}
+          </span>
+        )}
+      </div>
+    )
   }
 
   const getFollowActionCompletedFromNotification = (notification) => {
@@ -516,42 +636,29 @@ export default function UserNotificationsPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,#ecfeff_0%,#f8fafc_35%,#f1f5f9_100%)] text-slate-900">
       <div className="mx-auto max-w-300 px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
-        <section className="mb-4 rounded-[28px] border border-white/70 bg-white/80 px-3 py-4 shadow-[0_20px_80px_rgba(15,23,42,0.08)] backdrop-blur md:px-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="mb-2 flex items-center gap-2">
-                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#dff7ee] text-emerald-700">
-                  <BellRing className="h-4 w-4" />
-                </span>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-400">Alerts</p>
-              </div>
-              <h1 className="text-lg font-black tracking-tight text-slate-900 sm:text-2xl">Real-time notifications</h1>
-            </div>
+        <header className="mb-4 border-b border-slate-200 bg-white pb-3">
+          <div className="flex items-center justify-between gap-3 px-1 py-2">
+            <h1 className="text-[28px] font-black tracking-[-0.06em] text-slate-900">Notifications</h1>
+            <button type="button" aria-label="Search notifications" title="Search notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
+              <Search className="h-4 w-4" />
+            </button>
+          </div>
 
-            <div className="flex shrink-0 items-center gap-1.5">
-              <button type="button" onClick={notifyUrgent} aria-label="Toggle notification sound" title="Notification sound" className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
-                <Volume2 className="h-4 w-4" />
+          <div className="mt-2 flex items-center justify-between gap-3 px-1">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+              <BellRing className="h-3.5 w-3.5" />
+              Alerts
+            </div>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="text-xs font-semibold text-sky-700 disabled:opacity-40">
+                Mark all read
               </button>
-              <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 disabled:opacity-40">
-                <CheckCheck className="mr-1 h-3.5 w-3.5" />Read all
-              </button>
-              <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50">
-                <Trash2 className="h-4 w-4" />
+              <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="text-xs font-semibold text-red-600 disabled:opacity-40">
+                Clear all
               </button>
             </div>
           </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-[11px] font-bold text-sky-700">
-              <span className="h-2 w-2 rounded-full bg-sky-500" />
-              {unreadCount} unread
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-bold text-violet-700">
-              <Sparkles className="h-3.5 w-3.5" />
-              live feed
-            </span>
-          </div>
-        </section>
+        </header>
 
         {actionNotice && <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800">{actionNotice}</div>}
 
@@ -595,66 +702,70 @@ export default function UserNotificationsPage() {
                   {groupItems.map((notification) => {
                     const NotificationIcon = getNotificationIcon(notification)
                     const actor = notification.actor || null
-                    const actorName = actor?.full_name || (String(notification.message || '').split(/\s+(?:started following you|followed you back|commented|reacted|liked|sent you)/i)[0] || '').trim() || 'Community member'
+                    const actorName = actor?.full_name || actor?.name || (String(notification.message || '').split(/\s+(?:started following you|followed you back|commented|reacted|liked|sent you)/i)[0] || '').trim() || 'Community member'
                     const actorProfileHref = getActorProfileHref(notification)
                     const isFollowType = String(notification.type || '').toLowerCase() === 'follow'
-                    const messageText = String(notification.message || '')
+                    const messageText = getNotificationMessageText(notification, actorName)
                     const isFollowBack = isFollowType && messageText.toLowerCase().includes('followed you back')
                     const isStartedFollowing = isFollowType && messageText.toLowerCase().includes('started following you')
                     const followActionCompleted = getFollowActionCompletedFromNotification(notification)
                     const followActionMode = followActionCompleted ? 'message' : 'say-hi'
-                    return <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`relative block w-full text-left rounded-[18px] border p-4 transition active:scale-[0.99] ${notification.is_read ? 'border-slate-200 bg-white' : 'border-emerald-200 bg-[#eefdf7]'}`}>
-                      <div className="flex items-start gap-3">
-                        {actorProfileHref ? <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-xs font-black text-slate-600" aria-label={`Open ${actorName}'s profile`}>{actor?.profile_image_url ? <img src={actor.profile_image_url} alt={actorName} className="h-full w-full object-cover" /> : getInitials(actorName)}</Link> : <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${TYPE_STYLES[notification.type] || 'bg-slate-100 text-slate-700'}`}><NotificationIcon className="h-4 w-4" /></div>}
+                    const relativeTime = formatRelativeTime(notification.created_at)
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-start justify-between gap-3">
-                            {actorProfileHref ? <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="block min-w-0 text-sm font-black text-slate-900 hover:text-sky-700">{actorName}</Link> : <span className="min-w-0 text-sm font-black text-slate-900">{actorName}</span>}
-                            <button type="button" onClick={(event) => { event.stopPropagation(); void deleteNotification(notification.id) }} aria-label="Delete notification" title="Delete notification" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-red-50 hover:text-red-600">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                          {isFollowType && isFollowBack ? (
-                            <div className="min-w-0">
+                    return (
+                      <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`block w-full rounded-[20px] border p-3 text-left transition ${notification.is_read ? 'border-slate-200 bg-white' : 'border-sky-200 bg-sky-50/50 shadow-sm'}`}>
+                        <div className="flex items-start gap-3">
+                          <NotificationAvatar notification={notification} actor={actor} actorName={actorName} actorProfileHref={actorProfileHref} />
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm leading-5 text-slate-700">
+                                  {actorProfileHref ? (
+                                    <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="font-black text-slate-900 hover:text-sky-700">{actorName}</Link>
+                                  ) : (
+                                    <span className="font-black text-slate-900">{actorName}</span>
+                                  )}
+                                  <span className="ml-1 text-slate-600">{messageText}</span>
+                                </p>
+                              </div>
+
+                              <div className="flex shrink-0 items-center gap-2">
+                                {!notification.is_read && <span className="h-2.5 w-2.5 rounded-full bg-sky-500" aria-label="Unread" />}
+                                <button type="button" onClick={(event) => { event.stopPropagation(); void deleteNotification(notification.id) }} aria-label="Delete notification" title="Delete notification" className="flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-red-600">
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isFollowType && isFollowBack ? (
                               <div className="mt-2 flex items-center justify-between gap-3">
-                                <p className="text-sm leading-6 text-slate-600">Followed you back</p>
+                                <div className="text-xs text-slate-500">{relativeTime}</div>
                                 <div className="flex shrink-0 items-center gap-2">
                                   {followActionMode === 'message' ? (
-                                    <button type="button" onClick={(event) => { event.stopPropagation(); const actorId = parseProfileActorId(notification); if (actorId) router.push(`/user/messaging/${actorId}`) }} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">Message</button>
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); const actorId = parseProfileActorId(notification); if (actorId) router.push(`/user/messaging/${actorId}`) }} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-700">Message</button>
                                   ) : (
-                                    <button type="button" onClick={(event) => { event.stopPropagation(); void sendFollowSideAction(notification, 'hi') }} className="rounded-full bg-sky-700 px-3 py-1 text-xs font-bold text-white hover:bg-sky-800">Say Hi</button>
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); void sendFollowSideAction(notification, 'hi') }} className="rounded-full bg-sky-700 px-3 py-1 text-[11px] font-bold text-white hover:bg-sky-800">Say Hi</button>
                                   )}
-                                  <span role="button" tabIndex={0} onClick={(event) => { event.stopPropagation(); markAsRead(notification.id) }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); markAsRead(notification.id) } }} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700">
-                                    <CheckCheck className="h-3.5 w-3.5" />
+                                  <button type="button" onClick={(event) => { event.stopPropagation(); void markAsRead(notification.id) }} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-700">
                                     {notification.is_read ? 'Read' : 'Mark read'}
-                                  </span>
+                                  </button>
                                 </div>
                               </div>
-                            </div>
-                          ) : isFollowType && isStartedFollowing ? (
-                            <div className="min-w-0">
-                              <div className="mt-2 flex items-start justify-between gap-3">
-                                <p className="text-sm leading-6 text-slate-600">Started following you</p>
+                            ) : isFollowType && isStartedFollowing ? (
+                              <div className="mt-2 flex items-center justify-between gap-3">
+                                <span className="text-xs text-slate-500">{relativeTime}</span>
                               </div>
-                            </div>
-                          ) : (
-                            <>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-sm font-bold text-slate-900">{notification.title}</h3>
-                                {!notification.is_read && <span className="h-2 w-2 rounded-full bg-red-500" aria-label="Unread" />}
-                                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${PRIORITY_STYLES[notification.priority] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>{notification.priority || 'normal'}</span>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] ${TYPE_STYLES[notification.type] || 'bg-slate-100 text-slate-700'}`}>{notification.type}</span>
+                            ) : (
+                              <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
+                                <span>{relativeTime}</span>
+                                {notification.is_read ? <span className="font-semibold text-slate-500">Seen</span> : <span className="font-semibold text-sky-700">New</span>}
                               </div>
-                              <p className="mt-2 text-sm leading-6 text-slate-600">{notification.message}</p>
-                              <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-                                <span>{formatDate(notification.created_at)}</span>
-                                {getNotificationHref(notification) ? <span className="font-medium text-violet-700">Open related content</span> : null}
-                              </div>
-                            </>
-                          )}
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )
                   })}
                   </div>
                 </section>

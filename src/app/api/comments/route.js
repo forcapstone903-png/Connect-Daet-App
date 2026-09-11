@@ -10,14 +10,31 @@ function dedupeAndInsertNotifications(adminSupabase, rows) {
   return Promise.all(rows.map(async (row) => {
     const { data: existing } = await adminSupabase
       .from('info_notifications')
-      .select('id')
+      .select('id, title, message, comment_id, reply_id, post_id, updated_at')
       .eq('user_id', row.user_id)
       .eq('link', row.link)
       .eq('type', row.type)
       .eq('actor_id', row.actor_id)
       .limit(1)
 
-    if (existing && existing.length > 0) return null
+    if (existing && existing.length > 0) {
+      const current = existing[0]
+      const hasChanged = current.title !== row.title || current.message !== row.message || current.comment_id !== row.comment_id || current.reply_id !== row.reply_id || current.post_id !== row.post_id
+
+      if (!hasChanged) return null
+
+      return adminSupabase
+        .from('info_notifications')
+        .update({
+          title: row.title,
+          message: row.message,
+          comment_id: row.comment_id,
+          reply_id: row.reply_id,
+          post_id: row.post_id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', current.id)
+    }
 
     return adminSupabase.from('info_notifications').insert(row)
   }))
@@ -200,6 +217,10 @@ export async function POST(request) {
       ? await adminSupabase.from('content_comments').select('user_id').eq('id', replyTo).maybeSingle()
       : { data: null }
 
+    const safeCommentExcerpt = commentBody.replace(/\s+/g, ' ').trim()
+    const truncatedCommentExcerpt = safeCommentExcerpt.length > 120 ? `${safeCommentExcerpt.slice(0, 120).trim()}…` : safeCommentExcerpt
+    const quotedCommentExcerpt = `"${truncatedCommentExcerpt}"`
+
     const rows = []
     const recipients = new Set([ownerId, parentComment?.user_id].filter((recipientId) => recipientId && recipientId !== session.user_id))
     for (const recipientId of recipients) {
@@ -208,8 +229,8 @@ export async function POST(request) {
         user_id: recipientId,
         title: isReplyRecipient ? 'New reply to your comment' : 'New comment',
         message: isReplyRecipient
-          ? `${actorName} replied to your comment on a ${contentType}.`
-          : `${actorName} commented on your ${contentType}.`,
+          ? `${actorName} replied to your comment: ${quotedCommentExcerpt}`
+          : `${actorName} commented on your ${contentType}: ${quotedCommentExcerpt}`,
         type: 'comment',
         is_read: false,
         created_at: new Date().toISOString(),
