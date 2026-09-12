@@ -11,7 +11,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { startTransition, useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowUp,
@@ -32,6 +32,7 @@ import {
   Clock3,
   TrendingUp,
   UserPlus,
+  X,
   Zap,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -188,6 +189,10 @@ export default function UserDashboardPage() {
   const [feedNow, setFeedNow] = useState(() => Date.now())
   const [feedVisibleCount, setFeedVisibleCount] = useState(10)
   const [feedEndReached, setFeedEndReached] = useState(false)
+  const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
+  const [sheetVisible, setSheetVisible] = useState(false)
+  const [notificationCommentRequest, setNotificationCommentRequest] = useState(null)
+  const sheetTouchStartY = useRef(null)
 
   useEffect(() => {
     const handleFeedRefresh = () => {
@@ -197,6 +202,19 @@ export default function UserDashboardPage() {
     }
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
     return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('openComments') !== '1') return
+    const timer = window.setTimeout(() => {
+      setNotificationCommentRequest({
+        contentType: params.get('contentType') || '',
+        contentId: params.get('contentId') || '',
+        commentId: params.get('commentId') || null,
+      })
+    }, 0)
+    return () => window.clearTimeout(timer)
   }, [])
 
   useEffect(() => {
@@ -1033,10 +1051,53 @@ export default function UserDashboardPage() {
     return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
       }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
 
+  const openCommentsSheet = (sheetData) => {
+    setActiveCommentsSheet(sheetData)
+    setSheetVisible(false)
+    window.dispatchEvent(new CustomEvent('daet-comments-sheet-state', { detail: { open: true } }))
+    window.requestAnimationFrame(() => setSheetVisible(true))
+  }
+
+  const closeCommentsSheet = () => {
+    setSheetVisible(false)
+    window.setTimeout(() => {
+      setActiveCommentsSheet(null)
+      window.dispatchEvent(new CustomEvent('daet-comments-sheet-state', { detail: { open: false } }))
+    }, 280)
+  }
+
   useEffect(() => {
-    setFeedVisibleCount(10)
-    setFeedEndReached(false)
-  }, [activeCategory, feedScope, search, feedRefreshKey, hiddenPosts, notInterestedTopics])
+    if (!activeCommentsSheet) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [activeCommentsSheet])
+
+  useEffect(() => {
+    if (!notificationCommentRequest || loading) return
+    const requestedItem = feed.find((item) => {
+      const itemContentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type
+      return item.id === notificationCommentRequest.contentId && itemContentType === notificationCommentRequest.contentType
+    })
+    if (!requestedItem) return
+
+    const author = requestedItem.author || {}
+    const timer = window.setTimeout(() => {
+      openCommentsSheet({
+        contentType: notificationCommentRequest.contentType,
+        contentId: requestedItem.id,
+        userId,
+        contentOwnerId: requestedItem.created_by || author.id || userId,
+        contentTitle: requestedItem.title,
+        commentId: notificationCommentRequest.commentId,
+      })
+      setNotificationCommentRequest(null)
+      router.replace('/user/dashboard', { scroll: false })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [feed, loading, notificationCommentRequest, router, userId])
 
   const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
@@ -1150,7 +1211,7 @@ export default function UserDashboardPage() {
               <h1 className="mt-1 text-2xl font-black tracking-tight text-white">Stories, places, and people worth knowing.</h1>
               <p className="mt-2 text-sm leading-6 text-slate-100">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
             </div>
-            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor's pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
+            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor&apos;s pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
           </div>
         </section>
 
@@ -1271,7 +1332,14 @@ export default function UserDashboardPage() {
                         {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
                         {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
 
-                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => router.push(item.href)} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
+                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => openCommentsSheet({
+                          contentType,
+                          contentId: item.id,
+                          userId,
+                          contentOwnerId: item.created_by || author?.id || userId,
+                          contentTitle: item.title,
+                          itemType: item.type,
+                        })} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
                       </div>
                     </article>
                   )
@@ -1322,6 +1390,64 @@ export default function UserDashboardPage() {
         </div>
         <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
       </div>
+
+      {activeCommentsSheet && (
+        <div
+          className={`fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-[2px] transition-opacity duration-300 ${sheetVisible ? 'opacity-100' : 'opacity-0'}`}
+          onClick={closeCommentsSheet}
+        >
+          <div
+            className={`absolute inset-x-0 bottom-0 mx-auto flex h-[82vh] max-h-[900px] w-full max-w-[760px] flex-col rounded-t-[28px] border border-slate-200 bg-white shadow-[0_-20px_55px_rgba(15,23,42,0.18)] transition-transform duration-300 ease-out ${sheetVisible ? 'translate-y-0' : 'translate-y-full'}`}
+            onClick={(event) => event.stopPropagation()}
+            onTouchStart={(event) => { sheetTouchStartY.current = event.touches[0]?.clientY || null }}
+            onTouchEnd={(event) => {
+              const startY = sheetTouchStartY.current
+              const endY = event.changedTouches[0]?.clientY
+              sheetTouchStartY.current = null
+              if (startY !== null && typeof endY === 'number' && endY - startY > 80) closeCommentsSheet()
+            }}
+          >
+            <div className="shrink-0 border-b border-slate-200 px-4 pb-3 pt-2 sm:px-5">
+              <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-slate-300" />
+              <div className="flex items-center justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={closeCommentsSheet}
+                  aria-label="Close comments"
+                  className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold uppercase tracking-[0.18em] text-sky-700">Comments</p>
+                  <p className="truncate text-sm font-bold text-slate-900">{activeCommentsSheet.contentTitle || 'Discussion'}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={closeCommentsSheet}
+                className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+              >
+                Close
+              </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-2 sm:px-4 sm:pb-4">
+              <Comments
+                contentType={activeCommentsSheet.contentType}
+                contentId={activeCommentsSheet.contentId}
+                userId={activeCommentsSheet.userId}
+                contentOwnerId={activeCommentsSheet.contentOwnerId}
+                contentTitle={activeCommentsSheet.contentTitle}
+                sheetMode
+                focusCommentId={activeCommentsSheet.commentId}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 } 

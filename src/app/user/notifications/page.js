@@ -1,11 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Angry, Bell, BellRing, CheckCheck, Frown, Heart, Laugh, MessageCircle, Repeat2, Search, ShieldAlert, Sparkles, ThumbsUp, Trash2, UserRoundPlus, Volume2 } from 'lucide-react'
+import { Angry, Bell, BellRing, CheckCheck, Frown, Heart, Laugh, MessageCircle, Repeat2, Search, ShieldAlert, Sparkles, ThumbsUp, Trash2, UserRoundPlus, Volume2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
+import Comments from '@/app/components/user/Comments'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -123,8 +124,45 @@ export default function UserNotificationsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingHistory, setDeletingHistory] = useState(false)
   const [actionNotice, setActionNotice] = useState('')
+  const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
+  const [commentsSheetVisible, setCommentsSheetVisible] = useState(false)
+  const sheetTouchStartY = useRef(null)
 
   const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
+
+  const openCommentsSheet = (sheetData) => {
+    setActiveCommentsSheet(sheetData)
+    setCommentsSheetVisible(false)
+    window.dispatchEvent(new CustomEvent('daet-comments-sheet-state', { detail: { open: true } }))
+    window.requestAnimationFrame(() => setCommentsSheetVisible(true))
+  }
+
+  const closeCommentsSheet = () => {
+    setCommentsSheetVisible(false)
+    window.setTimeout(() => {
+      setActiveCommentsSheet(null)
+      window.dispatchEvent(new CustomEvent('daet-comments-sheet-state', { detail: { open: false } }))
+    }, 280)
+  }
+
+  useEffect(() => {
+    if (!activeCommentsSheet) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [activeCommentsSheet])
+
+  useEffect(() => {
+    const handleOpenComments = (event) => {
+      if (!event.detail?.contentId) return
+      openCommentsSheet(event.detail)
+    }
+
+    window.addEventListener('daet-open-notification-comments', handleOpenComments)
+    return () => window.removeEventListener('daet-open-notification-comments', handleOpenComments)
+  }, [])
 
   useEffect(() => {
     const storedSession = readStoredSession()
@@ -354,6 +392,36 @@ export default function UserNotificationsPage() {
     const routeCandidate = notification.link || notification.action_url || notification.href || metadata.link || metadata.href || metadata.action_url || null
     const postId = notification.post_id || metadata.post_id || metadata.entityId || null
     const notificationType = String(notification.type || metadata.type || '').toLowerCase()
+    const commentId = notification.comment_id || notification.reply_id || metadata.comment_id || metadata.reply_id
+      || String(routeCandidate || '').match(/#comment-([^/?#]+)/)?.[1] || null
+    const commentRelated = Boolean(commentId)
+      || ['comment', 'reply', 'mention'].includes(notificationType)
+      || /\b(?:comment|repl(?:ied|y)|reacted to your comment)\b/i.test(String(notification.message || notification.title || ''))
+
+    if (commentRelated && (routeCandidate || postId)) {
+      const routeMatch = String(routeCandidate).match(/\/user\/(blogs|events|forums|posts|announcements)\/([^/?#]+)/)
+      const relatedPostId = postId || routeMatch?.[2]
+      if (relatedPostId) {
+        const routeType = routeMatch?.[1]
+        const rawContentType = metadata.content_type || metadata.contentType || ''
+        const contentType = rawContentType === 'post' ? 'user_post'
+          : rawContentType === 'forum' ? 'forum_thread'
+            : rawContentType || (
+          routeType === 'blogs' ? 'blog'
+            : routeType === 'events' ? 'event'
+              : routeType === 'forums' ? 'forum_thread'
+                : routeType === 'announcements' ? 'announcement'
+                  : 'user_post'
+            )
+        const params = new URLSearchParams({
+          openComments: '1',
+          contentType,
+          contentId: String(relatedPostId),
+        })
+        if (commentId) params.set('commentId', String(commentId))
+        return `/user/notifications?${params.toString()}`
+      }
+    }
 
     if (notificationType === 'message' && routeCandidate && userId) {
       const messagePath = String(routeCandidate).split('?')[0].replace(/\/+$/, '')
@@ -582,6 +650,20 @@ export default function UserNotificationsPage() {
   const openNotification = async (notification) => {
     const href = getNotificationHref(notification)
     if (!notification.is_read) await markAsRead(notification.id)
+    if (href?.startsWith('/user/notifications?openComments=')) {
+      const params = new URLSearchParams(href.split('?')[1])
+      const sheetData = {
+        contentType: params.get('contentType') || '',
+        contentId: params.get('contentId') || '',
+        commentId: params.get('commentId') || null,
+        userId,
+        contentOwnerId: null,
+        contentTitle: notification.message || 'Discussion',
+      }
+      window.history.replaceState(null, '', href)
+      window.dispatchEvent(new CustomEvent('daet-open-notification-comments', { detail: sheetData }))
+      return
+    }
     if (href) router.push(href)
   }
 
@@ -778,6 +860,52 @@ export default function UserNotificationsPage() {
           )}
         </div>
       </div>
+
+      {activeCommentsSheet && (
+        <div
+          className={`fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-[2px] transition-opacity duration-300 ${commentsSheetVisible ? 'opacity-100' : 'opacity-0'}`}
+          onClick={closeCommentsSheet}
+        >
+          <div
+            className={`absolute inset-x-0 bottom-0 mx-auto flex h-[82vh] max-h-[900px] w-full max-w-[760px] flex-col rounded-t-[28px] border border-slate-200 bg-white shadow-[0_-20px_55px_rgba(15,23,42,0.18)] transition-transform duration-300 ease-out ${commentsSheetVisible ? 'translate-y-0' : 'translate-y-full'}`}
+            onClick={(event) => event.stopPropagation()}
+            onTouchStart={(event) => { sheetTouchStartY.current = event.touches[0]?.clientY || null }}
+            onTouchEnd={(event) => {
+              const startY = sheetTouchStartY.current
+              const endY = event.changedTouches[0]?.clientY
+              sheetTouchStartY.current = null
+              if (startY !== null && typeof endY === 'number' && endY - startY > 80) closeCommentsSheet()
+            }}
+          >
+            <div className="shrink-0 border-b border-slate-200 px-4 pb-3 pt-2 sm:px-5">
+              <div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-slate-300" />
+              <div className="flex items-center justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <button type="button" onClick={closeCommentsSheet} aria-label="Close comments" className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-slate-200">
+                    <X className="h-4 w-4" />
+                  </button>
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold uppercase tracking-[0.18em] text-sky-700">Comments</p>
+                    <p className="truncate text-sm font-bold text-slate-900">{activeCommentsSheet.contentTitle || 'Discussion'}</p>
+                  </div>
+                </div>
+                <button type="button" onClick={closeCommentsSheet} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-200">Close</button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden px-2 pb-2 pt-2 sm:px-4 sm:pb-4">
+              <Comments
+                contentType={activeCommentsSheet.contentType}
+                contentId={activeCommentsSheet.contentId}
+                userId={activeCommentsSheet.userId}
+                contentOwnerId={activeCommentsSheet.contentOwnerId}
+                contentTitle={activeCommentsSheet.contentTitle}
+                sheetMode
+                focusCommentId={activeCommentsSheet.commentId}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

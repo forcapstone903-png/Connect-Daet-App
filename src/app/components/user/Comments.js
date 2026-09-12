@@ -42,7 +42,7 @@ function countCommentLikes(comment) {
 
 const INITIAL_VISIBLE_COMMENTS = 3
 
-export default function Comments({ contentType, contentId, userId, contentOwnerId, contentTitle, onPinChange, sortBy = 'relevant', compact = false }) {
+export default function Comments({ contentType, contentId, userId, contentOwnerId, contentTitle, onPinChange, sortBy = 'relevant', compact = false, sheetMode = false, focusCommentId = null }) {
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -63,6 +63,9 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   const [editingCommentId, setEditingCommentId] = useState(null)
   const [editedCommentText, setEditedCommentText] = useState('')
   const [expandedReplyIds, setExpandedReplyIds] = useState({})
+  const [focusedCommentId, setFocusedCommentId] = useState(null)
+  const [reactionDetails, setReactionDetails] = useState(null)
+  const [reactionDetailsLoading, setReactionDetailsLoading] = useState(false)
 
   const loadComments = useCallback(async () => {
     if (!contentId) return
@@ -100,10 +103,11 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         _like_count: likesByComment.get(comment.id) || 0,
         _liked_by_user: likedCommentIds.has(comment.id),
       })))
+      if (focusCommentId) setShowAllComments(true)
     } catch (err) {
       console.error('Failed to load comments:', err)
     }
-  }, [contentType, contentId, userId])
+  }, [contentType, contentId, userId, focusCommentId])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -156,6 +160,20 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
     return () => window.clearTimeout(timer)
   }, [userId])
+
+  useEffect(() => {
+    if (!focusCommentId || !comments.length) return undefined
+
+    const timer = window.setTimeout(() => {
+      const target = document.getElementById(`comment-${focusCommentId}`)
+      if (!target) return
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setFocusedCommentId(String(focusCommentId))
+      window.setTimeout(() => setFocusedCommentId(null), 2200)
+    }, 80)
+
+    return () => window.clearTimeout(timer)
+  }, [comments, focusCommentId, showAllComments])
 
   const threads = useMemo(() => buildCommentThreads(comments, sortMode), [comments, sortMode])
   const totalCommentCount = comments.length
@@ -330,6 +348,43 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     await loadComments()
   }
 
+  const handleShowReactions = async (comment) => {
+    setReactionDetails({ commentId: comment.id, reactions: [] })
+    setReactionDetailsLoading(true)
+
+    try {
+      const { data: reactionRows, error: reactionError } = await supabase
+        .from('content_reactions')
+        .select('user_id, reaction_type, created_at')
+        .eq('content_type', 'comment')
+        .eq('content_id', comment.id)
+        .order('created_at', { ascending: true })
+
+      if (reactionError) throw reactionError
+
+      const userIds = [...new Set((reactionRows || []).map((reaction) => reaction.user_id).filter(Boolean))]
+      const { data: users, error: usersError } = userIds.length
+        ? await supabase.from('info_users').select('id, full_name, profile_image_url').in('id', userIds)
+        : { data: [], error: null }
+
+      if (usersError) throw usersError
+
+      const usersById = new Map((users || []).map((user) => [user.id, user]))
+      setReactionDetails({
+        commentId: comment.id,
+        reactions: (reactionRows || []).map((reaction) => ({
+          ...reaction,
+          user: usersById.get(reaction.user_id) || null,
+        })),
+      })
+    } catch (error) {
+      console.error('Failed to load comment reactions:', error)
+      setReactionDetails({ commentId: comment.id, reactions: [] })
+    } finally {
+      setReactionDetailsLoading(false)
+    }
+  }
+
   const renderComment = (comment, depth = 0) => {
     const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
@@ -341,7 +396,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     const isReplyExpanded = Boolean(expandedReplyIds[comment.id])
 
     return (
-      <div id={`comment-${comment.id}`} key={comment.id} className={`scroll-mt-24 ${depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''}`}>
+      <div id={`comment-${comment.id}`} key={comment.id} className={`scroll-mt-24 ${focusedCommentId === String(comment.id) ? 'rounded-2xl ring-2 ring-sky-400 ring-offset-2' : ''} ${depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''}`}>
         <div className={`rounded-[18px] border p-3 shadow-sm transition-all duration-200 hover:shadow-md ${comment.is_pinned ? 'border-amber-200 bg-amber-50/60' : 'border-slate-200 bg-slate-50/80'}`}>
           {comment.is_pinned && (
             <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
@@ -464,6 +519,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                       contentType="comment"
                       contentId={comment.id}
                       userId={userId}
+                      onCountClick={() => handleShowReactions(comment)}
                       contentTitle={contentTitle || contentType}
                       compact
                       label="reactions"
@@ -534,7 +590,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           </div>
         )}
 
-        {comment.children?.length > 0 && isReplyExpanded && (
+        {comment.children?.length > 0 && (isReplyExpanded || sheetMode) && (
           <div className="mt-3">
             {comment.children.map((child) => renderComment(child, depth + 1))}
           </div>
@@ -544,8 +600,8 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   }
 
   return (
-    <div className={compact ? 'mt-3 border-t border-slate-100 pt-3' : 'rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
-      <div className={`${compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
+    <div className={sheetMode ? 'flex h-full min-h-0 flex-col overflow-hidden' : compact ? 'mt-3 border-t border-slate-100 pt-3' : 'flex max-h-[80vh] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
+      {!sheetMode && <div className={`${compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
         <div>
           <h3 className={`flex items-center gap-2 font-bold text-slate-900 ${compact ? 'text-xs' : 'text-base'}`}>
             <MessageSquare className="h-4 w-4 text-sky-600" />
@@ -569,9 +625,35 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             </button>
           ))}
         </div>}
-      </div>
+      </div>}
 
-      <div className={`${compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mb-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
+      {threads.length > 0 ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+          <div className="space-y-3">
+            {visibleThreads.map((comment) => renderComment(comment))}
+          </div>
+        </div>
+      ) : !compact ? (
+        <div className="min-h-0 flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+          <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />
+          <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
+        </div>
+      ) : null}
+
+      {!compact && threads.length > INITIAL_VISIBLE_COMMENTS && (
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShowAllComments((value) => !value)}
+            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 active:scale-[0.99]"
+          >
+            {showAllComments ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            {showAllComments ? 'Hide Comments' : 'See More Comments'}
+          </button>
+        </div>
+      )}
+
+      <div className={`${sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
         <div className="flex items-start gap-3">
           <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
             {currentUser?.profile_image_url ? (
@@ -681,29 +763,66 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         </div>
       </div>
 
-      {threads.length > 0 ? (
-        <div className={`overflow-hidden transition-all duration-300 ease-out ${showAllComments ? 'max-h-550 opacity-100' : 'max-h-155 opacity-100'}`}>
-          <div className="space-y-3">
-            {visibleThreads.map((comment) => renderComment(comment))}
-          </div>
-        </div>
-      ) : !compact ? (
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-          <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />
-          <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
-        </div>
-      ) : null}
-
-      {!compact && threads.length > INITIAL_VISIBLE_COMMENTS && (
-        <div className="mt-4 flex justify-center">
-          <button
-            type="button"
-            onClick={() => setShowAllComments((value) => !value)}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 active:scale-[0.99]"
+      {reactionDetails && (
+        <div
+          className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-3 sm:items-center sm:p-4"
+          role="presentation"
+          onClick={() => setReactionDetails(null)}
+        >
+          <div
+            className="flex max-h-[min(70vh,28rem)] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="comment-reactions-title"
+            onClick={(event) => event.stopPropagation()}
           >
-            {showAllComments ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            {showAllComments ? 'Hide Comments' : 'See More Comments'}
-          </button>
+            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+              <h2 id="comment-reactions-title" className="text-sm font-bold text-slate-900">Reactions</h2>
+              <button
+                type="button"
+                onClick={() => setReactionDetails(null)}
+                className="rounded-full px-2 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="min-h-20 overflow-y-auto p-2">
+              {reactionDetailsLoading ? (
+                <div className="px-3 py-6 text-center text-xs font-semibold text-slate-500">Loading reactions...</div>
+              ) : reactionDetails.reactions.length > 0 ? (
+                <div className="space-y-1">
+                  {reactionDetails.reactions.map((reaction) => {
+                    const name = reaction.user?.full_name || 'Community member'
+                    const emoji = { like: '👍', love: '❤️', laugh: '😂', wow: '😮', sad: '😢', angry: '😡' }[reaction.reaction_type] || '👍'
+                    const reactionName = { like: 'Like', love: 'Love', laugh: 'Laugh', wow: 'Wow', sad: 'Sad', angry: 'Angry' }[reaction.reaction_type] || 'Reaction'
+                    const reactionUser = { id: reaction.user_id, full_name: name, profile_image_url: reaction.user?.profile_image_url || null }
+
+                    return (
+                      <div key={`${reaction.user_id}-${reaction.created_at}`} className="flex items-center gap-3 rounded-xl px-2 py-2">
+                        <UserProfileLink href={`/user/profile/${encodeURIComponent(reaction.user_id)}?from=reactions`} user={reactionUser} className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-linear-to-br from-sky-500 to-violet-600 text-xs font-bold text-white transition hover:ring-2 hover:ring-sky-300">
+                          {reaction.user?.profile_image_url ? (
+                            <img src={reaction.user.profile_image_url} alt={name} className="h-full w-full object-cover" />
+                          ) : (
+                            getInitials(name)
+                          )}
+                        </UserProfileLink>
+                        <div className="min-w-0 flex-1">
+                          <UserProfileLink href={`/user/profile/${encodeURIComponent(reaction.user_id)}?from=reactions`} user={reactionUser} className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700">
+                            {name}
+                          </UserProfileLink>
+                          <p className="text-xs text-slate-500">{reactionName}</p>
+                        </div>
+                        <span className="text-xl leading-none" title={reactionName}>{emoji}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 py-6 text-center text-xs font-semibold text-slate-500">No reactions yet.</div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
@@ -9,13 +9,11 @@ import {
   Heart,
   MessageSquare,
   MoreHorizontal,
-  Share2,
   Flag,
   Clock,
   User,
   Eye,
   Send,
-  Mail,
   Pencil,
   ShieldCheck,
   Star,
@@ -27,6 +25,7 @@ import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import Reactions from '@/app/components/user/Reactions'
 import MentionText from '@/app/components/user/MentionText'
+import SocialActionBar from '@/app/components/user/SocialActionBar'
 
 const STORAGE_KEYS = {
   readHistory: 'daet_blog_read_history',
@@ -118,12 +117,10 @@ export default function BlogDetailPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState(null)
   const [userName, setUserName] = useState('Guest')
-  const [isLiked, setIsLiked] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
   const [commentContent, setCommentContent] = useState('')
   const [replyMap, setReplyMap] = useState({})
   const [submittingComment, setSubmittingComment] = useState(false)
-  const [showShareMenu, setShowShareMenu] = useState(false)
   const [userReputation, setUserReputation] = useState(0)
   const [userBadges, setUserBadges] = useState([])
   const [shareCount, setShareCount] = useState(0)
@@ -148,6 +145,7 @@ export default function BlogDetailPage() {
     }),
   ), [mentionUsers, replyMap])
   const [lightboxImage, setLightboxImage] = useState(null)
+  const commentsSectionRef = useRef(null)
 
   useEffect(() => {
     if (!lightboxImage) return undefined
@@ -217,7 +215,6 @@ export default function BlogDetailPage() {
             .eq('content_type', 'blog')
             .eq('content_id', blogId)
 
-          setIsLiked(Boolean(userId && (reactionRows || []).some((reaction) => reaction.user_id === userId && reaction.reaction_type === 'like')))
           setBlog((previous) => ({ ...previous, likes: reactionRows?.length || 0 }))
 
           const viewKey = `daet_blog_viewed_${blogId}`
@@ -290,46 +287,6 @@ export default function BlogDetailPage() {
       ignore = true
     }
   }, [blogId])
-
-  const handleLike = async () => {
-    if (!userId) {
-      alert('Please log in to like articles')
-      return
-    }
-
-    try {
-      const result = isLiked
-        ? await supabase
-            .from('content_reactions')
-            .delete()
-            .eq('user_id', userId)
-            .eq('content_type', 'blog')
-            .eq('content_id', blogId)
-        : await supabase
-            .from('content_reactions')
-            .upsert(
-              { user_id: userId, content_type: 'blog', content_id: blogId, reaction_type: 'like' },
-              { onConflict: 'user_id,content_type,content_id' }
-            )
-
-      if (result.error) throw result.error
-      const nextLikeCount = Math.max(0, (blog.likes || 0) + (isLiked ? -1 : 1))
-      setIsLiked(!isLiked)
-      setBlog((prev) => ({ ...prev, likes: nextLikeCount }))
-      if (!isLiked && userId) {
-        trackUserActivity({
-          userId,
-          activityType: 'react_content',
-          entityType: 'blog',
-          entityId: blogId,
-          description: `Liked ${blog?.title || 'article'}`,
-          metadata: { contentTitle: blog?.title || 'Article' },
-        })
-      }
-    } catch (error) {
-      console.error('Error liking blog:', error)
-    }
-  }
 
   const handleSave = async () => {
     if (!userId) {
@@ -559,47 +516,8 @@ export default function BlogDetailPage() {
     }
   }
 
-  const handleShare = async (platform) => {
-    const url = typeof window !== 'undefined' ? window.location.href : ''
-    const title = blog?.title || 'Check out this article'
-    const nextCount = (shareCount || 0) + 1
-
-    if (platform === 'copy') {
-      if (typeof navigator !== 'undefined' && navigator.clipboard) {
-        await navigator.clipboard.writeText(url)
-      }
-      alert('Link copied to clipboard!')
-    } else if (platform === 'email') {
-      window.location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(`${title}\n\n${url}`)}`
-    } else {
-      const shareUrls = {
-        twitter: `https://twitter.com/intent/tweet?text=${encodeURIComponent(title)}&url=${encodeURIComponent(url)}`,
-        facebook: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`,
-        linkedin: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`,
-      }
-
-      if (shareUrls[platform]) {
-        window.open(shareUrls[platform], '_blank')
-      }
-    }
-
-    if (platform !== 'copy' && platform !== 'email') {
-      setShareCount(nextCount)
-      writeLocalStorage(`${STORAGE_KEYS.shareCounts}_${blogId}`, nextCount)
-    }
-
-    if (userId && (platform !== 'copy' && platform !== 'email')) {
-      trackUserActivity({
-        userId,
-        activityType: 'share_content',
-        entityType: 'blog',
-        entityId: blogId,
-        description: `Shared ${blog?.title || 'article'}`,
-        metadata: { contentTitle: blog?.title || 'Article', platform },
-      })
-    }
-
-    setShowShareMenu(false)
+  const handleOpenComments = () => {
+    commentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const renderComment = (comment, isReply = false) => (
@@ -720,13 +638,6 @@ export default function BlogDetailPage() {
           />
         </div>
 
-        {(comment.replies || []).length > 0 && (
-          <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600">
-            <MessageSquare className="h-3.5 w-3.5" />
-            <span className="font-semibold">{(comment.replies || []).length} Replies</span>
-          </span>
-        )}
-
         <button
           type="button"
           onClick={() => {
@@ -742,10 +653,12 @@ export default function BlogDetailPage() {
           Reply
         </button>
 
-        <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
-          <Flag className="h-3.5 w-3.5" />
-          Report
-        </button>
+        {userId !== comment.user_id && (
+          <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
+            <Flag className="h-3.5 w-3.5" />
+            Report
+          </button>
+        )}
       </div>
 
       {deletingCommentId === comment.id && (
@@ -877,34 +790,6 @@ export default function BlogDetailPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-6xl px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mb-6 flex items-center justify-end">
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={handleLike} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isLiked ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Like article">
-              <Heart className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} />
-            </button>
-
-            <button type="button" onClick={handleSave} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isSaved ? 'border-sky-200 bg-sky-50 text-sky-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Save article">
-              <Bookmark className={`h-5 w-5 ${isSaved ? 'fill-current' : ''}`} />
-            </button>
-
-            <div className="relative">
-              <button type="button" onClick={() => setShowShareMenu(!showShareMenu)} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title="Share article">
-                <Share2 className="h-5 w-5" />
-              </button>
-
-              {showShareMenu && (
-                <div className="absolute right-0 top-12 z-10 rounded-[16px] border border-slate-200 bg-white shadow-lg">
-                  <button type="button" onClick={() => handleShare('twitter')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-[14px]">Share on Twitter</button>
-                  <button type="button" onClick={() => handleShare('facebook')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on Facebook</button>
-                  <button type="button" onClick={() => handleShare('linkedin')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on LinkedIn</button>
-                  <button type="button" onClick={() => handleShare('email')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><span className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5" />Email</span></button>
-                  <button type="button" onClick={() => handleShare('copy')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 last:rounded-b-[14px]">Copy Link</button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
         <article className="mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8 lg:mb-0">
           {blog.featured_image && (
@@ -993,9 +878,19 @@ export default function BlogDetailPage() {
               </div>
             </div>
           )}
+
+          <SocialActionBar
+            contentType="blog"
+            contentId={blog.id}
+            userId={userId}
+            commentCount={comments.length}
+            onToggleComments={handleOpenComments}
+            isSaved={isSaved}
+            onToggleSave={handleSave}
+          />
         </article>
 
-        <section className="mb-8 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
+        <section ref={commentsSectionRef} className="mb-8 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-2xl font-bold text-slate-900">{comments.length} Comments</h2>
             {moderationPending > 0 && (
@@ -1003,28 +898,6 @@ export default function BlogDetailPage() {
                 {moderationPending} pending moderation
               </span>
             )}
-          </div>
-
-          <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-5">
-            <h3 className="mb-4 text-sm font-bold text-slate-900">Share Your Thoughts</h3>
-            <textarea
-              value={commentContent}
-              onChange={(event) => setCommentContent(event.target.value)}
-              placeholder="Write a comment..."
-              rows={4}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
-            />
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => handleCommentSubmit()}
-                disabled={submittingComment || !commentContent.trim()}
-                className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-              >
-                <Send className="h-4 w-4" />
-                {submittingComment ? 'Posting...' : 'Post Comment'}
-              </button>
-            </div>
           </div>
 
           {comments.length > 0 ? (
@@ -1049,6 +922,29 @@ export default function BlogDetailPage() {
               <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
             </div>
           )}
+
+          <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 text-sm font-bold text-slate-900">Share Your Thoughts</h3>
+            <div className="flex items-center gap-2">
+              <textarea
+                value={commentContent}
+                onChange={(event) => setCommentContent(event.target.value)}
+                placeholder="Write a comment..."
+                rows={1}
+                className="min-h-10 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
+              />
+              <button
+                type="button"
+                onClick={() => handleCommentSubmit()}
+                disabled={submittingComment || !commentContent.trim()}
+                aria-label="Post comment"
+                title={submittingComment ? 'Posting comment' : 'Post comment'}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
         </section>
         </div>
 

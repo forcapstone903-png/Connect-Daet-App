@@ -146,7 +146,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
 
     const { start, end } = mentionState
     const displayName = user.full_name || user.email?.split('@')[0] || 'user'
-    const mentionText = `@${displayName}`
+    const mentionText = displayName
 
     const range = document.createRange()
     const startRef = findTextPosition(editor, start)

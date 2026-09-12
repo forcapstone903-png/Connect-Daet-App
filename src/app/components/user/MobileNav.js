@@ -31,6 +31,13 @@ export default function MobileNav() {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [accountOpen, setAccountOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
+
+  useEffect(() => {
+    const handleCommentsSheetState = (event) => setCommentsSheetOpen(Boolean(event.detail?.open))
+    window.addEventListener('daet-comments-sheet-state', handleCommentsSheetState)
+    return () => window.removeEventListener('daet-comments-sheet-state', handleCommentsSheetState)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -131,7 +138,7 @@ export default function MobileNav() {
           </div>
         </div>
       </nav>
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur-sm lg:hidden">
+      {!commentsSheetOpen && <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur-sm lg:hidden">
         <div className="mx-auto grid max-w-[520px] grid-cols-5 items-center gap-1 px-2 py-1.5">
           {navItems.map(({ href, label, icon: Icon, highlight }) => {
             const isActive = pathname === href || (href !== '/user/dashboard' && pathname.startsWith(href))
@@ -169,7 +176,7 @@ export default function MobileNav() {
             )
           })}
         </div>
-      </nav>
+      </nav>}
     </>
   )
 }

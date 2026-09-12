@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
-import { parseMentionCandidates } from '@/lib/mentions'
+import { normalizeMentionName, parseMentionCandidates } from '@/lib/mentions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -62,6 +62,15 @@ async function resolveOwnerId(adminSupabase, contentType, contentId) {
 async function resolveMentions(adminSupabase, text, actorId, commentId, mentionRefs = []) {
   const candidates = parseMentionCandidates(text)
   const resolved = []
+  const normalizedText = String(text || '').toLocaleLowerCase()
+
+  const refsByName = new Map(
+    (Array.isArray(mentionRefs) ? mentionRefs : [])
+      .filter((ref) => ref?.id && ref?.displayName)
+      .map((ref) => [normalizeMentionName(ref.displayName), ref])
+  )
+
+  const resolvedNames = new Set()
 
   for (const candidate of candidates) {
     const selectedRef = mentionRefs.find((ref) => String(ref.displayName || '').trim().toLocaleLowerCase() === candidate.normalizedName)
@@ -90,14 +99,38 @@ async function resolveMentions(adminSupabase, text, actorId, commentId, mentionR
     }
 
     if (!user?.id || user.id === actorId || resolved.some((mention) => mention.mentioned_user_id === user.id)) continue
+
     resolved.push({
       mentioned_user_id: user.id,
-      display_name: candidate.displayName,
+      display_name: user.full_name || candidate.displayName,
       mention_text: candidate.displayName,
       content_type: 'comment',
       content_id: commentId,
       mentioned_by_user_id: actorId,
     })
+    resolvedNames.add(normalizeMentionName(user.full_name || candidate.displayName))
+  }
+
+  for (const [normalizedName, ref] of refsByName.entries()) {
+    if (resolvedNames.has(normalizedName) || !normalizedText.includes(normalizedName)) continue
+
+    const { data: user } = await adminSupabase
+      .from('info_users')
+      .select('id, full_name')
+      .eq('id', ref.id)
+      .maybeSingle()
+
+    if (!user?.id || user.id === actorId || resolved.some((mention) => mention.mentioned_user_id === user.id)) continue
+
+    resolved.push({
+      mentioned_user_id: user.id,
+      display_name: user.full_name || ref.displayName,
+      mention_text: ref.displayName,
+      content_type: 'comment',
+      content_id: commentId,
+      mentioned_by_user_id: actorId,
+    })
+    resolvedNames.add(normalizedName)
   }
 
   if (resolved.length) {

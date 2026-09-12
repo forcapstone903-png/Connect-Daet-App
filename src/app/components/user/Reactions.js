@@ -14,7 +14,7 @@ const REACTION_TYPES = [
   { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
 
-export default function Reactions({ contentType, contentId, userId, onReact, compact = false, label, contentTitle = '', fullWidth = false }) {
+export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, compact = false, label, contentTitle = '', fullWidth = false }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -108,6 +108,10 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   }, [])
 
   const totalCount = Object.values(reactionCounts).reduce((sum, n) => sum + n, 0)
+  const primaryReaction = Object.entries(reactionCounts)
+    .filter(([, count]) => count > 0)
+    .sort(([, leftCount], [, rightCount]) => rightCount - leftCount)[0]?.[0]
+  const primaryReactionMeta = REACTION_TYPES.find((reaction) => reaction.type === primaryReaction)
 
   // Determine the most used reaction (displayed as primary)
   const handleReact = async (reactionType) => {
@@ -175,7 +179,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
   return (
     <div className="flex w-full min-w-0 items-center gap-2">
       {/* Primary reaction button */}
-      <div className="relative w-full" ref={pickerRef}>
+      <div className={`relative ${onCountClick ? 'min-w-0 flex-1' : 'w-full'}`} ref={pickerRef}>
         <button
           type="button"
           onClick={() => setShowPicker((v) => !v)}
@@ -200,10 +204,10 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
             </>
           )}
 
-          {compact && label ? (
+          {compact && label && !onCountClick ? (
             <span className="font-bold">{totalCount} {label}</span>
           ) : (
-            totalCount > 0 && <span className="font-bold">{totalCount}</span>
+            !onCountClick && totalCount > 0 && <span className="font-bold">{totalCount}</span>
           )}
         </button>
 
@@ -224,6 +228,18 @@ export default function Reactions({ contentType, contentId, userId, onReact, com
           </div>
         )}
       </div>
+
+      {onCountClick && totalCount > 0 && (
+        <button
+          type="button"
+          onClick={onCountClick}
+          className="inline-flex min-w-0 shrink items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+          aria-label={`Show ${totalCount} ${label || 'reactions'}`}
+        >
+          <span className="text-sm leading-none">{primaryReactionMeta?.emoji || '👍'}</span>
+          <span>{totalCount} {totalCount === 1 ? 'reaction' : (label || 'reactions')}</span>
+        </button>
+      )}
 
       {/* Compact count badges for each reaction type */}
       {!compact && Object.keys(reactionCounts).length > 0 && (

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { CalendarDays, Check, FileText, MapPin, MessageCircle, MoreHorizontal, UserPlus, Users } from 'lucide-react'
-import { useParams } from 'next/navigation'
+import { ArrowLeft, CalendarDays, Check, FileText, MapPin, MessageCircle, MoreHorizontal, UserPlus, Users } from 'lucide-react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
@@ -17,7 +17,10 @@ function getInitials(name = '') {
 
 export default function PublicProfilePage() {
   const params = useParams()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const profileId = params?.id
+  const fromReactions = searchParams.get('from') === 'reactions'
   const [profile, setProfile] = useState(null)
   const [posts, setPosts] = useState([])
   const [followers, setFollowers] = useState([])
@@ -161,6 +164,19 @@ export default function PublicProfilePage() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 sm:px-5 sm:pb-10 lg:px-8">
+        {fromReactions && (
+          <div className="pt-3 sm:pt-5">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              aria-label="Back to reactions"
+              title="Back to reactions"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+          </div>
+        )}
         <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.06)]">
           <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-56">
             {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="profile-cover-image" />}

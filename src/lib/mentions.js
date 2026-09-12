@@ -45,18 +45,22 @@ export function renderMentionText(text = '', mentions = []) {
   const mentionPattern = resolvedMentions.map((mention) => escapeRegExp(mention.display_name)).join('|')
   const parts = []
   let cursor = 0
-  const pattern = new RegExp(`(^|\\s)(@(?:${mentionPattern}))(?=\\s|$|[.!?,])`, 'gi')
+  const pattern = new RegExp(`(^|\\s)(@?(?:${mentionPattern}))(?=\\s|$|[.!?,])`, 'gi')
   let match
 
   while ((match = pattern.exec(text)) !== null) {
     const tokenStart = match.index + match[1].length
     const token = match[2]
-    const normalizedToken = normalizeMentionName(token.slice(1))
+    const normalizedToken = normalizeMentionName(token.replace(/^@/, ''))
     const mention = resolvedMentions.find((candidate) => normalizedToken === candidate.normalizedName)
     if (!mention) continue
 
     if (tokenStart > cursor) parts.push({ type: 'text', value: text.slice(cursor, tokenStart) })
-    parts.push({ type: 'mention', value: token, userId: mention.mentioned_user_id })
+    parts.push({
+      type: 'mention',
+      value: mention.display_name || token.replace(/^@/, ''),
+      userId: mention.mentioned_user_id,
+    })
     cursor = tokenStart + token.length
   }
 
