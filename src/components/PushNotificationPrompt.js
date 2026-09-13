@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getPushAvailability, subscribeToPushNotifications } from '@/lib/pushNotifications'
+import { getPushAvailability, subscribeUserToPush } from '@/lib/pushNotifications'
 import { supabase } from '@/lib/supabase'
 
 export default function PushNotificationPrompt() {
@@ -22,6 +22,18 @@ export default function PushNotificationPrompt() {
     return () => window.clearTimeout(timer)
   }, [])
 
+  useEffect(() => {
+    const handleServiceWorkerMessage = (event) => {
+      if (event.data?.type !== 'PUSH_SUBSCRIPTION_CHANGED' || !userId) return
+      void subscribeUserToPush({ userId }).catch((error) => {
+        console.error('Push resubscription failed:', error)
+      })
+    }
+
+    navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
+    return () => navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
+  }, [userId])
+
   if (!availability || !userId) return null
 
   if (availability.reason === 'ios-install-required') {
@@ -37,15 +49,50 @@ export default function PushNotificationPrompt() {
 
   if (!availability.supported || Notification.permission === 'granted') return null
 
+  if (Notification.permission === 'denied') {
+    const checkPermissionAgain = async () => {
+      const nextPermission = Notification.permission
+      if (nextPermission === 'granted') {
+        try {
+          await subscribeUserToPush({ userId })
+          setStatus('success')
+          setMessage('Notifications enabled.')
+        } catch (error) {
+          setStatus('error')
+          setMessage(error?.message || 'Unable to save the notification subscription.')
+        }
+        return
+      }
+
+      setMessage('Permission is still blocked. Allow notifications in the browser site settings first.')
+    }
+
+    return (
+      <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 shadow-xl">
+        <p className="text-sm font-bold text-slate-900">Notifications are blocked</p>
+        <p className="mt-1 text-xs leading-relaxed text-slate-600">
+          Open this site&apos;s browser settings, set Notifications to Allow, then return here and check again.
+        </p>
+        <button
+          type="button"
+          onClick={checkPermissionAgain}
+          className="mt-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
+        >
+          I allowed notifications
+        </button>
+      </div>
+    )
+  }
+
   const enableNotifications = async () => {
     setStatus('loading')
     setMessage('')
 
     try {
-      const result = await subscribeToPushNotifications({ userId })
+      const result = await subscribeUserToPush({ userId })
       if (!result.success) {
         setStatus('error')
-        setMessage(result.message || 'Notifications were not enabled.')
+        setMessage(result.message || `Notifications were not enabled (${result.reason || 'unknown error'}).`)
         return
       }
       setStatus('success')
@@ -53,7 +100,7 @@ export default function PushNotificationPrompt() {
     } catch (error) {
       console.error('Push subscription failed:', error)
       setStatus('error')
-      setMessage('Unable to enable notifications right now.')
+      setMessage(error?.message || 'Unable to enable notifications right now.')
     }
   }
 

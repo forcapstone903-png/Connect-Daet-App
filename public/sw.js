@@ -23,11 +23,13 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('push', (event) => {
+  console.log('PUSH RECEIVED', event.data?.text())
   let payload = {}
 
   try {
-    payload = event.data ? event.data.json() : {}
+    payload = event.data ? JSON.parse(event.data.text()) : {}
   } catch {
+    console.warn('Push payload was not valid JSON; treating it as plain text.')
     payload = { body: event.data?.text() || '' }
   }
 
@@ -42,7 +44,11 @@ self.addEventListener('push', (event) => {
     },
   }
 
-  event.waitUntil(self.registration.showNotification(title, options))
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+      .then(() => console.log('SYSTEM NOTIFICATION SHOWN', title))
+      .catch((error) => console.error('SYSTEM NOTIFICATION FAILED', error))
+  )
 })
 
 self.addEventListener('notificationclick', (event) => {
@@ -51,6 +57,17 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = event.notification.data?.url || '/'
   event.waitUntil(
     self.clients.openWindow(new URL(targetUrl, self.location.origin).href)
+  )
+})
+
+self.addEventListener('pushsubscriptionchange', (event) => {
+  console.log('PUSH SUBSCRIPTION CHANGED')
+  // The public VAPID key belongs in the app bundle, not in this static worker.
+  // Ask an open app client to create and persist the replacement subscription.
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      clients.forEach((client) => client.postMessage({ type: 'PUSH_SUBSCRIPTION_CHANGED' }))
+    })
   )
 })
 

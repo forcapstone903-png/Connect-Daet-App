@@ -120,3 +120,80 @@ values (
 ```
 
 The trigger sends `record.user_id`, `record.title`, `record.body`, and `record.url` to `push`. The Edge Function then loads that user's subscriptions and sends the Web Push payload.
+
+## Verification and debugging
+
+Tail the deployed Edge Function logs:
+
+```bash
+supabase functions logs push --project-ref YOUR_PROJECT_REF
+```
+
+Verify the trigger through `pg_trigger`:
+
+```sql
+select
+  n.nspname as schema_name,
+  c.relname as table_name,
+  t.tgname as trigger_name,
+  pg_get_triggerdef(t.oid) as trigger_definition
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+where not t.tgisinternal
+  and n.nspname = 'public'
+  and c.relname = 'notifications';
+```
+
+Verify the SQL-standard trigger view:
+
+```sql
+select trigger_schema, event_object_schema, event_object_table,
+       trigger_name, action_timing, event_manipulation, action_statement
+from information_schema.triggers
+where event_object_schema = 'public'
+  and event_object_table = 'notifications';
+```
+
+Manually invoke the Edge Function. Use a function token accepted by your deployed function:
+
+```bash
+curl -i -X POST "https://YOUR_PROJECT_REF.supabase.co/functions/v1/push" `
+  -H "Authorization: Bearer YOUR_FUNCTION_TOKEN" `
+  -H "Content-Type: application/json" `
+  --data '{"record":{"user_id":"YOUR_AUTH_USER_UUID","title":"Manual push test","body":"Edge Function received the test payload.","url":"/user/notifications"}}'
+```
+
+Insert a test notification from a trusted SQL session and watch the function logs:
+
+```sql
+insert into public.notifications (user_id, title, body, url)
+values (
+  'YOUR_AUTH_USER_UUID',
+  'Database webhook test',
+  'This row should trigger the push function.',
+  '/user/notifications'
+);
+```
+
+Common webhook failure causes:
+
+- `039_push_notifications_webhook.sql` still contains placeholder project URL or token.
+- `pg_net` is not enabled or the function lacks permission to call `supabase_functions.http_request`.
+- The trigger is attached to a different schema/table, or the migration was not pushed.
+- The request URL does not match the deployed function name `push`.
+- The function JWT setting does not match the `Authorization` header sent by the trigger.
+- `notifications.user_id` does not match any row in `push_subscriptions`.
+- The Edge Function service-role secret is missing or incorrect.
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, or `VAPID_SUBJECT` is missing or the public/private pair does not match.
+- The client subscription was never saved, the browser permission is denied, or the subscription endpoint has expired.
+
+For the browser console, successful setup logs appear as:
+
+```text
+[push] Requesting notification permission
+[push] Notification permission: granted
+[push] Waiting for navigator.serviceWorker.ready
+[push] Push subscription created: https://...
+[push] Subscription saved successfully
+```
