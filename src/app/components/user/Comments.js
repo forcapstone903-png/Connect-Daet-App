@@ -386,7 +386,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   }
 
   const renderComment = (comment, depth = 0) => {
-    const authorName = comment.info_users?.full_name || comment.info_users?.email?.split('@')[0] || 'Community member'
+    const authorName = comment.info_users?.full_name || 'Community member'
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
     const isOwner = userId === comment.user_id
     const canPin = userId && contentOwnerId && userId === contentOwnerId
@@ -414,15 +414,15 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             </UserProfileLink>
 
             <div className="min-w-0 flex-1">
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                <div className="min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
                   <UserProfileLink user={authorProfileUser} className="inline-flex items-center text-sm font-bold text-slate-900 hover:text-sky-700 active:text-sky-700">
                     {authorName}
                   </UserProfileLink>
                   <span className="ml-2 text-xs text-slate-500">{formatRelativeTime(comment.created_at)}</span>
                 </div>
 
-                <div className="relative flex items-center gap-2">
+                <div className="relative flex shrink-0 items-center gap-2">
                   {canPin && (
                     <button
                       type="button"
@@ -481,11 +481,15 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
               {isEditing ? (
                 <div className="mt-2">
-                  <textarea
+                  <MentionsAutoSuggest
                     value={editedCommentText}
-                    onChange={(e) => setEditedCommentText(e.target.value)}
+                    onChange={setEditedCommentText}
+                    userId={userId}
+                    initialMention={comment.mention_data?.[0]?.mentioned_user_id ? {
+                      id: comment.mention_data[0].mentioned_user_id,
+                      full_name: comment.mention_data[0].display_name,
+                    } : null}
                     rows={3}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
                   />
                   <div className="mt-2 flex items-center justify-end gap-2">
                     <button
@@ -537,7 +541,17 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                         return
                       }
 
-                      setReplyTo(replyTo === comment.id ? null : comment.id)
+                      if (replyTo === comment.id) {
+                        setReplyTo(null)
+                        setBody('')
+                        setMentionRefs([])
+                        return
+                      }
+
+                      const name = authorName || 'there'
+                      setReplyTo(comment.id)
+                      setBody(`${name} `)
+                      setMentionRefs([{ id: comment.user_id, displayName: name }])
                     }}
                     className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
                   >
@@ -561,16 +575,17 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                     getInitials(currentUser?.full_name || 'You')
                   )}
                 </UserProfileLink>
-                <div className="flex-1">
+                <div className="min-w-0 flex-1">
                   <MentionsAutoSuggest
                     value={body}
                     onChange={setBody}
                     placeholder={`Reply to ${authorName}...`}
                     rows={2}
                     userId={userId}
+                    initialMention={{ id: comment.user_id, full_name: authorName }}
                     onMentionAdded={(user) => setMentionRefs((previous) => previous.some((item) => item.id === user.id)
                       ? previous
-                      : [...previous, { id: user.id, displayName: user.full_name || user.email }])}
+                      : [...previous, { id: user.id, displayName: user.full_name || 'User' }])}
                   />
                 </div>
               </div>
@@ -590,7 +605,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           </div>
         )}
 
-        {comment.children?.length > 0 && (isReplyExpanded || sheetMode) && (
+        {comment.children?.length > 0 && isReplyExpanded && (
           <div className="mt-3">
             {comment.children.map((child) => renderComment(child, depth + 1))}
           </div>
@@ -663,7 +678,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             )}
           </UserProfileLink>
 
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <MentionsAutoSuggest
               value={body}
               onChange={setBody}
@@ -672,7 +687,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
               userId={userId}
               onMentionAdded={(user) => setMentionRefs((previous) => previous.some((item) => item.id === user.id)
                 ? previous
-                : [...previous, { id: user.id, displayName: user.full_name || user.email }])}
+                : [...previous, { id: user.id, displayName: user.full_name || 'User' }])}
             />
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">

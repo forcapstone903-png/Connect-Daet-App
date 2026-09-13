@@ -40,7 +40,37 @@ function findTextPosition(editor, offset) {
   return { node: editor, offset: editor.childNodes.length }
 }
 
-export default function MentionsAutoSuggest({ value, onChange, placeholder, rows = 3, onMentionAdded, userId }) {
+function createMentionNode(user, router) {
+  const displayName = user.full_name || 'User'
+  const mentionNode = document.createElement('span')
+  mentionNode.className = 'font-semibold text-sky-700 hover:underline'
+  mentionNode.contentEditable = 'false'
+  mentionNode.dataset.userId = String(user.id)
+  mentionNode.dataset.displayName = displayName
+  mentionNode.textContent = displayName
+  mentionNode.setAttribute('role', 'link')
+  mentionNode.tabIndex = 0
+
+  const handleMentionClick = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (user?.id) {
+      router.push(`/user/profile/${encodeURIComponent(user.id)}?from=comments`)
+    }
+  }
+
+  mentionNode.onclick = handleMentionClick
+  mentionNode.onkeydown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleMentionClick(event)
+    }
+  }
+
+  return mentionNode
+}
+
+export default function MentionsAutoSuggest({ value, onChange, placeholder, rows = 3, onMentionAdded, userId, initialMention = null }) {
   const router = useRouter()
   const editorRef = useRef(null)
   const suggestionRef = useRef(null)
@@ -145,7 +175,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     if (!editor || !mentionState) return
 
     const { start, end } = mentionState
-    const displayName = user.full_name || user.email?.split('@')[0] || 'user'
+    const displayName = user.full_name || 'User'
     const mentionText = displayName
 
     const range = document.createRange()
@@ -156,30 +186,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     range.setEnd(endRef.node, endRef.offset)
     range.deleteContents()
 
-    const mentionNode = document.createElement('span')
-    mentionNode.className = 'inline-flex items-center rounded-md bg-sky-100 px-1.5 py-0.5 font-bold text-sky-700'
-    mentionNode.contentEditable = 'false'
-    mentionNode.dataset.userId = String(user.id)
-    mentionNode.dataset.displayName = displayName
-    mentionNode.textContent = mentionText
-    mentionNode.setAttribute('role', 'link')
-    mentionNode.tabIndex = 0
-
-    const handleMentionClick = (event) => {
-      event.preventDefault()
-      event.stopPropagation()
-      if (user?.id) {
-        router.push(`/user/profile/${encodeURIComponent(user.id)}`)
-      }
-    }
-
-    mentionNode.onclick = handleMentionClick
-    mentionNode.onkeydown = (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault()
-        handleMentionClick(event)
-      }
-    }
+    const mentionNode = createMentionNode({ ...user, full_name: mentionText }, router)
 
     range.insertNode(mentionNode)
 
@@ -237,10 +244,15 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     const nextValue = String(value || '')
     const currentText = editor.textContent || ''
 
-    if (currentText !== nextValue) {
+    if (currentText === nextValue) return
+
+    const displayName = initialMention?.full_name
+    if (initialMention?.id && displayName && nextValue.startsWith(displayName)) {
+      editor.replaceChildren(createMentionNode(initialMention, router), document.createTextNode(nextValue.slice(displayName.length)))
+    } else {
       editor.textContent = nextValue
     }
-  }, [value])
+  }, [value, initialMention, router])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -277,13 +289,13 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
         onKeyDown={handleKeyDown}
         data-placeholder={placeholder}
         style={{ minHeight: `${Math.max(rows, 1) * 1.5}rem` }}
-        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+        className="min-w-0 w-full max-w-full overflow-hidden whitespace-pre-wrap break-words rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100 [overflow-wrap:anywhere]"
       />
 
       {showSuggestions && suggestions.length > 0 && (
         <div
           ref={suggestionRef}
-          className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-lg"
+          className="absolute bottom-full left-[-3.25rem] right-0 z-20 mb-1 overflow-hidden rounded-[14px] border border-slate-200 bg-white shadow-lg"
         >
           <div className="border-b border-slate-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
             <AtSign className="mr-1 inline h-3 w-3" /> Mention a user
@@ -305,8 +317,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
                   (user.full_name || 'U')[0]?.toUpperCase()
                 )}
               </div>
-              <span className="font-semibold">{user.full_name || user.email || 'User'}</span>
-              <span className="ml-auto truncate text-xs text-slate-400">{user.email}</span>
+              <span className="font-semibold">{user.full_name || 'User'}</span>
             </button>
           ))}
         </div>

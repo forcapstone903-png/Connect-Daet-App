@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import {
   Bookmark,
+  ArrowLeft,
   ChevronDown,
   Heart,
   MessageSquare,
@@ -25,6 +26,7 @@ import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import Reactions from '@/app/components/user/Reactions'
 import MentionText from '@/app/components/user/MentionText'
+import MentionsAutoSuggest from '@/app/components/user/MentionsAutoSuggest'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 
 const STORAGE_KEYS = {
@@ -111,6 +113,7 @@ const categories = {
 
 export default function BlogDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const blogId = params?.id
   const [blog, setBlog] = useState(null)
   const [comments, setComments] = useState([])
@@ -120,6 +123,7 @@ export default function BlogDetailPage() {
   const [isSaved, setIsSaved] = useState(false)
   const [commentContent, setCommentContent] = useState('')
   const [replyMap, setReplyMap] = useState({})
+  const [replyMentionRefs, setReplyMentionRefs] = useState({})
   const [submittingComment, setSubmittingComment] = useState(false)
   const [userReputation, setUserReputation] = useState(0)
   const [userBadges, setUserBadges] = useState([])
@@ -133,17 +137,6 @@ export default function BlogDetailPage() {
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENTS)
   const [visibleReplies, setVisibleReplies] = useState({})
   const [expandedReplies, setExpandedReplies] = useState({})
-  const [mentionUsers, setMentionUsers] = useState([])
-  const mentionSuggestions = useMemo(() => Object.fromEntries(
-    Object.entries(replyMap).map(([commentId, value]) => {
-      const match = String(value || '').match(/(?:^|\s)@([^@\s]*)$/)
-      if (!match) return [commentId, []]
-      const query = match[1].trim().toLowerCase()
-      return [commentId, mentionUsers
-        .filter((user) => String(user.full_name || user.email || '').toLowerCase().includes(query))
-        .slice(0, 5)]
-    }),
-  ), [mentionUsers, replyMap])
   const [lightboxImage, setLightboxImage] = useState(null)
   const commentsSectionRef = useRef(null)
 
@@ -188,18 +181,13 @@ export default function BlogDetailPage() {
 
           setUserBadges((badgeData || []).map((item) => item.badge_name))
 
-          const followersResponse = await fetch('/api/users/followers', { credentials: 'same-origin', cache: 'no-store' })
-          const followersPayload = await followersResponse.json().catch(() => ({}))
-          if (followersResponse.ok && followersPayload.success) {
-            setMentionUsers(followersPayload.users || [])
-          }
         }
 
         if (!blogId) return
 
         const { data: blogData, error: blogError } = await supabase
           .from('info_blogs')
-          .select('*, info_users(full_name, email)')
+          .select('*, info_users(id, full_name, email, profile_image_url)')
           .eq('id', blogId)
           .single()
 
@@ -344,7 +332,12 @@ export default function BlogDetailPage() {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ blogId, parentId, content }),
+          body: JSON.stringify({
+            blogId,
+            parentId,
+            content,
+            mentionRefs: replyMentionRefs[parentId] || [],
+          }),
         })
         const payload = await response.json().catch(() => ({}))
         if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to submit your reply.')
@@ -359,6 +352,7 @@ export default function BlogDetailPage() {
             : { ...item, replies: [...(item.replies || []), nextReply] }
         }))
         setReplyMap((prev) => ({ ...prev, [parentId]: '' }))
+        setReplyMentionRefs((prev) => ({ ...prev, [parentId]: [] }))
         setExpandedReplies((prev) => ({ ...prev, [parentId]: true }))
         setModerationPending((prev) => prev + 1)
       } else {
@@ -415,13 +409,6 @@ export default function BlogDetailPage() {
 
   const updateReplyDraft = (commentId, value) => {
     setReplyMap((previous) => ({ ...previous, [commentId]: value }))
-  }
-
-  const selectMention = (commentId, user) => {
-    const currentValue = replyMap[commentId] || ''
-    const name = user.full_name || user.email || 'User'
-    const nextValue = currentValue.replace(/(?:^|\s)@([^@\s]*)$/, (match) => `${match.startsWith(' ') ? ' ' : ''}@${name} `)
-    setReplyMap((previous) => ({ ...previous, [commentId]: nextValue }))
   }
 
   const handleStartEditComment = (comment) => {
@@ -595,13 +582,17 @@ export default function BlogDetailPage() {
 
       {editingCommentId === comment.id ? (
         <div className="mt-2">
-          <textarea
+          <MentionsAutoSuggest
             value={editingContent}
-            onChange={(event) => setEditingContent(event.target.value)}
+            onChange={setEditingContent}
+            userId={userId}
+            initialMention={comment.mention_data?.[0]?.mentioned_user_id ? {
+              id: comment.mention_data[0].mentioned_user_id,
+              full_name: comment.mention_data[0].display_name,
+            } : null}
             rows={3}
             autoFocus
             placeholder="Edit your comment..."
-            className="w-full rounded-lg border border-sky-300 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-1 focus:ring-sky-200"
           />
           <div className="mt-2 flex items-center gap-2">
             <button
@@ -641,10 +632,14 @@ export default function BlogDetailPage() {
         <button
           type="button"
           onClick={() => {
-            const authorName = comment.info_users?.full_name || comment.info_users?.email || 'there'
+            const authorName = comment.info_users?.full_name || 'there'
             setReplyMap((prev) => ({
               ...prev,
-              [comment.id]: prev[comment.id] || `@${authorName} `,
+              [comment.id]: prev[comment.id] || `${authorName} `,
+            }))
+            setReplyMentionRefs((prev) => ({
+              ...prev,
+              [comment.id]: prev[comment.id] || [{ id: comment.user_id, displayName: authorName }],
             }))
             setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }))
           }}
@@ -688,30 +683,21 @@ export default function BlogDetailPage() {
       {replyMap[comment.id] !== undefined && (
         <div className="mt-3 space-y-2">
           <div className="relative">
-            <textarea
+            <MentionsAutoSuggest
               value={replyMap[comment.id] || ''}
-              onChange={(event) => updateReplyDraft(comment.id, event.target.value)}
-              rows={3}
+              onChange={(value) => updateReplyDraft(comment.id, value)}
               placeholder="Write a reply or mention someone with @..."
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
+              rows={3}
+              userId={userId}
+              initialMention={replyMentionRefs[comment.id]?.[0] ? {
+                id: replyMentionRefs[comment.id][0].id,
+                full_name: replyMentionRefs[comment.id][0].displayName,
+              } : null}
+              onMentionAdded={(user) => setReplyMentionRefs((previous) => ({
+                ...previous,
+                [comment.id]: [{ id: user.id, displayName: user.full_name || 'User' }],
+              }))}
             />
-            {(mentionSuggestions[comment.id] || []).length > 0 && (
-              <div className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-                {(mentionSuggestions[comment.id] || []).map((user) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    onClick={() => selectMention(comment.id, user)}
-                    className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left hover:bg-sky-50"
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">
-                      {user.profile_image_url ? <img src={user.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(user.full_name || user.email || 'User')}
-                    </span>
-                    <span className="truncate text-xs font-semibold text-slate-700">{user.full_name || user.email || 'User'}</span>
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
           <button
             type="button"
@@ -790,6 +776,15 @@ export default function BlogDetailPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-6xl px-3 py-6 sm:px-4 lg:px-6">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          aria-label="Go back"
+          title="Go back"
+          className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
         <article className="mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8 lg:mb-0">
           {blog.featured_image && (
@@ -817,8 +812,8 @@ export default function BlogDetailPage() {
 
           <div className="mt-6 flex items-center justify-between border-t border-b border-slate-200 py-4">
             <div className="flex items-center gap-3">
-              <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
-                {(blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
+              <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
+                {blog.info_users?.profile_image_url ? <img src={blog.info_users.profile_image_url} alt={blog.info_users.full_name || 'Author'} className="h-full w-full object-cover" /> : (blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
               </Link>
               <div>
                 <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="font-semibold text-slate-900 hover:text-sky-700">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>

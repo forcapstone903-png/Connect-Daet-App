@@ -165,6 +165,30 @@ export default function UserNotificationsPage() {
   }, [])
 
   useEffect(() => {
+    const restoreCommentsFromUrl = () => {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('openComments') !== '1' || !params.get('contentId')) return
+
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('daet-open-notification-comments', {
+          detail: {
+            contentType: params.get('contentType') || '',
+            contentId: params.get('contentId') || '',
+            commentId: params.get('commentId') || null,
+            userId,
+            contentOwnerId: null,
+            contentTitle: 'Discussion',
+          },
+        }))
+      }, 0)
+    }
+
+    restoreCommentsFromUrl()
+    window.addEventListener('popstate', restoreCommentsFromUrl)
+    return () => window.removeEventListener('popstate', restoreCommentsFromUrl)
+  }, [userId])
+
+  useEffect(() => {
     const storedSession = readStoredSession()
     queueMicrotask(() => {
       setSession(storedSession)
@@ -660,7 +684,7 @@ export default function UserNotificationsPage() {
         contentOwnerId: null,
         contentTitle: notification.message || 'Discussion',
       }
-      window.history.replaceState(null, '', href)
+      window.history.pushState(null, '', href)
       window.dispatchEvent(new CustomEvent('daet-open-notification-comments', { detail: sheetData }))
       return
     }

@@ -56,17 +56,22 @@ export default function EditProfilePage() {
     const locationParts = trimmedLocation ? trimmedLocation.split(',').map((part) => part.trim()).filter(Boolean) : []
     const city = locationParts[0] || ''
     const country = locationParts.slice(1).join(', ')
-    const updatedAt = new Date().toISOString()
 
     try {
-      const [{ error: userError }, { error: profileError }] = await Promise.all([
-        supabase.from('info_users').update({ full_name: form.full_name, bio: form.bio, city, country, profile_image_url: form.avatar_url || null, updated_at: updatedAt }).eq('id', userId),
-        supabase.from('profiles').upsert({ user_id: userId, full_name: form.full_name, bio: form.bio, city, country, location: trimmedLocation || null, profile_image_url: form.avatar_url || null, cover_photo_url: form.cover_photo_url || null, updated_at: updatedAt }, { onConflict: 'user_id' }),
-      ])
-
-      if (userError || profileError) {
-        throw userError || profileError
-      }
+      const response = await fetch('/api/profile', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: form.full_name,
+          bio: form.bio,
+          location: trimmedLocation,
+          avatarUrl: form.avatar_url,
+          coverPhotoUrl: form.cover_photo_url,
+        }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update your profile.')
 
       updateStoredSession({
         full_name: form.full_name,

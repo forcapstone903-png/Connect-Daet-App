@@ -21,6 +21,7 @@ export default function PublicProfilePage() {
   const searchParams = useSearchParams()
   const profileId = params?.id
   const fromReactions = searchParams.get('from') === 'reactions'
+  const fromComments = searchParams.get('from') === 'comments'
   const [profile, setProfile] = useState(null)
   const [posts, setPosts] = useState([])
   const [followers, setFollowers] = useState([])
@@ -164,13 +165,13 @@ export default function PublicProfilePage() {
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900">
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 sm:px-5 sm:pb-10 lg:px-8">
-        {fromReactions && (
+        {(fromReactions || fromComments) && (
           <div className="pt-3 sm:pt-5">
             <button
               type="button"
               onClick={() => router.back()}
-              aria-label="Back to reactions"
-              title="Back to reactions"
+              aria-label={fromComments ? 'Back to comments' : 'Back to reactions'}
+              title={fromComments ? 'Back to comments' : 'Back to reactions'}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
             >
               <ArrowLeft className="h-5 w-5" />
@@ -194,7 +195,12 @@ export default function PublicProfilePage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {isOwnProfile ? <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link> : (
+                {isOwnProfile ? (
+                  <>
+                    <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link>
+                    <Link href="/user/profile/edit" className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-slate-800">Edit profile</Link>
+                  </>
+                ) : (
                   <>
                   <button type="button" onClick={toggleFollow} disabled={followLoading} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 text-sm font-black transition ${isFollowing ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50' : 'bg-sky-600 text-white shadow-sm hover:bg-sky-700'} disabled:opacity-60`}>
                     {isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}

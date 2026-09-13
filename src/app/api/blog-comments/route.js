@@ -91,8 +91,30 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
   }
 }
 
-async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId) {
+async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId, mentionRefs = []) {
   const mentions = []
+  const refs = Array.isArray(mentionRefs) ? mentionRefs : []
+
+  for (const ref of refs) {
+    if (!ref?.id || !ref?.displayName || !text.toLocaleLowerCase().includes(String(ref.displayName).trim().toLocaleLowerCase())) continue
+
+    const { data: user } = await adminSupabase
+      .from('info_users')
+      .select('id, full_name')
+      .eq('id', ref.id)
+      .maybeSingle()
+
+    if (!user?.id || user.id === actorId || mentions.some((mention) => mention.mentioned_user_id === user.id)) continue
+    mentions.push({
+      mentioned_user_id: user.id,
+      display_name: user.full_name || ref.displayName,
+      mentioned_by_user_id: actorId,
+      content_type: 'comment',
+      content_id: commentId,
+      mention_text: ref.displayName,
+    })
+  }
+
   for (const candidate of parseMentionCandidates(text)) {
     const exactResult = await adminSupabase
       .from('info_users')
@@ -205,7 +227,7 @@ export async function POST(request) {
       }
     }
 
-    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id)
+    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id, body.mentionRefs)
     const mentionData = mentionRows.map((mention) => ({ mentioned_user_id: mention.mentioned_user_id, display_name: mention.display_name || mention.mention_text }))
     if (mentionData.length) {
       await adminSupabase.from('info_comments').update({ mention_data: mentionData }).eq('id', data.id)
