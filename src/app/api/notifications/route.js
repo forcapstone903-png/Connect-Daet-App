@@ -35,16 +35,32 @@ export async function GET(request) {
 
   try {
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
-    const { data, error } = await adminSupabase
-      .from('info_notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(50)
+    const [{ data, error }, { count: unreadCount, error: unreadError }] = await Promise.all([
+      adminSupabase
+        .from('info_notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(50),
+      adminSupabase
+        .from('info_notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('is_read', false),
+    ])
 
     if (error) throw error
+    if (unreadError) throw unreadError
 
-    return NextResponse.json({ success: true, notifications: await attachActorProfiles(adminSupabase, data || []) })
+    return NextResponse.json({
+      success: true,
+      notifications: await attachActorProfiles(adminSupabase, data || []),
+      unread_count: unreadCount || 0,
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
+    })
   } catch (error) {
     console.error('Notifications fetch failed:', error)
     return NextResponse.json(

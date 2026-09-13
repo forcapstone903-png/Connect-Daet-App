@@ -247,13 +247,12 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     if (!confirmed) return
 
     try {
-      const { error } = await supabase
-        .from('content_comments')
-        .delete()
-        .eq('id', commentId)
-        .eq('user_id', userId)
-
-      if (error) throw error
+      const response = await fetch(`/api/comments?commentId=${encodeURIComponent(commentId)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete the comment.')
       setOpenMenuId(null)
       await loadComments()
     } catch (err) {

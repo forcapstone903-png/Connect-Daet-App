@@ -41,18 +41,18 @@ function isMissingNotificationColumn(error) {
   return error && (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist/i.test(error.message || ''))
 }
 
-async function createBlogCommentNotification(adminSupabase, { recipientId, actorId, blogId, blogOwnerId, actorName, content, commentId, isReply }) {
+async function createBlogCommentNotification(adminSupabase, { recipientId, actorId, blogId, blogOwnerId, actorName, content, commentId, isReply, isMention = false }) {
   if (!recipientId || recipientId === actorId) return
 
-  const actionText = isReply ? 'replied to your comment' : 'commented on your post'
-  const notificationMessage = `${actorName} ${actionText}: ${content.slice(0, 120)}`
+  const actionText = isMention ? `mentioned you in ${isReply ? 'a reply' : 'a comment'}` : isReply ? 'replied to your comment' : 'commented on your post'
+  const notificationMessage = isMention ? `${actorName} ${actionText}.` : `${actorName} ${actionText}: ${content.slice(0, 120)}`
   const link = `/user/blogs/${blogId}#comment-${commentId || ''}`
   const { data: existing } = await adminSupabase
     .from('info_notifications')
     .select('id')
     .eq('user_id', recipientId)
     .eq('link', link)
-    .eq('type', 'comment')
+    .eq('type', isMention ? 'mention' : 'comment')
     .eq('actor_id', actorId)
     .limit(1)
 
@@ -60,9 +60,9 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
 
   const notification = {
     user_id: recipientId,
-    title: isReply ? 'New reply to your comment' : 'New comment on your post',
+    title: isMention ? 'You were mentioned' : isReply ? 'New reply to your comment' : 'New comment on your post',
     message: notificationMessage,
-    type: 'comment',
+    type: isMention ? 'mention' : 'comment',
     is_read: false,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -234,6 +234,14 @@ export async function POST(request) {
       data.mention_data = mentionData
     }
     for (const mention of mentionRows) {
+      await adminSupabase
+        .from('info_notifications')
+        .delete()
+        .eq('user_id', mention.mentioned_user_id)
+        .eq('type', 'comment')
+        .eq('actor_id', userId)
+        .eq('link', `/user/blogs/${blogId}#comment-${data.id}`)
+
       await createBlogCommentNotification(adminSupabase, {
         recipientId: mention.mentioned_user_id,
         actorId: userId,
@@ -242,7 +250,8 @@ export async function POST(request) {
         actorName,
         content,
         commentId: data.id,
-        isReply: false,
+        isReply: Boolean(parentId),
+        isMention: true,
       })
     }
 

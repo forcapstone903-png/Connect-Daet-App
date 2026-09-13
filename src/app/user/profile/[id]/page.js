@@ -195,12 +195,7 @@ export default function PublicProfilePage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                {isOwnProfile ? (
-                  <>
-                    <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link>
-                    <Link href="/user/profile/edit" className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-slate-800">Edit profile</Link>
-                  </>
-                ) : (
+                {isOwnProfile ? <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link> : (
                   <>
                   <button type="button" onClick={toggleFollow} disabled={followLoading} className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-full px-6 text-sm font-black transition ${isFollowing ? 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50' : 'bg-sky-600 text-white shadow-sm hover:bg-sky-700'} disabled:opacity-60`}>
                     {isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}

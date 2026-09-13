@@ -143,7 +143,7 @@ async function resolveMentions(adminSupabase, text, actorId, commentId, mentionR
   return resolved
 }
 
-async function mentionNotificationTargets(adminSupabase, mentions, actorId, actorName, contentType, contentId, commentId, ownerId) {
+async function mentionNotificationTargets(adminSupabase, mentions, actorId, actorName, contentType, contentId, commentId, ownerId, isReply = false) {
   if (!mentions.length) return []
 
   return mentions.map((mention) => {
@@ -151,7 +151,7 @@ async function mentionNotificationTargets(adminSupabase, mentions, actorId, acto
     return {
       user_id: mention.mentioned_user_id,
       title: 'You were mentioned',
-      message: `${actorName} mentioned you in a comment.`,
+      message: `${actorName} mentioned you in ${isReply ? 'a reply' : 'a comment'}.`,
       type: 'mention',
       is_read: false,
       created_at: new Date().toISOString(),
@@ -192,6 +192,51 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'rating',
   'poll',
 ])
+
+export async function DELETE(request) {
+  const session = getServerSession(request)
+  if (!session?.user_id) {
+    return NextResponse.json({ success: false, message: 'Please sign in to delete your comment.' }, { status: 401 })
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) {
+    return NextResponse.json({ success: false, message: 'Comment service is not configured.' }, { status: 500 })
+  }
+
+  const commentId = new URL(request.url).searchParams.get('commentId')?.trim()
+  if (!commentId) {
+    return NextResponse.json({ success: false, message: 'Comment id is required.' }, { status: 400 })
+  }
+
+  try {
+    const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const { data: comment, error: lookupError } = await adminSupabase
+      .from('content_comments')
+      .select('id, user_id')
+      .eq('id', commentId)
+      .maybeSingle()
+
+    if (lookupError) throw lookupError
+    if (!comment) return NextResponse.json({ success: false, message: 'Comment not found.' }, { status: 404 })
+    if (comment.user_id !== session.user_id) {
+      return NextResponse.json({ success: false, message: 'You can only delete your own comments.' }, { status: 403 })
+    }
+
+    const { error: deleteError } = await adminSupabase
+      .from('content_comments')
+      .delete()
+      .eq('id', commentId)
+      .eq('user_id', session.user_id)
+
+    if (deleteError) throw deleteError
+    return NextResponse.json({ success: true, commentId })
+  } catch (error) {
+    console.error('Comment delete route error:', error)
+    return NextResponse.json({ success: false, message: error.message || 'Unable to delete the comment.' }, { status: 500 })
+  }
+}
 
 export async function POST(request) {
   try {
@@ -283,11 +328,13 @@ export async function POST(request) {
       await adminSupabase.from('content_comments').update({ mention_data: mentionData }).eq('id', data.id)
       data.mention_data = mentionData
     }
-    const mentionRows = await mentionNotificationTargets(adminSupabase, mentions, session.user_id, actorName, contentType, contentId, data.id, ownerId)
+    const mentionRows = await mentionNotificationTargets(adminSupabase, mentions, session.user_id, actorName, contentType, contentId, data.id, ownerId, Boolean(replyTo))
     rows.push(...mentionRows)
+    const mentionedUserIds = new Set(mentions.map((mention) => mention.mentioned_user_id))
+    const notificationRows = rows.filter((row) => !(row.type === 'comment' && mentionedUserIds.has(row.user_id)))
 
-    if (rows.length > 0) {
-      await dedupeAndInsertNotifications(adminSupabase, rows)
+    if (notificationRows.length > 0) {
+      await dedupeAndInsertNotifications(adminSupabase, notificationRows)
     }
 
     return NextResponse.json({ success: true, comment: data })

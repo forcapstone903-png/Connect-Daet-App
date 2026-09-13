@@ -216,8 +216,8 @@ export default function UserNotificationsPage() {
 
     const userIdForRealtime = userId || session?.user_id || session?.id || session?.userId || session?.sub || ''
 
-    const loadNotifications = async () => {
-      setLoadError('')
+    const loadNotifications = async (silent = false) => {
+      if (!silent) setLoadError('')
       let lastError = null
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -237,8 +237,11 @@ export default function UserNotificationsPage() {
             throw new Error(result.message || `Unable to load notifications (${response.status})`)
           }
 
-          if (session) setNotifications(result.notifications || [])
-          setLoading(false)
+          if (session) {
+            setNotifications(result.notifications || [])
+            syncUnreadBadge(result.notifications || [])
+          }
+          if (!silent) setLoading(false)
           window.clearTimeout(timeout)
           return
         } catch (error) {
@@ -248,11 +251,14 @@ export default function UserNotificationsPage() {
         }
       }
 
-      if (lastError) setLoadError('We could not load your notifications right now. Please try again.')
-      setLoading(false)
+      if (!silent && lastError) setLoadError('We could not load your notifications right now. Please try again.')
+      if (!silent) setLoading(false)
     }
 
     loadNotifications()
+    const refreshTimer = window.setInterval(() => {
+      void loadNotifications(true)
+    }, 2000)
 
     let realtimeChannel = null
     let active = true
@@ -350,6 +356,7 @@ export default function UserNotificationsPage() {
           // ignore realtime channel teardown failures
         }
       }
+      window.clearInterval(refreshTimer)
     }
   }, [session, userId, retryKey])
 

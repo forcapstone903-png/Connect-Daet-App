@@ -64,6 +64,8 @@ export default function PwaInstaller() {
     window.addEventListener('appinstalled', appInstalled)
 
     if ('serviceWorker' in navigator) {
+      // Register once during app startup. Without this registration,
+      // navigator.serviceWorker.ready never resolves for push subscription.
       navigator.serviceWorker.register('/sw.js').catch(() => {
         // no-op: service worker registration failure is non-blocking
       })

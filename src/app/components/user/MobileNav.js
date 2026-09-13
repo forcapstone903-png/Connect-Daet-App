@@ -47,12 +47,17 @@ export default function MobileNav() {
     const loadUnreadAlerts = async () => {
       try {
         const [notificationsResponse, messagesResponse] = await Promise.all([
-          fetch('/api/notifications', { credentials: 'same-origin' }),
-          fetch('/api/messages', { credentials: 'same-origin' }),
+          fetch('/api/notifications', { credentials: 'same-origin', cache: 'no-store' }),
+          fetch('/api/messages', { credentials: 'same-origin', cache: 'no-store' }),
         ])
         const notificationsResult = notificationsResponse.ok ? await notificationsResponse.json() : null
         const messagesResult = messagesResponse.ok ? await messagesResponse.json() : null
-        if (active && notificationsResult?.success) setUnreadAlerts((notificationsResult.notifications || []).filter((notification) => !notification.is_read).length)
+        if (active && notificationsResult?.success) {
+          const unreadCount = Number.isFinite(Number(notificationsResult.unread_count))
+            ? Number(notificationsResult.unread_count)
+            : (notificationsResult.notifications || []).filter((notification) => !notification.is_read).length
+          setUnreadAlerts(unreadCount)
+        }
         if (active && messagesResult?.success) setUnreadMessages(messagesResult.unread_messages || 0)
       } catch {
         // Notifications are optional for the navigation shell.
@@ -71,8 +76,13 @@ export default function MobileNav() {
       void loadUnreadAlerts()
     }
 
+    const updateUnreadMessages = () => {
+      void loadUnreadAlerts()
+    }
+
     window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
-    window.addEventListener('daet-messages-updated', updateUnreadAlerts)
+    window.addEventListener('daet-messages-updated', updateUnreadMessages)
+    const refreshTimer = window.setInterval(loadUnreadAlerts, 2000)
     let realtimeChannel = null
     if (userId && supabase?.channel) {
       realtimeChannel = supabase.channel(`navigation-realtime-${userId}`)
@@ -89,7 +99,8 @@ export default function MobileNav() {
     return () => {
       active = false
       window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
-      window.removeEventListener('daet-messages-updated', updateUnreadAlerts)
+      window.removeEventListener('daet-messages-updated', updateUnreadMessages)
+      window.clearInterval(refreshTimer)
       if (realtimeChannel) supabase.removeChannel(realtimeChannel)
     }
   }, [])
