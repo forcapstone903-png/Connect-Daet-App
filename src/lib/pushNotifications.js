@@ -48,7 +48,7 @@ export async function subscribeToPushNotifications({ userId } = {}) {
     return { success: false, ...availability }
   }
 
-  const publicKey = (import.meta?.env?.VITE_VAPID_PUBLIC_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY)?.trim()
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
   if (!publicKey) {
     return { success: false, reason: 'missing-public-key', message: 'Push notifications are not configured.' }
   }
