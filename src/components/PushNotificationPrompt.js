@@ -68,14 +68,18 @@ export default function PushNotificationPrompt() {
     }
 
     return (
-      <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 shadow-xl">
+      <div className="pointer-events-auto fixed bottom-4 left-1/2 z-[100] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-red-200 bg-white p-4 shadow-xl">
         <p className="text-sm font-bold text-slate-900">Notifications are blocked</p>
         <p className="mt-1 text-xs leading-relaxed text-slate-600">
           Open this site&apos;s browser settings, set Notifications to Allow, then return here and check again.
         </p>
         <button
           type="button"
-          onClick={checkPermissionAgain}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            void checkPermissionAgain()
+          }}
           className="mt-3 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-100"
         >
           I allowed notifications
