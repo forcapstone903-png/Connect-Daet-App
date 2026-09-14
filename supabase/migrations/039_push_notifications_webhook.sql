@@ -9,15 +9,14 @@ CREATE OR REPLACE FUNCTION public.invoke_push_edge_function()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, extensions, supabase_functions
+SET search_path = public, extensions, net
 AS $$
 DECLARE
   function_url CONSTANT TEXT := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/push';
   webhook_token CONSTANT TEXT := 'REPLACE_WITH_WEBHOOK_SECRET_OR_ANON_KEY';
 BEGIN
-  PERFORM supabase_functions.http_request(
+  PERFORM net.http_post(
     function_url,
-    'POST',
     jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || webhook_token

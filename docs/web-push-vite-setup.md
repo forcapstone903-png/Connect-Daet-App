@@ -187,7 +187,7 @@ values (
 Common webhook failure causes:
 
 - `039_push_notifications_webhook.sql` still contains placeholder project URL or token.
-- `pg_net` is not enabled or the function lacks permission to call `supabase_functions.http_request`.
+- `pg_net` is not enabled or the function lacks permission to call `net.http_post`.
 - The trigger is attached to a different schema/table, or the migration was not pushed.
 - The request URL does not match the deployed function name `push`.
 - The function JWT setting does not match the `Authorization` header sent by the trigger.

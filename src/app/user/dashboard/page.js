@@ -182,6 +182,7 @@ export default function UserDashboardPage() {
   const [feedNow, setFeedNow] = useState(() => Date.now())
   const [feedVisibleCount, setFeedVisibleCount] = useState(10)
   const [feedEndReached, setFeedEndReached] = useState(false)
+  const [expandedPosts, setExpandedPosts] = useState(() => new Set())
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [sheetVisible, setSheetVisible] = useState(false)
   const [notificationCommentRequest, setNotificationCommentRequest] = useState(null)
@@ -747,7 +748,17 @@ export default function UserDashboardPage() {
         const counts = {}
         await Promise.all(
           (items || []).map(async (item) => {
-            const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
+            const contentType = item.type === 'forum'
+              ? 'forum_thread'
+              : item.type === 'blog'
+                ? 'blog'
+                : item.type === 'post'
+                  ? 'user_post'
+                  : item.type === 'announcement'
+                    ? 'announcement'
+                    : item.type === 'tourist_spot'
+                      ? 'tourist_spot'
+                      : 'event'
             const { count } = await supabase
               .from('content_comments')
               .select('id', { count: 'exact', head: true })
@@ -808,6 +819,12 @@ export default function UserDashboardPage() {
               .eq('status', 'active')
               .order('last_activity_at', { ascending: false })
               .limit(20),
+            supabase
+              .from('info_tourist_spots')
+              .select('id, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured_image, images, videos, created_by, status, created_at')
+              .eq('status', 'active')
+              .order('created_at', { ascending: false })
+              .limit(20),
             fetch('/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
               if (!response.ok || !result.success) return { data: [], error: null }
@@ -828,8 +845,8 @@ export default function UserDashboardPage() {
         if (categoriesResult.error) throw categoriesResult.error
         if (announcementsResult.error) throw announcementsResult.error
 
-        const [blogsFeed, eventsFeed, threadsFeed, followsFeed, userPostsFeed] = feedResult
-        if (blogsFeed.error || eventsFeed.error || threadsFeed.error) {
+        const [blogsFeed, eventsFeed, threadsFeed, touristSpotsFeed, followsFeed, userPostsFeed] = feedResult
+        if (blogsFeed.error || eventsFeed.error || threadsFeed.error || touristSpotsFeed.error) {
           throw new Error('Failed to load feed content')
         }
 
@@ -847,12 +864,32 @@ export default function UserDashboardPage() {
             category: 'Community',
           }))
 
+        const touristSpotPosts = (touristSpotsFeed.data || []).map((spot) => ({
+          ...spot,
+          id: spot.id,
+          title: spot.name,
+          excerpt: spot.description,
+          description: spot.description,
+          content: spot.description,
+          published_at: spot.created_at,
+          category: spot.category,
+          location: spot.location,
+          rating: spot.rating,
+          entrance_fee: spot.entry_fee,
+          opening_hours: spot.opening_hours,
+          best_time_to_visit: spot.best_visit_time,
+          featured_image: spot.featured_image,
+          images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
+          gallery_images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
+        }))
+
         const nextCategories = categoriesResult.data || []
         const nextAnnouncements = (announcementsResult.data || []).map(normalizeAnnouncementRecord)
         const authorIds = [
           ...(blogsFeed.data || []).map((item) => item.created_by),
           ...(eventsFeed.data || []).map((item) => item.created_by),
           ...(threadsFeed.data || []).map((item) => item.created_by),
+          ...(touristSpotPosts || []).map((item) => item.created_by),
           ...followedPosts.map((item) => item.created_by),
           ...(nextAnnouncements || []).map((item) => item.created_by),
         ].filter(Boolean)
@@ -880,6 +917,20 @@ export default function UserDashboardPage() {
             ...withAuthor(thread),
             type: 'forum',
             href: `/user/forums/${thread.id}`,
+          })),
+          ...(touristSpotPosts || []).map((spot) => ({
+            ...withAuthor(spot),
+            type: 'tourist_spot',
+            href: `/tourist-spots/${spot.id}`,
+            title: spot.name,
+            description: spot.description,
+            content: spot.description,
+            location: spot.location,
+            rating: spot.rating,
+            entrance_fee: spot.entry_fee,
+            opening_hours: spot.opening_hours,
+            best_time_to_visit: spot.best_visit_time,
+            gallery_images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
           })),
           ...followedPosts.map((post) => ({
             ...withAuthor(post),
@@ -1128,6 +1179,18 @@ export default function UserDashboardPage() {
     return () => window.clearTimeout(timer)
   }, [feed, loading, notificationCommentRequest, router, userId])
 
+  const toggleExpandedPost = (itemKey) => {
+    setExpandedPosts((current) => {
+      const next = new Set(current)
+      if (next.has(itemKey)) {
+        next.delete(itemKey)
+      } else {
+        next.add(itemKey)
+      }
+      return next
+    })
+  }
+
   const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
 
@@ -1244,19 +1307,19 @@ export default function UserDashboardPage() {
 
         <div className="dashboard-feed-layout">
           <div className="dashboard-feed-main min-w-0 lg:pr-3">
-        <div className="tourism-panel mb-3 rounded-[18px] p-3 shadow-sm sm:p-4 lg:rounded-[16px]">
+        <div className="tourism-panel mb-3 rounded-[20px] border border-slate-200 bg-white/95 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4 lg:rounded-[18px]">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
-            <Link href="/user/blogs/new" className="flex min-h-[46px] flex-1 items-center rounded-2xl border border-[#dfe7e1] bg-[#f7f8f4] px-4 text-sm text-[#66736e] transition hover:border-[#9bc9c0] hover:bg-white">
+            <Link href="/user/blogs/new" className="flex min-h-[54px] flex-1 items-center rounded-2xl border border-[#dfe7e1] bg-[#f5f7f4] px-4 text-sm font-medium text-[#66736e] transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
               Share something with Daet...
             </Link>
-            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-sm transition hover:bg-[#0e514d]">
+            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-[0_8px_18px_rgba(22,118,111,0.22)] transition hover:bg-[#0e514d]">
               <Zap className="h-4 w-4" />
             </Link>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
-            <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-slate-50">Write a story</Link>
-            <Link href="/user/blogs/new?share=media" className="rounded-xl py-2 hover:bg-slate-50">Post a photo or video</Link>
+            <Link href="/user/blogs/new" className="rounded-xl border border-transparent bg-slate-50 px-3 py-2.5 transition hover:border-slate-200 hover:bg-white">Write a story</Link>
+            <Link href="/user/blogs/new?share=media" className="rounded-xl border border-transparent bg-slate-50 px-3 py-2.5 transition hover:border-slate-200 hover:bg-white">Post a photo or video</Link>
           </div>
         </div>
 
@@ -1312,14 +1375,44 @@ export default function UserDashboardPage() {
                   const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
                   const authorRoleLabel = getAuthorRoleLabel(author || {})
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
-                  const eventMediaUrl = item.type === 'event' ? getImageUrl(item.featured_image || item.images || item.videos, null) : null
+                  const eventMediaUrl = (item.type === 'event' || item.type === 'tourist_spot') ? getImageUrl(item.featured_image || item.images || item.gallery_images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
                   const postGallery = item.type === 'blog' ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
-                  const postImageUrl = item.type === 'blog' ? item.featured_image || (item.images || [])[0] : item.type === 'announcement' ? item.image_url : eventMediaUrl
+                  const postImageUrl = item.type === 'blog'
+                    ? item.featured_image || (item.images || [])[0]
+                    : item.type === 'announcement'
+                      ? item.image_url
+                      : item.type === 'tourist_spot'
+                        ? getImageUrl(item.featured_image || item.images || item.gallery_images, null)
+                        : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
-                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
+                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
+                  const contentText = String(item.excerpt || item.description || item.content || '').trim()
+                  const normalizedTags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : []
+                  const isLongContent = contentText.length > 260
+                  const isExpanded = expandedPosts.has(itemKey)
+                  const renderedContent = isLongContent && !isExpanded ? `${contentText.slice(0, 260).trim()}...` : contentText
+                  const cardAccentClass = item.type === 'announcement'
+                    ? 'border-l-4 border-l-amber-300 bg-amber-50/50'
+                    : item.type === 'event'
+                      ? 'border-l-4 border-l-amber-200 bg-amber-50/30'
+                      : item.type === 'forum'
+                        ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40'
+                        : item.type === 'tourist_spot'
+                          ? 'border-l-4 border-l-sky-300 bg-sky-50/30'
+                          : item.type === 'blog'
+                            ? 'border-l-4 border-l-violet-300 bg-violet-50/30'
+                            : 'border-l-4 border-l-slate-200 bg-white'
+                  const announcementToneClass = item.announcement_type === 'urgent'
+                    ? 'bg-red-50 text-red-700 border-red-200'
+                    : item.announcement_type === 'important'
+                      ? 'bg-amber-50 text-amber-700 border-amber-200'
+                      : 'bg-sky-50 text-sky-700 border-sky-200'
+                  const isPhotoFirstContent = ['blog', 'event', 'tourist_spot'].includes(item.type)
+                  const readingMinutes = Math.max(1, Math.ceil((contentText.length || 0) / 180))
+
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] lg:rounded-[16px] ${item.type === 'event' ? 'lg:border-[#e6c987]' : item.type === 'forum' ? 'lg:border-[#b9dcd5]' : ''}`}>
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white lg:rounded-[16px] ${cardAccentClass}`}>
                       <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
                           <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
@@ -1333,10 +1426,30 @@ export default function UserDashboardPage() {
                               <span className="text-slate-400">·</span>
                               <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
                             </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{item.type}</span>{item.category && <><span className="text-slate-300">•</span><span className="normal-case tracking-normal text-slate-500">{item.category}</span></>}</div>
-                            <Link href={item.href} className="block"><h2 className="mt-1 break-words text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:mt-2 lg:text-lg lg:leading-7">{item.title}</h2></Link>
-                            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">{item.location && <span className="inline-flex items-center gap-1"><MapPin className="h-3 w-3" />{item.location}</span>}{item.start_date && <span className="inline-flex items-center gap-1"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}{item.reply_count !== undefined && <span>{item.reply_count} replies</span>}</div>
+
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700">
+                              <span>{item.type === 'tourist_spot' ? 'Tourist spot' : item.type === 'announcement' ? 'Announcement' : item.type === 'forum' ? 'Forum' : item.type === 'event' ? 'Event' : item.type === 'blog' ? 'Blog' : 'Post'}</span>
+                              {item.type === 'blog' && (
+                                <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">{readingMinutes} min read</span>
+                              )}
+                            </div>
+
+                            <Link href={item.href} className="mt-2 block pl-0"><h2 className="break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{item.title}</h2></Link>
+
+                            {item.type === 'event' && (
+                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
+                                {item.start_date && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}
+                                {item.location && <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600"><MapPin className="h-3 w-3" />{item.location}</span>}
+                              </div>
+                            )}
+
+                            {item.type === 'tourist_spot' && item.location && (
+                              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700">
+                                <MapPin className="h-3 w-3" />{item.location}
+                              </div>
+                            )}
                           </div>
+
                           <div className="relative shrink-0">
                             <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                             {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
@@ -1347,21 +1460,100 @@ export default function UserDashboardPage() {
                           </div>
                         </div>
 
-                        {(item.excerpt || item.description) && <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{item.excerpt || item.description}</p>}
-                        {item.type === 'forum' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-sky-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">Discussion</span>{item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">Archived</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span></div>}
-                        {item.type === 'event' && <div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>{item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">{item.current_attendees} attending</span>}<span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span></div>}
-                        {item.type === 'blog' && item.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{item.tags.slice(0, 4).map((tag) => <span key={tag} className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">#{tag}</span>)}</div>}
-                        {item.type === 'announcement' && <div className={`mt-3 flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold ${item.announcement_type === 'urgent' ? 'bg-red-50 text-red-700' : item.announcement_type === 'important' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}><ShieldCheck className="h-4 w-4" />Official {item.announcement_type || 'info'} update<span className="font-medium">Applies to: {item.audience || 'all'}</span>{item.expires_at && <span className="font-medium">Until {formatDate(item.expires_at)}</span>}</div>}
-                        {(postGallery.length > 0 || postImageUrl || postVideoUrl) && <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>{postGallery.length > 0 ? postGallery.map((media, mediaIndex) => <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>{media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}</div>) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}</div>}
+                        {item.type === 'announcement' && (
+                          <div className={`mt-3 rounded-2xl border px-3 py-2 text-[11px] font-semibold ${announcementToneClass}`}>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <span>Official {item.announcement_type || 'info'} update</span>
+                              {item.audience && <span className="rounded-full bg-white/70 px-1.5 py-0.5">{item.audience}</span>}
+                              {item.expires_at && <span>Until {formatDate(item.expires_at)}</span>}
+                            </div>
+                          </div>
+                        )}
 
-                        <div className="feed-actions"><SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => openCommentsSheet({
-                          contentType,
-                          contentId: item.id,
-                          userId,
-                          contentOwnerId: item.created_by || author?.id || userId,
-                          contentTitle: item.title,
-                          itemType: item.type,
-                        })} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} /></div>
+                        {isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
+                          <div className={`feed-media mt-4 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
+                            {postGallery.length > 0 ? postGallery.map((media, mediaIndex) => (
+                              <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>
+                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
+                              </div>
+                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
+                          </div>
+                        )}
+
+                        {item.type === 'tourist_spot' && (
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+                            {item.location && <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 font-semibold text-sky-700"><MapPin className="h-3 w-3" />{item.location}</span>}
+                            {item.rating && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-700">★ {Number(item.rating).toFixed(1)}</span>}
+                            {item.entrance_fee && <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">₱{Number(item.entrance_fee).toLocaleString()}</span>}
+                          </div>
+                        )}
+
+                        {item.type === 'event' && (
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {item.start_date && (
+                              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">When</p>
+                                <p className="mt-1 text-sm font-black text-slate-900">{formatDate(item.start_date)}</p>
+                                {item.start_time && <p className="text-[11px] font-semibold text-slate-600">{item.start_time}</p>}
+                              </div>
+                            )}
+                            {item.location && (
+                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Where</p>
+                                <p className="mt-1 text-sm font-black text-slate-900">{item.location}</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {contentText && (
+                          <div className="mt-3">
+                            <p className="break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{renderedContent}</p>
+                            {isLongContent && (
+                              <button type="button" onClick={() => toggleExpandedPost(itemKey)} className="mt-2 text-xs font-bold text-sky-700 hover:text-sky-800">
+                                {isExpanded ? 'Show less' : 'Read more'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {item.type === 'forum' && (
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                            <span className="rounded-full bg-sky-100 px-2.5 py-1 font-bold uppercase tracking-wide text-sky-700">Discussion</span>
+                            {item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 font-bold uppercase tracking-wide text-slate-600">Archived</span>}
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span>
+                          </div>
+                        )}
+
+                        {item.type === 'event' && (
+                          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+                            <span className="rounded-full bg-amber-100 px-2.5 py-1 font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>
+                            {item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-700">{item.current_attendees} attending</span>}
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span>
+                          </div>
+                        )}
+
+                        {!isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
+                          <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
+                            {postGallery.length > 0 ? postGallery.map((media, mediaIndex) => (
+                              <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>
+                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
+                              </div>
+                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
+                          </div>
+                        )}
+
+                        <div className="feed-actions mt-4">
+                          <SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => openCommentsSheet({
+                            contentType,
+                            contentId: item.id,
+                            userId,
+                            contentOwnerId: item.created_by || author?.id || userId,
+                            contentTitle: item.title,
+                            itemType: item.type,
+                          })} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} />
+                        </div>
                       </div>
                     </article>
                   )
