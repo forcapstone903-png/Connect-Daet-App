@@ -38,6 +38,11 @@ self.addEventListener('push', (event) => {
     body: payload.body || payload.message || 'You have a new notification.',
     icon: payload.icon || '/logo.png',
     badge: payload.badge || '/logo.png',
+    timestamp: Date.now(),
+    requireInteraction: true,
+    renotify: true,
+    silent: false,
+    vibrate: [200, 100, 200],
     data: {
       url: payload.url || payload.link || '/',
       ...(payload.data || {}),
