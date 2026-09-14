@@ -38,6 +38,8 @@ The migrations are split by responsibility:
 - `supabase/migrations/037_push_notifications.sql` creates `public.push_subscriptions`.
 - `supabase/migrations/038_notifications.sql` creates `public.notifications`.
 - `supabase/migrations/039_push_notifications_webhook.sql` creates the trigger.
+- `supabase/migrations/040_info_notifications_push_bridge.sql` bridges the app's
+  `public.info_notifications` rows into the push queue.
 
 Before applying `039`, replace:
 
@@ -153,6 +155,12 @@ select trigger_schema, event_object_schema, event_object_table,
 from information_schema.triggers
 where event_object_schema = 'public'
   and event_object_table = 'notifications';
+
+select trigger_schema, event_object_schema, event_object_table,
+       trigger_name, action_timing, event_manipulation, action_statement
+from information_schema.triggers
+where event_object_schema = 'public'
+  and event_object_table = 'info_notifications';
 ```
 
 Manually invoke the Edge Function. Use a function token accepted by your deployed function:

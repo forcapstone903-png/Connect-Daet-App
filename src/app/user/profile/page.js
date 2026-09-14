@@ -18,6 +18,7 @@ import MediaUpload from '@/app/components/MediaUpload'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
+import { invalidateCachePrefix } from '@/lib/cache'
 
 const STORAGE_KEYS = {
   profilePreferences: 'daet_user_profile_preferences',
@@ -389,6 +390,7 @@ export default function UserProfilePage() {
       writeLocalState(STORAGE_KEYS.profilePreferences, {
         notificationPrefs,
       })
+      invalidateCachePrefix(`profile:user:${userId}`)
       setSaveNotice('Profile updated successfully.')
     } catch (error) {
       console.error('Profile update failed:', error)

@@ -38,6 +38,7 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
+import { clearUserCache, getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
@@ -58,7 +59,6 @@ const TABLES = {
 }
 
 const DASHBOARD_CACHE_TTL_MS = 120000
-const DASHBOARD_CACHE = new Map()
 const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
 const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
 
@@ -77,23 +77,14 @@ function writeStoredSet(key, values) {
   localStorage.setItem(key, JSON.stringify([...values]))
 }
 
+const getDashboardCacheKey = (userId) => getCacheKey('feed', 'user', userId, 'dashboard')
+
 function getDashboardCache(userId) {
-  const cacheEntry = DASHBOARD_CACHE.get(userId)
-  if (!cacheEntry) return null
-
-  if (Date.now() > cacheEntry.expiresAt) {
-    DASHBOARD_CACHE.delete(userId)
-    return null
-  }
-
-  return cacheEntry.data
+  return getCache(getDashboardCacheKey(userId))?.data || null
 }
 
 function setDashboardCache(userId, data) {
-  DASHBOARD_CACHE.set(userId, {
-    data,
-    expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-  })
+  setCache(getDashboardCacheKey(userId), data, DASHBOARD_CACHE_TTL_MS)
 }
 
 // Helper functions
@@ -430,6 +421,7 @@ export default function UserDashboardPage() {
         setToastMessage(labels[reactionType] || 'Thanks for the reaction!')
       }
       setReactions(nextReactions)
+      invalidateCache(getDashboardCacheKey(userId))
     } catch (error) {
       console.error('Reaction update failed:', error)
       setToastMessage('Unable to update reaction')
@@ -474,6 +466,7 @@ export default function UserDashboardPage() {
         setToastMessage('Saved for later!')
       }
       setSavedItems(nextSaved)
+      invalidateCache(getDashboardCacheKey(userId))
     } catch (error) {
       console.error('Save update failed:', error)
       setToastMessage('Unable to update saved items')
@@ -536,6 +529,7 @@ export default function UserDashboardPage() {
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this person right now')
       setFollowedSuggestions((previous) => new Set([...previous, personId]))
+      invalidateCache(getDashboardCacheKey(userId))
     } catch (followError) {
       console.error('Suggested follow failed:', followError?.message || followError)
       setToastMessage(followError?.message || 'Unable to follow this person right now')
@@ -943,6 +937,7 @@ export default function UserDashboardPage() {
 
   const handleLogout = async () => {
     try {
+      clearUserCache(userId)
       await performLogout()
     } catch (err) {
       console.error('User logout error:', err)
@@ -1201,22 +1196,8 @@ export default function UserDashboardPage() {
           </div>
         )}
 
-        <section
-          className="mb-6 hidden overflow-hidden rounded-[24px] border border-sky-900/20 bg-cover bg-center px-6 py-5 text-white shadow-[0_10px_28px_rgba(14,116,144,0.14)] lg:block"
-          style={{ backgroundImage: "linear-gradient(90deg, rgba(2, 25, 45, 0.86), rgba(2, 25, 45, 0.48)), url('https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=85')" }}
-        >
-          <div className="flex items-center justify-between gap-6">
-            <div className="max-w-[620px]">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-cyan-200">Daet community journal</p>
-              <h1 className="mt-1 text-2xl font-black tracking-tight text-white">Stories, places, and people worth knowing.</h1>
-              <p className="mt-2 text-sm leading-6 text-slate-100">Stay close to what is happening across Daet, from local events to conversations with fellow travelers.</p>
-            </div>
-            {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="hidden w-[260px] shrink-0 rounded-2xl border border-white/70 bg-white/90 p-3 shadow-sm transition hover:bg-white xl:block"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Editor&apos;s pick</p><p className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p><p className="mt-1 text-[11px] text-slate-500">Read from the community feed</p></Link>}
-          </div>
-        </section>
-
-        <div className="dashboard-feed-layout lg:h-[calc(100vh-11rem)] lg:min-h-0 lg:overflow-hidden">
-          <div className="dashboard-feed-main min-w-0 lg:min-h-0 lg:max-h-full lg:overflow-y-auto lg:pr-3 lg:overscroll-contain">
+        <div className="dashboard-feed-layout">
+          <div className="dashboard-feed-main min-w-0 lg:pr-3">
         <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
             <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
@@ -1352,7 +1333,7 @@ export default function UserDashboardPage() {
           </div>
           </div>
 
-          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4 lg:min-h-0 lg:block lg:max-h-full lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
+          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4 lg:block lg:pr-1">
             <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
               <div className="border-b border-slate-100 px-2 pb-3">
                 <div className="flex items-center gap-2.5">

@@ -428,7 +428,7 @@ export default function VisitorPage() {
 
         <div className="relative mx-auto max-w-[1440px] px-3 pb-10 pt-2 sm:px-6 sm:pb-16 sm:pt-3 lg:px-8 xl:px-10">
           {/* Header */}
-          <header className="relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 bg-white/10 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] backdrop-blur-xl sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5">
+          <header className={`relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5 ${mobileMenuOpen ? 'bg-slate-950' : 'bg-white/10 backdrop-blur-xl'}`}>
             <div className="grid items-center gap-2 sm:gap-4 md:grid-cols-[auto_1fr_auto]">
               <div className="flex w-full items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 p-1 shadow-lg shadow-sky-900/20 ring-1 ring-white/20 sm:h-11 sm:w-11">
@@ -484,7 +484,7 @@ export default function VisitorPage() {
             </div>
 
             {mobileMenuOpen && (
-              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] overflow-hidden rounded-2xl border border-white/15 bg-slate-950/75 shadow-[0_18px_40px_rgba(15,23,42,0.22)] backdrop-blur-xl md:hidden">
+              <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-[60] overflow-hidden rounded-2xl border border-white/20 bg-slate-950 shadow-[0_18px_40px_rgba(15,23,42,0.35)] md:hidden">
                 <nav className="flex flex-col gap-0.5 p-2">
                   {navigationItems.map((item) => (
                     <a
@@ -494,7 +494,7 @@ export default function VisitorPage() {
                       className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 text-sm font-medium transition-all ${
                         activeSection === item.id
                           ? 'bg-white text-slate-900 shadow-sm'
-                          : 'text-slate-100 hover:bg-white/10 hover:text-white'
+                          : 'text-white hover:bg-white/10 hover:text-white'
                       }`}
                     >
                       <span>{item.label}</span>
@@ -516,7 +516,7 @@ export default function VisitorPage() {
                         <Link href="/login" className="rounded-xl bg-white px-3 py-2 text-center text-xs font-semibold text-slate-900 transition hover:bg-slate-100">
                           Sign in
                         </Link>
-                        <Link href="/register" className="rounded-xl border border-white/20 bg-white/5 px-3 py-2 text-center text-xs font-semibold text-white transition hover:bg-white/10">
+                        <Link href="/register" className="rounded-xl border border-white/30 bg-slate-800 px-3 py-2 text-center text-xs font-semibold text-white transition hover:bg-slate-700">
                           Join now
                         </Link>
                       </>

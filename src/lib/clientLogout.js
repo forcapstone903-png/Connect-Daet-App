@@ -1,4 +1,5 @@
-import { clearAuthCookie } from './authCookies'
+import { clearAuthCookie, getStoredSessionObject } from './authCookies'
+import { clearUserCache } from './cache'
 import { supabase } from './supabase'
 
 /**
@@ -9,6 +10,9 @@ import { supabase } from './supabase'
  * cookie. Only best-effort cleanup is performed after that.
  */
 export async function performLogout() {
+  const userId = getStoredSessionObject()?.user_id
+  clearUserCache(userId)
+
   try {
     await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' })
   } catch (error) {

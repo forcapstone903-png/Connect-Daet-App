@@ -6,7 +6,10 @@ import { useRouter } from 'next/navigation'
 import { Angry, Bell, BellRing, CheckCheck, Frown, Heart, Laugh, MessageCircle, Repeat2, Search, ShieldAlert, Sparkles, ThumbsUp, Trash2, UserRoundPlus, Volume2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
+import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import Comments from '@/app/components/user/Comments'
+
+const NOTIFICATIONS_CACHE_TTL_MS = 30 * 1000
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -215,10 +218,20 @@ export default function UserNotificationsPage() {
     }
 
     const userIdForRealtime = userId || session?.user_id || session?.id || session?.userId || session?.sub || ''
+    const notificationsCacheKey = getCacheKey('notifications', 'user', userIdForRealtime)
 
     const loadNotifications = async (silent = false) => {
       if (!silent) setLoadError('')
       let lastError = null
+
+      if (!silent) {
+        const cached = getCache(notificationsCacheKey)?.data
+        if (cached) {
+          setNotifications(cached.notifications || [])
+          syncUnreadBadge(cached.notifications || [])
+          setLoading(false)
+        }
+      }
 
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const controller = new AbortController()
@@ -240,6 +253,7 @@ export default function UserNotificationsPage() {
           if (session) {
             setNotifications(result.notifications || [])
             syncUnreadBadge(result.notifications || [])
+            setCache(notificationsCacheKey, { notifications: result.notifications || [], unreadCount: result.unread_count || 0 }, NOTIFICATIONS_CACHE_TTL_MS)
           }
           if (!silent) setLoading(false)
           window.clearTimeout(timeout)
@@ -622,6 +636,7 @@ export default function UserNotificationsPage() {
         syncUnreadBadge(next)
         return next
       })
+      invalidateCache(notificationsCacheKey)
     } catch (error) {
       console.error('Update read state failed:', error)
     }
@@ -648,6 +663,7 @@ export default function UserNotificationsPage() {
         syncUnreadBadge(next)
         return next
       })
+      invalidateCache(notificationsCacheKey)
     } catch (error) {
       console.error('Mark all notifications read failed:', error)
     }
@@ -672,6 +688,7 @@ export default function UserNotificationsPage() {
         syncUnreadBadge(next)
         return next
       })
+      invalidateCache(notificationsCacheKey)
     } catch (error) {
       console.error('Delete notification failed:', error)
       setActionNotice(error.message || 'Unable to delete notification.')
@@ -715,6 +732,7 @@ export default function UserNotificationsPage() {
       }
 
       setNotifications([])
+      invalidateCache(notificationsCacheKey)
       setShowDeleteConfirm(false)
       setActionNotice('Notification history deleted.')
       syncUnreadBadge([])

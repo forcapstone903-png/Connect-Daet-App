@@ -52,6 +52,7 @@ Deno.serve(async (request) => {
     if (subscriptionError) throw subscriptionError
 
     const payload = JSON.stringify({
+      id: notification.id || crypto.randomUUID(),
       title: notification.title || 'CONNECT-Daet',
       body,
       icon: notification.icon || '/logo.png',

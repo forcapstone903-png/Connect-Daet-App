@@ -180,7 +180,6 @@ export default function BlogDetailPage() {
             .limit(3)
 
           setUserBadges((badgeData || []).map((item) => item.badge_name))
-
         }
 
         if (!blogId) return
@@ -284,24 +283,23 @@ export default function BlogDetailPage() {
 
     try {
       if (isSaved) {
-        await supabase
+        const { error: deleteError } = await supabase
           .from('user_favorites')
           .delete()
           .eq('user_id', userId)
           .eq('item_type', 'blog')
           .eq('item_id', blogId)
-
+        if (deleteError) throw deleteError
       } else {
-        await supabase.from('user_favorites').insert({
-          user_id: userId,
-          item_type: 'blog',
-          item_id: blogId,
-        })
-
+        const { error: saveError } = await supabase
+          .from('user_favorites')
+          .upsert({ user_id: userId, item_type: 'blog', item_id: blogId }, { onConflict: 'user_id,item_type,item_id' })
+        if (saveError) throw saveError
       }
 
       setIsSaved(!isSaved)
-      if (!isSaved && userId) {
+      alert(isSaved ? 'Removed from saved items.' : 'Saved for later.')
+      if (!isSaved) {
         trackUserActivity({
           userId,
           activityType: 'save_content',
@@ -313,6 +311,7 @@ export default function BlogDetailPage() {
       }
     } catch (error) {
       console.error('Error saving blog:', error)
+      alert(error?.message || 'Unable to update saved items right now.')
     }
   }
 

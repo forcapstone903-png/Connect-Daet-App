@@ -10,6 +10,7 @@ import {
   Check,
   Compass,
   ImagePlus,
+  Mic,
   MapPin,
   ShieldCheck,
   Sparkles,
@@ -34,6 +35,7 @@ export default function OnboardingPage() {
   const [followedPeople, setFollowedPeople] = useState([])
   const [avatarUrl, setAvatarUrl] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
+  const [permissions, setPermissions] = useState({ location: 'not-requested', camera: 'not-requested', microphone: 'not-requested', notifications: 'not-requested' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -138,6 +140,112 @@ export default function OnboardingPage() {
     }
   }
 
+  const skipOnboarding = async (event) => {
+    event?.preventDefault()
+    if (!userId || saving) return
+
+    setSaving(true)
+    setError('')
+    try {
+      const [{ error: preferenceError }, { error: userError }] = await Promise.all([
+        supabase
+          .from('user_feed_preferences')
+          .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+          .eq('user_id', userId),
+        supabase
+          .from('info_users')
+          .update({ onboarding_completed: true, updated_at: new Date().toISOString() })
+          .eq('id', userId),
+      ])
+
+      if (preferenceError) throw preferenceError
+      if (userError) throw userError
+
+      updateStoredSession({ onboarding_completed: true })
+      router.replace('/user/dashboard')
+    } catch (skipError) {
+      console.error('Onboarding skip save failed:', skipError)
+      setError(skipError.message || 'Unable to save your onboarding choice right now.')
+      setSaving(false)
+    }
+  }
+
+  const requestLocationPermission = () => {
+    if (!navigator.geolocation) {
+      setPermissions((current) => ({ ...current, location: 'unsupported' }))
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      () => setPermissions((current) => ({ ...current, location: 'allowed' })),
+      (error) => setPermissions((current) => ({
+        ...current,
+        location: error.code === error.PERMISSION_DENIED ? 'blocked' : 'unavailable',
+      })),
+      { enableHighAccuracy: false, maximumAge: 300000, timeout: 10000 },
+    )
+  }
+
+  const requestCameraPermission = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermissions((current) => ({ ...current, camera: 'unsupported' }))
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      stream.getTracks().forEach((track) => track.stop())
+      setPermissions((current) => ({ ...current, camera: 'allowed' }))
+    } catch (permissionError) {
+      console.warn('Camera permission was not granted:', permissionError)
+      setPermissions((current) => ({
+        ...current,
+        camera: permissionError?.name === 'NotAllowedError' ? 'blocked' : 'unavailable',
+      }))
+    }
+  }
+
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      setPermissions((current) => ({ ...current, notifications: 'unsupported' }))
+      return
+    }
+
+    const permission = await Notification.requestPermission()
+    setPermissions((current) => ({
+      ...current,
+      notifications: permission === 'granted' ? 'allowed' : permission === 'denied' ? 'blocked' : 'dismissed',
+    }))
+  }
+
+  const requestMicrophonePermission = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermissions((current) => ({ ...current, microphone: 'unsupported' }))
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((track) => track.stop())
+      setPermissions((current) => ({ ...current, microphone: 'allowed' }))
+    } catch (permissionError) {
+      console.warn('Microphone permission was not granted:', permissionError)
+      setPermissions((current) => ({
+        ...current,
+        microphone: permissionError?.name === 'NotAllowedError' ? 'blocked' : 'unavailable',
+      }))
+    }
+  }
+
+  const permissionLabel = (status) => ({
+    allowed: 'Allowed',
+    blocked: 'Blocked in browser settings',
+    dismissed: 'Not allowed',
+    unsupported: 'Not supported on this device',
+    unavailable: 'Unavailable right now',
+    'not-requested': 'Allow',
+  }[status] || 'Allow')
+
   const nextStep = () => {
     if (!canContinue) return
     if (step === 4) {
@@ -162,7 +270,7 @@ export default function OnboardingPage() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] px-3 py-6 text-slate-900 sm:px-6 sm:py-10">
       <div className="mx-auto max-w-5xl">
         <header className="mb-5 flex items-center justify-between gap-3">
-          <Link href="/user/dashboard" className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700">
+          <Link href="/user/dashboard" onClick={skipOnboarding} className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700">
             <ArrowLeft className="h-4 w-4" />
             Skip setup
           </Link>
@@ -308,6 +416,40 @@ export default function OnboardingPage() {
 
             {step === 4 && (
               <>
+                <div className="mb-5 rounded-[1.5rem] border border-sky-200 bg-sky-50/70 p-4">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900">Choose what CONNECT-Daet can use</h2>
+                    <p className="mt-1 text-xs leading-5 text-slate-600">These permissions are optional and can be changed later in your phone or browser settings.</p>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      { key: 'location', label: 'Location', icon: MapPin, onClick: requestLocationPermission },
+                      { key: 'camera', label: 'Camera', icon: Camera, onClick: requestCameraPermission },
+                      { key: 'microphone', label: 'Microphone', icon: Mic, onClick: requestMicrophonePermission },
+                      { key: 'notifications', label: 'Notifications', icon: Bell, onClick: requestNotificationPermission },
+                    ].map(({ key, label, icon: Icon, onClick }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={onClick}
+                        disabled={permissions[key] === 'allowed'}
+                        className="flex items-center gap-3 rounded-xl border border-white bg-white px-3 py-3 text-left shadow-sm transition hover:border-sky-300 disabled:cursor-default disabled:opacity-80"
+                      >
+                        <Icon className="h-4 w-4 shrink-0 text-sky-600" />
+                        <span className="min-w-0">
+                          <span className="block text-xs font-bold text-slate-800">{label}</span>
+                          <span className={`mt-0.5 block text-[10px] ${permissions[key] === 'blocked' ? 'text-red-600' : permissions[key] === 'allowed' ? 'text-emerald-600' : 'text-slate-500'}`}>
+                            {permissionLabel(permissions[key])}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-3 text-[10px] leading-4 text-slate-500">
+                    Photos and files are selected through the upload buttons below. Calendar events use your phone&apos;s share or download tools and do not require calendar access.
+                  </p>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700">

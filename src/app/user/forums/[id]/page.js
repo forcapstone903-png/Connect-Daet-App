@@ -126,6 +126,18 @@ export default function ThreadDetailPage() {
 
           setReplies(repliesData || [])
 
+          if (session?.user?.id && repliesData?.length) {
+            const { data: reactionRows, error: reactionError } = await supabase
+              .from('content_reactions')
+              .select('content_id')
+              .eq('user_id', session.user.id)
+              .eq('content_type', 'forum_reply')
+              .in('content_id', repliesData.map((reply) => reply.id))
+
+            if (reactionError) throw reactionError
+            setUserLikes(new Set((reactionRows || []).map((reaction) => reaction.content_id)))
+          }
+
           // Check if subscribed
           if (session?.user?.id) {
             const { data: subData } = await supabase
@@ -163,21 +175,46 @@ export default function ThreadDetailPage() {
 
     try {
       if (isSubscribed) {
-        await supabase
+        const { error } = await supabase
           .from('forum_subscriptions')
           .delete()
           .eq('thread_id', threadId)
           .eq('user_id', userId)
+        if (error) throw error
       } else {
-        await supabase.from('forum_subscriptions').insert({
+        const { error } = await supabase.from('forum_subscriptions').upsert({
           thread_id: threadId,
           user_id: userId,
-        })
+        }, { onConflict: 'thread_id,user_id' })
+        if (error) throw error
       }
 
       setIsSubscribed(!isSubscribed)
+      alert(isSubscribed ? 'Thread notifications turned off.' : 'Thread notifications turned on.')
     } catch (error) {
       console.error('Error toggling subscription:', error)
+      alert(error?.message || 'Unable to update thread notifications right now.')
+    }
+  }
+
+  const handleShare = async () => {
+    const url = window.location.href
+    const shareData = { title: thread?.title || 'Daet community discussion', url }
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData)
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url)
+        alert('Link copied to clipboard.')
+      } else {
+        throw new Error('Sharing is not available in this browser.')
+      }
+    } catch (shareError) {
+      if (shareError?.name !== 'AbortError') {
+        console.error('Thread share failed:', shareError)
+        alert(shareError?.message || 'Unable to share this discussion right now.')
+      }
     }
   }
 
@@ -228,17 +265,28 @@ export default function ThreadDetailPage() {
   }
 
   const toggleLike = async (replyId) => {
-    const newLikes = new Set(userLikes)
-
-    if (newLikes.has(replyId)) {
-      newLikes.delete(replyId)
-    } else {
-      newLikes.add(replyId)
+    if (!userId) {
+      alert('Please log in to like replies.')
+      return
     }
 
-    setUserLikes(newLikes)
+    const wasLiked = userLikes.has(replyId)
+    const result = wasLiked
+      ? await supabase.from('content_reactions').delete().eq('user_id', userId).eq('content_type', 'forum_reply').eq('content_id', replyId)
+      : await supabase.from('content_reactions').upsert({ user_id: userId, content_type: 'forum_reply', content_id: replyId, reaction_type: 'like' }, { onConflict: 'user_id,content_type,content_id' })
 
-    // In a real app, this would save to database
+    if (result.error) {
+      console.error('Reply like update failed:', result.error)
+      alert(result.error.message || 'Unable to update like right now.')
+      return
+    }
+
+    setUserLikes((current) => {
+      const next = new Set(current)
+      if (wasLiked) next.delete(replyId)
+      else next.add(replyId)
+      return next
+    })
   }
 
   if (loading) {
@@ -293,6 +341,7 @@ export default function ThreadDetailPage() {
             </button>
             <button
               type="button"
+              onClick={handleShare}
               className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               title="Share"
             >

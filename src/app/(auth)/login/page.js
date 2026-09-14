@@ -106,7 +106,9 @@ function LoginContent() {
       }
 
       const user = data.user
-      const shouldStartOnboarding = searchParams.get('onboarding') === '1' || user.onboarding_completed === false
+      const shouldStartOnboarding = user.onboarding_completed !== true && (
+        searchParams.get('onboarding') === '1' || user.onboarding_completed === false
+      )
       const sessionData = {
         user_id: user.id,
         user_name: user.full_name,

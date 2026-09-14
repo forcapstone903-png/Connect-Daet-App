@@ -12,8 +12,11 @@ import {
   Star,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getCacheKey, getPersistentCache, setPersistentCache } from '@/lib/cache'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
+const SPOTS_CACHE_KEY = getCacheKey('places', 'public', 'all')
+const SPOTS_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 function getImageUrl(value, fallback) {
   if (Array.isArray(value) && value.length > 0) return value[0]
@@ -34,6 +37,12 @@ export default function TouristSpotsPage() {
 
     const loadSpots = async () => {
       try {
+        const cachedSpots = getPersistentCache(SPOTS_CACHE_KEY)?.data
+        if (Array.isArray(cachedSpots)) {
+          setSpots(cachedSpots)
+          setLoading(false)
+        }
+
         const [{ data, error }, { data: sessionData }] = await Promise.all([
           supabase
           .from('info_tourist_spots')
@@ -54,6 +63,7 @@ export default function TouristSpotsPage() {
             setSpots([])
           } else {
             setSpots(data || [])
+            setPersistentCache(SPOTS_CACHE_KEY, data || [], SPOTS_CACHE_TTL_MS)
           }
           setFavorites(new Set((favoriteRows || []).map((favorite) => favorite.item_id)))
           setLoading(false)

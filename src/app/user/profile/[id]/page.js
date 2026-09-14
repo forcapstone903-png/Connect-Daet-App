@@ -5,6 +5,10 @@ import Link from 'next/link'
 import { ArrowLeft, CalendarDays, Check, FileText, MapPin, MessageCircle, MoreHorizontal, UserPlus, Users } from 'lucide-react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
+import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import { getCache, getCacheKey, invalidateCachePrefix, setCache } from '@/lib/cache'
+
+const PROFILE_CACHE_TTL_MS = 10 * 60 * 1000
 
 function getInitials(name = '') {
   return name
@@ -44,6 +48,15 @@ export default function PublicProfilePage() {
       setError('')
 
       try {
+        const viewerId = getAuthCookieFromDocument()?.user_id || 'anonymous'
+        const cacheKey = getCacheKey('profile', 'user', profileId, 'viewer', viewerId)
+        const cachedProfile = getCache(cacheKey)?.data
+        if (cachedProfile) {
+          applyProfileResult(cachedProfile)
+          setLoading(false)
+          return
+        }
+
         const profileResponse = await fetch(`/api/users/${profileId}`, { credentials: 'same-origin' })
         const profileResult = await profileResponse.json()
 
@@ -52,6 +65,17 @@ export default function PublicProfilePage() {
           return
         }
 
+        setCache(getCacheKey('profile', 'user', profileId, 'viewer', profileResult.viewer_id || viewerId), profileResult, PROFILE_CACHE_TTL_MS)
+        applyProfileResult(profileResult)
+      } catch (loadError) {
+        console.error('Public profile load failed:', loadError)
+        setError('Unable to load this profile right now.')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    const applyProfileResult = (profileResult) => {
         const currentViewerId = profileResult.viewer_id || null
         const content = profileResult.content || {}
         setViewerId(currentViewerId)
@@ -97,12 +121,6 @@ export default function PublicProfilePage() {
             href: `/user/events/${post.id}`,
           })),
         ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)))
-      } catch (loadError) {
-        console.error('Public profile load failed:', loadError)
-        setError('Unable to load this profile right now.')
-      } finally {
-        setLoading(false)
-      }
     }
 
     void loadProfile()
@@ -124,6 +142,8 @@ export default function PublicProfilePage() {
         setIsMutual(Boolean(result.is_mutual))
         setFollowerCount(result.followers_count ?? 0)
         setFollowingCount(result.following_count ?? 0)
+        invalidateCachePrefix(`profile:user:${profileId}`)
+        if (viewerId) invalidateCachePrefix(`feed:user:${viewerId}`)
       } else {
         const response = await fetch(`/api/users/${profileId}/follow`, { method: 'POST', credentials: 'same-origin' })
         const result = await response.json()
@@ -133,6 +153,8 @@ export default function PublicProfilePage() {
         setIsMutual(Boolean(result.is_mutual))
         setFollowerCount(result.followers_count ?? 0)
         setFollowingCount(result.following_count ?? 0)
+        invalidateCachePrefix(`profile:user:${profileId}`)
+        invalidateCachePrefix(`feed:user:${viewerId}`)
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('daet-notifications-updated'))
         }
