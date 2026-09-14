@@ -185,7 +185,7 @@ export default function PublicProfilePage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
+    <main className="tourism-shell min-h-screen text-slate-900">
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 sm:px-5 sm:pb-10 lg:px-8">
         {(fromReactions || fromComments) && (
           <div className="pt-3 sm:pt-5">
@@ -200,7 +200,7 @@ export default function PublicProfilePage() {
             </button>
           </div>
         )}
-        <section className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.06)]">
+        <section className="tourism-panel overflow-hidden rounded-[22px]">
           <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-56">
             {profile.cover_photo_url && <img src={profile.cover_photo_url} alt={`${profile.full_name || 'User'} cover`} className="profile-cover-image" />}
             <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
@@ -236,7 +236,7 @@ export default function PublicProfilePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 border-b border-slate-200 bg-white text-center">
+          <div className="grid grid-cols-3 border-b border-[#dfe7e1] bg-[#fffefa] text-center">
             <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{posts.length}</p><p className="text-[11px] text-slate-500">Posts</p></div>
             <Link href={`/user/profile/connections?user=${profile.id}&tab=followers`} className="border-r border-slate-200 px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{followerCount}</p><p className="text-[11px] text-slate-500">Followers</p></Link>
             <Link href={`/user/profile/connections?user=${profile.id}&tab=following`} className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{followingCount}</p><p className="text-[11px] text-slate-500">Following</p></Link>

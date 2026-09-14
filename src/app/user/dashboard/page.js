@@ -15,9 +15,11 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowUp,
+  Bell,
   Flame,
   Loader,
   LogOut,
+  Mail,
   MessageCircle,
   Menu,
   MapPinned,
@@ -183,7 +185,9 @@ export default function UserDashboardPage() {
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [sheetVisible, setSheetVisible] = useState(false)
   const [notificationCommentRequest, setNotificationCommentRequest] = useState(null)
+  const [pullDistance, setPullDistance] = useState(0)
   const sheetTouchStartY = useRef(null)
+  const pullStartY = useRef(null)
 
   useEffect(() => {
     const handleFeedRefresh = () => {
@@ -946,6 +950,36 @@ export default function UserDashboardPage() {
     }
   }
 
+  const resetPullToRefresh = () => {
+    pullStartY.current = null
+    setPullDistance(0)
+  }
+
+  const handleDashboardTouchStart = (event) => {
+    if (feedRefreshing || window.scrollY > 0) return
+    pullStartY.current = event.touches?.[0]?.clientY ?? null
+  }
+
+  const handleDashboardTouchMove = (event) => {
+    if (pullStartY.current === null || feedRefreshing) return
+
+    const clientY = event.touches?.[0]?.clientY
+    if (clientY === undefined || clientY < pullStartY.current) return
+
+    const delta = clientY - pullStartY.current
+    if (delta > 0) {
+      event.preventDefault()
+      setPullDistance(Math.min(delta * 0.72, 120))
+    }
+  }
+
+  const handleDashboardTouchEnd = () => {
+    if (pullDistance >= 72) {
+      window.dispatchEvent(new Event('daet-feed-refresh'))
+    }
+    resetPullToRefresh()
+  }
+
   const filteredFeed = useMemo(() => {
     let result = feed.filter((item) => {
       if (hiddenPosts.has(`${item.type}-${item.id}`)) return false
@@ -1135,15 +1169,24 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
+    <main className="tourism-shell relative min-h-screen w-full overflow-x-clip" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
       {toastMessage && (
         <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
           {toastMessage}
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
-        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4 lg:mb-6 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+      {(pullDistance > 0 || feedRefreshing) && (
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[70] -translate-x-1/2">
+          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700 shadow-lg backdrop-blur-md">
+            <RefreshCw className={`h-3.5 w-3.5 ${feedRefreshing ? 'animate-spin' : ''}`} />
+            <span>{feedRefreshing ? 'Refreshing' : pullDistance >= 72 ? 'Release to refresh' : 'Pull to refresh'}</span>
+          </div>
+        </div>
+      )}
+
+      <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
+        <header className="sticky top-0 z-50 mb-0 w-full self-start rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-0 sm:p-4 lg:mb-0 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
               <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
@@ -1171,15 +1214,18 @@ export default function UserDashboardPage() {
             </div>
 
             <div className="flex items-center gap-2 lg:hidden">
-              <Link href="/user/profile" aria-label="Open profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white transition hover:bg-sky-800">
-                {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
+              <Link href="/search" aria-label="Search" title="Search" className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-sky-700">
+                <Search className="h-4 w-4" />
+              </Link>
+              <Link href="/user/notifications" aria-label="Alerts" title="Alerts" className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-sky-700">
+                <Bell className="h-4 w-4" />
               </Link>
               <div className="relative">
                 <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
                   <Menu className="h-5 w-5" />
                 </button>
                 {showProfileMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                  <Link href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile settings</Link>
+                  <Link href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile</Link>
                   <Link href="/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />Messages</Link>
                   <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
                 </div>}
@@ -1198,29 +1244,24 @@ export default function UserDashboardPage() {
 
         <div className="dashboard-feed-layout">
           <div className="dashboard-feed-main min-w-0 lg:pr-3">
-        <div className="mb-4 rounded-[22px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_25px_rgba(15,23,42,0.06)] sm:p-5 lg:rounded-[16px] lg:shadow-[0_6px_20px_rgba(15,23,42,0.05)]">
-            <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
-            <Link href="/user/blogs/new" className="flex min-h-11 flex-1 items-center rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-500 transition hover:border-sky-300">
+        <div className="tourism-panel mb-3 rounded-[18px] p-3 shadow-sm sm:p-4 lg:rounded-[16px]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
+            <Link href="/user/blogs/new" className="flex min-h-[46px] flex-1 items-center rounded-2xl border border-[#dfe7e1] bg-[#f7f8f4] px-4 text-sm text-[#66736e] transition hover:border-[#9bc9c0] hover:bg-white">
               Share something with Daet...
             </Link>
-            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm transition hover:bg-amber-600">
+            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-sm transition hover:bg-[#0e514d]">
               <Zap className="h-4 w-4" />
             </Link>
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
-            <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-white">Write a story</Link>
-            <Link href="/user/blogs/new?share=media" className="rounded-xl py-2 hover:bg-white">Post a photo or video</Link>
+            <Link href="/user/blogs/new" className="rounded-xl py-2 hover:bg-slate-50">Write a story</Link>
+            <Link href="/user/blogs/new?share=media" className="rounded-xl py-2 hover:bg-slate-50">Post a photo or video</Link>
           </div>
         </div>
 
         <div>
-          <section className="min-w-0 space-y-4">
-            <div className="flex items-end justify-between px-1">
-              <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Your community</p><h1 className="mt-1 text-xl font-black leading-tight tracking-tight text-slate-900">Latest from Daet</h1></div>
-              <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} aria-label="Refresh your feed" title="Refresh your feed" className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:border-sky-300 hover:text-sky-700" disabled={feedRefreshing}><RefreshCw className={`h-4 w-4 ${feedRefreshing ? 'animate-spin' : ''}`} /></button>
-            </div>
-
+          <section className="min-w-0 space-y-0">
             <div className="hidden items-center border-b border-slate-200 lg:flex">
               {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
             </div>
@@ -1262,7 +1303,7 @@ export default function UserDashboardPage() {
             ) : filteredFeed.length === 0 ? (
               <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No posts found. Try another topic or search.</div>
             ) : (
-              <div className="space-y-4 lg:space-y-6">
+              <div className="space-y-0">
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const isSaved = savedItems.has(itemKey)
@@ -1278,7 +1319,7 @@ export default function UserDashboardPage() {
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : 'event'
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,55,60,0.05)] lg:rounded-[16px] lg:shadow-[0_5px_18px_rgba(15,23,42,0.05)] ${item.type === 'event' ? 'lg:border-amber-200' : item.type === 'forum' ? 'lg:border-sky-100' : ''}`}>
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] lg:rounded-[16px] ${item.type === 'event' ? 'lg:border-[#e6c987]' : item.type === 'forum' ? 'lg:border-[#b9dcd5]' : ''}`}>
                       <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
                           <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>

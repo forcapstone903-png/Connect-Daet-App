@@ -1,8 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f4f6f3;
+  --foreground: #1d2a27;
+  --ink: #1d2a27;
+  --muted-ink: #66736e;
+  --paper: #fffefa;
+  --paper-muted: #f7f8f4;
+  --line: #dde5df;
+  --brand: #16766f;
+  --brand-dark: #0e514d;
+  --sun: #e6a437;
+  --coral: #d96955;
   --admin-sidebar-width: 18rem;
   color-scheme: light !important;
 }
@@ -14,15 +23,8 @@ html, body {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: 'Inter', Arial, Helvetica, sans-serif;
+  --font-sans: 'Avenir Next', 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 html {
@@ -37,9 +39,39 @@ body {
   max-width: 100%;
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  font-family: 'Avenir Next', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+.tourism-shell {
+  background: var(--background);
+  color: var(--ink);
+}
+
+.tourism-panel {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  box-shadow: 0 10px 28px rgba(29, 42, 39, 0.055);
+}
+
+.tourism-muted-panel {
+  border: 1px solid var(--line);
+  background: var(--paper-muted);
+}
+
+.tourism-action-row {
+  border-top: 1px solid var(--line);
+}
+
+.tourism-action {
+  color: var(--muted-ink);
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+.tourism-action:hover {
+  background: #edf4f0;
+  color: var(--brand-dark);
 }
 
 img {
@@ -259,6 +291,36 @@ select {
 
 .admin-page-shell [class*='rounded-full'] {
   border-radius: 9999px !important;
+}
+
+/* User surfaces use a sharper editorial treatment. Keep avatars and badges round. */
+.user-page-shell [class*='rounded-'] {
+  border-radius: 0 !important;
+}
+
+.user-page-shell [class*='rounded-full'] {
+  border-radius: 9999px !important;
+}
+
+/* Tighten stacked user surfaces so related content reads as one continuous feed. */
+.user-page-shell .space-y-4 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.75rem !important;
+}
+
+.user-page-shell .space-y-5 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 1rem !important;
+}
+
+.user-page-shell .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 1.25rem !important;
+}
+
+.user-page-shell .gap-4 {
+  gap: 0.75rem !important;
+}
+
+.user-page-shell .gap-5 {
+  gap: 1rem !important;
 }
 
 .admin-page-shell .fc-daygrid-day-frame {

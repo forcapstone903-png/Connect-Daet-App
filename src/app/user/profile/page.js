@@ -401,9 +401,9 @@ export default function UserProfilePage() {
   }
 
   return (
-    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
+    <main className="tourism-shell min-h-screen w-full overflow-x-clip">
       <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
-        <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_8px_25px_rgba(15,23,42,0.06)]">
+        <div className="tourism-panel overflow-hidden rounded-[22px]">
           <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-56">
             {profile.cover_photo_url ? (
               <img src={profile.cover_photo_url} alt="Cover photo" className="profile-cover-image" />
@@ -430,7 +430,7 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 border-b border-slate-200 bg-white text-center">
+          <div className="grid grid-cols-3 border-b border-[#dfe7e1] bg-[#fffefa] text-center">
             <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="text-[11px] text-slate-500">Posts</p></div>
             <Link href="/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="text-[11px] text-slate-500">Followers</p></Link>
             <Link href="/user/profile/connections?tab=following" className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></Link>
@@ -453,7 +453,7 @@ export default function UserProfilePage() {
                 {following.length ? <div className="space-y-2">{following.map((person) => <UserProfileLink key={person.id} user={person} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></UserProfileLink>)}</div> : <p className="text-sm text-slate-500">Not following anyone yet.</p>}
               </div>
             </section>
-            <section className="mb-5 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <section className="tourism-panel mb-5 rounded-[22px] p-4 sm:p-5">
               <div className="mb-3 flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
                   <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{levelName}</span>

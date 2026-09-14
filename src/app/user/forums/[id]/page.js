@@ -8,7 +8,6 @@ import {
   Bell,
   Heart,
   MessageSquare,
-  Share2,
   ThumbsDown,
   ThumbsUp,
   Flag,
@@ -21,6 +20,7 @@ import {
   Eye,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import ShareRepost from '@/app/components/user/ShareRepost'
 
 function formatDate(value) {
   if (!value) return 'New'
@@ -197,27 +197,6 @@ export default function ThreadDetailPage() {
     }
   }
 
-  const handleShare = async () => {
-    const url = window.location.href
-    const shareData = { title: thread?.title || 'Daet community discussion', url }
-
-    try {
-      if (navigator.share) {
-        await navigator.share(shareData)
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url)
-        alert('Link copied to clipboard.')
-      } else {
-        throw new Error('Sharing is not available in this browser.')
-      }
-    } catch (shareError) {
-      if (shareError?.name !== 'AbortError') {
-        console.error('Thread share failed:', shareError)
-        alert(shareError?.message || 'Unable to share this discussion right now.')
-      }
-    }
-  }
-
   const handleReplySubmit = async () => {
     if (!replyContent.trim()) return
 
@@ -339,14 +318,7 @@ export default function ThreadDetailPage() {
             >
               <Bell className={`h-5 w-5 ${isSubscribed ? 'fill-current' : ''}`} />
             </button>
-            <button
-              type="button"
-              onClick={handleShare}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-              title="Share"
-            >
-              <Share2 className="h-5 w-5" />
-            </button>
+            <ShareRepost contentType="forum_thread" contentId={threadId} userId={userId} />
           </div>
         </div>
 

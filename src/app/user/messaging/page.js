@@ -206,9 +206,9 @@ export default function UserMessagingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#eef4f5] text-slate-900">
+    <main className="tourism-shell min-h-screen">
       <div className="mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
-        <header className="mb-4 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
+        <header className="mb-4 flex items-center justify-between border-b border-[#dfe7e1] bg-[#fffefa] px-4 py-4 shadow-[0_6px_20px_rgba(29,42,39,0.04)] sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <div>
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#147d75]">Inbox</p>
@@ -253,13 +253,13 @@ export default function UserMessagingPage() {
           </div>
         )}
 
-        <div className="relative mb-4 flex items-center gap-2 border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        <div className="tourism-panel relative mb-4 flex items-center gap-2 px-4 py-3">
           <Search className="h-4 w-4 text-slate-400" />
           <input value={conversationQuery} onChange={(event) => setConversationQuery(event.target.value)} placeholder="Search a community member" className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400" />
           {conversationQuery && <button type="button" onClick={() => setConversationQuery('')} aria-label="Clear conversation search" title="Clear search" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
         </div>
 
-        <section className="border border-slate-200 bg-white shadow-sm">
+        <section className="tourism-panel shadow-none">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 sm:px-5">
             <div><h2 className="font-extrabold text-slate-950">Your conversations</h2><p className="mt-1 text-xs text-slate-500">Updates and messages from the Daet community</p></div>
             <Mail className="h-5 w-5 text-[#147d75]" />

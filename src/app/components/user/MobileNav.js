@@ -10,10 +10,10 @@ import { getStoredSessionObject } from '@/lib/authCookies'
 
 const navItems = [
   { href: '/user/dashboard', label: 'Feed', icon: Home },
-  { href: '/search', label: 'Search', icon: Search },
+  { href: '/user/forums', label: 'Forums', icon: MessageCircle },
   { href: '/user/blogs/new', label: 'Create', icon: PlusCircle, highlight: true },
-  { href: '/user/notifications', label: 'Alerts', icon: Bell },
-  { href: '/user/messaging', label: 'Messages', icon: Mail },
+  { href: '/user/blogs', label: 'Blogs', icon: FileText },
+  { href: '/user/events', label: 'Events', icon: CalendarDays },
 ]
 
 const desktopNavItems = [
@@ -118,7 +118,7 @@ export default function MobileNav() {
 
   return (
     <>
-      <nav className="sticky top-0 z-40 hidden border-b border-slate-200 bg-white/95 shadow-sm backdrop-blur-sm lg:block">
+      <nav className="sticky top-0 z-40 hidden border-b border-[#dfe7e1] bg-[#fffefa]/95 shadow-[0_6px_20px_rgba(29,42,39,0.04)] backdrop-blur-sm lg:block">
         <div className="mx-auto grid h-16 max-w-[1440px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-6 px-6">
           <div className="flex min-w-0 items-center gap-5">
             <Link href="/user/dashboard" className="flex shrink-0 items-center gap-2 whitespace-nowrap">
@@ -149,7 +149,7 @@ export default function MobileNav() {
           </div>
         </div>
       </nav>
-      {!commentsSheetOpen && <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-[0_-8px_24px_rgba(15,23,42,0.06)] pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur-sm lg:hidden">
+      {!commentsSheetOpen && <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dfe7e1] bg-[#fffefa]/96 shadow-[0_-8px_24px_rgba(29,42,39,0.08)] pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur-sm lg:hidden">
         <div className="mx-auto grid max-w-[520px] grid-cols-5 items-center gap-1 px-2 py-1.5">
           {navItems.map(({ href, label, icon: Icon, highlight }) => {
             const isActive = pathname === href || (href !== '/user/dashboard' && pathname.startsWith(href))
@@ -158,11 +158,11 @@ export default function MobileNav() {
                 key={href}
                 href={href}
                 className={`flex h-14 min-w-0 flex-col items-center justify-center rounded-lg px-1 text-center transition ${
-                  highlight ? 'text-white' : isActive ? 'text-sky-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
+                    highlight ? 'text-white' : isActive ? 'text-[#16766f]' : 'text-[#72807a] hover:bg-[#edf4f0] hover:text-[#0e514d]'
                 }`}
               >
                 {highlight ? (
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-blue-600 shadow-[0_6px_14px_rgba(14,165,233,0.3)]">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#16766f] shadow-[0_6px_14px_rgba(22,118,111,0.25)]">
                     <Icon className="h-5 w-5" />
                   </span>
                 ) : (
