@@ -89,13 +89,21 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ success: true, marked_read: true })
   }
 
-  const isArchived = body.isArchived === true
+  const updatePayload = { updated_at: new Date().toISOString() }
+  if (typeof body.isArchived === 'boolean') updatePayload.is_archived = body.isArchived
+  if (typeof body.isMuted === 'boolean') updatePayload.is_muted = body.isMuted
+  if (body.deleteConversation === true) updatePayload.is_deleted = true
+
+  if (Object.keys(updatePayload).length === 1) {
+    return NextResponse.json({ success: false, message: 'A conversation action is required.' }, { status: 400 })
+  }
+
   const { error } = await adminSupabase
     .from('message_conversation_settings')
-    .upsert({ user_id: userId, other_user_id: otherUserId, is_archived: isArchived, updated_at: new Date().toISOString() }, { onConflict: 'user_id,other_user_id' })
+    .upsert({ user_id: userId, other_user_id: otherUserId, ...updatePayload }, { onConflict: 'user_id,other_user_id' })
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
 
-  return NextResponse.json({ success: true, is_archived: isArchived })
+  return NextResponse.json({ success: true, ...updatePayload })
 }
 
 export async function DELETE(request, { params }) {

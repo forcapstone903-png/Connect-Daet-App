@@ -1125,13 +1125,10 @@ export default function AdminDashboard() {
 
   async function fetchRecentActivity() {
     try {
-      const { data, error } = await supabase
-        .from('user_activity_log')
-        .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)')
-        .order('created_at', { ascending: false })
-        .limit(8);
-
-      if (error) throw error;
+      const response = await fetch('/api/activity/track?scope=recent', { credentials: 'same-origin', cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load activity')
+      const data = result.activities || []
 
       const normalized = (data || []).map((item) => {
         const actorName = item.info_users?.full_name || item.info_users?.email?.split('@')[0] || 'A user';

@@ -39,7 +39,7 @@ export async function POST(request) {
         .insert({
           title,
           content,
-          status: 'published',
+          status: 'active',
           created_by: userId,
         })
         .select('id')
@@ -49,7 +49,43 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: error.message || 'Unable to create forum discussion.' }, { status: 500 })
       }
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/user/forums' })
+      const { data: followers, error: followersError } = await adminSupabase
+        .from('user_follows')
+        .select('follower_id')
+        .eq('following_id', userId)
+        .neq('follower_id', userId)
+
+      if (followersError) {
+        console.error('Forum follower lookup failed:', followersError)
+      } else {
+        const followerIds = [...new Set((followers || []).map((follower) => follower.follower_id).filter(Boolean))]
+        if (followerIds.length) {
+          const { data: author } = await adminSupabase
+            .from('info_users')
+            .select('full_name')
+            .eq('id', userId)
+            .maybeSingle()
+          const notificationRows = followerIds.map((followerId) => ({
+            user_id: followerId,
+            title: 'New forum discussion',
+            message: `${author?.full_name || 'Someone you follow'} started a new discussion: ${title}`,
+            type: 'forum',
+            is_read: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            link: `/user/forums/${data.id}`,
+            post_id: data.id,
+            post_owner_id: userId,
+            actor_id: userId,
+          }))
+          const { error: notificationError } = await adminSupabase
+            .from('info_notifications')
+            .insert(notificationRows)
+          if (notificationError) console.error('Forum follower notification failed:', notificationError)
+        }
+      }
+
+      return NextResponse.json({ success: true, id: data?.id, destination: '/user/dashboard' })
     }
 
     if (shareType === 'event') {

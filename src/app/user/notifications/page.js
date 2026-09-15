@@ -10,6 +10,7 @@ import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import Comments from '@/app/components/user/Comments'
 
 const NOTIFICATIONS_CACHE_TTL_MS = 30 * 1000
+const NOTIFICATIONS_REFRESH_INTERVAL_MS = 10_000
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -250,10 +251,25 @@ export default function UserNotificationsPage() {
             throw new Error(result.message || `Unable to load notifications (${response.status})`)
           }
 
+          let nextNotifications = result.notifications || []
+          if (!silent && Number(result.unread_count) > 0) {
+            const markReadResponse = await fetch('/api/notifications', {
+              method: 'PATCH',
+              credentials: 'same-origin',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ markAllRead: true }),
+            })
+            const markReadResult = await markReadResponse.json().catch(() => ({}))
+            if (markReadResponse.ok && markReadResult.success) {
+              nextNotifications = nextNotifications.map((notification) => ({ ...notification, is_read: true }))
+              result.unread_count = 0
+            }
+          }
+
           if (session) {
-            setNotifications(result.notifications || [])
-            syncUnreadBadge(result.notifications || [])
-            setCache(notificationsCacheKey, { notifications: result.notifications || [], unreadCount: result.unread_count || 0 }, NOTIFICATIONS_CACHE_TTL_MS)
+            setNotifications(nextNotifications)
+            syncUnreadBadge(nextNotifications)
+            setCache(notificationsCacheKey, { notifications: nextNotifications, unreadCount: result.unread_count || 0 }, NOTIFICATIONS_CACHE_TTL_MS)
           }
           if (!silent) setLoading(false)
           window.clearTimeout(timeout)
@@ -272,7 +288,7 @@ export default function UserNotificationsPage() {
     loadNotifications()
     const refreshTimer = window.setInterval(() => {
       void loadNotifications(true)
-    }, 2000)
+    }, NOTIFICATIONS_REFRESH_INTERVAL_MS)
 
     let realtimeChannel = null
     let active = true

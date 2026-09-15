@@ -3,16 +3,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CalendarDays, ChevronRight, Loader, MapPin, Search, Ticket, UserRound } from 'lucide-react'
+import { CalendarDays, ChevronRight, Loader, MapPin, Ticket } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 
 export default function UserEventsPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [authChecking, setAuthChecking] = useState(true)
   const [events, setEvents] = useState([])
-  const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [loadError, setLoadError] = useState('')
   const [retryKey, setRetryKey] = useState(0)
@@ -63,16 +63,26 @@ export default function UserEventsPage() {
     if (categoryFilter !== 'all') {
       result = result.filter(e => e.category === categoryFilter)
     }
-    if (search) {
-      const query = search.toLowerCase()
-      result = result.filter(e =>
-        (e.title || '').toLowerCase().includes(query) ||
-        (e.description || '').toLowerCase().includes(query) ||
-        (e.location || '').toLowerCase().includes(query)
-      )
-    }
     return result
-  }, [events, categoryFilter, search])
+  }, [events, categoryFilter])
+
+  const eventSummary = useMemo(() => {
+    const now = new Date()
+    const summary = { upcoming: [], ongoing: [], past: [] }
+
+    events.forEach((event) => {
+      const start = event.start_date ? new Date(event.start_date) : null
+      const end = event.end_date ? new Date(event.end_date) : start
+      if (!start || Number.isNaN(start.getTime())) return
+      if (end && !Number.isNaN(end.getTime()) && end < start) end.setTime(start.getTime())
+
+      if (start > now) summary.upcoming.push(event)
+      else if (end && !Number.isNaN(end.getTime()) && end >= now) summary.ongoing.push(event)
+      else summary.past.push(event)
+    })
+
+    return summary
+  }, [events])
 
   const getMediaUrl = (value, fallback = null) => {
     if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
@@ -110,30 +120,8 @@ export default function UserEventsPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-        <header className="sticky top-3 z-30 mb-5 overflow-hidden rounded-[24px] border border-slate-200 bg-white/90 shadow-sm backdrop-blur">
-          <div className="px-3 py-3 sm:px-4 md:px-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
-                  <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Explore</p>
-                  <p className="text-sm font-bold text-slate-800">CONNECT Daet</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href="/user/dashboard" className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100">
-                  Back to Dashboard
-                </Link>
-                <Link href="/user/profile" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                  <UserRound className="h-4 w-4" />
-                </Link>
-              </div>
-            </div>
-          </div>
-        </header>
+      <UserTopHeader />
+      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-2 sm:px-4 lg:px-6">
 
         <div className="mb-6">
           <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">Events</p>
@@ -141,18 +129,49 @@ export default function UserEventsPage() {
           <p className="mt-1 text-sm text-slate-600">Festivals, concerts, workshops, and more happening in Daet</p>
         </div>
 
-        {/* Search & Filter */}
+        <section className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="event-calendar-heading">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700"><CalendarDays className="h-4 w-4" /></span>
+            <div>
+              <h2 id="event-calendar-heading" className="text-sm font-black text-slate-950">Event calendar</h2>
+              <p className="text-xs text-slate-500">A quick look at what is happening around Daet</p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {[
+              ['Upcoming', eventSummary.upcoming.length, 'bg-sky-50 text-sky-700'],
+              ['Ongoing', eventSummary.ongoing.length, 'bg-emerald-50 text-emerald-700'],
+              ['Past', eventSummary.past.length, 'bg-slate-100 text-slate-600'],
+            ].map(([label, count, tone]) => (
+              <div key={label} className={`rounded-xl px-3 py-2.5 ${tone}`}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em]">{label}</p>
+                <p className="mt-1 text-xl font-black">{count}</p>
+              </div>
+            ))}
+          </div>
+
+          {(eventSummary.ongoing.length > 0 || eventSummary.upcoming.length > 0) && (
+            <div className="mt-4 border-t border-slate-100 pt-3">
+              <div className="space-y-2">
+                {[...eventSummary.ongoing, ...eventSummary.upcoming].slice(0, 3).map((event) => (
+                  <Link key={event.id} href={`/user/events/${event.id}`} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 transition hover:bg-sky-50">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-sky-700 shadow-sm"><CalendarDays className="h-4 w-4" /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-bold text-slate-800">{event.title}</span>
+                      <span className="mt-0.5 block text-[10px] font-semibold uppercase tracking-wide text-slate-500">{eventSummary.ongoing.some((item) => item.id === event.id) ? 'Ongoing now' : formatDate(event.start_date)}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Category filter */}
         <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row">
-            <label className="flex flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
-              <Search className="h-4 w-4" />
-              <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search events..."
-                className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-              />
-            </label>
+          <div className="flex flex-col gap-3">
             <select
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
@@ -195,7 +214,7 @@ export default function UserEventsPage() {
             <p className="mt-1 text-xs text-slate-400">Check back later for upcoming events in Daet</p>
           </div>
         ) : (
-          <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
             {filteredEvents.map((event) => {
               const firstImage = getMediaUrl(event.featured_image || event.images)
               const firstVideo = getMediaUrl(event.videos || event.video_url)
@@ -205,7 +224,7 @@ export default function UserEventsPage() {
               <Link
                 key={event.id}
                 href={`/user/events/${event.id}`}
-                className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:border-slate-300 hover:shadow-md"
+                className="group overflow-hidden rounded-[22px] border border-slate-200 border-l-4 border-l-amber-300 bg-white shadow-sm transition hover:border-sky-200 hover:shadow-md"
               >
                 {primaryMedia ? (
                   <div className="relative h-40 w-full overflow-hidden">

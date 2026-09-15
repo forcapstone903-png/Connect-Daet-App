@@ -91,8 +91,9 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
   }
 }
 
-async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId, mentionRefs = []) {
+async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId, blogId, mentionRefs = []) {
   const mentions = []
+  const audienceMentions = []
   const refs = Array.isArray(mentionRefs) ? mentionRefs : []
 
   for (const ref of refs) {
@@ -113,6 +114,40 @@ async function persistBlogCommentMentions(adminSupabase, text, actorId, commentI
       content_id: commentId,
       mention_text: ref.displayName,
     })
+  }
+
+  const audienceTokens = [...String(text || '').matchAll(/@(?:followers|highlights)\b/gi)].map((match) => match[0].slice(1).toLowerCase())
+  if (audienceTokens.length) {
+    const { data: followers } = await adminSupabase
+      .from('user_follows')
+      .select('follower_id')
+      .eq('following_id', actorId)
+      .neq('follower_id', actorId)
+    const followerIds = [...new Set((followers || []).map((row) => row.follower_id).filter(Boolean))]
+    audienceTokens.forEach((token) => {
+      audienceMentions.push({
+        mentioned_user_id: `mention-${token}`,
+        display_name: token,
+        mentioned_by_user_id: actorId,
+        content_type: 'comment',
+        content_id: commentId,
+        mention_text: `@${token}`,
+        isAudienceMention: true,
+      })
+    })
+    for (const followerId of followerIds) {
+      await createBlogCommentNotification(adminSupabase, {
+        recipientId: followerId,
+        actorId,
+        blogId,
+        blogOwnerId: null,
+        actorName: 'Someone you follow',
+        content: text,
+        commentId,
+        isReply: Boolean(commentId),
+        isMention: true,
+      })
+    }
   }
 
   for (const candidate of parseMentionCandidates(text)) {
@@ -150,7 +185,7 @@ async function persistBlogCommentMentions(adminSupabase, text, actorId, commentI
     })
   }
 
-  return mentions
+  return [...mentions, ...audienceMentions]
 }
 
 export async function POST(request) {
@@ -227,13 +262,13 @@ export async function POST(request) {
       }
     }
 
-    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id, body.mentionRefs)
+    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id, blogId, body.mentionRefs)
     const mentionData = mentionRows.map((mention) => ({ mentioned_user_id: mention.mentioned_user_id, display_name: mention.display_name || mention.mention_text }))
     if (mentionData.length) {
       await adminSupabase.from('info_comments').update({ mention_data: mentionData }).eq('id', data.id)
       data.mention_data = mentionData
     }
-    for (const mention of mentionRows) {
+    for (const mention of mentionRows.filter((item) => !item.isAudienceMention)) {
       await adminSupabase
         .from('info_notifications')
         .delete()

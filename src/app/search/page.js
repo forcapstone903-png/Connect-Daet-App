@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Compass, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink } from 'lucide-react'
+import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Compass, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink, UserPlus, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import MobileNav from '@/app/components/user/MobileNav'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import { Suspense } from 'react'
 
@@ -34,6 +34,9 @@ function SearchContent() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [followingIds, setFollowingIds] = useState(new Set())
+  const [authorProfiles, setAuthorProfiles] = useState({})
+  const [followBusyId, setFollowBusyId] = useState(null)
   const [results, setResults] = useState({
     spots: [],
     events: [],
@@ -42,6 +45,7 @@ function SearchContent() {
     users: [],
     userContent: [],
     userComments: [],
+    forumComments: [],
     mentions: [],
   })
 
@@ -61,12 +65,13 @@ function SearchContent() {
         const q = query.trim().toLowerCase()
 
         if (!q) {
-          setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], mentions: [] })
+          setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], forumComments: [], mentions: [] })
           setLoading(false)
           return
         }
 
-        const [spotsRes, eventsRes, blogsRes, threadsRes, usersResponse] = await Promise.all([
+        const [{ data: sessionData }, spotsRes, eventsRes, blogsRes, threadsRes, usersResponse] = await Promise.all([
+          supabase.auth.getSession(),
           supabase
             .from('info_tourist_spots')
             .select('*')
@@ -90,7 +95,29 @@ function SearchContent() {
           fetch(`/api/search/users?q=${encodeURIComponent(q)}&limit=20`, { credentials: 'same-origin' }).then((response) => response.json()),
         ])
 
+        const viewerId = sessionData?.session?.user?.id || null
+        const { data: followingRows } = viewerId
+          ? await supabase.from('user_follows').select('following_id').eq('follower_id', viewerId)
+          : { data: [] }
+        if (viewerId) setFollowingIds(new Set((followingRows || []).map((row) => row.following_id)))
+
+        const authorIds = [...new Set([
+          ...(blogsRes.data || []).map((item) => item.created_by),
+          ...(eventsRes.data || []).map((item) => item.created_by),
+          ...(threadsRes.data || []).map((item) => item.created_by),
+        ].filter(Boolean))]
+        if (authorIds.length) {
+          const { data: authors } = await supabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', authorIds)
+          setAuthorProfiles(Object.fromEntries((authors || []).map((author) => [author.id, author])))
+        } else {
+          setAuthorProfiles({})
+        }
+
         const users = usersResponse.success ? usersResponse.users || [] : []
+        const forumIds = (threadsRes.data || []).map((thread) => thread.id).filter(Boolean)
+        const { data: forumComments } = forumIds.length
+          ? await supabase.from('content_comments').select('id, content_id, user_id, body, created_at, info_users(full_name, profile_image_url)').eq('content_type', 'forum_thread').eq('status', 'active').in('content_id', forumIds).ilike('body', `%${q}%`).order('created_at', { ascending: false })
+          : { data: [] }
         const userIds = users.map((user) => user.id).filter(Boolean)
         let userContent = []
         let userComments = []
@@ -123,12 +150,13 @@ function SearchContent() {
           users,
           userContent,
           userComments,
+          forumComments: forumComments || [],
           mentions,
         })
       } catch (error) {
         console.error('Search failed:', error)
         setError('We could not complete your search right now. Please check your connection and try again.')
-        setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], mentions: [] })
+        setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], forumComments: [], mentions: [] })
       } finally {
         setLoading(false)
       }
@@ -144,6 +172,33 @@ function SearchContent() {
     saveRecentSearch(query)
     setSearchFocused(false)
     router.push(`/search?q=${encodeURIComponent(query.trim())}`)
+  }
+
+  const toggleFollow = async (event, userId) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!userId || followBusyId === userId) return
+
+    const isFollowing = followingIds.has(userId)
+    setFollowBusyId(userId)
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(userId)}/follow`, {
+        method: isFollowing ? 'DELETE' : 'POST',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update follow status.')
+      setFollowingIds((previous) => {
+        const next = new Set(previous)
+        if (isFollowing) next.delete(userId)
+        else next.add(userId)
+        return next
+      })
+    } catch (followError) {
+      console.error('Search follow update failed:', followError)
+    } finally {
+      setFollowBusyId(null)
+    }
   }
 
   const suggestions = [
@@ -187,13 +242,25 @@ function SearchContent() {
   }
 
   const userNames = new Map(results.users.map((user) => [user.id, user.full_name || user.email || 'Community member']))
+  const getAuthor = (authorId) => authorProfiles[authorId] || null
+
+  const renderFollowButton = (authorId) => {
+    if (!authorId || !authorProfiles[authorId]) return null
+    const isFollowing = followingIds.has(authorId)
+    return (
+      <button type="button" onClick={(event) => toggleFollow(event, authorId)} disabled={followBusyId === authorId} className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold transition ${isFollowing ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
+        {isFollowing ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
+        {isFollowing ? 'Following' : 'Follow'}
+      </button>
+    )
+  }
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-slate-900">
-      <MobileNav />
-      <div className="mx-auto max-w-[1100px] px-3 pb-28 pt-3 sm:px-4 sm:pb-12 lg:px-6">
+      <UserTopHeader />
+      <div className="mx-auto max-w-[1100px] px-3 pb-28 pt-2 sm:px-4 sm:pb-12 lg:px-6">
         {/* Header */}
-        <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
+        <header className="sticky top-2 z-30 mb-4 border border-slate-200/80 bg-white/95 px-3 py-3 shadow-sm backdrop-blur md:px-5">
           <div className="flex items-center justify-between gap-3">
             <div className="relative hidden flex-1 items-center justify-center lg:flex">
             <div className="flex w-full max-w-xl items-center gap-2">
@@ -278,7 +345,7 @@ function SearchContent() {
         </header>
 
         {/* Search Results Header */}
-        <div className="mb-5 rounded-[22px] border border-slate-200/80 bg-white/80 p-4 shadow-sm sm:p-5">
+        <div className="mb-4 border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <h1 className="text-2xl font-black text-slate-900">
             {query.trim() ? (
               <>
@@ -327,14 +394,14 @@ function SearchContent() {
         {loading ? (
           <div className="space-y-4">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-4">
+              <div key={i} className="animate-pulse border border-slate-200 bg-slate-100 p-4">
                 <div className="h-5 w-1/3 rounded bg-slate-200" />
                 <div className="mt-3 h-3 w-full rounded bg-slate-200" />
               </div>
             ))}
           </div>
         ) : totalCount === 0 && error ? (
-          <div role="alert" className="rounded-[22px] border border-red-200 bg-red-50 p-8 text-center shadow-sm sm:p-10">
+          <div role="alert" className="border border-red-200 bg-red-50 p-8 text-center shadow-sm sm:p-10">
             <SearchIcon className="mx-auto mb-3 h-10 w-10 text-red-400" />
             <p className="text-sm font-semibold text-red-700">{error}</p>
             <button
@@ -346,7 +413,7 @@ function SearchContent() {
             </button>
           </div>
         ) : totalCount === 0 ? (
-          <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm sm:p-10">
+          <div className="border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm sm:p-10">
             <SearchIcon className="mx-auto mb-3 h-10 w-10 text-slate-400" />
             <p className="text-sm text-slate-500">
               {query.trim() ? 'No results found. Try different keywords.' : 'Type something to search across Daet.'}
@@ -370,9 +437,10 @@ function SearchContent() {
                   <UserRound className="h-4 w-4" />
                   People ({results.users.length})
                 </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-0 border border-slate-200 bg-white">
                   {results.users.map((user) => (
-                    <UserProfileLink key={user.id} user={user} className="flex min-w-0 items-center gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-sky-200 hover:shadow-md">
+                    <div key={user.id} className="flex min-h-[88px] min-w-0 items-center gap-3 border-b border-slate-200 bg-white p-3 transition last:border-b-0 hover:bg-sky-50/40 sm:min-h-[96px]">
+                          <UserProfileLink user={user} className="flex min-w-0 flex-1 items-center gap-3">
                       <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sm font-black text-sky-700">
                         {user.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Community member'} className="h-full w-full object-cover" /> : <UserRound className="h-5 w-5" />}
                       </div>
@@ -381,29 +449,43 @@ function SearchContent() {
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{user.bio || [user.city, user.country].filter(Boolean).join(', ') || 'Daet community member'}</p>
                         {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
                       </div>
-                    </UserProfileLink>
+                      </UserProfileLink>
+                      <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
+                        {followingIds.has(user.id) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
+                        {followingIds.has(user.id) ? 'Following' : 'Follow'}
+                      </button>
+                    </div>
                   ))}
                 </div>
               </section>
             )}
 
             {(activeTab === 'all' || activeTab === 'community') && (results.userContent.length > 0 || results.userComments.length > 0 || results.mentions.length > 0) && (
-              <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
+              <section className="border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
                   <AtSign className="h-4 w-4 text-sky-600" />
                   <div><h2 className="text-base font-black text-slate-900">Community activity</h2><p className="text-xs text-slate-500">Public posts, comments, and mentions connected to these people.</p></div>
                 </div>
                 <div className="space-y-3">
                   {results.userContent.map((item) => (
-                    <Link key={`${item.contentKind}-${item.id}`} href={item.href} className="block rounded-xl border border-slate-100 bg-slate-50 p-3 transition hover:border-sky-200 hover:bg-sky-50">
-                      <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">{item.contentKind === 'post' ? 'Public post' : item.contentKind}</span><span className="text-[11px] text-slate-400">By {userNames.get(item.authorId) || 'Community member'}</span></div>
-                      <p className="mt-1 text-sm font-bold text-slate-900">{item.title || item.content || item.description}</p>
+                    <div key={`${item.contentKind}-${item.id}`} className="border border-slate-100 bg-slate-50 p-3 transition hover:border-sky-200 hover:bg-sky-50">
+                      <div className="flex items-center justify-between gap-2">
+                        <Link href={item.href} className="min-w-0 flex-1">
+                          <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">{item.contentKind === 'post' ? 'Public post' : item.contentKind}</span>
+                          <p className="mt-1 text-sm font-bold text-slate-900">{item.title || item.content || item.description}</p>
+                        </Link>
+                        <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
+                          {followingIds.has(item.authorId) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
+                          {followingIds.has(item.authorId) ? 'Following' : 'Follow'}
+                        </button>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500">By {userNames.get(item.authorId) || 'Community member'}</p>
                       {item.excerpt && <p className="mt-1 line-clamp-2 text-xs text-slate-600">{item.excerpt}</p>}
-                    </Link>
+                    </div>
                   ))}
 
                   {results.userComments.map((comment) => (
-                    <Link key={`comment-${comment.id}`} href={getContentHref(comment.content_type, comment.content_id)} className="block rounded-xl border border-slate-100 bg-amber-50/60 p-3 transition hover:border-amber-200 hover:bg-amber-50">
+                    <Link key={`comment-${comment.id}`} href={getContentHref(comment.content_type, comment.content_id)} className="block border border-slate-100 bg-amber-50/60 p-3 transition hover:border-amber-200 hover:bg-amber-50">
                       <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Comment</span><ExternalLink className="h-3.5 w-3.5 shrink-0 text-amber-600" /></div>
                       <p className="mt-1 line-clamp-2 text-sm text-slate-700">{comment.body}</p>
                       <p className="mt-1 text-[11px] text-slate-500">On {comment.content_type.replace('_', ' ')}</p>
@@ -411,7 +493,7 @@ function SearchContent() {
                   ))}
 
                   {results.mentions.map((mention) => (
-                    <Link key={`mention-${mention.id}`} href={getContentHref(mention.content_type, mention.content_id)} className="block rounded-xl border border-slate-100 bg-violet-50/60 p-3 transition hover:border-violet-200 hover:bg-violet-50">
+                    <Link key={`mention-${mention.id}`} href={getContentHref(mention.content_type, mention.content_id)} className="block border border-slate-100 bg-violet-50/60 p-3 transition hover:border-violet-200 hover:bg-violet-50">
                       <div className="flex items-center justify-between gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Mentioned or tagged</span><AtSign className="h-3.5 w-3.5 shrink-0 text-violet-600" /></div>
                       <p className="mt-1 text-sm font-bold text-slate-800">{mention.mention_text || `Mentioned in a ${mention.content_type.replace('_', ' ')}`}</p>
                     </Link>
@@ -427,17 +509,17 @@ function SearchContent() {
                   <Compass className="h-4 w-4" />
                   Destinations ({results.spots.length})
                 </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-0 border border-slate-200 bg-white">
                   {results.spots.slice(0, activeTab === 'all' ? 4 : undefined).map((spot) => (
                     <Link
                       key={spot.id}
                       href={`/tourist-spots/${spot.id}`}
-                      className="group flex gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
+                      className="group flex gap-3 border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
                     >
                       <img
                         src={getImage(spot)}
                         alt={spot.name}
-                        className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
+                        className="h-20 w-24 flex-shrink-0 object-cover"
                       />
                       <div className="min-w-0">
                         <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{spot.name}</h3>
@@ -462,26 +544,27 @@ function SearchContent() {
                   <CalendarDays className="h-4 w-4" />
                   Events ({results.events.length})
                 </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-0 border border-slate-200 bg-white">
                   {results.events.slice(0, activeTab === 'all' ? 4 : undefined).map((event) => (
                     <Link
                       key={event.id}
                       href={`/events/${event.id}`}
-                      className="group flex gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
+                      className="group flex gap-3 border-b border-slate-200 bg-white p-4 transition hover:bg-sky-50/40 last:border-b-0"
                     >
                       {event.featured_image ? (
                         <img
                           src={event.featured_image}
                           alt={event.title}
-                          className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
+                          className="h-20 w-24 flex-shrink-0 object-cover"
                         />
                       ) : (
-                        <div className="flex h-20 w-24 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-100 to-emerald-100">
+                        <div className="flex h-20 w-24 flex-shrink-0 items-center justify-center bg-gradient-to-br from-sky-100 to-emerald-100">
                           <CalendarDays className="h-8 w-8 text-sky-400" />
                         </div>
                       )}
                       <div className="min-w-0">
                         <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{event.title}</h3>
+                        {getAuthor(event.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(event.created_by).full_name || 'Community member'}</span>{renderFollowButton(event.created_by)}</div>}
                         <p className="mt-1 text-xs text-slate-500">{formatDate(event.start_date)}</p>
                         {event.location && (
                           <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
@@ -503,20 +586,21 @@ function SearchContent() {
                   <Newspaper className="h-4 w-4" />
                   Blogs ({results.blogs.length})
                 </h2>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-0 border border-slate-200 bg-white">
                   {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog) => (
                     <Link
                       key={blog.id}
                       href={`/blog/${blog.id}`}
-                      className="group flex gap-3 rounded-[16px] border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
+                      className="group flex gap-3 border-b border-slate-200 bg-white p-4 transition hover:bg-sky-50/40 last:border-b-0"
                     >
                       <img
                         src={getImage(blog)}
                         alt={blog.title}
-                        className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
+                        className="h-20 w-24 flex-shrink-0 object-cover"
                       />
                       <div className="min-w-0">
                         <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{blog.title}</h3>
+                        {getAuthor(blog.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(blog.created_by).full_name || 'Community member'}</span>{renderFollowButton(blog.created_by)}</div>}
                         <p className="mt-1 text-xs text-slate-600">{blog.excerpt}</p>
                         <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-sky-600">
                           {blog.category || 'Blog'}
@@ -535,14 +619,18 @@ function SearchContent() {
                   <MessageSquare className="h-4 w-4" />
                   Forum Discussions ({results.threads.length})
                 </h2>
-                <div className="space-y-3">
+                <div className="space-y-0 border border-slate-200 bg-white">
                   {results.threads.slice(0, activeTab === 'all' ? 4 : undefined).map((thread) => (
-                    <Link
+                    <div
                       key={thread.id}
-                      href={`/forum/${thread.id}`}
-                      className="group block rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md hover:border-sky-200"
+                      className="border-b border-slate-200 p-4 transition last:border-b-0 hover:bg-emerald-50/30"
                     >
-                      <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{thread.title}</h3>
+                      <div className="flex items-start justify-between gap-3">
+                        <Link href={`/forum/${thread.id}`} className="min-w-0 flex-1">
+                          <h3 className="text-sm font-bold text-slate-900 hover:text-sky-700">{thread.title}</h3>
+                          {getAuthor(thread.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(thread.created_by).full_name || 'Community member'}</span>{renderFollowButton(thread.created_by)}</div>}
+                        </Link>
+                      </div>
                       <p className="mt-1 text-xs text-slate-600">{thread.content}</p>
                       <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
                         <span>{formatDate(thread.last_activity_at || thread.created_at)}</span>
@@ -551,7 +639,14 @@ function SearchContent() {
                           {thread.reply_count || 0} replies
                         </span>
                       </div>
-                    </Link>
+                      {results.forumComments.filter((comment) => comment.content_id === thread.id).map((comment) => (
+                        <Link key={comment.id} href={`/forum/${thread.id}#comment-${comment.id}`} className="mt-3 block border-l-2 border-emerald-300 bg-emerald-50/60 px-3 py-2.5 hover:bg-emerald-50">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">Related comment</p>
+                          <p className="mt-1 text-xs leading-5 text-slate-700">{comment.body}</p>
+                          <p className="mt-1 text-[10px] text-slate-500">By {comment.info_users?.full_name || 'Community member'}</p>
+                        </Link>
+                      ))}
+                    </div>
                   ))}
                 </div>
               </section>

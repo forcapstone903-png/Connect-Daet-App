@@ -29,6 +29,8 @@ const EMPTY_FORM = {
   status: 'draft',
 }
 
+const POST_SUBMIT_DELAY_MS = 700
+
 function generateSlug(title) {
   return title
     .toLowerCase()
@@ -109,6 +111,7 @@ export default function CreateBlogPage() {
           message: feedbackForm.message.trim(),
         }
 
+        await new Promise((resolve) => window.setTimeout(resolve, POST_SUBMIT_DELAY_MS))
         const response = await fetch('/api/posts', {
           method: 'POST',
           credentials: 'same-origin',
@@ -122,7 +125,7 @@ export default function CreateBlogPage() {
         }
 
         setSuccess(true)
-        setTimeout(() => router.push(result.destination || '/user/feedback'), 1200)
+  window.setTimeout(() => router.push('/user/dashboard'), 1200)
         return
       }
 
@@ -153,6 +156,7 @@ export default function CreateBlogPage() {
         status: form.status,
       }
 
+      await new Promise((resolve) => window.setTimeout(resolve, POST_SUBMIT_DELAY_MS))
       const response = await fetch('/api/user/blogs', {
         method: 'POST',
         credentials: 'same-origin',
@@ -179,9 +183,7 @@ export default function CreateBlogPage() {
       })
 
       setSuccess(true)
-      setTimeout(() => {
-        router.push(form.status === 'published' ? '/user/blogs' : '/user/drafts')
-      }, 1200)
+      window.setTimeout(() => router.push('/user/dashboard'), 1200)
     } catch (error) {
       const errorMessage = normalizeErrorMessage(error)
       console.warn('Error creating blog:', errorMessage)

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, CalendarDays, Clock, Loader, MapPin, Ticket, Users } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Clock, Loader, MapPin, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import Comments from '@/app/components/user/Comments'
@@ -16,12 +16,9 @@ export default function EventDetailPage() {
   const [loading, setLoading] = useState(true)
   const [event, setEvent] = useState(null)
   const [userId, setUserId] = useState(null)
-  const [isRegistered, setIsRegistered] = useState(false)
-  const [registrationLoading, setRegistrationLoading] = useState(false)
-  const [registrationMessage, setRegistrationMessage] = useState('')
   const [error, setError] = useState(null)
 
-  async function fetchEvent(currentUserId = userId) {
+  async function fetchEvent() {
     try {
       const { data, error } = await supabase
         .from('info_events')
@@ -32,15 +29,6 @@ export default function EventDetailPage() {
 
       if (error) throw error
       setEvent(data)
-      if (currentUserId) {
-        const { data: registration } = await supabase
-          .from('event_registrations')
-          .select('status')
-          .eq('event_id', eventId)
-          .eq('user_id', currentUserId)
-          .maybeSingle()
-        setIsRegistered(registration?.status === 'confirmed')
-      }
     } catch (err) {
       console.error('Error loading event:', err)
       setError('Event not found or unavailable')
@@ -66,7 +54,7 @@ export default function EventDetailPage() {
 
         setUserId(activeSession.user.id)
         setAuthChecking(false)
-        await fetchEvent(activeSession.user.id)
+        await fetchEvent()
       } catch (err) {
         console.error('Auth error:', err)
         router.push('/login')
@@ -80,48 +68,6 @@ export default function EventDetailPage() {
     if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
     if (typeof value === 'string' && value.trim()) return value
     return fallback
-  }
-
-  const registerForEvent = async () => {
-    if (!userId || !event) return
-    if (!event.is_free && Number(event.ticket_price || 0) > 0) {
-      setRegistrationMessage('Online payment is not available for this paid event yet.')
-      return
-    }
-    setRegistrationLoading(true)
-    setRegistrationMessage('')
-    try {
-      if (isRegistered) {
-        const { error: cancelError } = await supabase
-          .from('event_registrations')
-          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
-          .eq('event_id', event.id)
-          .eq('user_id', userId)
-        if (cancelError) throw cancelError
-        setIsRegistered(false)
-        setEvent((previous) => ({ ...previous, current_attendees: Math.max(0, (previous.current_attendees || 1) - 1) }))
-        setRegistrationMessage('Registration cancelled.')
-        return
-      }
-
-      if (event.max_attendees > 0 && (event.current_attendees || 0) >= event.max_attendees) {
-        setRegistrationMessage('This event is already full.')
-        return
-      }
-
-      const { error: registrationError } = await supabase
-        .from('event_registrations')
-        .upsert({ event_id: event.id, user_id: userId, status: 'confirmed' }, { onConflict: 'event_id,user_id' })
-      if (registrationError) throw registrationError
-      setIsRegistered(true)
-      setEvent((previous) => ({ ...previous, current_attendees: (previous.current_attendees || 0) + 1 }))
-      setRegistrationMessage('You are registered for this event.')
-    } catch (registrationError) {
-      console.error('Event registration failed:', registrationError)
-      setRegistrationMessage('Unable to update registration right now.')
-    } finally {
-      setRegistrationLoading(false)
-    }
   }
 
   const formatDate = (dateStr) => {
@@ -177,9 +123,8 @@ export default function EventDetailPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-6xl px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-        <Link href="/user/events" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
+          <Link href="/user/events" aria-label="Back to events" title="Back to events" className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
-          Back to Events
         </Link>
 
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
@@ -237,52 +182,25 @@ export default function EventDetailPage() {
               </div>
             )}
 
-            {(event.organizer || event.max_attendees) && (
+            {event.organizer && (
               <div className="mt-6 grid gap-3 rounded-[20px] border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-                {event.organizer && (
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                      <Users className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Organizer</p>
-                      <p className="text-sm font-semibold text-slate-800">{event.organizer}</p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+                    <Users className="h-5 w-5" />
                   </div>
-                )}
-                {event.max_attendees > 0 && (
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                      <Ticket className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Attendance</p>
-                      <p className="text-sm font-semibold text-slate-800">
-                        {event.current_attendees || 0} / {event.max_attendees} registered
-                      </p>
-                    </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Organizer</p>
+                    <p className="text-sm font-semibold text-slate-800">{event.organizer}</p>
                   </div>
-                )}
+                </div>
               </div>
             )}
 
-            {(event.is_free || event.ticket_price != null || event.max_attendees > 0) && (
-              <div className="mt-6 flex items-center justify-between rounded-[20px] bg-gradient-to-r from-sky-600 to-emerald-500 p-4 text-white">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-white/70">Ticket Price</p>
-                  <p className="text-2xl font-black">{event.is_free ? 'Free' : `₱${Number(event.ticket_price || 0).toLocaleString()}`}</p>
-                </div>
-                <button type="button" onClick={registerForEvent} disabled={registrationLoading || (event.max_attendees > 0 && (event.current_attendees || 0) >= event.max_attendees && !isRegistered)} className="rounded-full bg-white px-4 py-2 text-sm font-bold text-sky-700 transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">
-                  {registrationLoading ? 'Updating...' : isRegistered ? 'Cancel registration' : event.is_free ? 'Register Now' : 'Register Now'}
-                </button>
-              </div>
-            )}
-            {registrationMessage && <p className="mt-3 text-sm font-semibold text-sky-700">{registrationMessage}</p>}
           </div>
         </div>
 
         <section className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
-          <Comments contentType="event" contentId={event.id} userId={userId} contentOwnerId={event.created_by} contentTitle={event.title} />
+          <Comments contentType="event" contentId={event.id} userId={userId} contentOwnerId={event.created_by} contentTitle={event.title} articleStyle />
         </section>
         </div>
       </div>

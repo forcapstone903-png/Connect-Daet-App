@@ -11,11 +11,13 @@ import {
   MessageSquareText,
   MoreHorizontal,
   Star,
+  Trophy,
   Users,
   Wand2,
 } from 'lucide-react'
 import MediaUpload from '@/app/components/MediaUpload'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
+import ProfileFeedActions from '@/app/components/user/ProfileFeedActions'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
@@ -128,6 +130,7 @@ export default function UserProfilePage() {
     level: 1,
     created_at: new Date().toISOString(),
   })
+  const [profileActionsOpen, setProfileActionsOpen] = useState(false)
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
   const [badges, setBadges] = useState([])
@@ -183,7 +186,7 @@ export default function UserProfilePage() {
 
     const loadProfile = async () => {
       try {
-        const [{ data: userData }, { data: profileData }, { data: followSummary }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }] = await Promise.all([
+        const [{ data: userData }, { data: profileData }, { data: followSummary }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }, { data: profileContent }] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
@@ -226,6 +229,11 @@ export default function UserProfilePage() {
             .eq('created_by', fallbackUserId)
             .eq('status', 'published')
             .order('start_date', { ascending: false }),
+          fetch(`/api/users/${fallbackUserId}`, { credentials: 'same-origin' }).then(async (response) => {
+            const result = await response.json()
+            if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load profile content')
+            return { data: result.content || {} }
+          }),
         ])
 
         const mergedLocation = profileData?.location || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte'
@@ -243,6 +251,18 @@ export default function UserProfilePage() {
         }
 
         const createdPosts = [
+          ...((profileContent?.user_posts || []).map((post) => ({
+            id: post.id,
+            type: 'Post',
+            title: post.title || 'Community update',
+            content: post.content || 'Shared a community post.',
+            created_at: post.created_at,
+            category: 'Community',
+            href: `/user/posts/${post.id}`,
+            media: post.featured_image || (post.images || [])[0] || '',
+            pinned: false,
+            accent: 'bg-amber-100 text-amber-700',
+          }))),
           ...(blogsData || []).map((blog) => ({
             id: blog.id,
             type: 'Blog',
@@ -279,6 +299,30 @@ export default function UserProfilePage() {
             pinned: Boolean(event.is_pinned || event.pinned),
             accent: 'bg-amber-100 text-amber-700',
           })),
+          ...((profileContent?.reposts || []).map((repost) => {
+            const typeMap = {
+              blog: { type: 'Blog', category: repost.category || 'Story', href: `/user/blogs/${repost.original_content_id}`, accent: 'bg-sky-100 text-sky-700', content: repost.excerpt || repost.content || 'Shared a new story.' },
+              forum_thread: { type: 'Forum', category: 'Community', href: `/user/forums/${repost.original_content_id}`, accent: 'bg-cyan-100 text-cyan-700', content: repost.content || 'Started a new discussion.' },
+              event: { type: 'Event', category: repost.category || 'Event', href: `/user/events/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.description || 'Shared an upcoming event.' },
+              user_post: { type: 'Post', category: 'Community', href: `/user/posts/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.content || 'Shared a community post.' },
+            }
+            const mapped = typeMap[repost.original_content_type] || typeMap.user_post
+            return {
+              id: `repost-${repost.repost_id}`,
+              type: mapped.type,
+              title: repost.title || 'Shared content',
+              content: mapped.content,
+              created_at: repost.created_at,
+              category: mapped.category,
+              href: mapped.href,
+              media: repost.featured_image || (repost.images || [])[0] || '',
+              pinned: false,
+              accent: mapped.accent,
+              isRepost: true,
+              repostQuote: repost.repost_quote,
+              originalAuthor: repost.original_author,
+            }
+          })),
         ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
 
         setProfile(nextProfile)
@@ -311,11 +355,39 @@ export default function UserProfilePage() {
           description: item.description || 'Updated profile activity',
           created_at: item.created_at,
         })))
-        setUserPosts(createdPosts)
+        const engagementRefs = createdPosts.map((post) => ({
+          type: post.type === 'Blog' ? 'blog' : post.type === 'Forum' ? 'forum_thread' : post.type === 'Event' ? 'event' : 'user_post',
+          id: post.id,
+        }))
+        const engagementIds = [...new Set(engagementRefs.map((item) => item.id))]
+        const [{ data: reactionRows }, { data: commentRows }] = engagementIds.length
+          ? await Promise.all([
+            supabase.from('content_reactions').select('content_type, content_id').in('content_id', engagementIds),
+            supabase.from('content_comments').select('content_type, content_id').in('content_id', engagementIds).eq('status', 'active'),
+          ])
+          : [{ data: [] }, { data: [] }]
+        const engagementCounts = new Map()
+        ;(reactionRows || []).forEach((row) => {
+          const key = `${row.content_type}:${row.content_id}`
+          const current = engagementCounts.get(key) || { reactionsCount: 0, commentsCount: 0 }
+          current.reactionsCount += 1
+          engagementCounts.set(key, current)
+        })
+        ;(commentRows || []).forEach((row) => {
+          const key = `${row.content_type}:${row.content_id}`
+          const current = engagementCounts.get(key) || { reactionsCount: 0, commentsCount: 0 }
+          current.commentsCount += 1
+          engagementCounts.set(key, current)
+        })
+        const enrichedPosts = createdPosts.map((post) => {
+          const type = post.type === 'Blog' ? 'blog' : post.type === 'Forum' ? 'forum_thread' : post.type === 'Event' ? 'event' : 'user_post'
+          return { ...post, ...(engagementCounts.get(`${type}:${post.id}`) || { reactionsCount: 0, commentsCount: 0 }) }
+        })
+        setUserPosts(enrichedPosts)
         setStats({
           followers: followSummary?.followers_count ?? 0,
           following: followSummary?.following_count ?? 0,
-          posts: createdPosts.length,
+          posts: enrichedPosts.length,
           points: userData?.points || nextProfile.points || 0,
         })
       } catch (error) {
@@ -402,7 +474,7 @@ export default function UserProfilePage() {
 
   return (
     <main className="tourism-shell min-h-screen w-full overflow-x-clip">
-      <div className="mx-auto w-full max-w-[1280px] px-3 pb-24 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-10">
+      <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:px-6 lg:pb-10">
         <div className="tourism-panel overflow-hidden rounded-[22px]">
           <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-56">
             {profile.cover_photo_url ? (
@@ -412,7 +484,7 @@ export default function UserProfilePage() {
           </div>
 
           <div className="border-b border-slate-200 px-4 pb-4 sm:px-7 sm:pb-5">
-            <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-end gap-3">
                 <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-sky-100 text-2xl font-black text-sky-700 shadow-lg sm:h-24 sm:w-24">
                   {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
@@ -422,10 +494,20 @@ export default function UserProfilePage() {
                   <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                    <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link>
-                <Link href="/user/profile/edit" className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-slate-800">Edit profile</Link>
-                <Link href="/user/settings" aria-label="Open profile settings" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"><MoreHorizontal className="h-5 w-5" /></Link>
+              <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+                <Link href="/user/blogs/new" className="inline-flex h-10 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link>
+                <Link href="/user/profile/edit" className="inline-flex h-10 items-center gap-1.5 rounded-full bg-slate-900 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">Edit profile</Link>
+                <div className="relative">
+                  <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+                    <MoreHorizontal className="h-5 w-5" />
+                  </button>
+                  {profileActionsOpen && (
+                    <div className="absolute right-0 top-12 z-20 w-44 overflow-hidden border border-slate-200 bg-white p-1.5 shadow-xl">
+                      <Link href="/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Trophy className="h-4 w-4" />Rewards</Link>
+                      <Link href="/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -436,23 +518,7 @@ export default function UserProfilePage() {
             <Link href="/user/profile/connections?tab=following" className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></Link>
           </div>
 
-          <div className="p-4 sm:p-6">
-            <section className="mb-5 grid gap-4 sm:grid-cols-2">
-              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-black text-slate-900">Followers</h2>
-                  <span className="text-xs font-semibold text-slate-500">{followers.length}</span>
-                </div>
-                {followers.length ? <div className="space-y-2">{followers.map((person) => <UserProfileLink key={person.id} user={person} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></UserProfileLink>)}</div> : <p className="text-sm text-slate-500">No followers yet.</p>}
-              </div>
-              <div className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-black text-slate-900">Following</h2>
-                  <span className="text-xs font-semibold text-slate-500">{following.length}</span>
-                </div>
-                {following.length ? <div className="space-y-2">{following.map((person) => <UserProfileLink key={person.id} user={person} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></UserProfileLink>)}</div> : <p className="text-sm text-slate-500">Not following anyone yet.</p>}
-              </div>
-            </section>
+          <div className="p-0">
             <section className="tourism-panel mb-5 rounded-[22px] p-4 sm:p-5">
               <div className="mb-3 flex items-center justify-between">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
@@ -477,47 +543,45 @@ export default function UserProfilePage() {
 
             </section>
 
-          <div className="mt-3 grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="min-w-0 p-4 sm:p-6 lg:pr-0">
+          <div className="mt-3">
+            <div className="min-w-0 p-0 sm:p-2">
             {pinnedPosts.length > 0 && <section className="mb-5 rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="rounded-xl bg-white/80 p-3 hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
 
             <section className="space-y-6">
-              <div className="rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                  <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
-                  <div className="flex items-center gap-2">
-                    <Link href="/user/blogs/new" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+              <div className="rounded-[16px] border border-slate-200 bg-white px-0 py-4 sm:py-5">
+                <div className="mb-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="pl-2"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
+                  <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                    <Link href="/user/blogs/new" className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
-                    <Link href="/user/forums" className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700">
+                    <Link href="/user/forums" className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-none">
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-0">
                     {visiblePosts.length ? visiblePosts.map((post) => (
-                      <div key={`${post.type}-${post.id}`} className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-sky-200 hover:shadow-md">
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ${post.accent}`}>
-                              {post.type}
-                            </span>
-                            <span className="text-xs text-slate-500">{post.category}</span>
-                          </div>
-                          <span className="text-xs text-slate-500">{formatDate(post.created_at)}</span>
+                      <article key={`${post.type}-${post.id}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white lg:rounded-[16px] ${post.type === 'Blog' ? 'border-l-4 border-l-violet-300 bg-violet-50/30' : post.type === 'Forum' ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40' : post.type === 'Event' ? 'border-l-4 border-l-amber-200 bg-amber-50/30' : 'border-l-4 border-l-slate-200'}`}>
+                        <div className="p-4 sm:p-5 lg:p-6">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12">
+                            {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
+                          </span>
+                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{post.isRepost ? `${profile.full_name} reposted` : profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{post.isRepost ? 'Repost' : post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
+                          <button type="button" aria-label="Post options" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                         </div>
 
-                        <h3 className="text-base font-bold leading-6 text-slate-900">{post.title}</h3>
-                        <p className="mt-2 text-[13px] leading-6 text-slate-600">{post.content}</p>
+                        {post.isRepost && post.repostQuote && <p className="mb-3 text-[13px] leading-6 text-slate-700">{post.repostQuote}</p>}
+                        {post.isRepost && <div className="mb-3 flex items-center gap-2 text-xs text-slate-500"><span className="font-semibold text-slate-700">Originally shared by</span><span>{post.originalAuthor?.full_name || 'Community member'}</span></div>}
+                        <Link href={post.href} className="mt-2 block"><h3 className="break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
+                        <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
+                        {post.media && <Link href={post.href} className="mt-4 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px]"><img src={post.media} alt={post.title} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>}
 
-                        <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-3">
-                          <div className="flex items-center gap-3 text-xs text-slate-500">
-                            <span className="inline-flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />{post.type === 'Blog' ? 'Story' : 'Community'}</span>
-                          </div>
-                          <Link href={post.href} className="text-sm font-semibold text-sky-700">View post</Link>
+                        <ProfileFeedActions post={post} userId={userId} />
                         </div>
-                      </div>
+                      </article>
                     )) : (
                       <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
                         You haven’t shared anything yet.
@@ -678,19 +742,6 @@ export default function UserProfilePage() {
               </div>
             </section>
           </div>
-          <aside className="space-y-4 p-4 sm:p-6 lg:sticky lg:top-5 lg:px-0">
-            {[
-              { label: 'Followers', people: followers, tab: 'followers', tone: 'bg-sky-100 text-sky-700', empty: 'No followers yet.' },
-              { label: 'Following', people: following, tab: 'following', tone: 'bg-emerald-100 text-emerald-700', empty: 'Not following anyone yet.' },
-            ].map(({ label, people, tab, tone, empty }) => (
-              <div key={label} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-2"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{label}</p><Link href={`/user/profile/connections?tab=${tab}`} className="text-xs font-bold text-sky-700 hover:text-sky-800">View all</Link></div>
-                {people.length ? <div className="space-y-2">{people.slice(0, 5).map((person) => <Link key={person.id} href={`/user/profile/${person.id}`} className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-2 hover:bg-slate-50"><span className={`flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full ${tone} text-[10px] font-bold`}>{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-sm font-semibold text-slate-700">{person.full_name || 'Community member'}</span></Link>)}</div> : <p className="text-sm text-slate-500">{empty}</p>}
-              </div>
-            ))}
-            <div className="rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_12px_30px_rgba(15,23,42,0.14)]"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-200">Traveler snapshot</p><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-white/10 p-3"><p className="text-2xl font-black">{profile.points || 0}</p><p className="mt-1 text-[11px] text-slate-300">Points</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-2xl font-black">{stats.posts}</p><p className="mt-1 text-[11px] text-slate-300">Shared</p></div></div><p className="mt-4 text-xs leading-5 text-slate-300">Your Daet stories and community discoveries.</p></div>
-            <div className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Profile details</p><div className="mt-4 space-y-3 text-sm text-slate-600"><div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</div><div className="flex items-center gap-2"><Users className="h-4 w-4 text-sky-600" />Community member</div></div></div>
-          </aside>
         </div>
         </div>
         </div>

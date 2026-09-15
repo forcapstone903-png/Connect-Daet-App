@@ -181,18 +181,10 @@ export default function AdminAccountPage() {
 
   const loadSessions = async (userId) => {
     try {
-      const { data, error } = await supabase
-        .from('user_activity_log')
-        .select('id, activity_type, description, metadata, created_at')
-        .eq('user_id', userId)
-        .in('activity_type', ['login', 'logout', 'sign_in', 'sign_out', 'session', 'auth'])
-        .order('created_at', { ascending: false })
-        .limit(20)
-      if (error) {
-        console.error('Session load error:', error)
-        return []
-      }
-      return data || []
+      const response = await fetch('/api/activity/track?scope=sessions', { credentials: 'same-origin', cache: 'no-store' })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load sessions')
+      return result.activities || []
     } catch (err) {
       console.error('Session load exception:', err)
       return []

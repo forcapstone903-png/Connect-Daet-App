@@ -41,12 +41,13 @@ function findTextPosition(editor, offset) {
 }
 
 function createMentionNode(user, router) {
-  const displayName = user.full_name || 'User'
+  const name = user.full_name || 'User'
+  const displayName = user.isAudienceMention ? `@${user.mentionToken}` : `@${name}`
   const mentionNode = document.createElement('span')
   mentionNode.className = 'font-semibold text-sky-700 hover:underline'
   mentionNode.contentEditable = 'false'
   mentionNode.dataset.userId = String(user.id)
-  mentionNode.dataset.displayName = displayName
+  mentionNode.dataset.displayName = name
   mentionNode.textContent = displayName
   mentionNode.setAttribute('role', 'link')
   mentionNode.tabIndex = 0
@@ -54,7 +55,7 @@ function createMentionNode(user, router) {
   const handleMentionClick = (event) => {
     event.preventDefault()
     event.stopPropagation()
-    if (user?.id) {
+    if (user?.id && !user.isAudienceMention) {
       router.push(`/user/profile/${encodeURIComponent(user.id)}?from=comments`)
     }
   }
@@ -80,6 +81,10 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
   const [suggestions, setSuggestions] = useState([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mentionState, setMentionState] = useState(null)
+  const specialMentions = [
+    { id: 'mention-highlights', full_name: 'Highlights', mentionToken: 'highlights', isAudienceMention: true },
+    { id: 'mention-followers', full_name: 'Followers', mentionToken: 'followers', isAudienceMention: true },
+  ]
 
   const fetchSuggestions = async (query = '') => {
     if (!userId) {
@@ -101,6 +106,9 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
       }
 
       setSuggestions(result.users || [])
+      const normalizedQuery = String(query || '').toLowerCase()
+      const audienceSuggestions = specialMentions.filter((mention) => !normalizedQuery || mention.mentionToken.startsWith(normalizedQuery))
+      setSuggestions([...audienceSuggestions, ...(result.users || [])])
     } catch (error) {
       if (requestId === requestIdRef.current) {
         setSuggestions([])
@@ -176,7 +184,6 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
 
     const { start, end } = mentionState
     const displayName = user.full_name || 'User'
-    const mentionText = displayName
 
     const range = document.createRange()
     const startRef = findTextPosition(editor, start)
@@ -186,7 +193,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     range.setEnd(endRef.node, endRef.offset)
     range.deleteContents()
 
-    const mentionNode = createMentionNode({ ...user, full_name: mentionText }, router)
+    const mentionNode = createMentionNode({ ...user, full_name: displayName, mentionToken: user.mentionToken || displayName }, router)
 
     range.insertNode(mentionNode)
 
@@ -247,8 +254,9 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     if (currentText === nextValue) return
 
     const displayName = initialMention?.full_name
-    if (initialMention?.id && displayName && nextValue.startsWith(displayName)) {
-      editor.replaceChildren(createMentionNode(initialMention, router), document.createTextNode(nextValue.slice(displayName.length)))
+    const mentionPrefix = nextValue.startsWith(`@${displayName}`) ? `@${displayName}` : displayName
+    if (initialMention?.id && displayName && nextValue.startsWith(mentionPrefix)) {
+      editor.replaceChildren(createMentionNode({ ...initialMention, mentionToken: displayName }, router), document.createTextNode(nextValue.slice(mentionPrefix.length)))
     } else {
       editor.textContent = nextValue
     }

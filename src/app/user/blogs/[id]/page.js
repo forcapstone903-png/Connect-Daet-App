@@ -7,7 +7,6 @@ import {
   Bookmark,
   ArrowLeft,
   ChevronDown,
-  Heart,
   MessageSquare,
   MoreHorizontal,
   Flag,
@@ -16,7 +15,6 @@ import {
   Eye,
   Send,
   Pencil,
-  ShieldCheck,
   Star,
   Trash2,
   X,
@@ -125,7 +123,6 @@ export default function BlogDetailPage() {
   const [replyMap, setReplyMap] = useState({})
   const [replyMentionRefs, setReplyMentionRefs] = useState({})
   const [submittingComment, setSubmittingComment] = useState(false)
-  const [userReputation, setUserReputation] = useState(0)
   const [userBadges, setUserBadges] = useState([])
   const [shareCount, setShareCount] = useState(0)
   const [moderationPending, setModerationPending] = useState(0)
@@ -164,14 +161,6 @@ export default function BlogDetailPage() {
           const fullName = session?.user?.user_metadata?.full_name || cookieSession?.user_name || session?.user?.email || cookieSession?.user_email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
           setUserId(currentUserId)
-
-          const { data: userData } = await supabase
-            .from('info_users')
-            .select('points')
-            .eq('id', currentUserId)
-            .single()
-
-          setUserReputation(userData?.points || 0)
 
           const { data: badgeData } = await supabase
             .from('user_badges')
@@ -220,9 +209,13 @@ export default function BlogDetailPage() {
           ;(commentsData || []).forEach((comment) => {
             if (comment.parent_id) repliesByParent[comment.parent_id] = [...(repliesByParent[comment.parent_id] || []), comment]
           })
+          const buildCommentTree = (comment) => ({
+            ...comment,
+            replies: (repliesByParent[comment.id] || []).map(buildCommentTree),
+          })
           const mergedComments = (commentsData || [])
             .filter((comment) => !comment.parent_id)
-            .map((comment) => ({ ...comment, replies: repliesByParent[comment.id] || [] }))
+            .map(buildCommentTree)
 
           setComments((currentComments) => {
             if (commentsError || !Array.isArray(commentsData)) return currentComments
@@ -342,15 +335,32 @@ export default function BlogDetailPage() {
         if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to submit your reply.')
         const data = payload.comment
 
-        const nextReply = { ...data, replies: [] }
-        setComments((prev) => prev.map((item) => {
-          if (String(item.id) !== String(parentId)) return item
-          const existingReplyIds = new Set((item.replies || []).map((reply) => String(reply.id)))
-          return existingReplyIds.has(String(nextReply.id))
-            ? item
-            : { ...item, replies: [...(item.replies || []), nextReply] }
-        }))
-        setReplyMap((prev) => ({ ...prev, [parentId]: '' }))
+        const replyMentionData = (replyMentionRefs[parentId] || [])
+          .filter((mention) => mention?.id)
+          .map((mention) => ({
+            mentioned_user_id: mention.id,
+            display_name: String(mention.id).startsWith('mention-') ? String(mention.id).replace('mention-', '') : mention.displayName,
+          }))
+        const nextReply = {
+          ...data,
+          mention_data: data?.mention_data?.length ? data.mention_data : replyMentionData,
+          replies: [],
+        }
+        const appendReply = (items) => (items || []).map((item) => {
+          if (String(item.id) === String(parentId)) {
+            const existingReplyIds = new Set((item.replies || []).map((reply) => String(reply.id)))
+            return existingReplyIds.has(String(nextReply.id))
+              ? item
+              : { ...item, replies: [...(item.replies || []), nextReply] }
+          }
+          return item.replies?.length ? { ...item, replies: appendReply(item.replies) } : item
+        })
+        setComments((prev) => appendReply(prev))
+        setReplyMap((prev) => {
+          const next = { ...prev }
+          delete next[parentId]
+          return next
+        })
         setReplyMentionRefs((prev) => ({ ...prev, [parentId]: [] }))
         setExpandedReplies((prev) => ({ ...prev, [parentId]: true }))
         setModerationPending((prev) => prev + 1)
@@ -359,7 +369,7 @@ export default function BlogDetailPage() {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ blogId, content }),
+          body: JSON.stringify({ blogId, content, mentionRefs: replyMentionRefs.root || [] }),
         })
         const payload = await response.json().catch(() => ({}))
         if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to submit your comment.')
@@ -387,11 +397,20 @@ export default function BlogDetailPage() {
           created_at: new Date().toISOString(),
           likes: 0,
           replies: [],
+          mention_data: data?.mention_data?.length
+            ? data.mention_data
+            : (replyMentionRefs.root || [])
+              .filter((mention) => mention?.id)
+              .map((mention) => ({
+                mentioned_user_id: mention.id,
+                display_name: String(mention.id).startsWith('mention-') ? String(mention.id).replace('mention-', '') : mention.displayName,
+              })),
           info_users: data?.info_users || { full_name: userName, email: userName, profile_image_url: null },
         }
 
         setComments((prev) => [createdComment, ...prev])
         setCommentContent('')
+        setReplyMentionRefs((prev) => ({ ...prev, root: [] }))
         setModerationPending((prev) => prev + 1)
 
         const nextCommentCount = (blog.comments_count || 0) + 1
@@ -502,15 +521,42 @@ export default function BlogDetailPage() {
     }
   }
 
+  const handleReportComment = async (comment) => {
+    if (!userId || !comment?.id || comment.user_id === userId) return
+
+    const reason = window.prompt('Why are you reporting this comment?', 'Inappropriate content')?.trim()
+    if (!reason) return
+
+    const { error } = await supabase.from('info_moderation').insert({
+      report_type: 'comment',
+      reason,
+      reported_by: userId,
+      reported_user_id: comment.user_id,
+      reported_item_id: comment.id,
+      reported_item_table: 'info_comments',
+      status: 'pending',
+    })
+
+    if (error) {
+      console.error('Comment report failed:', error)
+      alert('Unable to submit this report right now.')
+      return
+    }
+
+    alert('Thanks. Your report was submitted for review.')
+  }
+
   const handleOpenComments = () => {
     commentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  const renderComment = (comment, isReply = false) => (
+  const flattenReplies = (replies = []) => replies.flatMap((reply) => [reply, ...flattenReplies(reply.replies || [])])
+
+  const renderComment = (comment, showReplies = true) => (
     <div
       key={comment.id}
       className={`rounded-[20px] border p-4 ${
-        isReply ? 'ml-6 border-slate-200 bg-slate-50' : 'border-slate-200 bg-white'
+        'border-slate-200 bg-white'
       }`}
     >
       <div className="flex items-start justify-between gap-3">
@@ -616,8 +662,8 @@ export default function BlogDetailPage() {
         <MentionText text={comment.content} mentions={comment.mention_data} className="mt-2 text-sm text-slate-700" />
       )}
 
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs">
-        <div className="min-w-42.5 max-w-full">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2 text-xs">
+        <div className="min-w-0 max-w-full">
           <Reactions
             contentType="comment"
             contentId={comment.id}
@@ -632,23 +678,31 @@ export default function BlogDetailPage() {
           type="button"
           onClick={() => {
             const authorName = comment.info_users?.full_name || 'there'
-            setReplyMap((prev) => ({
-              ...prev,
-              [comment.id]: prev[comment.id] || `${authorName} `,
-            }))
-            setReplyMentionRefs((prev) => ({
-              ...prev,
-              [comment.id]: prev[comment.id] || [{ id: comment.user_id, displayName: authorName }],
-            }))
+            setReplyMap((prev) => {
+              if (Object.prototype.hasOwnProperty.call(prev, comment.id)) {
+                const next = { ...prev }
+                delete next[comment.id]
+                return next
+              }
+              return { ...prev, [comment.id]: `@${authorName} ` }
+            })
+            setReplyMentionRefs((prev) => {
+              if (prev[comment.id]) {
+                const next = { ...prev }
+                delete next[comment.id]
+                return next
+              }
+              return { ...prev, [comment.id]: [{ id: comment.user_id, displayName: authorName }] }
+            })
             setExpandedReplies((prev) => ({ ...prev, [comment.id]: true }))
           }}
-          className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100"
+          className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-600 hover:bg-slate-100"
         >
           Reply
         </button>
 
-        {userId !== comment.user_id && (
-          <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
+        {userId && userId !== comment.user_id && (
+          <button type="button" onClick={() => handleReportComment(comment)} className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2.5 py-1.5 font-semibold text-slate-600 hover:bg-slate-100">
             <Flag className="h-3.5 w-3.5" />
             Report
           </button>
@@ -694,7 +748,7 @@ export default function BlogDetailPage() {
               } : null}
               onMentionAdded={(user) => setReplyMentionRefs((previous) => ({
                 ...previous,
-                [comment.id]: [{ id: user.id, displayName: user.full_name || 'User' }],
+                [comment.id]: [{ id: user.id, displayName: user.mentionToken || user.full_name || 'User' }],
               }))}
             />
           </div>
@@ -709,37 +763,37 @@ export default function BlogDetailPage() {
         </div>
       )}
 
-      {(comment.replies || []).length > 0 && !expandedReplies[comment.id] && (
+      {showReplies && (comment.replies || []).length > 0 && !expandedReplies[comment.id] && (
         <button
           type="button"
           onClick={() => setExpandedReplies((previous) => ({ ...previous, [comment.id]: true }))}
           className="mt-3 inline-flex items-center gap-1 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100"
         >
           <ChevronDown className="h-3.5 w-3.5" />
-          View replies ({(comment.replies || []).length})
+          View replies ({flattenReplies(comment.replies || []).length})
         </button>
       )}
 
-      {(comment.replies || []).length > 0 && expandedReplies[comment.id] && (
-        <div className="mt-4 space-y-3">
-          {(comment.replies || []).slice(0, visibleReplies[comment.id] || INITIAL_REPLIES).map((reply) => renderComment(reply, true))}
-          {(comment.replies || []).length > (visibleReplies[comment.id] || INITIAL_REPLIES) && (
+      {showReplies && (comment.replies || []).length > 0 && expandedReplies[comment.id] && (
+        <div className="mt-4 space-y-0">
+          {flattenReplies(comment.replies || []).slice(0, visibleReplies[comment.id] || INITIAL_REPLIES).map((reply) => renderComment(reply, false))}
+          {flattenReplies(comment.replies || []).length > (visibleReplies[comment.id] || INITIAL_REPLIES) && (
             <button
               type="button"
               onClick={() => setVisibleReplies((previous) => ({
                 ...previous,
                 [comment.id]: (previous[comment.id] || INITIAL_REPLIES) + REPLIES_PER_PAGE,
               }))}
-              className="ml-6 inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
             >
               <ChevronDown className="h-3.5 w-3.5" />
-              See more replies ({(comment.replies || []).length - (visibleReplies[comment.id] || INITIAL_REPLIES)})
+              See more replies ({flattenReplies(comment.replies || []).length - (visibleReplies[comment.id] || INITIAL_REPLIES)})
             </button>
           )}
           <button
             type="button"
             onClick={() => setExpandedReplies((previous) => ({ ...previous, [comment.id]: false }))}
-            className="ml-6 inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+            className="inline-flex items-center gap-1 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100"
           >
             Hide replies
           </button>
@@ -774,49 +828,40 @@ export default function BlogDetailPage() {
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-6xl px-3 py-6 sm:px-4 lg:px-6">
+      <div className="mx-auto max-w-6xl px-2 py-3 sm:px-4 sm:py-5 lg:px-6">
         <button
           type="button"
           onClick={() => router.back()}
           aria-label="Go back"
           title="Go back"
-          className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+          className="mb-3 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 sm:inline-flex"
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
-        <article className="mb-8 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-8 lg:mb-0">
+        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
+        <article className="mb-5 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:mb-0">
           {blog.featured_image && (
-            <div className="mb-6 overflow-hidden rounded-[16px]">
+            <div className="-mx-4 -mt-4 mb-5 overflow-hidden rounded-t-[14px] sm:-mx-6 sm:-mt-6">
               <button type="button" onClick={() => setLightboxImage({ src: blog.featured_image, alt: blog.title })} className="block w-full cursor-zoom-in" aria-label="Enlarge article photo">
-                <img alt={blog.title} src={blog.featured_image} className="h-96 w-full object-cover transition hover:brightness-95" />
+                <img alt={blog.title} src={blog.featured_image} className="max-h-[32rem] w-full object-cover transition hover:brightness-95" />
               </button>
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className="inline-block rounded-full border border-sky-200 bg-sky-50 px-3 py-1 font-bold uppercase text-sky-700">
-              {categories[blog.category] || blog.category}
-            </span>
-            <span className="text-slate-500">•</span>
-            <span className="inline-flex items-center gap-1 text-slate-600">
-              <Clock className="h-3.5 w-3.5" />
-              {calculateReadTime(blog.content)} min read
-            </span>
-            <span className="text-slate-500">•</span>
-            <span className="text-slate-600">{formatDate(blog.published_at)}</span>
-          </div>
+          <h1 className="mt-4 break-words text-2xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl">{blog.title}</h1>
 
-          <h1 className="mt-4 text-3xl font-bold text-slate-900 sm:text-4xl">{blog.title}</h1>
-
-          <div className="mt-6 flex items-center justify-between border-t border-b border-slate-200 py-4">
-            <div className="flex items-center gap-3">
+          <div className="mt-5 flex items-start gap-3 border-t border-b border-slate-200 py-3.5">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
                 {blog.info_users?.profile_image_url ? <img src={blog.info_users.profile_image_url} alt={blog.info_users.full_name || 'Author'} className="h-full w-full object-cover" /> : (blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
               </Link>
-              <div>
+              <div className="min-w-0">
                 <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="font-semibold text-slate-900 hover:text-sky-700">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
-                <div className="flex items-center gap-2 text-xs text-slate-500">
+                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                  <span>{categories[blog.category] || blog.category}</span>
+                  <span>•</span>
+                  <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{calculateReadTime(blog.content)} min read</span>
+                  <span>•</span>
                   <span>{formatDate(blog.published_at)}</span>
                   <span>•</span>
                   <span>{shareCount} shares</span>
@@ -824,23 +869,15 @@ export default function BlogDetailPage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-4 text-sm text-slate-600">
+            <div className="ml-auto flex shrink-0 items-center gap-1 pt-1 text-xs text-slate-600 sm:text-sm">
               <div className="flex items-center gap-1">
                 <Eye className="h-4 w-4" />
                 <span>{(blog.views || 0) + 1}</span>
               </div>
-              <div className="flex items-center gap-1">
-                <Heart className="h-4 w-4" />
-                <span>{blog.likes || 0} Likes</span>
-              </div>
             </div>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-3">
-            <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 border border-sky-200">
-              <ShieldCheck className="h-3.5 w-3.5" />
-              Reputation {userReputation}
-            </div>
+          <div className="mt-5 flex flex-wrap gap-3">
             {userBadges.length > 0 && userBadges.map((badge) => (
               <span key={badge} className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 border border-amber-200">
                 <Star className="h-3.5 w-3.5" />
@@ -849,7 +886,7 @@ export default function BlogDetailPage() {
             ))}
           </div>
 
-          <div className="mt-8 space-y-6 leading-relaxed text-slate-700">
+          <div className="mt-6 space-y-5 leading-relaxed text-slate-700">
             {blog.excerpt && <p className="text-lg italic text-slate-600">{blog.excerpt}</p>}
 
             {blog.content && (
@@ -861,12 +898,12 @@ export default function BlogDetailPage() {
           </div>
 
           {blog.tags && blog.tags.length > 0 && (
-            <div className="mt-8 border-t border-slate-200 pt-6">
+            <div className="mt-6 border-t border-slate-200 pt-5">
               <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Tags</p>
               <div className="flex flex-wrap gap-2">
                 {blog.tags.map((tag, idx) => (
-                  <span key={idx} className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
-                    #{tag}
+                  <span key={idx} className="text-sm font-semibold text-slate-600">
+                    {tag}
                   </span>
                 ))}
               </div>
@@ -884,9 +921,38 @@ export default function BlogDetailPage() {
           />
         </article>
 
-        <section ref={commentsSectionRef} className="mb-8 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-2xl font-bold text-slate-900">{comments.length} Comments</h2>
+        <section ref={commentsSectionRef} className="mb-5 lg:sticky lg:top-5 lg:max-h-[calc(100vh-2.5rem)] lg:overflow-y-auto lg:pr-1">
+          <div className="mb-5 rounded-[20px] border border-slate-200 bg-white p-4">
+            <h3 className="mb-3 text-sm font-bold text-slate-900">Share Your Thoughts</h3>
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <MentionsAutoSuggest
+                  value={commentContent}
+                  onChange={setCommentContent}
+                  placeholder="Write a comment..."
+                  rows={1}
+                  userId={userId}
+                  onMentionAdded={(mention) => setReplyMentionRefs((previous) => ({
+                    ...previous,
+                    root: [...(previous.root || []).filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }],
+                  }))}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCommentSubmit()}
+                disabled={submittingComment || !commentContent.trim()}
+                aria-label="Post comment"
+                title={submittingComment ? 'Posting comment' : 'Post comment'}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h2 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{comments.length} Comments</h2>
             {moderationPending > 0 && (
               <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                 {moderationPending} pending moderation
@@ -895,7 +961,7 @@ export default function BlogDetailPage() {
           </div>
 
           {comments.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-0">
               {comments.slice(0, visibleComments).map((comment) => renderComment(comment))}
               {comments.length > visibleComments && (
                 <div className="text-center">
@@ -917,28 +983,6 @@ export default function BlogDetailPage() {
             </div>
           )}
 
-          <div className="mt-5 rounded-[20px] border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-sm font-bold text-slate-900">Share Your Thoughts</h3>
-            <div className="flex items-center gap-2">
-              <textarea
-                value={commentContent}
-                onChange={(event) => setCommentContent(event.target.value)}
-                placeholder="Write a comment..."
-                rows={1}
-                className="min-h-10 flex-1 resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
-              />
-              <button
-                type="button"
-                onClick={() => handleCommentSubmit()}
-                disabled={submittingComment || !commentContent.trim()}
-                aria-label="Post comment"
-                title={submittingComment ? 'Posting comment' : 'Post comment'}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Send className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
         </section>
         </div>
 

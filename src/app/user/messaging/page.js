@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, Mail, Plus, Search, Send, X } from 'lucide-react'
+import { Archive, Mail, MoreHorizontal, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
@@ -44,6 +44,8 @@ export default function UserMessagingPage() {
   const [composeSending, setComposeSending] = useState(false)
   const [composeError, setComposeError] = useState('')
   const [revealedConversation, setRevealedConversation] = useState(null)
+  const [revealedAction, setRevealedAction] = useState(null)
+  const [conversationMenu, setConversationMenu] = useState(null)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null })
 
   const clearGesture = () => {
@@ -54,7 +56,7 @@ export default function UserMessagingPage() {
   const handleTouchStart = (event, conversationId) => {
     clearGesture()
     const touch = event.touches[0]
-    gestureRef.current = { id: conversationId, startX: touch.clientX, startY: touch.clientY, timer: window.setTimeout(() => setRevealedConversation(conversationId), 650) }
+    gestureRef.current = { id: conversationId, startX: touch.clientX, startY: touch.clientY, timer: window.setTimeout(() => setConversationMenu(conversationId), 650) }
   }
 
   const handleTouchMove = (event) => {
@@ -65,15 +67,31 @@ export default function UserMessagingPage() {
   const handleTouchEnd = (event, conversationId) => {
     clearGesture()
     const touch = event.changedTouches[0]
-    if (gestureRef.current.id === conversationId && Math.abs(touch.clientX - gestureRef.current.startX) > 60) setRevealedConversation(conversationId)
+    const deltaX = touch.clientX - gestureRef.current.startX
+    if (gestureRef.current.id === conversationId && Math.abs(deltaX) > 60) {
+      setConversationMenu(null)
+      setRevealedConversation(conversationId)
+      setRevealedAction(deltaX < 0 ? 'archive' : 'delete')
+    }
   }
 
-  const updateArchive = async (conversationId, isArchived) => {
-    const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify({ isArchived }) })
+  const updateConversation = async (conversationId, action) => {
+    const payload = action === 'archive'
+      ? { isArchived: true }
+      : action === 'delete'
+        ? { deleteConversation: true }
+        : { isMuted: action === 'mute' }
+    const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) })
     const result = await response.json()
     if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update conversation.')
-    setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
+    if (action === 'archive' || action === 'delete') {
+      setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
+    } else {
+      setConversations((previous) => previous.map((conversation) => conversation.other_user?.id === conversationId ? { ...conversation, is_muted: action === 'mute' } : conversation))
+    }
     setRevealedConversation(null)
+    setRevealedAction(null)
+    setConversationMenu(null)
   }
 
   useEffect(() => {
@@ -284,15 +302,19 @@ export default function UserMessagingPage() {
                 {filteredConversations.map((conversation) => {
                   const conversationId = conversation.other_user?.id || conversation.id
                   const revealed = revealedConversation === conversationId
+                  const actionMenuOpen = conversationMenu === conversationId
                   const unreadCount = Number(conversation.unread_count || 0)
                   const hasUnread = unreadCount > 0
                   const previewText = String(conversation.body || 'New message')
                   return (
                     <div key={conversationId} className="relative overflow-hidden" onTouchStart={(event) => handleTouchStart(event, conversationId)} onTouchMove={handleTouchMove} onTouchEnd={(event) => handleTouchEnd(event, conversationId)}>
-                      <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
-                        <button type="button" onClick={() => updateArchive(conversationId, true)} aria-label="Archive conversation" title="Archive" className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700"><Archive className="h-4 w-4" /></button>
+                      <div className="absolute inset-y-0 flex items-center gap-1 px-2">
+                        <button type="button" onClick={() => void updateConversation(conversationId, 'delete')} aria-label="Delete conversation" title="Delete" className={`${revealedAction === 'delete' ? 'flex' : 'hidden'} h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-700`}><Trash2 className="h-4 w-4" /></button>
                       </div>
-                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed) { event.preventDefault(); setRevealedConversation(null) } }} className={`relative flex gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? '-translate-x-24' : 'translate-x-0'}`}>
+                      <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
+                        <button type="button" onClick={() => void updateConversation(conversationId, 'archive')} aria-label="Archive conversation" title="Archive" className={`${revealedAction === 'archive' ? 'flex' : 'hidden'} h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700`}><Archive className="h-4 w-4" /></button>
+                      </div>
+                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed || actionMenuOpen) { event.preventDefault(); setRevealedConversation(null); setRevealedAction(null); setConversationMenu(null) } }} className={`relative flex gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? (revealedAction === 'archive' ? '-translate-x-24' : 'translate-x-24') : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -309,7 +331,13 @@ export default function UserMessagingPage() {
                           </div>
                           <p className={`mt-1 line-clamp-2 text-sm leading-6 ${hasUnread ? 'font-extrabold text-slate-900' : 'text-slate-600'}`}>{previewText}</p>
                         </div>
+                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setConversationMenu(actionMenuOpen ? null : conversationId); setRevealedConversation(null); setRevealedAction(null) }} aria-label="Conversation actions" title="Conversation actions" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"><MoreHorizontal className="h-4 w-4" /></button>
                       </UserProfileLink>
+                      {actionMenuOpen && <div className="absolute right-3 top-14 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                        <button type="button" onClick={() => void updateConversation(conversationId, conversation.is_muted ? 'unmute' : 'mute')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">{conversation.is_muted ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}{conversation.is_muted ? 'Unmute' : 'Mute'}</button>
+                        <button type="button" onClick={() => void updateConversation(conversationId, 'archive')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Archive className="h-4 w-4" />Archive</button>
+                        <button type="button" onClick={() => void updateConversation(conversationId, 'delete')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" />Delete</button>
+                      </div>}
                     </div>
                   )
                 })}

@@ -39,6 +39,18 @@ export async function POST(request) {
   }
 
   const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+  const { data: existingRepost, error: existingRepostError } = await adminSupabase
+    .from('reposts')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('original_content_type', contentType)
+    .eq('original_content_id', contentId)
+    .maybeSingle()
+
+  if (existingRepostError) {
+    return NextResponse.json({ success: false, message: existingRepostError.message || 'Unable to check repost.' }, { status: 400 })
+  }
+
   const { data, error } = await adminSupabase
     .from('reposts')
     .upsert({
@@ -53,6 +65,43 @@ export async function POST(request) {
   if (error) {
     console.error('Repost insert failed:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to repost.' }, { status: 400 })
+  }
+
+  if (!existingRepost) {
+    const { data: followers, error: followersError } = await adminSupabase
+      .from('user_follows')
+      .select('follower_id')
+      .eq('following_id', userId)
+      .neq('follower_id', userId)
+
+    if (followersError) {
+      console.error('Repost follower lookup failed:', followersError)
+    } else {
+      const followerIds = [...new Set((followers || []).map((follower) => follower.follower_id).filter(Boolean))]
+      if (followerIds.length) {
+        const { data: reposter } = await adminSupabase
+          .from('info_users')
+          .select('full_name')
+          .eq('id', userId)
+          .maybeSingle()
+        const notificationRows = followerIds.map((followerId) => ({
+          user_id: followerId,
+          title: 'New repost',
+          message: `${reposter?.full_name || 'Someone you follow'} reposted a post.`,
+          type: 'repost',
+          is_read: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          link: `/user/posts/${contentId}`,
+          post_id: contentId,
+          actor_id: userId,
+        }))
+        const { error: notificationError } = await adminSupabase
+          .from('info_notifications')
+          .insert(notificationRows)
+        if (notificationError) console.error('Repost follower notification failed:', notificationError)
+      }
+    }
   }
 
   return NextResponse.json({ success: true, repost: data })

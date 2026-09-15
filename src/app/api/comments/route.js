@@ -133,8 +133,24 @@ async function resolveMentions(adminSupabase, text, actorId, commentId, mentionR
     resolvedNames.add(normalizedName)
   }
 
-  if (resolved.length) {
-    await adminSupabase.from('mentions').upsert(resolved, {
+  const audienceTokens = [...String(text || '').matchAll(/@(?:followers|highlights)\b/gi)].map((match) => match[0].slice(1).toLowerCase())
+  audienceTokens.forEach((token) => {
+    if (!resolved.some((mention) => mention.mentioned_user_id === `mention-${token}`)) {
+      resolved.push({
+        mentioned_user_id: `mention-${token}`,
+        display_name: token,
+        mention_text: `@${token}`,
+        content_type: 'comment',
+        content_id: commentId,
+        mentioned_by_user_id: actorId,
+        isAudienceMention: true,
+      })
+    }
+  })
+
+  const userMentions = resolved.filter((mention) => !mention.isAudienceMention)
+  if (userMentions.length) {
+    await adminSupabase.from('mentions').upsert(userMentions, {
       onConflict: 'mentioned_user_id,content_type,content_id,mentioned_by_user_id',
       ignoreDuplicates: true,
     })
@@ -146,7 +162,16 @@ async function resolveMentions(adminSupabase, text, actorId, commentId, mentionR
 async function mentionNotificationTargets(adminSupabase, mentions, actorId, actorName, contentType, contentId, commentId, ownerId, isReply = false) {
   if (!mentions.length) return []
 
-  return mentions.map((mention) => {
+  const audienceMentioned = mentions.some((mention) => mention.isAudienceMention)
+  const { data: followerRows } = audienceMentioned
+    ? await adminSupabase.from('user_follows').select('follower_id').eq('following_id', actorId).neq('follower_id', actorId)
+    : { data: [] }
+  const audienceTargets = [...new Set((followerRows || []).map((row) => row.follower_id).filter(Boolean))].map((userId) => ({
+    mentioned_user_id: userId,
+    display_name: 'followers',
+  }))
+
+  return [...mentions.filter((mention) => !mention.isAudienceMention), ...audienceTargets].map((mention) => {
     const link = routeForEntity(contentType, contentId)
     return {
       user_id: mention.mentioned_user_id,
@@ -330,7 +355,7 @@ export async function POST(request) {
     }
     const mentionRows = await mentionNotificationTargets(adminSupabase, mentions, session.user_id, actorName, contentType, contentId, data.id, ownerId, Boolean(replyTo))
     rows.push(...mentionRows)
-    const mentionedUserIds = new Set(mentions.map((mention) => mention.mentioned_user_id))
+    const mentionedUserIds = new Set(mentionRows.map((mention) => mention.user_id))
     const notificationRows = rows.filter((row) => !(row.type === 'comment' && mentionedUserIds.has(row.user_id)))
 
     if (notificationRows.length > 0) {

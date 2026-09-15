@@ -47,6 +47,7 @@ import SocialActionBar from '@/app/components/user/SocialActionBar'
 import Comments from '@/app/components/user/Comments'
 import DailyFeedback from '@/app/components/user/DailyFeedback'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 
 // Database table constants
 const TABLES = {
@@ -130,6 +131,7 @@ export default function UserDashboardPage() {
   const [authenticated, setAuthenticated] = useState(false)
   const [authError, setAuthError] = useState(null)
   const [userId, setUserId] = useState(null)
+  const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [userName, setUserName] = useState('Traveler')
   const [userAvatarUrl, setUserAvatarUrl] = useState('')
 
@@ -189,6 +191,33 @@ export default function UserDashboardPage() {
   const [pullDistance, setPullDistance] = useState(0)
   const sheetTouchStartY = useRef(null)
   const pullStartY = useRef(null)
+
+  useEffect(() => {
+    if (!userId) return undefined
+
+    let active = true
+    const loadUnreadAlerts = async () => {
+      try {
+        const response = await fetch('/api/notifications', { credentials: 'same-origin', cache: 'no-store' })
+        const result = response.ok ? await response.json() : null
+        if (active && result?.success) setUnreadAlerts(Number(result.unread_count) || 0)
+      } catch {
+        // The bell remains available if the unread count cannot be loaded.
+      }
+    }
+
+    loadUnreadAlerts()
+    const updateUnreadAlerts = (event) => {
+      const count = Number(event?.detail?.unreadCount)
+      if (Number.isFinite(count)) setUnreadAlerts(count)
+      else void loadUnreadAlerts()
+    }
+    window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
+    return () => {
+      active = false
+      window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
+    }
+  }, [userId])
 
   useEffect(() => {
     const handleFeedRefresh = () => {
@@ -863,6 +892,45 @@ export default function UserDashboardPage() {
             published_at: post.created_at,
             category: 'Community',
           }))
+        const followedUserIdsArray = [...followedUserIds].filter(Boolean)
+        const { data: followedReposts } = followedUserIdsArray.length
+          ? await supabase
+            .from('reposts')
+            .select('id, user_id, original_content_type, original_content_id, quote_text, created_at')
+            .eq('original_content_type', 'user_post')
+            .in('user_id', followedUserIdsArray)
+            .order('created_at', { ascending: false })
+            .limit(50)
+          : { data: [] }
+        const repostedPostIds = [...new Set((followedReposts || []).map((repost) => repost.original_content_id).filter(Boolean))]
+        const { data: repostedPosts } = repostedPostIds.length
+          ? await supabase
+            .from('info_user_posts')
+            .select('id, user_id, title, content, created_at, updated_at, status')
+            .in('id', repostedPostIds)
+            .eq('status', 'published')
+          : { data: [] }
+        const repostedPostMap = new Map((repostedPosts || []).map((post) => [post.id, post]))
+        const repostFeed = (followedReposts || [])
+          .map((repost) => {
+            const originalPost = repostedPostMap.get(repost.original_content_id)
+            if (!originalPost) return null
+            return {
+              ...originalPost,
+              id: repost.id,
+              original_post_id: originalPost.id,
+              repost_id: repost.id,
+              reposted_by: repost.user_id,
+              repost_quote: repost.quote_text,
+              created_by: repost.user_id,
+              published_at: repost.created_at,
+              excerpt: repost.quote_text || originalPost.content,
+              category: 'Repost',
+              type: 'post',
+              href: `/user/posts/${originalPost.id}`,
+            }
+          })
+          .filter(Boolean)
 
         const touristSpotPosts = (touristSpotsFeed.data || []).map((spot) => ({
           ...spot,
@@ -891,6 +959,8 @@ export default function UserDashboardPage() {
           ...(threadsFeed.data || []).map((item) => item.created_by),
           ...(touristSpotPosts || []).map((item) => item.created_by),
           ...followedPosts.map((item) => item.created_by),
+          ...repostFeed.map((item) => item.created_by),
+          ...(repostedPosts || []).map((item) => item.user_id),
           ...(nextAnnouncements || []).map((item) => item.created_by),
         ].filter(Boolean)
         const { data: authors } = authorIds.length
@@ -936,6 +1006,12 @@ export default function UserDashboardPage() {
             ...withAuthor(post),
             type: 'post',
             href: `/user/profile/${post.user_id}`,
+          })),
+          ...repostFeed.map((repost) => ({
+            ...withAuthor(repost),
+            type: 'post',
+            href: `/user/posts/${repost.original_post_id}`,
+            is_repost: true,
           })),
           ...(nextAnnouncements || []).map((announcement) => ({
             ...withAuthor(announcement),
@@ -1019,7 +1095,6 @@ export default function UserDashboardPage() {
 
     const delta = clientY - pullStartY.current
     if (delta > 0) {
-      event.preventDefault()
       setPullDistance(Math.min(delta * 0.72, 120))
     }
   }
@@ -1232,7 +1307,8 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="tourism-shell relative min-h-screen w-full overflow-x-clip" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
+    <main className="tourism-shell relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
+      <UserTopHeader />
       {toastMessage && (
         <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
           {toastMessage}
@@ -1249,7 +1325,7 @@ export default function UserDashboardPage() {
       )}
 
       <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
-        <header className="sticky top-0 z-50 mb-0 w-full self-start rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-0 sm:p-4 lg:mb-0 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none">
+        <header className="hidden">
           <div className="flex items-center justify-between gap-3">
             <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
               <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
@@ -1282,6 +1358,7 @@ export default function UserDashboardPage() {
               </Link>
               <Link href="/user/notifications" aria-label="Alerts" title="Alerts" className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-sky-700">
                 <Bell className="h-4 w-4" />
+                {unreadAlerts > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-white">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>}
               </Link>
               <div className="relative">
                 <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
@@ -1428,7 +1505,7 @@ export default function UserDashboardPage() {
                             </div>
 
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700">
-                              <span>{item.type === 'tourist_spot' ? 'Tourist spot' : item.type === 'announcement' ? 'Announcement' : item.type === 'forum' ? 'Forum' : item.type === 'event' ? 'Event' : item.type === 'blog' ? 'Blog' : 'Post'}</span>
+                              <span>{item.is_repost ? 'Repost' : item.type === 'tourist_spot' ? 'Tourist spot' : item.type === 'announcement' ? 'Announcement' : item.type === 'forum' ? 'Forum' : item.type === 'event' ? 'Event' : item.type === 'blog' ? 'Blog' : 'Post'}</span>
                               {item.type === 'blog' && (
                                 <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">{readingMinutes} min read</span>
                               )}

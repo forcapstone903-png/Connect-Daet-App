@@ -64,6 +64,42 @@ function missingConfig() {
   )
 }
 
+export async function GET(request) {
+  if (!adminSupabase) return missingConfig()
+
+  const session = getServerSession(request)
+  if (!session?.user_id) {
+    return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
+  }
+
+  const scope = new URL(request.url).searchParams.get('scope') || 'sessions'
+  const isAdmin = ['admin', 'administrator'].includes(String(session.role || '').toLowerCase())
+  if (scope === 'recent' && !isAdmin) {
+    return NextResponse.json({ success: false, message: 'Administrator access is required.' }, { status: 403 })
+  }
+
+  try {
+    let query = adminSupabase
+      .from('user_activity_log')
+      .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)')
+      .order('created_at', { ascending: false })
+      .limit(scope === 'recent' ? 8 : 20)
+
+    if (scope !== 'recent') {
+      query = query
+        .eq('user_id', session.user_id)
+        .in('activity_type', ['login', 'logout', 'sign_in', 'sign_out', 'session', 'auth'])
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+    return NextResponse.json({ success: true, activities: data || [] })
+  } catch (error) {
+    console.error('Activity read error:', error)
+    return NextResponse.json({ success: false, message: error.message || 'Unable to load activity.' }, { status: 500 })
+  }
+}
+
 async function resolveOwnerUserId(entityType, entityId) {
   if (!entityType || !entityId) return null
 

@@ -2,20 +2,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import {
   ChevronRight,
   Heart,
   MessageSquare,
-  Search,
   Flame,
   Eye,
   Clock,
-  User,
   Share2,
-  Filter,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 
 const categories = [
   { id: 'travel_guides', label: 'Travel Guides', icon: '✈️' },
@@ -87,6 +84,21 @@ function formatDate(value) {
   })
 }
 
+function formatPostedDate(value) {
+  if (!value) return 'Recently posted'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Recently posted'
+
+  return date.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+}
+
 function getCategoryColor(category) {
   const colors = {
     travel_guides: 'bg-sky-50 text-sky-700 border-sky-200',
@@ -99,14 +111,29 @@ function getCategoryColor(category) {
   return colors[category] || 'bg-slate-50 text-slate-700 border-slate-200'
 }
 
+function BlogMedia({ blog, compact = false }) {
+  const [imageFailed, setImageFailed] = useState(false)
+
+  if (!blog.featured_image || imageFailed) return null
+
+  return (
+    <div className={`w-full overflow-hidden bg-slate-100 ${compact ? 'relative h-48' : 'aspect-[16/8.5]'}`}>
+      <img
+        alt={blog.title}
+        src={blog.featured_image}
+        onError={() => setImageFailed(true)}
+        className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+      />
+    </div>
+  )
+}
+
 export default function BlogsPage() {
   const [blogs, setBlogs] = useState([])
   const [featuredBlogs, setFeaturedBlogs] = useState([])
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [sortBy, setSortBy] = useState('recent')
-  const [filterOpen, setFilterOpen] = useState(false)
   const [recentReads, setRecentReads] = useState([])
   const [newsletterEmail, setNewsletterEmail] = useState('')
   const [newsletterSaved, setNewsletterSaved] = useState(false)
@@ -122,7 +149,7 @@ export default function BlogsPage() {
           .select(
             `
             *,
-            info_users(id, full_name, email)
+            info_users(id, full_name, email, profile_image_url)
           `
           )
           .eq('status', 'published')
@@ -131,10 +158,33 @@ export default function BlogsPage() {
         if (blogsError) {
           console.error('Error loading blogs:', blogsError)
         } else if (!ignore) {
-          setBlogs(blogsData || [])
+          const blogIds = (blogsData || []).map((blog) => blog.id).filter(Boolean)
+          const [reactionsResult, sharesResult, commentsResult] = blogIds.length
+            ? await Promise.all([
+                supabase.from('content_reactions').select('content_id').eq('content_type', 'blog').in('content_id', blogIds),
+                supabase.from('content_shares').select('content_id').eq('content_type', 'blog').in('content_id', blogIds),
+                supabase.from('content_comments').select('content_id').eq('content_type', 'blog').in('content_id', blogIds),
+              ])
+            : [{ data: [] }, { data: [] }, { data: [] }]
+
+          const countByBlog = (rows) => (rows || []).reduce((counts, row) => {
+            counts[row.content_id] = (counts[row.content_id] || 0) + 1
+            return counts
+          }, {})
+          const reactionCounts = countByBlog(reactionsResult.data)
+          const shareCounts = countByBlog(sharesResult.data)
+          const commentCounts = countByBlog(commentsResult.data)
+          const blogsWithEngagement = (blogsData || []).map((blog) => ({
+            ...blog,
+            _reaction_count: reactionCounts[blog.id] || 0,
+            _share_count: shareCounts[blog.id] || 0,
+            _comment_count: commentCounts[blog.id] || 0,
+          }))
+
+          setBlogs(blogsWithEngagement)
 
           // Get featured blogs (top 3 by views/likes)
-          const featured = (blogsData || [])
+          const featured = [...blogsWithEngagement]
             .sort((a, b) => {
               const scoreA = (a.views || 0) + (a.likes || 0) * 2
               const scoreB = (b.views || 0) + (b.likes || 0) * 2
@@ -157,12 +207,14 @@ export default function BlogsPage() {
     loadBlogs()
 
     const storedReads = readLocalStorage(STORAGE_KEYS.readHistory, [])
-    setRecentReads(storedReads.slice(0, 3))
     const savedNewsletter = readLocalStorage(STORAGE_KEYS.newsletter, null)
-    if (savedNewsletter) {
-      setNewsletterEmail(savedNewsletter)
-      setNewsletterSaved(true)
-    }
+    queueMicrotask(() => {
+      setRecentReads(storedReads.slice(0, 3))
+      if (savedNewsletter) {
+        setNewsletterEmail(savedNewsletter)
+        setNewsletterSaved(true)
+      }
+    })
 
     return () => {
       ignore = true
@@ -185,15 +237,6 @@ export default function BlogsPage() {
       result = result.filter((blog) => blog.category === selectedCategory)
     }
 
-    // Search filter
-    if (search.trim()) {
-      const query = search.toLowerCase()
-      result = result.filter((blog) => {
-        const haystack = [blog.title, blog.excerpt, blog.content, ...(blog.tags || [])].join(' ').toLowerCase()
-        return haystack.includes(query)
-      })
-    }
-
     // Sort
     if (sortBy === 'recent') {
       result.sort((a, b) => new Date(b.published_at || 0) - new Date(a.published_at || 0))
@@ -208,74 +251,42 @@ export default function BlogsPage() {
     }
 
     return result
-  }, [blogs, selectedCategory, search, sortBy])
+  }, [blogs, selectedCategory, sortBy])
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-[1200px] px-3 pb-8 pt-3 sm:px-4 lg:px-6">
-        {/* Header */}
-        <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center justify-between gap-3 sm:justify-start">
-              <Link href="/user/dashboard" className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
-                  <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
-                </div>
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>
-                  <p className="text-base font-bold text-slate-800">Connect</p>
-                </div>
-              </Link>
-
-              <button
-                type="button"
-                onClick={() => setFilterOpen(!filterOpen)}
-                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 lg:hidden"
-              >
-                <Filter className="h-4 w-4" />
-                Filter
-              </button>
-            </div>
-
-            <div className="hidden items-center gap-2 lg:flex">
-              <Link href="/user/blogs/new" className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700">
-                Write Article
-              </Link>
-            </div>
-
-            <label className="hidden flex-1 items-center justify-center lg:flex">
-              <div className="w-full max-w-xl rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
-                <div className="flex items-center gap-2">
-                  <Search className="h-4 w-4" />
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search articles..."
-                    className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
-            </label>
+      <UserTopHeader />
+      <div className="mx-auto max-w-3xl px-3 pb-8 pt-2 sm:px-4 lg:px-6">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">Community stories</h1>
           </div>
-
-          <div className="mt-3 flex items-center gap-2 lg:hidden">
-            <label className="flex flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
-              <Search className="h-4 w-4" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search..."
-                className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-              />
-            </label>
-            <Link href="/user/blogs/new" className="rounded-lg bg-sky-600 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-700">
-              New
-            </Link>
-          </div>
-        </header>
+          <Link href="/user/blogs/new" className="hidden rounded-lg bg-[#16766f] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#0e514d] sm:inline-flex">
+            Write article
+          </Link>
+        </div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+            <select
+              value={selectedCategory}
+              onChange={(event) => setSelectedCategory(event.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none"
+            >
+              <option value="">All categories</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}
+            </select>
+            <select
+              value={sortBy}
+              onChange={(event) => setSortBy(event.target.value)}
+              className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none"
+            >
+              <option value="recent">Most recent</option>
+              <option value="popular">Most popular</option>
+              <option value="trending">Trending</option>
+            </select>
+        </div>
 
         {/* Featured Section */}
-        {!search && !selectedCategory && featuredBlogs.length > 0 && (
+        {false && !selectedCategory && featuredBlogs.length > 0 && (
           <section className="mb-8">
             <div className="mb-4 flex items-center gap-2">
               <Flame className="h-5 w-5 text-orange-600" />
@@ -289,20 +300,7 @@ export default function BlogsPage() {
                   href={`/user/blogs/${blog.id}`}
                   className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:shadow-lg hover:border-sky-200"
                 >
-                  <div className="relative h-48 w-full overflow-hidden bg-gradient-to-br from-sky-400 to-blue-600">
-                    {blog.featured_image ? (
-                      <img
-                        alt={blog.title}
-                        src={blog.featured_image}
-                        className="h-full w-full object-cover transition group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center bg-gradient-to-br from-sky-400 to-blue-600">
-                        <span className="text-4xl opacity-50">📰</span>
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition" />
-                  </div>
+                  <BlogMedia blog={blog} compact />
 
                   <div className="p-4">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -338,11 +336,9 @@ export default function BlogsPage() {
           </section>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+        <div>
           <aside
-            className={`space-y-4 rounded-[24px] ${
-              filterOpen ? 'block' : 'hidden lg:block'
-            }`}
+            className="hidden"
           >
             <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="mb-4">
@@ -459,90 +455,59 @@ export default function BlogsPage() {
           {/* Main Content */}
           <section>
             {loading ? (
-              <div className="space-y-4">
+              <div className="space-y-0">
                 {[1, 2, 3].map((item) => (
                   <div key={item} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-4 h-40" />
                 ))}
               </div>
             ) : filteredBlogs.length > 0 ? (
-              <div className="space-y-4">
+              <div className="space-y-3">
                 {filteredBlogs.map((blog) => (
-                  <Link
+                  <article
                     key={blog.id}
-                    href={`/user/blogs/${blog.id}`}
-                    className="block rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md hover:border-sky-200 sm:p-5"
+                    className="group overflow-hidden rounded-[20px] border border-slate-200 border-l-4 border-l-violet-300 bg-white shadow-sm transition hover:border-sky-200 hover:shadow-md"
                   >
-                    <div className="flex gap-4 sm:gap-5">
-                      {/* Image */}
-                      <div className="h-32 w-32 flex-shrink-0 overflow-hidden rounded-[16px] bg-gradient-to-br from-sky-400 to-blue-600 sm:h-40 sm:w-40">
-                        {blog.featured_image ? (
-                          <img alt={blog.title} src={blog.featured_image} className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full items-center justify-center">
-                            <span className="text-3xl opacity-50">📰</span>
+                    <div className="p-4 sm:p-5">
+                      <div className="flex items-start gap-3">
+                        <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label="View author's profile">
+                          {blog.info_users?.profile_image_url ? <img src={blog.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : (blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
+                        </Link>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
+                            <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
+                            <span className="text-slate-400">·</span>
+                            <time dateTime={blog.published_at || undefined} title={formatPostedDate(blog.published_at)} className="text-slate-500">{formatDate(blog.published_at)}</time>
                           </div>
-                        )}
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700">
+                            <span>Blog</span>
+                            <span className="font-medium normal-case tracking-normal text-slate-500">{calculateReadTime(blog.content)} min read</span>
+                          </div>
+                        </div>
                       </div>
 
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide border ${getCategoryColor(blog.category)}`}
-                          >
-                            {categories.find((c) => c.id === blog.category)?.label || blog.category}
-                          </span>
+                      {blog.featured_image && (
+                        <Link href={`/user/blogs/${blog.id}`} className="mt-3 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
+                          <BlogMedia blog={blog} />
+                        </Link>
+                      )}
+
+                      <div className="pt-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getCategoryColor(blog.category)}`}>{categories.find((c) => c.id === blog.category)?.label || blog.category}</span>
+                          {blog.featured && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"><Flame className="h-3 w-3" />Featured</span>}
                         </div>
-
-                        <h3 className="mt-2 text-lg font-bold text-slate-900 line-clamp-2">{blog.title}</h3>
-
-                        <p className="mt-2 line-clamp-2 text-sm text-slate-600">{blog.excerpt || blog.content}</p>
-
-                        {/* Tags */}
-                        {blog.tags && blog.tags.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {blog.tags.slice(0, 3).map((tag, idx) => (
-                              <span key={idx} className="inline-block rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
-                                #{tag}
-                              </span>
-                            ))}
-                            {blog.tags.length > 3 && (
-                              <span className="text-[10px] font-semibold text-slate-500">+{blog.tags.length - 3}</span>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Meta */}
-                        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                          <span className="inline-flex items-center gap-1">
-                            <User className="h-3.5 w-3.5" />
-                            {blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Clock className="h-3.5 w-3.5" />
-                            {calculateReadTime(blog.content)} min read
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Eye className="h-3.5 w-3.5" />
-                            {blog.views || 0} views
-                          </span>
-                          <span className="text-[10px]">{formatDate(blog.published_at)}</span>
-                        </div>
-
-                        {/* Stats */}
-                        <div className="mt-3 flex items-center gap-4 text-sm font-semibold text-slate-700">
-                          <div className="flex items-center gap-1">
-                            <Heart className="h-4 w-4 text-slate-400" />
-                            {blog.likes || 0}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <MessageSquare className="h-4 w-4 text-slate-400" />
-                            {blog.comments_count || 0}
-                          </div>
+                        <Link href={`/user/blogs/${blog.id}`}><h3 className="mt-3 line-clamp-2 text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{blog.title}</h3></Link>
+                        <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-600">{blog.excerpt || blog.content}</p>
+                        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1"><Heart className="h-3.5 w-3.5" />{blog._reaction_count ?? blog.likes ?? 0} reactions</span>
+                          <span className="inline-flex items-center gap-1"><MessageSquare className="h-3.5 w-3.5" />{blog._comment_count || 0} comments</span>
+                          <span className="inline-flex items-center gap-1"><Share2 className="h-3.5 w-3.5" />{blog._share_count || 0} shares</span>
+                          <span className="inline-flex items-center gap-1"><Eye className="h-3.5 w-3.5" />{blog.views || 0} views</span>
+                          <span className="ml-auto inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{calculateReadTime(blog.content)} min read</span>
                         </div>
                       </div>
                     </div>
-                  </Link>
+                  </article>
                 ))}
               </div>
             ) : (
@@ -552,7 +517,6 @@ export default function BlogsPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setSearch('')
                     setSelectedCategory('')
                   }}
                   className="mt-3 text-xs font-semibold text-sky-600 hover:underline"

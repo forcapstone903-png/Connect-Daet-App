@@ -1,0 +1,10 @@
+BEGIN;
+
+ALTER TABLE public.forum_replies
+  ADD COLUMN IF NOT EXISTS image_url TEXT,
+  ADD COLUMN IF NOT EXISTS video_url TEXT,
+  ADD COLUMN IF NOT EXISTS gif_url TEXT,
+  ADD COLUMN IF NOT EXISTS sticker_url TEXT,
+  ADD COLUMN IF NOT EXISTS mention_data JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+COMMIT;

@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, Bookmark, CalendarDays, FileText, Home, LogOut, Mail, Menu, MessageCircle, PlusCircle, Search, Settings, UserRound } from 'lucide-react'
-import { performLogout } from '@/lib/clientLogout'
+import { Bell, Bookmark, CalendarDays, FileText, Home, MessageCircle, PlusCircle, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
+
+const UNREAD_REFRESH_INTERVAL_MS = 10_000
 
 const navItems = [
   { href: '/user/dashboard', label: 'Feed', icon: Home },
@@ -14,7 +15,6 @@ const navItems = [
   { href: '/user/blogs/new', label: 'Create', icon: PlusCircle, highlight: true },
   { href: '/user/blogs', label: 'Blogs', icon: FileText },
   { href: '/user/events', label: 'Events', icon: CalendarDays },
-  { href: '/user/notifications', label: 'Alerts', icon: Bell },
 ]
 
 const desktopNavItems = [
@@ -30,7 +30,6 @@ export default function MobileNav() {
   const router = useRouter()
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
-  const [accountOpen, setAccountOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
 
@@ -83,7 +82,7 @@ export default function MobileNav() {
 
     window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
     window.addEventListener('daet-messages-updated', updateUnreadMessages)
-    const refreshTimer = window.setInterval(loadUnreadAlerts, 2000)
+    const refreshTimer = window.setInterval(loadUnreadAlerts, UNREAD_REFRESH_INTERVAL_MS)
     let realtimeChannel = null
     if (userId && supabase?.channel) {
       realtimeChannel = supabase.channel(`navigation-realtime-${userId}`)
@@ -106,16 +105,14 @@ export default function MobileNav() {
     }
   }, [])
 
-  const handleLogout = async () => {
-    await performLogout()
-    router.push('/login')
-  }
-
   const submitSearch = (event) => {
     event.preventDefault()
     const query = searchQuery.trim()
     router.push(query ? `/search?q=${encodeURIComponent(query)}` : '/search')
   }
+
+  const totalUnread = unreadAlerts + unreadMessages
+  const unreadLabel = totalUnread > 9 ? '9+' : totalUnread
 
   return (
     <>
@@ -136,24 +133,15 @@ export default function MobileNav() {
               return <Link key={href} href={href} aria-current={isActive ? 'page' : undefined} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition ${isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><Icon className="h-4 w-4" />{label}</Link>
             })}
           </div>
-          <div className="relative flex items-center justify-self-end gap-2">
+          <div className="flex items-center justify-self-end">
             <Link href="/user/notifications" aria-label="Notifications" className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-50">
               <Bell className="h-4 w-4" />
-              {unreadAlerts > 0 && (
+              {totalUnread > 0 && (
                 <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#fffefa]">
-                  {unreadAlerts > 9 ? '9+' : unreadAlerts}
+                  {unreadLabel}
                 </span>
               )}
             </Link>
-            <button type="button" aria-label="Open account menu" title="Open menu" onClick={() => setAccountOpen((value) => !value)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900">
-              <Menu className="h-5 w-5" />
-            </button>
-            {accountOpen && <div className="absolute right-0 top-11 z-50 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-              <Link href="/user/profile" onClick={() => setAccountOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" />View profile</Link>
-              <Link href="/user/settings" onClick={() => setAccountOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile settings</Link>
-              <Link href="/user/messaging" onClick={() => setAccountOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Mail className="h-4 w-4" />Messages</Link>
-              <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
-            </div>}
           </div>
         </div>
       </nav>

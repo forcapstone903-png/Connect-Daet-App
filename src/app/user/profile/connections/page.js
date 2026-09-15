@@ -26,11 +26,13 @@ export default function ProfileConnectionsPage() {
     const query = new URLSearchParams(window.location.search)
     const tab = query.get('tab')
     const profileId = query.get('user') || id
-    setUserId(id)
-    if (tab === 'following') setActiveTab(tab)
+    queueMicrotask(() => {
+      setUserId(id)
+      if (tab === 'following') setActiveTab(tab)
+    })
 
     if (!id) {
-      setLoading(false)
+      queueMicrotask(() => setLoading(false))
       return
     }
 
@@ -89,10 +91,12 @@ export default function ProfileConnectionsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-slate-50 py-6 text-slate-900">
       <div className="mx-auto max-w-3xl">
-        <Link href="/user/profile" className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-sky-700"><ArrowLeft className="h-4 w-4" /> Back to profile</Link>
-        <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <div className="px-4 sm:px-5">
+          <Link href="/user/profile" className="mb-5 inline-flex items-center gap-2 text-sm font-bold text-slate-600 hover:text-sky-700"><ArrowLeft className="h-4 w-4" /> Back to profile</Link>
+        </div>
+        <section className="overflow-hidden border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 px-5 py-5 sm:px-7">
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-sky-700">Your community</p>
             <h1 className="mt-1 text-2xl font-black tracking-tight">Connections</h1>
@@ -105,15 +109,15 @@ export default function ProfileConnectionsPage() {
               </button>
             ))}
           </div>
-          <div className="p-4 sm:p-6">
+          <div className="p-0">
             {notice && <p className="mb-4 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">{notice}</p>}
             {loading ? <p className="py-8 text-center text-sm text-slate-500">Loading connections...</p> : people.length === 0 ? <p className="py-8 text-center text-sm text-slate-500">No {activeTab} yet.</p> : (
-              <div className="space-y-2">
+              <div>
                 {people.map((person) => {
                   const isBlocked = blockedIds.has(person.id)
                   const isBusy = busyId === person.id
                   return (
-                    <div key={person.id} className="flex items-center gap-3 rounded-2xl border border-slate-100 px-3 py-3">
+                    <div key={person.id} className="flex min-h-[72px] items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0 sm:px-5">
                       <Link href={`/user/profile/${person.id}`} className="flex min-w-0 flex-1 items-center gap-3 hover:text-sky-700">
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt={person.full_name || 'User'} className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span>
                         <span className="min-w-0 truncate text-sm font-bold">{person.full_name || 'Community member'}</span>

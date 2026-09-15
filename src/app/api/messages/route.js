@@ -33,10 +33,10 @@ export async function GET(request) {
 
   const { data: settings, error: settingsError } = await adminSupabase
     .from('message_conversation_settings')
-    .select('other_user_id, is_archived')
+    .select('other_user_id, is_archived, is_muted, is_deleted')
     .eq('user_id', userId)
   if (settingsError) return NextResponse.json({ success: false, message: settingsError.message }, { status: 500 })
-  const archivedByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting.is_archived]))
+  const settingsByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting]))
 
   const rows = data || []
   const participantIds = [...new Set(rows.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
@@ -51,7 +51,8 @@ export async function GET(request) {
   for (const message of rows) {
     const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
     if (!otherUserId) continue
-    if (Boolean(archivedByUser.get(otherUserId)) !== archived) continue
+    const conversationSettings = settingsByUser.get(otherUserId) || {}
+    if (conversationSettings.is_deleted || Boolean(conversationSettings.is_archived) !== archived) continue
 
     const existing = latestByConversation.get(otherUserId)
     if (!existing || new Date(message.created_at) > new Date(existing.created_at)) {
@@ -85,6 +86,7 @@ export async function GET(request) {
         sender_id: latestMessage.sender_id,
         recipient_id: latestMessage.recipient_id,
         unread_count: unreadCount,
+        is_muted: Boolean(conversationSettings.is_muted),
       }
     })
     .sort((a, b) => {
@@ -189,25 +191,20 @@ export async function POST(request) {
     .maybeSingle()
 
   const displayLink = `/user/messaging/${senderId}`
-  const { data: existing } = await adminSupabase
-    .from('info_notifications')
-    .select('id')
-    .eq('user_id', recipientId)
-    .eq('link', displayLink)
-    .limit(1)
+  const { error: notificationError } = await adminSupabase.from('info_notifications').insert({
+    user_id: recipientId,
+    title: 'New message',
+    message: `${sender?.full_name || 'Someone'} sent you a message.`,
+    type: 'message',
+    is_read: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    link: displayLink,
+    actor_id: senderId,
+  })
 
-  if (!existing || existing.length === 0) {
-    await adminSupabase.from('info_notifications').insert({
-      user_id: recipientId,
-      title: 'New message',
-      message: `${sender?.full_name || 'Someone'} sent you a message.`,
-      type: 'message',
-      is_read: false,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      link: displayLink,
-      actor_id: senderId,
-    })
+  if (notificationError) {
+    console.error('Message notification creation failed:', notificationError)
   }
 
   return NextResponse.json({

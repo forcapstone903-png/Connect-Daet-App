@@ -2,6 +2,7 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import CookieConsent from '@/components/CookieConsent'
 import PushNotificationPrompt from '@/components/PushNotificationPrompt'
+import AlertToast from '@/components/AlertToast'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -23,6 +24,7 @@ export default function RootLayout({ children }) {
         <main>{children}</main>
         <CookieConsent />
         <PushNotificationPrompt />
+        <AlertToast />
       </body>
     </html>
   )
