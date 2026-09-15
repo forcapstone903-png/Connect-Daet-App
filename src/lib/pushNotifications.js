@@ -103,12 +103,29 @@ export async function subscribeUserToPush({ userId } = {}) {
   const subscriptionJson = subscription.toJSON()
   console.log('[push] Saving subscription to push_subscriptions')
 
-  const { error } = await supabase
+  const subscriptionRow = {
+    user_id: resolvedUserId,
+    subscription: subscriptionJson,
+    subscription_endpoint: subscriptionJson.endpoint,
+    p256dh: subscriptionJson.keys?.p256dh || null,
+    auth: subscriptionJson.keys?.auth || null,
+  }
+
+  let { error } = await supabase
     .from('push_subscriptions')
-    .insert({
-      user_id: resolvedUserId,
-      subscription: subscriptionJson,
-    })
+    .insert(subscriptionRow)
+
+  // Support databases created from the JSONB-only migration while production
+  // projects finish applying the normalized subscription columns.
+  if (error?.code === 'PGRST204' || error?.code === '42703') {
+    const fallbackResult = await supabase
+      .from('push_subscriptions')
+      .insert({
+        user_id: resolvedUserId,
+        subscription: subscriptionJson,
+      })
+    error = fallbackResult.error
+  }
 
   if (error) {
     console.error('Push subscription database save failed:', error)
