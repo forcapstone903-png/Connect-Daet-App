@@ -14,6 +14,7 @@ const navItems = [
   { href: '/user/blogs/new', label: 'Create', icon: PlusCircle, highlight: true },
   { href: '/user/blogs', label: 'Blogs', icon: FileText },
   { href: '/user/events', label: 'Events', icon: CalendarDays },
+  { href: '/user/notifications', label: 'Alerts', icon: Bell },
 ]
 
 const desktopNavItems = [
@@ -136,7 +137,14 @@ export default function MobileNav() {
             })}
           </div>
           <div className="relative flex items-center justify-self-end gap-2">
-            <Link href="/user/notifications" aria-label="Notifications" className="rounded-lg p-2 text-slate-600 hover:bg-slate-50"><Bell className="h-4 w-4" /></Link>
+            <Link href="/user/notifications" aria-label="Notifications" className="relative rounded-lg p-2 text-slate-600 hover:bg-slate-50">
+              <Bell className="h-4 w-4" />
+              {unreadAlerts > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#fffefa]">
+                  {unreadAlerts > 9 ? '9+' : unreadAlerts}
+                </span>
+              )}
+            </Link>
             <button type="button" aria-label="Open account menu" title="Open menu" onClick={() => setAccountOpen((value) => !value)} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-50 hover:text-slate-900">
               <Menu className="h-5 w-5" />
             </button>
