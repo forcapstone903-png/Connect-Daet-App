@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { getPushAvailability, subscribeUserToPush } from '@/lib/pushNotifications'
-import { supabase } from '@/lib/supabase'
+import { getStoredSessionObject } from '@/lib/authCookies'
 
 export default function PushNotificationPrompt() {
   const [availability, setAvailability] = useState(null)
@@ -13,10 +13,7 @@ export default function PushNotificationPrompt() {
   useEffect(() => {
     const timer = window.setTimeout(async () => {
       setAvailability(getPushAvailability())
-      if (!supabase) return
-
-      const { data } = await supabase.auth.getUser()
-      setUserId(data?.user?.id || null)
+      setUserId(getStoredSessionObject()?.id || getStoredSessionObject()?.user_id || null)
     }, 0)
 
     return () => window.clearTimeout(timer)

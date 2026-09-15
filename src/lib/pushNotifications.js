@@ -1,7 +1,5 @@
 'use client'
 
-import { supabase } from '@/lib/supabase'
-
 export function isIOSDevice() {
   if (typeof navigator === 'undefined') return false
 
@@ -59,11 +57,6 @@ export async function subscribeUserToPush({ userId } = {}) {
   }
 
   let resolvedUserId = userId
-  if (!resolvedUserId && supabase) {
-    const { data } = await supabase.auth.getUser()
-    resolvedUserId = data?.user?.id || null
-  }
-
   if (!resolvedUserId) {
     return { success: false, reason: 'not-authenticated', message: 'Please sign in before enabling notifications.' }
   }
@@ -103,33 +96,17 @@ export async function subscribeUserToPush({ userId } = {}) {
   const subscriptionJson = subscription.toJSON()
   console.log('[push] Saving subscription to push_subscriptions')
 
-  const subscriptionRow = {
-    user_id: resolvedUserId,
-    subscription: subscriptionJson,
-    subscription_endpoint: subscriptionJson.endpoint,
-    p256dh: subscriptionJson.keys?.p256dh || null,
-    auth: subscriptionJson.keys?.auth || null,
-  }
+  const response = await fetch('/api/push-subscriptions', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription: subscriptionJson }),
+  })
+  const result = await response.json().catch(() => ({}))
 
-  let { error } = await supabase
-    .from('push_subscriptions')
-    .insert(subscriptionRow)
-
-  // Support databases created from the JSONB-only migration while production
-  // projects finish applying the normalized subscription columns.
-  if (error?.code === 'PGRST204' || error?.code === '42703') {
-    const fallbackResult = await supabase
-      .from('push_subscriptions')
-      .insert({
-        user_id: resolvedUserId,
-        subscription: subscriptionJson,
-      })
-    error = fallbackResult.error
-  }
-
-  if (error) {
-    console.error('Push subscription database save failed:', error)
-    throw new Error(error.message || 'The push subscription could not be saved.')
+  if (!response.ok || !result.success) {
+    console.error('Push subscription database save failed:', result)
+    throw new Error(result.message || 'The push subscription could not be saved.')
   }
 
   console.log('[push] Subscription saved successfully')
