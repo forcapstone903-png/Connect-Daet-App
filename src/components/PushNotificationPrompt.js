@@ -13,7 +13,17 @@ export default function PushNotificationPrompt() {
   useEffect(() => {
     const timer = window.setTimeout(async () => {
       setAvailability(getPushAvailability())
-      setUserId(getStoredSessionObject()?.id || getStoredSessionObject()?.user_id || null)
+      const storedSession = getStoredSessionObject()
+      const resolvedUserId = storedSession?.id || storedSession?.user_id || null
+      setUserId(resolvedUserId)
+
+      // Permission can remain granted after an earlier database save failed.
+      // Re-save the existing device subscription when the app starts.
+      if (resolvedUserId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        void subscribeUserToPush({ userId: resolvedUserId }).catch((error) => {
+          console.error('Push subscription sync failed:', error)
+        })
+      }
     }, 0)
 
     return () => window.clearTimeout(timer)
