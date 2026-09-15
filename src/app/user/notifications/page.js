@@ -132,6 +132,7 @@ export default function UserNotificationsPage() {
   const sheetTouchStartY = useRef(null)
 
   const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
+  const notificationsCacheKey = getCacheKey('notifications', 'user', userId)
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -218,7 +219,6 @@ export default function UserNotificationsPage() {
     }
 
     const userIdForRealtime = userId || session?.user_id || session?.id || session?.userId || session?.sub || ''
-    const notificationsCacheKey = getCacheKey('notifications', 'user', userIdForRealtime)
 
     const loadNotifications = async (silent = false) => {
       if (!silent) setLoadError('')
