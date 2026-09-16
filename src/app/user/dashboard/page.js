@@ -43,12 +43,14 @@ import { performLogout } from '@/lib/clientLogout'
 import { clearUserCache, getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
+import { isOwnOriginalPost } from '@/lib/postOwnership'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
 import Comments from '@/app/components/user/Comments'
 import DailyFeedback from '@/app/components/user/DailyFeedback'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
+import ConfirmationModal from '@/app/components/ConfirmationModal'
 
 // Database table constants
 const TABLES = {
@@ -179,6 +181,9 @@ export default function UserDashboardPage() {
   const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
   const [openPostMenu, setOpenPostMenu] = useState(null)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [blogActionConfirm, setBlogActionConfirm] = useState(null)
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
   const [feedRefreshing, setFeedRefreshing] = useState(false)
@@ -241,6 +246,31 @@ export default function UserDashboardPage() {
 
       if (detail.action === 'removed') {
         setFeed((previous) => previous.filter((item) => !(item.is_repost && item.original_post_id === detail.contentId && item.reposted_by === userId)))
+        invalidateCache(getDashboardCacheKey(userId))
+        return
+      }
+
+      if (detail.action === 'restored' && detail.repost?.repost_id) {
+        const restored = detail.repost
+        const original = restored.original_post || {}
+        const restoredItem = {
+          ...original,
+          id: restored.repost_id,
+          original_post_id: restored.original_content_id,
+          repost_id: restored.repost_id,
+          reposted_by: restored.reposted_by || restored.user_id,
+          repost_quote: restored.repost_quote || restored.quote_text,
+          created_by: restored.reposted_by || restored.user_id,
+          published_at: restored.created_at,
+          category: 'Repost',
+          type: restored.original_content_type === 'blog' ? 'blog' : 'post',
+          href: restored.original_content_type === 'blog' ? `/user/blogs/${restored.original_content_id}` : `/user/posts/${restored.original_content_id}`,
+          is_repost: true,
+          original_author: restored.original_author || original.author || null,
+          original_post: { ...original, author: restored.original_author || original.author || null },
+        }
+        setFeed((previous) => [restoredItem, ...previous.filter((item) => item.repost_id !== restoredItem.repost_id)])
+        setFeedVisibleCount((previous) => Math.max(previous, 10))
         invalidateCache(getDashboardCacheKey(userId))
         return
       }
@@ -698,6 +728,30 @@ export default function UserDashboardPage() {
     }
   }
 
+  const editOwnRepost = async (item, quoteText) => {
+    if (!item?.repost_id || item.reposted_by !== userId) return
+
+    try {
+      const response = await fetch(`/api/reposts/${item.repost_id}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteText: quoteText.trim() || null }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to edit repost.')
+      setFeed((previous) => previous.map((feedItem) => feedItem.repost_id === item.repost_id
+        ? { ...feedItem, repost_quote: quoteText.trim() || null }
+        : feedItem))
+      invalidateCache(getDashboardCacheKey(userId))
+      setToastMessage('Repost updated.')
+      setTimeout(() => setToastMessage(''), 2500)
+    } catch (actionError) {
+      setToastMessage(actionError.message || 'Unable to edit repost.')
+      setTimeout(() => setToastMessage(''), 2500)
+    }
+  }
+
   const updateOwnPost = async (item, action) => {
     if (item?.type !== 'post' || item?.is_repost || item.user_id !== userId) return
     const isDelete = action === 'delete'
@@ -717,6 +771,74 @@ export default function UserDashboardPage() {
       setTimeout(() => setToastMessage(''), 2500)
     } catch (actionError) {
       setToastMessage(actionError.message || 'Unable to update post.')
+      setTimeout(() => setToastMessage(''), 2500)
+    }
+  }
+
+  const updateOwnBlog = async (item, action) => {
+    if (item?.type !== 'blog' || item?.is_repost || item.created_by !== userId) return
+    const isDelete = action === 'delete'
+
+    try {
+      const response = await fetch(`/api/user/blogs/${item.id}`, {
+        method: isDelete ? 'DELETE' : 'PATCH',
+        credentials: 'same-origin',
+        headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
+        body: isDelete ? undefined : JSON.stringify({ status: 'archived' }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update blog.')
+      setFeed((previous) => previous.filter((feedItem) => feedItem.id !== item.id))
+      setOpenPostMenu(null)
+      invalidateCache(getDashboardCacheKey(userId))
+      setToastMessage(isDelete ? 'Blog deleted.' : 'Blog archived.')
+      setTimeout(() => setToastMessage(''), 2500)
+    } catch (actionError) {
+      setToastMessage(actionError.message || 'Unable to update blog.')
+      setTimeout(() => setToastMessage(''), 2500)
+    }
+  }
+
+  const requestBlogAction = (item, action) => {
+    if (item?.type !== 'blog' || item?.is_repost || item.created_by !== userId) return
+    setOpenPostMenu(null)
+    setBlogActionConfirm({ item, action })
+  }
+
+  const confirmBlogAction = async () => {
+    const pendingAction = blogActionConfirm
+    setBlogActionConfirm(null)
+    if (pendingAction) await updateOwnBlog(pendingAction.item, pendingAction.action)
+  }
+
+  const editOwnBlog = (item) => {
+    if (item?.type !== 'blog' || item?.is_repost || item.created_by !== userId) return
+    router.push(`/user/blogs/${item.id}/edit`)
+    setOpenPostMenu(null)
+  }
+
+  const editOwnPost = async (item) => {
+    if (item?.type !== 'post' || item?.is_repost || item.user_id !== userId) return
+    const title = window.prompt('Edit post title:', item.title || '')
+    if (title === null) return
+    const content = window.prompt('Edit post content:', item.content || '')
+    if (content === null) return
+    try {
+      const response = await fetch(`/api/posts/${item.id}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to edit post.')
+      setFeed((previous) => previous.map((feedItem) => feedItem.id === item.id ? { ...feedItem, title, content, excerpt: content } : feedItem))
+      setOpenPostMenu(null)
+      invalidateCache(getDashboardCacheKey(userId))
+      setToastMessage('Post updated.')
+      setTimeout(() => setToastMessage(''), 2500)
+    } catch (actionError) {
+      setToastMessage(actionError.message || 'Unable to edit post.')
       setTimeout(() => setToastMessage(''), 2500)
     }
   }
@@ -1208,14 +1330,20 @@ export default function UserDashboardPage() {
     }
   }, [authenticated, userId, feedRefreshKey])
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    setShowProfileMenu(false)
+    setShowLogoutConfirm(true)
+  }
+
+  const confirmLogout = async () => {
+    setLoggingOut(true)
     try {
       clearUserCache(userId)
       await performLogout()
     } catch (err) {
       console.error('User logout error:', err)
     } finally {
-      router.push('/login')
+      window.location.assign('/login')
     }
   }
 
@@ -1518,6 +1646,30 @@ export default function UserDashboardPage() {
 
         </header>
 
+        <ConfirmationModal
+          isOpen={showLogoutConfirm}
+          title="Confirm Logout"
+          message="Are you sure you want to logout?"
+          confirmText={loggingOut ? 'Logging out...' : 'OK'}
+          cancelText="Cancel"
+          isDangerous
+          onConfirm={confirmLogout}
+          onCancel={() => setShowLogoutConfirm(false)}
+        />
+
+        <ConfirmationModal
+          isOpen={Boolean(blogActionConfirm)}
+          title={blogActionConfirm?.action === 'delete' ? 'Delete blog?' : 'Archive blog?'}
+          message={blogActionConfirm?.action === 'delete'
+            ? 'This permanently removes your blog.'
+            : 'This hides your blog until you restore it.'}
+          confirmText={blogActionConfirm?.action === 'delete' ? 'Delete post' : 'Archive post'}
+          cancelText="Cancel"
+          isDangerous={blogActionConfirm?.action === 'delete'}
+          onConfirm={confirmBlogAction}
+          onCancel={() => setBlogActionConfirm(null)}
+        />
+
         {error && (
           <div className="mb-4 flex gap-3 rounded-[18px] border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             <AlertCircle className="h-5 w-5 shrink-0" />
@@ -1631,7 +1783,20 @@ export default function UserDashboardPage() {
                       : 'bg-sky-50 text-sky-700 border-sky-200'
                   const isPhotoFirstContent = ['blog', 'event', 'tourist_spot'].includes(item.type)
                   const readingMinutes = Math.max(1, Math.ceil((contentText.length || 0) / 180))
-                  const isOwnOriginalPost = item.type === 'post' && !item.is_repost && item.user_id === userId
+                  const ownsOriginalPost = isOwnOriginalPost(item, userId)
+                  const canManageOriginalPost = ownsOriginalPost && item.type === 'post'
+                  const canManageOwnBlog = ownsOriginalPost && item.type === 'blog'
+
+                  if (process.env.NODE_ENV !== 'production' && openPostMenu === itemKey) {
+                    console.debug('[POST OWNERSHIP]', {
+                      postId: item.id,
+                      postAuthorId: item.user_id || item.created_by || item.original_author_id,
+                      currentUserId: userId,
+                      isOwnPost: ownsOriginalPost,
+                      isRepost: Boolean(item.is_repost),
+                      reposterId: item.reposted_by,
+                    })
+                  }
 
                   if (item.is_repost) {
                     return (
@@ -1653,6 +1818,7 @@ export default function UserDashboardPage() {
                               itemType: item.type,
                             })}
                             onToggleSave={(event) => handleBookmark(event, item)}
+                            onEdit={(quoteText) => void editOwnRepost(item, quoteText)}
                             onDelete={() => void updateOwnRepost(item, 'delete')}
                             onArchive={() => void updateOwnRepost(item, 'archive')}
                           />
@@ -1687,8 +1853,6 @@ export default function UserDashboardPage() {
                             {item.is_repost && <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"><span className="font-semibold text-slate-700">{authorName} reposted</span><span>·</span><span>Originally shared by</span><Link href={item.original_author?.id ? `/user/profile/${item.original_author.id}` : item.href} className="font-bold text-slate-800 hover:text-sky-700">{item.original_author?.full_name || 'Community member'}</Link></div>}
                             {item.is_repost && item.repost_quote && <div className="mt-3 rounded-xl border-l-4 border-emerald-300 bg-emerald-50 px-3 py-2.5 text-[13px] leading-5 text-slate-700"><span className="font-bold text-emerald-800">{authorName}</span>{' '}{item.repost_quote}</div>}
 
-                            <Link href={item.href} className="mt-2 block pl-0"><h2 className="break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{item.title}</h2></Link>
-
                             {item.type === 'event' && (
                               <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
                                 {item.start_date && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}
@@ -1706,17 +1870,24 @@ export default function UserDashboardPage() {
                           <div className="relative shrink-0">
                             <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                             {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              {isOwnOriginalPost ? <>
+                              {canManageOriginalPost ? <>
+                                <button type="button" onClick={() => void editOwnPost(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50">Edit post</button>
                                 <button type="button" onClick={() => void updateOwnPost(item, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
                                 <button type="button" onClick={() => void updateOwnPost(item, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
-                              </> : <>
+                              </> : canManageOwnBlog ? <>
+                                <button type="button" onClick={() => editOwnBlog(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50">Edit post</button>
+                                <button type="button" onClick={() => requestBlogAction(item, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
+                                <button type="button" onClick={() => requestBlogAction(item, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
+                              </> : !ownsOriginalPost ? <>
                                 <button type="button" onClick={() => hidePost(itemKey)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
                                 <button type="button" onClick={() => markNotInterested(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
-                              </>}
+                              </> : null}
                               <button type="button" onClick={() => void copyPostLink(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
                             </div>}
                           </div>
                         </div>
+
+                        <Link href={item.href} className="mt-2 block w-full pl-0 text-left"><h2 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{item.title}</h2></Link>
 
                         {item.type === 'announcement' && (
                           <div className={`mt-3 rounded-2xl border px-3 py-2 text-[11px] font-semibold ${announcementToneClass}`}>

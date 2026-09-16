@@ -4,9 +4,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Bell, Bookmark, LogOut, Menu, MessageCircle, Search, Settings } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
+import ConfirmationModal from '@/app/components/ConfirmationModal'
 
 export default function UserTopHeader() {
   const [showMenu, setShowMenu] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
 
   useEffect(() => {
@@ -40,9 +43,15 @@ export default function UserTopHeader() {
     }
   }, [])
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
     setShowMenu(false)
+    setShowLogoutConfirm(true)
+  }
+
+  const confirmLogout = async () => {
+    setLoggingOut(true)
     await performLogout()
+    window.location.assign('/login')
   }
 
   return (
@@ -80,6 +89,16 @@ export default function UserTopHeader() {
         </div>
       </header>
       <div aria-hidden="true" className="h-[66px] lg:hidden" />
+      <ConfirmationModal
+        isOpen={showLogoutConfirm}
+        title="Confirm Logout"
+        message="Are you sure you want to logout?"
+        confirmText={loggingOut ? 'Logging out...' : 'OK'}
+        cancelText="Cancel"
+        isDangerous
+        onConfirm={confirmLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </>
   )
 }

@@ -158,7 +158,7 @@ export default function BlogsPage() {
         if (blogsError) {
           console.error('Error loading blogs:', blogsError)
         } else if (!ignore) {
-          const blogIds = (blogsData || []).map((blog) => blog.id).filter(Boolean)
+          const blogIds = filterValidUuidValues((blogsData || []).map((blog) => blog.id).filter(Boolean))
           const [reactionsResult, sharesResult, commentsResult] = blogIds.length
             ? await Promise.all([
                 supabase.from('content_reactions').select('content_id').eq('content_type', 'blog').in('content_id', blogIds),

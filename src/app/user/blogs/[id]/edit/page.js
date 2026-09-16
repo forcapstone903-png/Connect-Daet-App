@@ -47,7 +47,7 @@ export default function EditBlogPage() {
         .select('title, excerpt, content, category')
         .eq('id', id)
         .eq('created_by', userId)
-        .eq('status', 'draft')
+        .in('status', ['draft', 'published'])
         .maybeSingle()
 
       if (loadError || !data) setError('This draft is unavailable.')
@@ -69,21 +69,21 @@ export default function EditBlogPage() {
 
     const session = getStoredSessionObject()
     const userId = session?.user_id || session?.id || session?.sub || session?.userId
-    const { error: saveError } = await supabase
-      .from('info_blogs')
-      .update({
+    const response = await fetch(`/api/user/blogs/${id}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         title: form.title.trim(),
         excerpt: form.excerpt.trim() || null,
         content: form.content.trim(),
         category: form.category,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .eq('created_by', userId)
-      .eq('status', 'draft')
+      }),
+    })
+    const result = await response.json().catch(() => ({}))
 
-    if (saveError) setError(saveError.message || 'Unable to save this draft.')
-    else router.push('/user/drafts')
+    if (!response.ok || !result.success) setError(result.message || 'Unable to save this blog.')
+    else router.push('/user/dashboard')
     setSaving(false)
   }
 
@@ -97,8 +97,8 @@ export default function EditBlogPage() {
     <main className="min-h-screen bg-slate-50 px-3 py-6 text-slate-900 sm:px-5">
       <div className="mx-auto max-w-3xl">
         <div className="mb-5 flex items-center justify-between">
-          <Link href="/user/drafts" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><ArrowLeft className="h-4 w-4" />Drafts</Link>
-          <h1 className="text-xl font-black">Edit draft</h1>
+          <Link href="/user/dashboard" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"><ArrowLeft className="h-4 w-4" />Dashboard</Link>
+          <h1 className="text-xl font-black">Edit blog</h1>
         </div>
         <form onSubmit={handleSubmit} className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
           <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Title</span><input required value={form.title} onChange={(event) => updateField('title', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-400 focus:bg-white" /></label>
@@ -106,7 +106,7 @@ export default function EditBlogPage() {
           <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Short excerpt</span><textarea rows={3} value={form.excerpt} onChange={(event) => updateField('excerpt', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-400 focus:bg-white" /></label>
           <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Article content</span><textarea required rows={16} value={form.content} onChange={(event) => updateField('content', event.target.value)} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none focus:border-sky-400 focus:bg-white" /></label>
           {error && <p className="text-sm text-red-600">{error}</p>}
-          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save draft'}</button>
+          <button type="submit" disabled={saving} className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-60"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save changes'}</button>
         </form>
       </div>
     </main>

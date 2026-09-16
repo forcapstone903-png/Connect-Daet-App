@@ -6,6 +6,7 @@ import { ChevronDown, ChevronUp, CornerDownRight, LoaderCircle, MessageSquare, M
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { buildCommentThreads } from '@/lib/commentThreads'
+import { filterValidUuidValues } from '@/lib/uuid'
 import Reactions from './Reactions'
 import UserProfileLink from './UserProfileLink'
 import MentionText from './MentionText'
@@ -80,7 +81,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
       if (error) throw error
 
-      const commentIds = (data || []).map((comment) => comment.id).filter(Boolean)
+      const commentIds = filterValidUuidValues((data || []).map((comment) => comment.id).filter(Boolean))
       const { data: reactionRows, error: reactionError } = commentIds.length
         ? await supabase
             .from('content_reactions')

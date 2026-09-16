@@ -206,6 +206,10 @@ export default function PublicProfilePage() {
             }[post.original_content_type] || { type: "Post", text: post.content || "Shared a community post.", href: `/user/posts/${post.original_content_id}`, label: "Community post" }
             return {
               id: `repost-${post.repost_id}`,
+              repost_id: post.repost_id,
+              reposted_by: post.reposted_by || post.user_id,
+              original_content_id: post.original_content_id,
+              original_content_type: post.original_content_type,
               type: repostType.type,
               title: post.title,
               text: repostType.text,
@@ -566,7 +570,7 @@ export default function PublicProfilePage() {
                           <span>{post.originalAuthor?.full_name || "Community member"}</span>
                         </div>
                       )}
-                      <Link href={post.href} className="block"><h3 className="text-base font-bold leading-6 text-slate-900 hover:text-sky-700">
+                      <Link href={post.href} className="block w-full pl-0 text-left"><h3 className="m-0 text-left text-base font-bold leading-6 text-slate-900 hover:text-sky-700">
                         {post.title || "Untitled community update"}
                       </h3></Link>
                       <p className="mt-2 text-[13px] leading-6 text-slate-600">

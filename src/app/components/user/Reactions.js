@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
+import { isValidUuid } from '@/lib/uuid'
 
 const REACTION_TYPES = [
   { type: 'like', label: 'Like', color: 'text-sky-600', bg: 'bg-sky-50', emoji: '👍' },
@@ -23,7 +24,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   const mutationVersionRef = useRef(0)
 
   const loadReactions = useCallback(async () => {
-    if (!contentId) return
+    if (!contentId || !isValidUuid(String(contentId))) return
     const requestVersion = mutationVersionRef.current
     try {
       const [allResult, userResult] = await Promise.all([
@@ -122,8 +123,8 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
 
   // Determine the most used reaction (displayed as primary)
   const handleReact = async (reactionType) => {
-    if (!userId) {
-      alert('Please log in to react to this content.')
+    if (!userId || !isValidUuid(String(contentId))) {
+      alert('This content is unavailable for reactions right now.')
       return
     }
     if (loading) return

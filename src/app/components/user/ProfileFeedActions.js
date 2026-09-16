@@ -3,21 +3,32 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { isValidUuid } from '@/lib/uuid'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 
+function normalizeFavoriteItemType(value) {
+  if (!value) return value
+
+  const type = String(value).trim().toLowerCase()
+  if (type === 'forum_thread' || type === 'forum') return 'forum'
+  if (type === 'user_post' || type === 'post') return 'user_post'
+  if (type === 'tourist_spot' || type === 'spot') return 'tourist_spot'
+  return type
+}
+
 function getContentType(post) {
-  if (post.original_content_type) return post.original_content_type
-  return post.type === 'Forum' ? 'forum_thread' : post.type === 'Post' ? 'user_post' : post.type.toLowerCase()
+  if (post.original_content_type) return normalizeFavoriteItemType(post.original_content_type)
+  return normalizeFavoriteItemType(post.type)
 }
 
 export default function ProfileFeedActions({ post, userId, onRepost }) {
   const router = useRouter()
   const contentType = getContentType(post)
-  const contentId = post.original_content_id || post.id
+  const contentId = post.original_content_id || (post.isRepost ? post.original_post?.id : post.id)
   const [isSaved, setIsSaved] = useState(false)
 
   useEffect(() => {
-    if (!userId || !contentId) return undefined
+    if (!userId || !contentId || !isValidUuid(String(contentId)) || String(contentId).startsWith('repost-')) return undefined
 
     let active = true
     supabase
@@ -37,7 +48,7 @@ export default function ProfileFeedActions({ post, userId, onRepost }) {
   const handleSave = async (event) => {
     event?.preventDefault()
     event?.stopPropagation()
-    if (!userId) return
+    if (!userId || !contentId || !isValidUuid(String(contentId)) || String(contentId).startsWith('repost-')) return
 
     const query = isSaved
       ? supabase.from('user_favorites').delete().eq('user_id', userId).eq('item_type', contentType).eq('item_id', contentId)

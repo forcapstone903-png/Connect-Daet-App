@@ -21,6 +21,7 @@ import ProfileFeedActions from '@/app/components/user/ProfileFeedActions'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { isOwnOriginalPost } from '@/lib/postOwnership'
 
 const STORAGE_KEYS = {
   profilePreferences: 'daet_user_profile_preferences',
@@ -267,6 +268,7 @@ export default function UserProfilePage() {
           }))),
           ...(blogsData || []).map((blog) => ({
             id: blog.id,
+            user_id: blog.created_by,
             type: 'Blog',
             title: blog.title || 'Untitled blog',
             content: blog.excerpt || blog.content || 'Shared a new story.',
@@ -279,6 +281,7 @@ export default function UserProfilePage() {
           })),
           ...(threadsData || []).map((thread) => ({
             id: thread.id,
+            user_id: thread.created_by,
             type: 'Forum',
             title: thread.title || 'Community discussion',
             content: thread.content || 'Started a new discussion.',
@@ -291,6 +294,7 @@ export default function UserProfilePage() {
           })),
           ...(eventsData || []).map((event) => ({
             id: event.id,
+            user_id: event.created_by,
             type: 'Event',
             title: event.title || 'Community event',
             content: event.description || 'Shared an upcoming event.',
@@ -313,6 +317,9 @@ export default function UserProfilePage() {
               id: `repost-${repost.repost_id}`,
               repost_id: repost.repost_id,
               reposted_by: repost.reposted_by || repost.user_id,
+              user_id: repost.reposted_by || repost.user_id,
+              original_content_id: repost.original_content_id,
+              original_content_type: repost.original_content_type,
               type: mapped.type,
               title: repost.title || 'Shared content',
               content: mapped.content,
@@ -367,7 +374,7 @@ export default function UserProfilePage() {
           type: post.type === 'Blog' ? 'blog' : post.type === 'Forum' ? 'forum_thread' : post.type === 'Event' ? 'event' : 'user_post',
           id: post.id,
         }))
-        const engagementIds = [...new Set(engagementRefs.map((item) => item.id))]
+        const engagementIds = filterValidUuidValues([...new Set(engagementRefs.map((item) => item.id))])
         const [{ data: reactionRows }, { data: commentRows }] = engagementIds.length
           ? await Promise.all([
             supabase.from('content_reactions').select('content_type, content_id').in('content_id', engagementIds),
@@ -480,7 +487,10 @@ export default function UserProfilePage() {
     const isRepost = Boolean(post?.isRepost)
     const endpoint = isRepost ? `/api/reposts/${post.repost_id}` : `/api/posts/${post.id}`
     const isDelete = action === 'delete'
-    if (isDelete && !window.confirm(isRepost ? 'Delete repost?\n\nThis removes only your repost.' : 'Delete post?\n\nThis permanently removes your post.')) return
+    const confirmation = isDelete
+      ? (isRepost ? 'Delete repost?\n\nThis removes only your repost.' : 'Delete post?\n\nThis permanently removes your post.')
+      : (isRepost ? 'Archive repost?\n\nThis hides the repost from your profile and feed. You can restore it from Archive.' : 'Archive post?\n\nThis hides the post until you restore it from Archive.')
+    if (!window.confirm(confirmation)) return
     const response = await fetch(endpoint, {
       method: isDelete ? 'DELETE' : 'PATCH',
       credentials: 'same-origin',
@@ -495,6 +505,28 @@ export default function UserProfilePage() {
     setUserPosts((previous) => previous.filter((item) => item.id !== post.id && !(isDelete && !isRepost && item.original_content_id === post.id)))
     setOpenPostMenu(null)
     setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
+    invalidateCachePrefix(`profile:user:${userId}`)
+  }
+
+  const editProfilePost = async (post) => {
+    if (post?.type !== 'Post' || post?.isRepost || post.user_id !== userId) return
+    const title = window.prompt('Edit post title:', post.title || '')
+    if (title === null) return
+    const content = window.prompt('Edit post content:', post.content || '')
+    if (content === null) return
+    const response = await fetch(`/api/posts/${post.id}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, content }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) {
+      setSaveNotice(result.message || 'Unable to edit post.')
+      return
+    }
+    setUserPosts((previous) => previous.map((item) => item.id === post.id ? { ...item, title, content } : item))
+    setOpenPostMenu(null)
     invalidateCachePrefix(`profile:user:${userId}`)
   }
 
@@ -672,7 +704,8 @@ export default function UserProfilePage() {
                               {post.isRepost ? <>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive repost</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete repost</button>
-                              </> : post.type === 'Post' && post.user_id === userId ? <>
+                              </> : isOwnOriginalPost(post, userId) && post.type === 'Post' ? <>
+                                <button type="button" onClick={() => void editProfilePost(post)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50">Edit post</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
                               </> : null}
@@ -683,7 +716,7 @@ export default function UserProfilePage() {
 
                         {post.isRepost && post.repostQuote && <p className="mb-3 text-[13px] leading-6 text-slate-700">{post.repostQuote}</p>}
                         {post.isRepost && <div className="mb-3 flex items-center gap-2 text-xs text-slate-500"><span className="font-semibold text-slate-700">Originally shared by</span><span>{post.originalAuthor?.full_name || 'Community member'}</span></div>}
-                        <Link href={post.href} className="mt-2 block"><h3 className="break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
+                        <Link href={post.href} className="mt-2 block w-full pl-0 text-left"><h3 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
                         <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
                         {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 grid gap-1 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] sm:grid-cols-2">
                           {(post.images?.length ? post.images : (post.media ? [post.media] : [])).map((url, index) => <Link key={`${url}-${index}`} href={post.href} className="block"><img src={url} alt={`${post.title || 'Post'} ${index + 1}`} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>)}

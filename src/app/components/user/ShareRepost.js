@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link2, Mail, MessageCircle, Repeat2, Send, Share2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -25,6 +25,48 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
   const [shareCount, setShareCount] = useState(0)
   const [reposted, setReposted] = useState(false)
   const [repostLoading, setRepostLoading] = useState(false)
+  const shareButtonRef = useRef(null)
+  const [menuPosition, setMenuPosition] = useState(null)
+
+  const updateMenuPosition = useCallback(() => {
+    const button = shareButtonRef.current
+    if (!button) return
+
+    const rect = button.getBoundingClientRect()
+    const menuWidth = 224
+    const horizontalPadding = 8
+    const left = Math.min(
+      Math.max(horizontalPadding, rect.left),
+      window.innerWidth - menuWidth - horizontalPadding
+    )
+
+    setMenuPosition({
+      left,
+      bottom: Math.max(horizontalPadding, window.innerHeight - rect.top + 8),
+    })
+  }, [])
+
+  const toggleShareMenu = () => {
+    if (showMenu) {
+      setShowMenu(false)
+      return
+    }
+
+    updateMenuPosition()
+    setShowMenu(true)
+  }
+
+  useEffect(() => {
+    if (!showMenu) return undefined
+
+    const reposition = () => updateMenuPosition()
+    window.addEventListener('resize', reposition)
+    window.addEventListener('scroll', reposition, true)
+    return () => {
+      window.removeEventListener('resize', reposition)
+      window.removeEventListener('scroll', reposition, true)
+    }
+  }, [showMenu, updateMenuPosition])
 
   const loadShareCount = useCallback(async () => {
     if (!contentType || !contentId) return
@@ -283,7 +325,8 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
     <div className="relative inline-flex w-full max-w-full">
       <button
         type="button"
-        onClick={() => setShowMenu((v) => !v)}
+        ref={shareButtonRef}
+        onClick={toggleShareMenu}
         className={`inline-flex h-9 max-w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 ${fullWidth ? 'w-full' : ''}`}
       >
         <Share2 className="h-3.5 w-3.5" />
@@ -293,7 +336,10 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
 
       {showMenu && (
         <>
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-56 overflow-hidden rounded-[16px] border border-slate-200 bg-white p-1.5 shadow-xl">
+          <div
+            className="fixed z-30 w-56 max-w-[calc(100vw-1rem)] overflow-hidden rounded-[16px] border border-slate-200 bg-white p-1.5 shadow-xl"
+            style={menuPosition ? { left: menuPosition.left, bottom: menuPosition.bottom } : undefined}
+          >
             <button
               type="button"
               onClick={() => {

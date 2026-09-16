@@ -184,7 +184,7 @@ export async function GET(request, { params }) {
       ...(threads || []).map((item) => ({ type: 'forum_thread', id: item.id })),
       ...(events || []).map((item) => ({ type: 'event', id: item.id })),
     ]
-    const contentIds = [...new Set(contentRefs.map((item) => item.id))]
+    const contentIds = filterValidUuidValues([...new Set(contentRefs.map((item) => item.id))])
     const [{ data: reactions }, { data: comments }] = contentIds.length
       ? await Promise.all([
         adminSupabase.from('content_reactions').select('content_type, content_id').in('content_id', contentIds),

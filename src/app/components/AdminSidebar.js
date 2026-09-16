@@ -148,13 +148,13 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
 
   const handleConfirmLogout = async () => {
     setShowLogoutConfirm(false)
-    // Centralized logout: clears the signed HTTP-only server cookie via
-    // /api/logout, the display-only client cookie, storage, and Supabase.
-    await performLogout()
     if (onLogout) {
       await onLogout()
       return
     }
+    // Centralized logout: clears the signed HTTP-only server cookie via
+    // /api/logout, the display-only client cookie, storage, and Supabase.
+    await performLogout()
     router.push('/login')
   }
 

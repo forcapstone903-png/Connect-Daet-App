@@ -38,9 +38,11 @@ export async function POST(request) {
       )
     }
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ||
-      process.env.NEXT_PUBLIC_VERCEL_URL ||
-      'http://localhost:3000'
+    const requestOrigin = request.headers.get('origin') || `${request.nextUrl.protocol}//${request.nextUrl.host}`
+    const vercelUrl = process.env.NEXT_PUBLIC_VERCEL_URL
+      ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL.replace(/^https?:\/\//, '')}`
+      : null
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || vercelUrl || requestOrigin
 
     const redirectUrl = `${appUrl}/reset-password`
 

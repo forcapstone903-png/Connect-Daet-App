@@ -30,11 +30,15 @@ export async function PATCH(request, { params }) {
 
   const body = await request.json().catch(() => ({}))
   const status = body.status === 'archived' ? 'archived' : body.status === 'active' ? 'active' : null
-  if (!status) return NextResponse.json({ success: false, message: 'Invalid repost status.' }, { status: 400 })
+  const hasQuoteText = Object.prototype.hasOwnProperty.call(body, 'quoteText')
+  const updatePayload = {}
+  if (status) updatePayload.status = status
+  if (hasQuoteText) updatePayload.quote_text = body.quoteText ? String(body.quoteText).trim() : null
+  if (!Object.keys(updatePayload).length) return NextResponse.json({ success: false, message: 'Invalid repost update.' }, { status: 400 })
 
   const { data, error } = await adminSupabase
     .from('reposts')
-    .update({ status })
+    .update(updatePayload)
     .eq('id', repostId)
     .eq('user_id', userId)
     .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')

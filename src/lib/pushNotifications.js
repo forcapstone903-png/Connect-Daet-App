@@ -111,13 +111,25 @@ export async function subscribeUserToPush({ userId } = {}) {
     })
   } catch (error) {
     if (timeout) window.clearTimeout(timeout)
+
+    const isAbortError = error?.name === 'AbortError'
+    if (isAbortError) {
+      console.info('[push] Subscription request was interrupted; retrying is safe.')
+      return {
+        success: false,
+        reason: 'request-aborted',
+        message: 'The notification request was interrupted. Please try again.',
+        subscription: subscriptionJson,
+        registration,
+        ...availability,
+      }
+    }
+
     console.warn('[push] Subscription could not reach the server:', error?.message || error)
     return {
       success: false,
-      reason: error?.name === 'AbortError' ? 'request-timeout' : 'network-error',
-      message: error?.name === 'AbortError'
-        ? 'The notification service took too long to respond. Please try again.'
-        : 'The notification service is temporarily unavailable. Please try again when you are online.',
+      reason: 'network-error',
+      message: 'The notification service is temporarily unavailable. Please try again when you are online.',
       subscription: subscriptionJson,
       registration,
       ...availability,

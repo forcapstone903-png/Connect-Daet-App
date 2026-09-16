@@ -29,11 +29,21 @@ export async function PATCH(request, { params }) {
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Post service is not configured.' }, { status: 500 })
   const body = await request.json().catch(() => ({}))
   const status = body.status === 'archived' ? 'archived' : body.status === 'published' ? 'published' : null
-  if (!status) return NextResponse.json({ success: false, message: 'Invalid post status.' }, { status: 400 })
+  const hasTitle = Object.prototype.hasOwnProperty.call(body, 'title')
+  const hasContent = Object.prototype.hasOwnProperty.call(body, 'content')
+  const title = hasTitle ? String(body.title || '').trim() : null
+  const content = hasContent ? String(body.content || '').trim() : null
+  if (!status && !hasTitle && !hasContent) return NextResponse.json({ success: false, message: 'Invalid post update.' }, { status: 400 })
+  if ((hasTitle && !title) || (hasContent && !content)) return NextResponse.json({ success: false, message: 'Title and content cannot be empty.' }, { status: 400 })
+
+  const updatePayload = { updated_at: new Date().toISOString() }
+  if (status) updatePayload.status = status
+  if (hasTitle) updatePayload.title = title
+  if (hasContent) updatePayload.content = content
 
   const { data, error } = await adminSupabase
     .from('info_user_posts')
-    .update({ status, updated_at: new Date().toISOString() })
+    .update(updatePayload)
     .eq('id', postId)
     .eq('user_id', userId)
     .select('id, user_id, title, content, status, created_at, updated_at')
