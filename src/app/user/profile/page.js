@@ -131,6 +131,7 @@ export default function UserProfilePage() {
     created_at: new Date().toISOString(),
   })
   const [profileActionsOpen, setProfileActionsOpen] = useState(false)
+  const [openPostMenu, setOpenPostMenu] = useState(null)
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
   const [badges, setBadges] = useState([])
@@ -253,6 +254,7 @@ export default function UserProfilePage() {
         const createdPosts = [
           ...((profileContent?.user_posts || []).map((post) => ({
             id: post.id,
+            user_id: post.user_id,
             type: 'Post',
             title: post.title || 'Community update',
             content: post.content || 'Shared a community post.',
@@ -309,6 +311,8 @@ export default function UserProfilePage() {
             const mapped = typeMap[repost.original_content_type] || typeMap.user_post
             return {
               id: `repost-${repost.repost_id}`,
+              repost_id: repost.repost_id,
+              reposted_by: repost.reposted_by || repost.user_id,
               type: mapped.type,
               title: repost.title || 'Shared content',
               content: mapped.content,
@@ -316,11 +320,15 @@ export default function UserProfilePage() {
               category: mapped.category,
               href: mapped.href,
               media: repost.featured_image || (repost.images || [])[0] || '',
+              images: Array.isArray(repost.images) ? repost.images : [],
+              videos: Array.isArray(repost.videos) ? repost.videos : [],
+              video_url: repost.video_url || '',
               pinned: false,
               accent: mapped.accent,
               isRepost: true,
               repostQuote: repost.repost_quote,
               originalAuthor: repost.original_author,
+              original_post: repost.original_post,
             }
           })),
         ].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
@@ -400,8 +408,95 @@ export default function UserProfilePage() {
     loadProfile()
   }, [])
 
+  useEffect(() => {
+    if (!userId) return undefined
+
+    const handleRepostChange = (event) => {
+      const detail = event.detail || {}
+      if (detail.userId !== userId) return
+
+      if (detail.action === 'removed') {
+        setUserPosts((previous) => previous.filter((post) => !(post.isRepost && post.original_content_id === detail.contentId)))
+        setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
+        invalidateCachePrefix(`profile:user:${userId}`)
+        return
+      }
+
+      const original = detail.original
+      const repost = detail.repost
+      if (!original || !repost?.id) return
+      const typeMap = {
+        blog: { type: 'Blog', category: 'Story', href: `/user/blogs/${repost.original_content_id}`, content: original.excerpt || original.content || 'Shared a new story.' },
+        forum_thread: { type: 'Forum', category: 'Community', href: `/user/forums/${repost.original_content_id}`, content: original.content || 'Started a new discussion.' },
+        event: { type: 'Event', category: 'Event', href: `/user/events/${repost.original_content_id}`, content: original.description || 'Shared an upcoming event.' },
+        user_post: { type: 'Post', category: 'Community', href: `/user/posts/${repost.original_content_id}`, content: original.content || 'Shared a community post.' },
+      }
+      const mapped = typeMap[repost.original_content_type] || typeMap.user_post
+      const nextPost = {
+        id: `repost-${repost.id}`,
+        original_content_id: repost.original_content_id,
+        type: mapped.type,
+        title: original.title || 'Shared content',
+        content: mapped.content,
+        created_at: repost.created_at,
+        category: mapped.category,
+        href: mapped.href,
+        media: original.featured_image || (original.images || [])[0] || '',
+        images: Array.isArray(original.images) ? original.images : [],
+        videos: Array.isArray(original.videos) ? original.videos : [],
+        video_url: original.video_url || '',
+        pinned: false,
+        accent: 'bg-amber-100 text-amber-700',
+        isRepost: true,
+        repostQuote: repost.quote_text,
+        originalAuthor: original.author || null,
+        original_post: { ...original, author: original.author || null },
+      }
+      setUserPosts((previous) => [nextPost, ...previous.filter((post) => post.id !== nextPost.id)])
+      setStats((previous) => ({ ...previous, posts: previous.posts + 1 }))
+      invalidateCachePrefix(`profile:user:${userId}`)
+    }
+
+    window.addEventListener('daet-repost-created', handleRepostChange)
+    return () => window.removeEventListener('daet-repost-created', handleRepostChange)
+  }, [userId])
+
+  useEffect(() => {
+    const handleRepostVisibilityChange = (event) => {
+      const repostId = event.detail?.repost?.repost_id || event.detail?.repost?.id
+      if (!repostId || !['delete', 'archive'].includes(event.detail?.action)) return
+      setUserPosts((previous) => previous.filter((post) => post.id !== `repost-${repostId}`))
+      setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
+      invalidateCachePrefix(`profile:user:${userId}`)
+    }
+    window.addEventListener('daet-repost-visibility-changed', handleRepostVisibilityChange)
+    return () => window.removeEventListener('daet-repost-visibility-changed', handleRepostVisibilityChange)
+  }, [userId])
+
   const visiblePosts = userPosts
   const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
+
+  const updateProfilePost = async (post, action) => {
+    const isRepost = Boolean(post?.isRepost)
+    const endpoint = isRepost ? `/api/reposts/${post.repost_id}` : `/api/posts/${post.id}`
+    const isDelete = action === 'delete'
+    if (isDelete && !window.confirm(isRepost ? 'Delete repost?\n\nThis removes only your repost.' : 'Delete post?\n\nThis permanently removes your post.')) return
+    const response = await fetch(endpoint, {
+      method: isDelete ? 'DELETE' : 'PATCH',
+      credentials: 'same-origin',
+      headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
+      body: isDelete ? undefined : JSON.stringify({ status: 'archived' }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) {
+      setSaveNotice(result.message || 'Unable to update post.')
+      return
+    }
+    setUserPosts((previous) => previous.filter((item) => item.id !== post.id && !(isDelete && !isRepost && item.original_content_id === post.id)))
+    setOpenPostMenu(null)
+    setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
+    invalidateCachePrefix(`profile:user:${userId}`)
+  }
 
   const handleSaveProfile = async () => {
     if (!userId) {
@@ -504,6 +599,7 @@ export default function UserProfilePage() {
                   {profileActionsOpen && (
                     <div className="absolute right-0 top-12 z-20 w-44 overflow-hidden border border-slate-200 bg-white p-1.5 shadow-xl">
                       <Link href="/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Trophy className="h-4 w-4" />Rewards</Link>
+                      <Link href="/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
                       <Link href="/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
                     </div>
                   )}
@@ -569,15 +665,30 @@ export default function UserProfilePage() {
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12">
                             {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                           </span>
-                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{post.isRepost ? `${profile.full_name} reposted` : profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{post.isRepost ? 'Repost' : post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
-                          <button type="button" aria-label="Post options" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
+                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{post.isRepost ? `${profile.full_name} 🔄 reposted` : profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{post.isRepost ? 'Repost' : post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
+                          <div className="relative shrink-0">
+                            <button type="button" aria-label="Post options" aria-expanded={openPostMenu === `${post.type}-${post.id}`} onClick={() => setOpenPostMenu(openPostMenu === `${post.type}-${post.id}` ? null : `${post.type}-${post.id}`)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
+                            {openPostMenu === `${post.type}-${post.id}` && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+                              {post.isRepost ? <>
+                                <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive repost</button>
+                                <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete repost</button>
+                              </> : post.type === 'Post' && post.user_id === userId ? <>
+                                <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
+                                <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
+                              </> : null}
+                              <button type="button" onClick={() => { void navigator.clipboard?.writeText(`${window.location.origin}${post.href}`); setOpenPostMenu(null) }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
+                            </div>}
+                          </div>
                         </div>
 
                         {post.isRepost && post.repostQuote && <p className="mb-3 text-[13px] leading-6 text-slate-700">{post.repostQuote}</p>}
                         {post.isRepost && <div className="mb-3 flex items-center gap-2 text-xs text-slate-500"><span className="font-semibold text-slate-700">Originally shared by</span><span>{post.originalAuthor?.full_name || 'Community member'}</span></div>}
                         <Link href={post.href} className="mt-2 block"><h3 className="break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
                         <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
-                        {post.media && <Link href={post.href} className="mt-4 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px]"><img src={post.media} alt={post.title} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>}
+                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 grid gap-1 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] sm:grid-cols-2">
+                          {(post.images?.length ? post.images : (post.media ? [post.media] : [])).map((url, index) => <Link key={`${url}-${index}`} href={post.href} className="block"><img src={url} alt={`${post.title || 'Post'} ${index + 1}`} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>)}
+                          {(post.videos?.length ? post.videos : (post.video_url ? [post.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
+                        </div>}
 
                         <ProfileFeedActions post={post} userId={userId} />
                         </div>

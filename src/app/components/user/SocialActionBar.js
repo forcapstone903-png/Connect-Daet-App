@@ -5,13 +5,13 @@ import { Bookmark, MessageCircle } from 'lucide-react'
 import Reactions from './Reactions'
 import ShareRepost from './ShareRepost'
 
-export default function SocialActionBar({ contentType, contentId, userId, commentCount = 0, onToggleComments, isSaved = false, onToggleSave }) {
+export default function SocialActionBar({ contentType, contentId, userId, commentCount = 0, onToggleComments, isSaved = false, onToggleSave, onRepost, originalPost = null }) {
   const [showShareMenu, setShowShareMenu] = useState(false)
 
   return (
-    <div className="tourism-action-row mt-3 grid min-w-0 grid-cols-4 items-center gap-2 pt-3">
+    <div className="tourism-action-row mt-3 grid min-w-0 grid-cols-4 items-end gap-2 pt-3">
       <div className="min-w-0">
-        <Reactions contentType={contentType} contentId={contentId} userId={userId} compact fullWidth />
+        <Reactions contentType={contentType} contentId={contentId} userId={userId} compact fullWidth breakdown />
       </div>
 
       <button
@@ -25,7 +25,7 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
       </button>
 
       <div className="min-w-0">
-        <ShareRepost contentType={contentType} contentId={contentId} userId={userId} fullWidth />
+        <ShareRepost contentType={contentType} contentId={contentId} userId={userId} onRepost={onRepost} originalPost={originalPost} fullWidth />
       </div>
 
       <button

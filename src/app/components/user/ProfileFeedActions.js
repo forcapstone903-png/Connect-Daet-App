@@ -10,7 +10,7 @@ function getContentType(post) {
   return post.type === 'Forum' ? 'forum_thread' : post.type === 'Post' ? 'user_post' : post.type.toLowerCase()
 }
 
-export default function ProfileFeedActions({ post, userId }) {
+export default function ProfileFeedActions({ post, userId, onRepost }) {
   const router = useRouter()
   const contentType = getContentType(post)
   const contentId = post.original_content_id || post.id
@@ -55,6 +55,8 @@ export default function ProfileFeedActions({ post, userId }) {
       onToggleComments={() => router.push(post.href)}
       isSaved={isSaved}
       onToggleSave={handleSave}
+      onRepost={onRepost}
+      originalPost={{ ...post, id: contentId }}
     />
   )
 }

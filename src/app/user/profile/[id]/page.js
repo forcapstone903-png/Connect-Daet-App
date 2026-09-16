@@ -211,12 +211,21 @@ export default function PublicProfilePage() {
               text: repostType.text,
               date: post.created_at,
               media: post.featured_image || (post.images || [])[0] || "",
+              images: Array.isArray(post.images) ? post.images : [],
+              videos: Array.isArray(post.videos) ? post.videos : [],
+            images: Array.isArray(post.images) ? post.images : [],
+            videos: Array.isArray(post.videos) ? post.videos : [],
+            images: Array.isArray(post.images) ? post.images : [],
+            videos: Array.isArray(post.videos) ? post.videos : [],
+            images: Array.isArray(post.images) ? post.images : [],
+            videos: Array.isArray(post.videos) ? post.videos : [],
               reactionsCount: 0,
               commentsCount: 0,
               href: repostType.href,
               isRepost: true,
               repostQuote: post.repost_quote,
               originalAuthor: post.original_author,
+              original_post: post.original_post,
             }
           }),
         ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0)),
@@ -532,7 +541,7 @@ export default function PublicProfilePage() {
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-bold text-slate-900 lg:text-sm">
-                            {post.isRepost ? `${profile.full_name} reposted` : profile.full_name}
+                            {post.isRepost ? `${profile.full_name} 🔄 reposted` : profile.full_name}
                           </p>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{post.isRepost ? "Repost" : post.type}</span>{post.type === "Blog" && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div>
                         </div>
@@ -563,13 +572,10 @@ export default function PublicProfilePage() {
                       <p className="mt-2 text-[13px] leading-6 text-slate-600">
                         {post.text}
                       </p>
-                      {post.media && (
-                        <Link href={post.href} className="mt-4 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px]"><img
-                          src={post.media}
-                          alt={post.title || "Post media"}
-                          className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95"
-                        /></Link>
-                      )}
+                      {(post.images?.length > 0 || post.videos?.length > 0 || post.media) && <div className="mt-4 grid gap-1 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] sm:grid-cols-2">
+                        {(post.images?.length ? post.images : (post.media ? [post.media] : [])).map((url, index) => <Link key={`${url}-${index}`} href={post.href} className="block"><img src={url} alt={`${post.title || 'Post'} ${index + 1}`} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>)}
+                        {(post.videos || []).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
+                      </div>}
                       <ProfileFeedActions post={post} userId={viewerId} />
                       </div>
                     </article>

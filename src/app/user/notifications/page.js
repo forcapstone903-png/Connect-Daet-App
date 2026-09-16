@@ -442,7 +442,7 @@ export default function UserNotificationsPage() {
     }
 
     if (normalizedType === 'repost' || normalizedType === 'share') {
-      return { emoji: '🔁', className: 'text-emerald-500' }
+      return { emoji: '🔄', className: 'text-emerald-500' }
     }
 
     return { emoji: '🔔', className: 'text-slate-500' }

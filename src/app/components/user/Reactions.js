@@ -14,7 +14,7 @@ const REACTION_TYPES = [
   { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
 
-export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, compact = false, label, contentTitle = '', fullWidth = false }) {
+export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -65,27 +65,34 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   useEffect(() => {
     if (!contentType || !contentId || !supabase) return undefined
 
-    const channel = supabase.channel(`content-reactions-${contentType}-${contentId}`)
-    const subscription = channel
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'content_reactions',
-          filter: `content_type=eq.${contentType}`,
-        },
-        (payload) => {
-          const changed = payload?.new || payload?.old
-          if (!changed || changed.content_id !== contentId) return
-          void loadReactions()
-        }
-      )
-      .subscribe()
+    const channelSuffix = Math.random().toString(36).slice(2)
+    const channel = supabase.channel(`content-reactions-${contentType}-${contentId}-${channelSuffix}`)
+    let subscription
+    try {
+      subscription = channel
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'content_reactions',
+            filter: `content_type=eq.${contentType}`,
+          },
+          (payload) => {
+            const changed = payload?.new || payload?.old
+            if (!changed || changed.content_id !== contentId) return
+            void loadReactions()
+          }
+        )
+        .subscribe()
+    } catch (error) {
+      console.warn('Failed to subscribe to reaction updates:', error?.message || error)
+      return undefined
+    }
 
     return () => {
       try {
-        channel.unsubscribe?.()
+        subscription?.unsubscribe?.()
       } catch {
         // ignore channel cleanup edge cases
       }
@@ -175,8 +182,38 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   }
 
   const activeReactionMeta = REACTION_TYPES.find((r) => r.type === userReaction)
+  const visibleReactionTypes = REACTION_TYPES.filter((reaction) => (reactionCounts[reaction.type] || 0) > 0)
 
   return (
+    breakdown ? (
+      <div ref={pickerRef} className="relative flex w-full min-w-0 flex-col items-center gap-1">
+        <div className="flex h-5 items-center justify-center gap-0.5 text-xs leading-5">
+          {visibleReactionTypes.slice(0, 4).map((reaction) => (
+            <span key={reaction.type} aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`} title={`${reaction.label}: ${reactionCounts[reaction.type]}`}>
+              {reaction.emoji}
+            </span>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowPicker((value) => !value)}
+          disabled={loading}
+          aria-label={userReaction ? `${activeReactionMeta?.label || 'Reaction'} reaction, ${totalCount} total` : `React to this post, ${totalCount} total`}
+          title="React to this post"
+          className={`inline-flex h-9 min-w-[114px] items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition ${activeReactionMeta ? activeReactionMeta.color : 'text-slate-600 hover:text-slate-900'}`}
+        >
+          {activeReactionMeta ? <span className="text-base leading-none">{activeReactionMeta.emoji}</span> : <ThumbsUp aria-hidden="true" className="h-4 w-4" />}
+          <span>{totalCount}</span>
+        </button>
+        {showPicker && (
+          <div className="absolute bottom-full left-0 z-20 mb-2 flex translate-x-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-xl">
+            {REACTION_TYPES.map(({ type, label: pickerLabel, emoji }) => (
+              <button key={type} type="button" onClick={() => handleReact(type)} className="flex h-9 w-9 items-center justify-center rounded-full text-xl hover:bg-slate-50" title={pickerLabel}>{emoji}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    ) : (
     <div className="flex w-full min-w-0 items-center gap-2">
       {/* Primary reaction button */}
       <div className={`relative ${onCountClick ? 'min-w-0 flex-1' : 'w-full'}`} ref={pickerRef}>
@@ -261,5 +298,6 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
         </div>
       )}
     </div>
+    )
   )
 }

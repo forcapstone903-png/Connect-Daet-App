@@ -918,6 +918,7 @@ export default function BlogDetailPage() {
             onToggleComments={handleOpenComments}
             isSaved={isSaved}
             onToggleSave={handleSave}
+            originalPost={{ ...blog, author: blog.info_users || blog.author || { id: blog.created_by, full_name: blog.author_name, profile_image_url: blog.author_avatar_url } }}
           />
         </article>
 

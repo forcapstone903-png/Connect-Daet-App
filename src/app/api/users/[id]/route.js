@@ -20,6 +20,7 @@ export async function GET(request, { params }) {
     return NextResponse.json({ success: false, message: 'Profile id is required.' }, { status: 400 })
   }
   const viewerId = getServerSession(request)?.user_id || null
+  const archivedOnly = new URL(request.url).searchParams.get('archived') === 'true'
 
   try {
     const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }, { data: reverseFollowRow, error: reverseFollowError }] = await Promise.all([
@@ -66,13 +67,42 @@ export async function GET(request, { params }) {
     }
 
     const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: reposts }, { data: followRows }, { count: followersCount, error: followersCountError }, { count: followingCount, error: followingCountError }, { data: blockedRows, error: blockedError }] = await Promise.all([
-      adminSupabase
-        .from('info_user_posts')
-        .select('id, user_id, title, content, created_at, updated_at')
-        .eq('user_id', profileId)
-        .in('status', ['active', 'published'])
-        .order('created_at', { ascending: false })
-        .limit(20),
+      (async () => {
+        const query = adminSupabase
+          .from('info_user_posts')
+          .select('id, user_id, title, content, created_at, updated_at')
+          .eq('user_id', profileId)
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        if (archivedOnly && viewerId === profileId) {
+          const { data, error } = await query.in('status', ['archived'])
+          if (!error) return { data: data || [], error: null }
+          if (String(error.message || '').toLowerCase().includes('info_user_posts') && String(error.message || '').toLowerCase().includes('status')) {
+            const { data: legacyData, error: legacyError } = await adminSupabase
+              .from('info_user_posts')
+              .select('id, user_id, title, content, created_at, updated_at')
+              .eq('user_id', profileId)
+              .order('created_at', { ascending: false })
+              .limit(20)
+            return { data: legacyData || [], error: legacyError }
+          }
+          return { data: [], error }
+        }
+
+        const { data, error } = await query.in('status', ['active', 'published'])
+        if (!error) return { data: data || [], error: null }
+        if (String(error.message || '').toLowerCase().includes('info_user_posts') && String(error.message || '').toLowerCase().includes('status')) {
+          const { data: legacyData, error: legacyError } = await adminSupabase
+            .from('info_user_posts')
+            .select('id, user_id, title, content, created_at, updated_at')
+            .eq('user_id', profileId)
+            .order('created_at', { ascending: false })
+            .limit(20)
+          return { data: legacyData || [], error: legacyError }
+        }
+        return { data: [], error }
+      })(),
       adminSupabase
         .from('info_blogs')
         .select('id, title, excerpt, content, featured_image, images, videos, created_at, published_at, category, slug')
@@ -96,8 +126,9 @@ export async function GET(request, { params }) {
         .limit(20),
       adminSupabase
         .from('reposts')
-        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at')
+        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
         .eq('user_id', profileId)
+        .eq('status', archivedOnly && viewerId === profileId ? 'archived' : 'active')
         .order('created_at', { ascending: false })
         .limit(20),
       adminSupabase
@@ -124,15 +155,15 @@ export async function GET(request, { params }) {
     const repostIdsByType = (type) => [...new Set((reposts || []).filter((repost) => repost.original_content_type === type).map((repost) => repost.original_content_id).filter(Boolean))]
     const repostOriginalQueries = [
       ['user_post', 'info_user_posts', 'id, user_id, title, content, created_at, updated_at', 'created_at'],
-      ['blog', 'info_blogs', 'id, created_by, title, excerpt, content, featured_image, images, published_at, created_at, category', 'published_at'],
+      ['blog', 'info_blogs', 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, category', 'published_at'],
       ['forum_thread', 'forum_threads', 'id, created_by, title, content, created_at, category_id', 'created_at'],
       ['event', 'info_events', 'id, created_by, title, description, featured_image, images, start_date, created_at, category, status', 'start_date'],
     ].map(async ([type, table, fields, orderField]) => {
       const ids = repostIdsByType(type)
       if (!ids.length) return [type, []]
       const query = adminSupabase.from(table).select(fields).in('id', ids)
-      if (type === 'user_post' || type === 'forum_thread') query.in('status', ['active', 'published'])
-      if (type === 'blog' || type === 'event') query.eq('status', 'published')
+      if (!archivedOnly && (type === 'user_post' || type === 'forum_thread')) query.in('status', ['active', 'published'])
+      if (!archivedOnly && (type === 'blog' || type === 'event')) query.eq('status', 'published')
       const { data } = await query.order(orderField, { ascending: false })
       return [type, data || []]
     })
@@ -190,6 +221,10 @@ export async function GET(request, { params }) {
         original_content_id: original.id,
         original_content_type: repost.original_content_type,
         original_author: repostAuthorsById.get(originalAuthorId) || { id: originalAuthorId, full_name: 'Community member' },
+        original_post: {
+          ...original,
+          author: repostAuthorsById.get(originalAuthorId) || { id: originalAuthorId, full_name: 'Community member' },
+        },
       }
     }).filter(Boolean)
 
@@ -222,11 +257,13 @@ export async function GET(request, { params }) {
         country: profileData?.country || userData.country,
       },
       content: {
-        user_posts: attachEngagement(userPosts, 'user_post'),
+        user_posts: archivedOnly && viewerId === profileId ? [] : attachEngagement(userPosts, 'user_post'),
+        archived_user_posts: archivedOnly && viewerId === profileId ? userPosts : [],
         blogs: attachEngagement(blogs, 'blog'),
         threads: attachEngagement(threads, 'forum_thread'),
         events: attachEngagement(events, 'event'),
-        reposts: repostContent,
+        reposts: archivedOnly && viewerId === profileId ? [] : repostContent,
+        archived_reposts: archivedOnly && viewerId === profileId ? repostContent : [],
       },
     })
   } catch (error) {

@@ -1,11 +1,20 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link2, Mail, MessageCircle, Repeat2, Send, Share2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 
-export default function ShareRepost({ contentType, contentId, userId, onShared, fullWidth = false }) {
+function isMissingRepostStatusColumnError(error) {
+  const message = String(error?.message || error || '').toLowerCase()
+  return (
+    message.includes("'status' column of 'reposts'") ||
+    message.includes('reposts.status') ||
+    (message.includes('status') && message.includes('reposts') && message.includes('schema cache'))
+  )
+}
+
+export default function ShareRepost({ contentType, contentId, userId, onShared, onRepost, originalPost = null, fullWidth = false }) {
   const [showMenu, setShowMenu] = useState(false)
   const [showRepostModal, setShowRepostModal] = useState(false)
   const [showDMModal, setShowDMModal] = useState(false)
@@ -14,13 +23,124 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
   const [dmSearch, setDmSearch] = useState('')
   const [dmBody, setDmBody] = useState('')
   const [shareCount, setShareCount] = useState(0)
+  const [reposted, setReposted] = useState(false)
+  const [repostLoading, setRepostLoading] = useState(false)
+
+  const loadShareCount = useCallback(async () => {
+    if (!contentType || !contentId) return
+
+    const baseQuery = supabase
+      .from('reposts')
+      .select('user_id')
+      .eq('original_content_type', contentType)
+      .eq('original_content_id', contentId)
+
+    let repostsResult
+    try {
+      repostsResult = await baseQuery.eq('status', 'active')
+    } catch (error) {
+      if (!isMissingRepostStatusColumnError(error)) throw error
+      repostsResult = await baseQuery
+    }
+
+    const sharesResult = await supabase
+      .from('content_shares')
+      .select('user_id')
+      .eq('content_type', contentType)
+      .eq('content_id', contentId)
+      .in('share_type', ['repost', 'quote', 'external'])
+
+    if (repostsResult.error || sharesResult.error) return
+    const users = new Set([
+      ...(repostsResult.data || []).map((row) => row.user_id),
+      ...(sharesResult.data || []).map((row) => row.user_id),
+    ].filter(Boolean))
+    setShareCount(users.size)
+  }, [contentId, contentType])
+
+  useEffect(() => {
+    if (!userId || !contentType || !contentId) {
+      return undefined
+    }
+
+    let active = true
+    const checkExistingRepost = async () => {
+      const baseQuery = supabase
+        .from('reposts')
+        .select('id, status')
+        .eq('user_id', userId)
+        .eq('original_content_type', contentType)
+        .eq('original_content_id', contentId)
+
+      try {
+        const { data } = await baseQuery.maybeSingle()
+        if (active) setReposted(Boolean(data?.status === 'active'))
+      } catch (error) {
+        if (!isMissingRepostStatusColumnError(error)) throw error
+        const { data } = await supabase
+          .from('reposts')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('original_content_type', contentType)
+          .eq('original_content_id', contentId)
+          .maybeSingle()
+        if (active) setReposted(Boolean(data))
+      }
+    }
+
+    void checkExistingRepost()
+
+    return () => { active = false }
+  }, [contentId, contentType, userId])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadShareCount() }, 0)
+    if (!contentType || !contentId || !supabase?.channel) return () => window.clearTimeout(timer)
+    const channelSuffix = Math.random().toString(36).slice(2)
+    const channel = supabase.channel(`content-shares-${contentType}-${contentId}-${channelSuffix}`)
+    channel
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reposts', filter: `original_content_type=eq.${contentType}` }, (payload) => {
+        const changed = payload?.new || payload?.old
+        if (changed?.original_content_id === contentId) void loadShareCount()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_shares', filter: `content_type=eq.${contentType}` }, (payload) => {
+        const changed = payload?.new || payload?.old
+        if (changed?.content_id === contentId) void loadShareCount()
+      })
+      .subscribe()
+    return () => {
+      window.clearTimeout(timer)
+      supabase.removeChannel(channel)
+    }
+  }, [contentId, contentType, loadShareCount])
+
+  const publishRepostChange = (detail) => {
+    onRepost?.(detail)
+    if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('daet-repost-created', { detail }))
+  }
 
   const handleRepost = async (quote = null) => {
     if (!userId) {
       alert('Please log in to repost.')
       return
     }
+    if (repostLoading) return
+    setRepostLoading(true)
     try {
+      if (reposted) {
+        const response = await fetch(`/api/reposts?contentType=${encodeURIComponent(contentType)}&contentId=${encodeURIComponent(contentId)}`, {
+          method: 'DELETE',
+          credentials: 'same-origin',
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to undo this repost.')
+        setReposted(false)
+        void loadShareCount()
+        publishRepostChange({ action: 'removed', contentType, contentId, userId })
+        setShowMenu(false)
+        return
+      }
+
       const response = await fetch('/api/reposts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32,14 +152,20 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
         throw new Error(result.message || 'Unable to repost this content.')
       }
 
-      await trackShare('repost')
+      setReposted(true)
+      void loadShareCount()
       setShowRepostModal(false)
       setQuoteText('')
       setShowMenu(false)
+      if (!result.alreadyReposted) {
+        publishRepostChange({ action: 'created', repost: result.repost, original: result.original || originalPost, contentType, contentId, userId })
+      }
       if (onShared) onShared('repost')
     } catch (err) {
       console.error('Repost failed:', err?.message || err)
       alert(err?.message || 'Failed to repost. Please try again.')
+    } finally {
+      setRepostLoading(false)
     }
   }
 
@@ -158,7 +284,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
       <button
         type="button"
         onClick={() => setShowMenu((v) => !v)}
-        className={`inline-flex h-9 max-w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200 ${fullWidth ? 'w-full' : ''}`}
+        className={`inline-flex h-9 max-w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 ${fullWidth ? 'w-full' : ''}`}
       >
         <Share2 className="h-3.5 w-3.5" />
         {shareCount > 0 && <span>{shareCount}</span>}
@@ -170,10 +296,18 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
           <div className="absolute bottom-full left-0 z-20 mb-2 w-56 overflow-hidden rounded-[16px] border border-slate-200 bg-white p-1.5 shadow-xl">
             <button
               type="button"
-              onClick={() => { setShowRepostModal(true); setShowMenu(false) }}
+              onClick={() => {
+                if (reposted) {
+                  void handleRepost()
+                } else {
+                  setShowRepostModal(true)
+                  setShowMenu(false)
+                }
+              }}
+              disabled={repostLoading}
               className="flex w-full items-center gap-2 rounded-[10px] px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
             >
-              <Repeat2 className="h-4 w-4 text-emerald-600" /> Repost
+              <Repeat2 className={`h-4 w-4 ${reposted ? 'text-emerald-600' : 'text-slate-500'}`} /> {repostLoading ? 'Updating...' : reposted ? 'Reposted' : 'Repost'}
             </button>
             <button
               type="button"

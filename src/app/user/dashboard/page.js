@@ -44,6 +44,7 @@ import { clearUserCache, getCache, getCacheKey, invalidateCache, setCache } from
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
+import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
 import Comments from '@/app/components/user/Comments'
 import DailyFeedback from '@/app/components/user/DailyFeedback'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
@@ -184,6 +185,8 @@ export default function UserDashboardPage() {
   const [feedNow, setFeedNow] = useState(() => Date.now())
   const [feedVisibleCount, setFeedVisibleCount] = useState(10)
   const [feedEndReached, setFeedEndReached] = useState(false)
+  const [newRepostIds, setNewRepostIds] = useState(() => new Set())
+  const [pendingRepostId, setPendingRepostId] = useState(null)
   const [expandedPosts, setExpandedPosts] = useState(() => new Set())
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [sheetVisible, setSheetVisible] = useState(false)
@@ -207,6 +210,15 @@ export default function UserDashboardPage() {
     }
 
     loadUnreadAlerts()
+    const notificationChannel = supabase?.channel?.(`dashboard-notifications-${userId}`)
+    notificationChannel
+      ?.on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'info_notifications',
+        filter: `user_id=eq.${userId}`,
+      }, () => setUnreadAlerts((count) => count + 1))
+      ?.subscribe()
     const updateUnreadAlerts = (event) => {
       const count = Number(event?.detail?.unreadCount)
       if (Number.isFinite(count)) setUnreadAlerts(count)
@@ -216,8 +228,68 @@ export default function UserDashboardPage() {
     return () => {
       active = false
       window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
+      if (notificationChannel) supabase.removeChannel(notificationChannel)
     }
   }, [userId])
+
+  useEffect(() => {
+    if (!userId) return undefined
+
+    const handleRepostChange = (event) => {
+      const detail = event.detail || {}
+      if (detail.userId !== userId) return
+
+      if (detail.action === 'removed') {
+        setFeed((previous) => previous.filter((item) => !(item.is_repost && item.original_post_id === detail.contentId && item.reposted_by === userId)))
+        invalidateCache(getDashboardCacheKey(userId))
+        return
+      }
+
+      const original = detail.original
+      if (!original || !detail.repost?.id) return
+      const repostItem = {
+        ...original,
+        id: detail.repost.id,
+        original_post_id: detail.repost.original_content_id,
+        repost_id: detail.repost.id,
+        reposted_by: detail.repost.user_id,
+        repost_quote: detail.repost.quote_text,
+        created_by: detail.repost.user_id,
+        published_at: detail.repost.created_at,
+        category: 'Repost',
+        type: detail.repost.original_content_type === 'blog' ? 'blog' : 'post',
+        href: detail.repost.original_content_type === 'blog'
+          ? `/user/blogs/${detail.repost.original_content_id}`
+          : `/user/posts/${detail.repost.original_content_id}`,
+        is_repost: true,
+        original_author: original.author || null,
+        original_post: { ...original, author: original.author || null },
+      }
+      setFeed((previous) => [repostItem, ...previous.filter((item) => item.repost_id !== repostItem.repost_id)])
+      setNewRepostIds((previous) => new Set(previous).add(repostItem.id))
+      setFeedVisibleCount((previous) => Math.max(previous, 10))
+      setPendingRepostId(repostItem.repost_id)
+      invalidateCache(getDashboardCacheKey(userId))
+    }
+
+    window.addEventListener('daet-repost-created', handleRepostChange)
+    return () => window.removeEventListener('daet-repost-created', handleRepostChange)
+  }, [userId])
+
+  useEffect(() => {
+    if (!pendingRepostId) return undefined
+
+    const frame = window.requestAnimationFrame(() => {
+      const repostElement = document.querySelector(`[data-repost-id="${pendingRepostId}"]`)
+      if (!repostElement) return
+      repostElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      repostElement.classList.add('ring-2', 'ring-emerald-400', 'ring-offset-2')
+      window.setTimeout(() => repostElement.classList.remove('ring-2', 'ring-emerald-400', 'ring-offset-2'), 2200)
+      setPendingRepostId(null)
+    })
+
+    return () => window.cancelAnimationFrame(frame)
+  }, [feed, pendingRepostId])
 
   useEffect(() => {
     const handleFeedRefresh = () => {
@@ -597,6 +669,58 @@ export default function UserDashboardPage() {
     setTimeout(() => setToastMessage(''), 2500)
   }
 
+  const updateOwnRepost = async (item, action) => {
+    if (!item?.repost_id || item.reposted_by !== userId) return
+    const isDelete = action === 'delete'
+    try {
+      const response = await fetch(`/api/reposts/${item.repost_id}`, {
+        method: isDelete ? 'DELETE' : 'PATCH',
+        credentials: 'same-origin',
+        headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
+        body: isDelete ? undefined : JSON.stringify({ status: 'archived' }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update repost.')
+      setFeed((previous) => previous.filter((feedItem) => feedItem.repost_id !== item.repost_id))
+      setNewRepostIds((previous) => {
+        const next = new Set(previous)
+        next.delete(item.id)
+        return next
+      })
+      invalidateCache(getDashboardCacheKey(userId))
+      window.dispatchEvent(new CustomEvent('daet-repost-visibility-changed', { detail: { action, repost: item } }))
+      setToastMessage(isDelete ? 'Repost deleted.' : 'Repost archived. You can restore it from Archive.')
+      setTimeout(() => setToastMessage(''), 2500)
+    } catch (actionError) {
+      console.error('Repost action failed:', actionError)
+      setToastMessage(actionError.message || 'Unable to update repost.')
+      setTimeout(() => setToastMessage(''), 2500)
+    }
+  }
+
+  const updateOwnPost = async (item, action) => {
+    if (item?.type !== 'post' || item?.is_repost || item.user_id !== userId) return
+    const isDelete = action === 'delete'
+    if (!window.confirm(isDelete ? 'Delete post?\n\nThis will permanently remove your post and its repost relationships.' : 'Archive post?\n\nThis will hide your post until you restore it.')) return
+    try {
+      const response = await fetch(`/api/posts/${item.id}`, {
+        method: isDelete ? 'DELETE' : 'PATCH',
+        credentials: 'same-origin',
+        headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
+        body: isDelete ? undefined : JSON.stringify({ status: 'archived' }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update post.')
+      setFeed((previous) => previous.filter((feedItem) => feedItem.id !== item.id && feedItem.original_post_id !== item.id))
+      invalidateCache(getDashboardCacheKey(userId))
+      setToastMessage(isDelete ? 'Post deleted.' : 'Post archived.')
+      setTimeout(() => setToastMessage(''), 2500)
+    } catch (actionError) {
+      setToastMessage(actionError.message || 'Unable to update post.')
+      setTimeout(() => setToastMessage(''), 2500)
+    }
+  }
+
   const copyPostLink = async (item) => {
     const url = `${window.location.origin}${item.href}`
     try {
@@ -896,13 +1020,14 @@ export default function UserDashboardPage() {
         const { data: followedReposts } = followedUserIdsArray.length
           ? await supabase
             .from('reposts')
-            .select('id, user_id, original_content_type, original_content_id, quote_text, created_at')
-            .eq('original_content_type', 'user_post')
+            .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
             .in('user_id', followedUserIdsArray)
+            .in('original_content_type', ['user_post', 'blog'])
+            .eq('status', 'active')
             .order('created_at', { ascending: false })
             .limit(50)
           : { data: [] }
-        const repostedPostIds = [...new Set((followedReposts || []).map((repost) => repost.original_content_id).filter(Boolean))]
+        const repostedPostIds = [...new Set((followedReposts || []).filter((repost) => repost.original_content_type === 'user_post').map((repost) => repost.original_content_id).filter(Boolean))]
         const { data: repostedPosts } = repostedPostIds.length
           ? await supabase
             .from('info_user_posts')
@@ -911,9 +1036,20 @@ export default function UserDashboardPage() {
             .eq('status', 'published')
           : { data: [] }
         const repostedPostMap = new Map((repostedPosts || []).map((post) => [post.id, post]))
+        const repostedBlogIds = [...new Set((followedReposts || []).filter((repost) => repost.original_content_type === 'blog').map((repost) => repost.original_content_id).filter(Boolean))]
+        const { data: repostedBlogs } = repostedBlogIds.length
+          ? await supabase
+            .from('info_blogs')
+            .select('id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, status')
+            .in('id', repostedBlogIds)
+            .eq('status', 'published')
+          : { data: [] }
+        const repostedBlogMap = new Map((repostedBlogs || []).map((blog) => [blog.id, blog]))
         const repostFeed = (followedReposts || [])
           .map((repost) => {
-            const originalPost = repostedPostMap.get(repost.original_content_id)
+            const originalPost = repost.original_content_type === 'blog'
+              ? repostedBlogMap.get(repost.original_content_id)
+              : repostedPostMap.get(repost.original_content_id)
             if (!originalPost) return null
             return {
               ...originalPost,
@@ -924,10 +1060,13 @@ export default function UserDashboardPage() {
               repost_quote: repost.quote_text,
               created_by: repost.user_id,
               published_at: repost.created_at,
-              excerpt: repost.quote_text || originalPost.content,
+              excerpt: originalPost.content,
               category: 'Repost',
-              type: 'post',
-              href: `/user/posts/${originalPost.id}`,
+              type: repost.original_content_type === 'blog' ? 'blog' : 'post',
+              href: repost.original_content_type === 'blog' ? `/user/blogs/${originalPost.id}` : `/user/posts/${originalPost.id}`,
+              is_repost: true,
+              original_author_id: originalPost.user_id || originalPost.created_by,
+              original_post: originalPost,
             }
           })
           .filter(Boolean)
@@ -961,6 +1100,7 @@ export default function UserDashboardPage() {
           ...followedPosts.map((item) => item.created_by),
           ...repostFeed.map((item) => item.created_by),
           ...(repostedPosts || []).map((item) => item.user_id),
+          ...(repostedBlogs || []).map((item) => item.created_by),
           ...(nextAnnouncements || []).map((item) => item.created_by),
         ].filter(Boolean)
         const { data: authors } = authorIds.length
@@ -1009,9 +1149,11 @@ export default function UserDashboardPage() {
           })),
           ...repostFeed.map((repost) => ({
             ...withAuthor(repost),
-            type: 'post',
-            href: `/user/posts/${repost.original_post_id}`,
+            type: repost.type,
+            href: repost.href,
             is_repost: true,
+            original_author: authorMap.get(repost.original_author_id) || null,
+            original_post: { ...repost.original_post, author: authorMap.get(repost.original_author_id) || null },
           })),
           ...(nextAnnouncements || []).map((announcement) => ({
             ...withAuthor(announcement),
@@ -1192,6 +1334,7 @@ export default function UserDashboardPage() {
           + (interactedIds.has(itemKey) ? 18 : 0)
           + (reactionIds.has(itemKey) ? 22 : 0)
           + (favoriteIds.has(itemKey) ? 20 : 0)
+          + (newRepostIds.has(item.id) ? 1000 : 0)
           + refreshVariation
 
         return { item, index, score }
@@ -1204,7 +1347,7 @@ export default function UserDashboardPage() {
 
     const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
     return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-      }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow])
+      }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds])
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -1446,6 +1589,7 @@ export default function UserDashboardPage() {
               <div className="space-y-0">
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
+                  const actionContentId = item.original_post_id || item.id
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
                   const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
@@ -1454,15 +1598,15 @@ export default function UserDashboardPage() {
                   const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = (item.type === 'event' || item.type === 'tourist_spot') ? getImageUrl(item.featured_image || item.images || item.gallery_images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
-                  const postGallery = item.type === 'blog' ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
-                  const postImageUrl = item.type === 'blog'
+                  const postGallery = ['blog', 'post'].includes(item.type) ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
+                  const postImageUrl = ['blog', 'post'].includes(item.type)
                     ? item.featured_image || (item.images || [])[0]
                     : item.type === 'announcement'
                       ? item.image_url
                       : item.type === 'tourist_spot'
                         ? getImageUrl(item.featured_image || item.images || item.gallery_images, null)
                         : eventMediaUrl
-                  const postVideoUrl = item.type === 'announcement' ? item.video_url : eventVideoUrl
+                  const postVideoUrl = item.type === 'announcement' ? item.video_url : item.type === 'post' ? item.video_url : eventVideoUrl
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
                   const contentText = String(item.excerpt || item.description || item.content || '').trim()
                   const normalizedTags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : []
@@ -1487,6 +1631,35 @@ export default function UserDashboardPage() {
                       : 'bg-sky-50 text-sky-700 border-sky-200'
                   const isPhotoFirstContent = ['blog', 'event', 'tourist_spot'].includes(item.type)
                   const readingMinutes = Math.max(1, Math.ceil((contentText.length || 0) / 180))
+                  const isOwnOriginalPost = item.type === 'post' && !item.is_repost && item.user_id === userId
+
+                  if (item.is_repost) {
+                    return (
+                      <article key={itemKey} data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} className="tourism-panel overflow-hidden rounded-[22px] border border-slate-200 bg-slate-50 lg:rounded-[16px]">
+                        <div className="p-4 sm:p-5 lg:p-6">
+                          <QuoteRepostCard
+                            item={item}
+                            reposter={author}
+                            reposterName={authorName}
+                            userId={userId}
+                            commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0}
+                            isSaved={isSaved}
+                            onToggleComments={() => openCommentsSheet({
+                              contentType,
+                              contentId: actionContentId,
+                              userId,
+                              contentOwnerId: item.original_author?.id || item.original_author_id || userId,
+                              contentTitle: item.original_post?.title || item.title,
+                              itemType: item.type,
+                            })}
+                            onToggleSave={(event) => handleBookmark(event, item)}
+                            onDelete={() => void updateOwnRepost(item, 'delete')}
+                            onArchive={() => void updateOwnRepost(item, 'archive')}
+                          />
+                        </div>
+                      </article>
+                    )
+                  }
 
                   return (
                     <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white lg:rounded-[16px] ${cardAccentClass}`}>
@@ -1511,6 +1684,9 @@ export default function UserDashboardPage() {
                               )}
                             </div>
 
+                            {item.is_repost && <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"><span className="font-semibold text-slate-700">{authorName} reposted</span><span>·</span><span>Originally shared by</span><Link href={item.original_author?.id ? `/user/profile/${item.original_author.id}` : item.href} className="font-bold text-slate-800 hover:text-sky-700">{item.original_author?.full_name || 'Community member'}</Link></div>}
+                            {item.is_repost && item.repost_quote && <div className="mt-3 rounded-xl border-l-4 border-emerald-300 bg-emerald-50 px-3 py-2.5 text-[13px] leading-5 text-slate-700"><span className="font-bold text-emerald-800">{authorName}</span>{' '}{item.repost_quote}</div>}
+
                             <Link href={item.href} className="mt-2 block pl-0"><h2 className="break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{item.title}</h2></Link>
 
                             {item.type === 'event' && (
@@ -1530,8 +1706,13 @@ export default function UserDashboardPage() {
                           <div className="relative shrink-0">
                             <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                             {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              <button type="button" onClick={() => hidePost(itemKey)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
-                              <button type="button" onClick={() => markNotInterested(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
+                              {isOwnOriginalPost ? <>
+                                <button type="button" onClick={() => void updateOwnPost(item, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
+                                <button type="button" onClick={() => void updateOwnPost(item, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
+                              </> : <>
+                                <button type="button" onClick={() => hidePost(itemKey)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
+                                <button type="button" onClick={() => markNotInterested(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
+                              </>}
                               <button type="button" onClick={() => void copyPostLink(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
                             </div>}
                           </div>
@@ -1622,11 +1803,11 @@ export default function UserDashboardPage() {
                         )}
 
                         <div className="feed-actions mt-4">
-                          <SocialActionBar contentType={contentType} contentId={item.id} userId={userId} commentCount={commentCounts[`${item.type}-${item.id}`] || 0} onToggleComments={() => openCommentsSheet({
+                          <SocialActionBar contentType={contentType} contentId={actionContentId} userId={userId} originalPost={{ ...item, id: actionContentId, author: item.is_repost ? item.original_author : item.author }} commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0} onToggleComments={() => openCommentsSheet({
                             contentType,
                             contentId: item.id,
                             userId,
-                            contentOwnerId: item.created_by || author?.id || userId,
+                            contentOwnerId: (item.is_repost ? item.original_author?.id : item.created_by) || author?.id || userId,
                             contentTitle: item.title,
                             itemType: item.type,
                           })} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} />

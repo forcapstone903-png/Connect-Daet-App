@@ -83,6 +83,17 @@ async function createReactionNotification(adminSupabase, { contentType, contentI
   const postOwnerId = await resolvePostOwner(adminSupabase, postType, postId)
   if (!postOwnerId || postOwnerId === actorId || commentAuthorId === actorId) return
 
+  const { data: recipient, error: recipientError } = await adminSupabase
+    .from('info_users')
+    .select('id')
+    .eq('id', postOwnerId)
+    .maybeSingle()
+  if (recipientError) throw recipientError
+  if (!recipient) {
+    console.warn('Skipping reaction notification for missing user profile:', postOwnerId)
+    return
+  }
+
   const parentLink = routeForEntity(postType, postId)
   if (!parentLink) return
 
@@ -129,7 +140,9 @@ async function createReactionNotification(adminSupabase, { contentType, contentI
     error = fallbackResult.error
   }
 
-  if (error && error.code !== '23505') throw error
+  if (error && error.code !== '23505') {
+    console.error('Reaction notification failed after reaction was saved:', error)
+  }
 }
 
 async function writeReaction(request, method) {
@@ -195,7 +208,12 @@ async function writeReaction(request, method) {
       return NextResponse.json({ success: false, message: error.message || 'Unable to react to content.' }, { status: 400 })
     }
 
-    await createReactionNotification(adminSupabase, { contentType, contentId, actorId: userId, reactionType })
+    try {
+      await createReactionNotification(adminSupabase, { contentType, contentId, actorId: userId, reactionType })
+    } catch (notificationError) {
+      // A notification or push-bridge failure must not turn a saved reaction into an error.
+      console.error('Reaction notification skipped:', notificationError)
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -62,6 +62,7 @@ export async function GET(request) {
 
   const conversationRows = [...latestByConversation.entries()]
     .map(([otherUserId, latestMessage]) => {
+      const conversationSettings = settingsByUser.get(otherUserId) || {}
       const unreadCount = rows.filter((candidate) => {
         const candidateOtherUserId = candidate.sender_id === userId ? candidate.recipient_id : candidate.sender_id
         return candidateOtherUserId === otherUserId

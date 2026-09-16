@@ -96,17 +96,47 @@ export async function subscribeUserToPush({ userId } = {}) {
   const subscriptionJson = subscription.toJSON()
   console.log('[push] Saving subscription to push_subscriptions')
 
-  const response = await fetch('/api/push-subscriptions', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ subscription: subscriptionJson }),
-  })
+  let response
+  let timeout
+  try {
+    const controller = new AbortController()
+    timeout = window.setTimeout(() => controller.abort(), 10000)
+    response = await fetch('/api/push-subscriptions', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: subscriptionJson }),
+    })
+  } catch (error) {
+    if (timeout) window.clearTimeout(timeout)
+    console.warn('[push] Subscription could not reach the server:', error?.message || error)
+    return {
+      success: false,
+      reason: error?.name === 'AbortError' ? 'request-timeout' : 'network-error',
+      message: error?.name === 'AbortError'
+        ? 'The notification service took too long to respond. Please try again.'
+        : 'The notification service is temporarily unavailable. Please try again when you are online.',
+      subscription: subscriptionJson,
+      registration,
+      ...availability,
+    }
+  }
+  if (timeout) window.clearTimeout(timeout)
+
   const result = await response.json().catch(() => ({}))
 
   if (!response.ok || !result.success) {
     console.error('Push subscription database save failed:', result)
-    throw new Error(result.message || 'The push subscription could not be saved.')
+    return {
+      success: false,
+      reason: 'server-error',
+      message: result.message || 'The push subscription could not be saved.',
+      subscription: subscriptionJson,
+      registration,
+      ...availability,
+    }
   }
 
   console.log('[push] Subscription saved successfully')
