@@ -22,6 +22,7 @@ import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
+import { filterValidUuidValues } from '@/lib/uuid'
 
 const STORAGE_KEYS = {
   profilePreferences: 'daet_user_profile_preferences',
@@ -671,7 +672,7 @@ export default function UserProfilePage() {
 
             </section>
 
-          <div className="mt-3">
+          <div>
             <div className="min-w-0 p-0 sm:p-2">
             {pinnedPosts.length > 0 && <section className="mb-5 rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="rounded-xl bg-white/80 p-3 hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
 

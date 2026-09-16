@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { filterValidUuidValues } from '@/lib/uuid'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'

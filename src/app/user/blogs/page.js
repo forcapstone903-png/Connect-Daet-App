@@ -12,6 +12,7 @@ import {
   Share2,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { filterValidUuidValues } from '@/lib/uuid'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
 
 const categories = [
