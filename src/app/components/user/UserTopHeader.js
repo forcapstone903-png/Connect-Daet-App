@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Bell, Bookmark, LogOut, Menu, MessageCircle, Search, Settings } from 'lucide-react'
+import { Bell, Bookmark, LogOut, Menu, MessageCircle, Search, Settings, UserRound } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
 
@@ -79,7 +79,8 @@ export default function UserTopHeader() {
                 <Menu className="h-5 w-5" />
               </button>
               {showMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                <Link href="/user/profile" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile</Link>
+                <Link href="/user/profile" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" />Profile</Link>
+                <Link href="/user/settings" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Settings</Link>
                 <Link href="/user/messaging" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />Messages</Link>
                 <Link href="/user/saved" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Bookmark className="h-4 w-4" />Saved</Link>
                 <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>

@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Class-based dark mode: the user's saved choice (html.dark) drives the palette
+   instead of only the OS preference. Tailwind 4 requires an explicit custom
+   variant for `dark:` utilities. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #f4f6f3;
   --foreground: #1d2a27;
@@ -18,6 +23,40 @@
 
 html, body {
   color-scheme: light !important;
+}
+
+/* ── Dark theme palette ───────────────────────────────────────────────
+   Applied by UserSettingsProvider / the pre-paint script via `html.dark`.
+   `!important` overrides win on specificity: html.dark (0,1,1) beats the
+   `:root` (0,1,0) and `html, body` (0,0,1) light declarations above. */
+.dark {
+  --background: #0b1220;
+  --foreground: #e8eef8;
+  --ink: #e8eef8;
+  --muted-ink: #97a6bb;
+  --paper: #131d2c;
+  --paper-muted: #0f1826;
+  --line: #26344a;
+  --brand: #34d3c1;
+  --brand-dark: #8bf0e4;
+  --sun: #f0b455;
+  --coral: #ef7d69;
+  color-scheme: dark !important;
+}
+
+html.dark,
+html.dark body {
+  color-scheme: dark !important;
+}
+
+html.dark {
+  background: var(--background);
+}
+
+/* Keep the light-white default from feeling glaring behind translucent cards. */
+html.dark ::selection {
+  background: rgba(56, 189, 248, 0.28);
+  color: #eaf2fb;
 }
 
 @theme inline {
@@ -583,5 +622,274 @@ textarea {
 @media (max-width: 640px) {
   body {
     min-width: 0;
+  }
+}
+/* ══════════════════════════════════════════════════════════════════════════
+   Dark theme overrides (user-selected, applied as `html.dark`)
+   Legacy pages use fixed light utility classes, so the neutral surfaces,
+   text, borders, and form controls are remapped here. These rules are
+   intentionally unlayered: unlayered CSS outranks Tailwind's `utilities`
+   layer, which is what allows a single dark palette to cover the whole app
+   without touching every page. New components should keep using the light
+   utility classes (e.g. `bg-white`, `text-slate-900`) and let this block
+   handle the dark mapping instead of hand-writing `dark:` variants.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page and panel surfaces ─────────────────────────────────────────────── */
+.dark .tourism-shell,
+.dark .tourism-panel,
+.dark .tourism-muted-panel {
+  background: var(--paper);
+}
+
+.dark .tourism-shell {
+  background: var(--background);
+}
+
+/* The shared page background gradient used by most user/admin pages. */
+.dark [class*="radial-gradient(circle_at_top,_#ecfeff"],
+.dark [class*="radial-gradient(circle_at_top_left,_#ecfeff"] {
+  background-image: none;
+  background-color: var(--background);
+}
+
+.dark .bg-white,
+.dark [class*="bg-white/"] {
+  background-color: var(--paper);
+}
+
+.dark .bg-slate-50,
+.dark .bg-gray-50,
+.dark .bg-zinc-50,
+.dark .bg-neutral-50,
+.dark [class*="bg-slate-50/"] {
+  background-color: var(--paper-muted);
+}
+
+.dark .bg-slate-100,
+.dark .bg-gray-100 {
+  background-color: #1a2538;
+}
+
+.dark .bg-slate-200,
+.dark .bg-gray-200 {
+  background-color: #243149;
+}
+
+.dark .bg-slate-900,
+.dark .bg-gray-900 {
+  background-color: #0d1626;
+}
+
+.dark [class*="bg-[#fffefa]"] {
+  background-color: var(--paper);
+}
+
+.dark [class*="bg-[#f5f7f4]"] {
+  background-color: var(--paper-muted);
+}
+
+.dark [class*="bg-[#edf7f3]"] {
+  background-color: rgba(52, 211, 193, 0.14);
+}
+
+.dark [class*="bg-[#edf4f0]"] {
+  background-color: var(--paper-muted);
+}
+
+.dark [class*="hover:bg-[#edf4f0]"]:hover {
+  background-color: #1d2b3f;
+  color: var(--brand-dark);
+}
+
+/* ── Tinted status surfaces ──────────────────────────────────────────────── */
+.dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.16); }
+.dark .bg-blue-50 { background-color: rgba(59, 130, 246, 0.16); }
+.dark .bg-cyan-50 { background-color: rgba(6, 182, 212, 0.16); }
+.dark .bg-teal-50 { background-color: rgba(20, 184, 166, 0.16); }
+.dark .bg-emerald-50 { background-color: rgba(16, 185, 129, 0.16); }
+.dark .bg-green-50 { background-color: rgba(34, 197, 94, 0.16); }
+.dark .bg-amber-50 { background-color: rgba(245, 158, 11, 0.16); }
+.dark .bg-yellow-50 { background-color: rgba(234, 179, 8, 0.16); }
+.dark .bg-orange-50 { background-color: rgba(249, 115, 22, 0.16); }
+.dark .bg-red-50,
+.dark .bg-rose-50 { background-color: rgba(244, 63, 94, 0.16); }
+.dark .bg-pink-50 { background-color: rgba(236, 72, 153, 0.16); }
+.dark .bg-violet-50,
+.dark .bg-purple-50 { background-color: rgba(139, 92, 246, 0.16); }
+.dark .bg-indigo-50 { background-color: rgba(99, 102, 241, 0.16); }
+.dark .bg-slate-50\/80,
+.dark .bg-slate-100\/80 { background-color: rgba(26, 37, 56, 0.8); }
+
+/* ── Text ────────────────────────────────────────────────────────────────── */
+.dark .text-black,
+.dark .text-slate-950,
+.dark .text-gray-950 { color: #f1f5f9; }
+
+.dark .text-slate-900,
+.dark .text-gray-900 { color: #e8eef8; }
+
+.dark .text-slate-800,
+.dark .text-gray-800 { color: #dbe4f1; }
+
+.dark .text-slate-700,
+.dark .text-gray-700 { color: #cbd6e6; }
+
+.dark .text-slate-600,
+.dark .text-gray-600 { color: #b1bfd3; }
+
+.dark .text-slate-500,
+.dark .text-gray-500 { color: #94a3b8; }
+
+.dark .text-slate-400,
+.dark .text-gray-400 { color: #8697b0; }
+
+.dark .text-slate-300,
+.dark .text-gray-300 { color: #7b8ba3; }
+
+.dark [class*="text-[#66736e]"],
+.dark [class*="text-[#72807a]"] { color: var(--muted-ink); }
+
+.dark [class*="text-[#0e514d]"],
+.dark [class*="text-[#16766f]"] { color: var(--brand); }
+
+/* Accent text that is too dark to read on a dark surface. */
+.dark .text-sky-700,
+.dark .text-sky-800 { color: #7dd3fc; }
+.dark .text-blue-700 { color: #93c5fd; }
+.dark .text-cyan-700 { color: #67e8f9; }
+.dark .text-teal-700 { color: #5eead4; }
+.dark .text-emerald-700,
+.dark .text-green-700 { color: #6ee7b7; }
+.dark .text-amber-700,
+.dark .text-yellow-700 { color: #fcd34d; }
+.dark .text-orange-700 { color: #fdba74; }
+.dark .text-red-700,
+.dark .text-rose-700 { color: #fca5a5; }
+.dark .text-pink-700 { color: #f9a8d4; }
+.dark .text-violet-700,
+.dark .text-purple-700 { color: #c4b5fd; }
+.dark .text-indigo-700 { color: #a5b4fc; }
+
+/* ── Borders and dividers ────────────────────────────────────────────────── */
+.dark .border-white { border-color: #1c2739; }
+.dark .border-slate-100,
+.dark .border-gray-100 { border-color: #1d2939; }
+.dark .border-slate-200,
+.dark .border-gray-200 { border-color: var(--line); }
+.dark .border-slate-300,
+.dark .border-gray-300 { border-color: #35435c; }
+
+.dark [class*="border-slate-200/"],
+.dark [class*="border-gray-200/"],
+.dark [class*="border-[#dfe7e1]"],
+.dark [class*="border-[#e5e7eb]"] { border-color: var(--line); }
+
+.dark [class*="divide-slate-200"] > * + *,
+.dark [class*="divide-gray-200"] > * + * { border-color: var(--line); }
+/* ── Form controls ──────────────────────────────────────────────────────── */
+.dark input,
+.dark select,
+.dark textarea {
+  color: #e8eef8;
+  background-color: var(--paper-muted);
+}
+
+.dark input[type="checkbox"],
+.dark input[type="radio"],
+.dark input[type="range"],
+.dark input[type="file"] {
+  background-color: transparent;
+  color: inherit;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #7f8ea4;
+}
+
+.dark select option {
+  color: #e8eef8;
+  background-color: #101a29;
+}
+
+.dark input[type="date"],
+.dark input[type="time"],
+.dark input[type="datetime-local"],
+.dark input[type="month"],
+.dark input[type="week"] {
+  color: #e8eef8 !important;
+  color-scheme: dark !important;
+}
+
+.dark :focus-visible {
+  outline-color: #38bdf8;
+}
+
+/* ── FullCalendar ────────────────────────────────────────────────────────── */
+.dark .fc,
+.dark .fc .fc-toolbar-title,
+.dark .fc .fc-col-header-cell-cushion,
+.dark .fc .fc-daygrid-day-number {
+  color: #e8eef8 !important;
+}
+
+.dark .fc .fc-daygrid-day.fc-day-other .fc-daygrid-day-number {
+  color: #7b8ba3 !important;
+}
+
+.dark .fc-theme-standard td,
+.dark .fc-theme-standard th,
+.dark .fc-theme-standard .fc-scrollgrid {
+  border-color: var(--line) !important;
+}
+
+.dark .fc .fc-day-today {
+  background: rgba(56, 189, 248, 0.12) !important;
+}
+
+.dark .fc .fc-button-primary {
+  background-color: #1d2939;
+  border-color: var(--line);
+  color: #e8eef8;
+}
+
+.dark .fc .fc-button-primary:hover {
+  background-color: #26344a;
+}
+
+.dark .fc .fc-button-primary:disabled {
+  background-color: #182231;
+  color: #7b8ba3;
+}
+
+.dark .fc .fc-highlight {
+  background: rgba(56, 189, 248, 0.18) !important;
+}
+
+/* ── Autofill / reveal controls that assume a white field ───────────────── */
+.dark input[type="password"]::-ms-reveal,
+.dark input[type="password"]::-webkit-credentials-auto-fill-button {
+  filter: invert(0.9);
+}
+
+/* ── Reduced motion (user setting and OS preference) ─────────────────────── */
+html[data-reduce-motion="true"] {
+  scroll-behavior: auto !important;
+}
+
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  transition-delay: 0ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
   }
 }

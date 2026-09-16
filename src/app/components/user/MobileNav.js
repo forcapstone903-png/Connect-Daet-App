@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, Bookmark, CalendarDays, FileText, Home, MessageCircle, PlusCircle, Search } from 'lucide-react'
+import { Bell, Bookmark, CalendarDays, FileText, Home, MessageCircle, PlusCircle, Search, Settings } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
@@ -23,6 +23,7 @@ const desktopNavItems = [
   { href: '/user/blogs', label: 'Blogs', icon: FileText },
   { href: '/user/events', label: 'Events', icon: CalendarDays },
   { href: '/user/saved', label: 'Saved', icon: Bookmark },
+  { href: '/user/settings', label: 'Settings', icon: Settings },
 ]
 
 export default function MobileNav() {
