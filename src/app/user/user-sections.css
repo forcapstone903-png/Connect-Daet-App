@@ -167,4 +167,212 @@
   .usr-section-hero { padding: 24px; }
 }
 
+/* Dark-mode polish for all user-related surfaces so the app reads as one cohesive system. */
+html.dark .usr-section-page {
+  background: radial-gradient(ellipse at top left, rgba(20, 184, 166, 0.12), transparent 36%), #0b1220;
+  color: #e2e8f0;
+}
+
+html.dark .usr-card,
+html.dark .usr-surface,
+html.dark .usr-section-heading,
+html.dark .usr-section-toolbar,
+html.dark .usr-list-row,
+html.dark .usr-empty-state,
+html.dark .usr-section-page .usr-section-tab,
+html.dark .usr-section-page .usr-section-tabs,
+html.dark .tourism-panel,
+html.dark .conversation-page.usr-section-page .conversation-shell,
+html.dark .conversation-page.usr-section-page .message-composer-row,
+html.dark .conversation-page.usr-section-page .messages-container,
+html.dark .conversation-page.usr-section-page .conversation-header,
+html.dark .usr-settings .usr-card {
+  background: rgba(15, 23, 42, 0.93);
+  border-color: #233247;
+  box-shadow: 0 18px 48px -28px rgba(14, 116, 144, 0.4);
+}
+
+html.dark .usr-section-heading {
+  background: linear-gradient(120deg, rgba(15, 23, 42, 0.96) 60%, rgba(20, 125, 117, 0.15));
+  border-top-color: rgba(45, 212, 191, 0.9);
+}
+
+html.dark .usr-section-page h1,
+html.dark .usr-section-page h2,
+html.dark .usr-section-page h3,
+html.dark .usr-section-page h4,
+html.dark .usr-section-page p,
+html.dark .usr-section-page label,
+html.dark .usr-section-page span,
+html.dark .usr-section-page button,
+html.dark .usr-section-page select,
+html.dark .usr-section-page option,
+html.dark .usr-section-page a,
+html.dark .usr-section-page textarea,
+html.dark .usr-section-page input,
+html.dark .usr-section-page .usr-stat-label,
+html.dark .usr-section-page .usr-stat-value,
+html.dark .usr-section-page .usr-section-title,
+html.dark .usr-section-page .usr-section-description {
+  color: inherit;
+}
+
+html.dark .usr-section-title,
+html.dark .usr-stat-value,
+html.dark .usr-card h2,
+html.dark .usr-card h3,
+html.dark .usr-card .text-slate-900,
+html.dark .usr-card .text-slate-800,
+html.dark .usr-card .text-slate-700,
+html.dark .usr-card .text-slate-600,
+html.dark .usr-card .text-slate-500,
+html.dark .usr-card .text-slate-400,
+html.dark .usr-section-page .text-slate-900,
+html.dark .usr-section-page .text-slate-800,
+html.dark .usr-section-page .text-slate-700,
+html.dark .usr-section-page .text-slate-600,
+html.dark .usr-section-page .text-slate-500,
+html.dark .usr-section-page .text-slate-400 {
+  color: #f8fafc !important;
+}
+
+html.dark .usr-section-page .text-slate-500,
+html.dark .usr-section-page .text-slate-400,
+html.dark .usr-section-page .text-slate-600,
+html.dark .usr-card .text-slate-500,
+html.dark .usr-card .text-slate-400,
+html.dark .usr-card .text-slate-600 {
+  color: #b7c4d6 !important;
+}
+
+html.dark .usr-section-page .usr-section-eyebrow,
+html.dark .usr-section-page .usr-stat-label,
+html.dark .usr-section-page .usr-section-counter,
+html.dark .usr-section-page .usr-section-tab-count {
+  color: #d7fff8;
+}
+
+html.dark .usr-section-page .usr-section-counter {
+  background: rgba(20, 184, 166, 0.14);
+  color: #c7f9f1;
+}
+
+html.dark .usr-section-page .usr-section-primary {
+  background: #0f766e;
+  box-shadow: 0 8px 22px rgba(20, 184, 166, 0.22);
+}
+
+html.dark .usr-section-page .usr-section-secondary,
+html.dark .usr-section-page button.bg-white,
+html.dark .usr-section-page .bg-slate-50,
+html.dark .usr-section-page .bg-slate-100,
+html.dark .usr-card .bg-slate-50,
+html.dark .usr-card .bg-white,
+html.dark .usr-card select,
+html.dark .usr-card input,
+html.dark .usr-card textarea,
+html.dark .usr-card [role='radio'],
+html.dark .usr-card [role='switch'],
+html.dark .usr-section-page .usr-section-tab,
+html.dark .usr-section-page .usr-section-toolbar,
+html.dark .usr-section-page .usr-section-heading-actions button,
+html.dark .usr-card .border-slate-200,
+html.dark .usr-card .border-slate-300,
+html.dark .usr-card .border-slate-100 {
+  background-color: rgba(15, 23, 42, 0.9);
+  border-color: #2c3f58;
+}
+
+html.dark .usr-section-page .usr-section-tab {
+  color: #dfeaf7;
+}
+
+html.dark .usr-section-page .usr-section-tab:hover {
+  background: rgba(15, 118, 110, 0.15);
+  color: #f0fdfa;
+}
+
+html.dark .usr-section-page .usr-section-tab[aria-selected='true'],
+html.dark .usr-section-page .usr-section-tab[aria-pressed='true'] {
+  background: rgba(20, 125, 117, 0.28);
+  color: #e2f8f7;
+  box-shadow: inset 0 0 0 1px rgba(45, 212, 191, 0.2);
+}
+
+html.dark .usr-section-page .usr-section-tab-count {
+  background: rgba(20, 184, 166, 0.12);
+  color: #d7fff8;
+}
+
+html.dark .usr-section-page .usr-section-secondary {
+  border-color: #32475e;
+  color: #d6efff;
+}
+
+html.dark .usr-section-page .usr-section-secondary:hover {
+  background: rgba(20, 125, 117, 0.08);
+}
+
+html.dark .usr-section-page .bg-emerald-50,
+html.dark .usr-section-page .bg-amber-50,
+html.dark .usr-section-page .bg-violet-50,
+html.dark .usr-section-page .bg-sky-50,
+html.dark .usr-card .bg-emerald-50,
+html.dark .usr-card .bg-amber-50,
+html.dark .usr-card .bg-violet-50,
+html.dark .usr-card .bg-sky-50 {
+  background-color: rgba(17, 24, 39, 0.9) !important;
+}
+
+html.dark .usr-section-page .text-teal-700,
+html.dark .usr-section-page .text-sky-700,
+html.dark .usr-card .text-teal-700,
+html.dark .usr-card .text-sky-700,
+html.dark .usr-section-page a,
+html.dark .usr-card a {
+  color: #7dd3fc !important;
+}
+
+html.dark .usr-section-page .border-slate-200,
+html.dark .usr-section-page .divide-slate-200 > * {
+  border-color: #233247 !important;
+}
+
+html.dark .usr-pop-in,
+html.dark .usr-section-page [role='menu'],
+html.dark .usr-section-page [role='dialog'],
+html.dark .usr-section-page .absolute.z-20,
+html.dark .usr-section-page .absolute.z-30,
+html.dark .usr-section-page .fixed {
+  background: rgba(15, 23, 42, 0.98) !important;
+  border-color: #2c3f58 !important;
+  box-shadow: 0 22px 48px -26px rgba(14, 116, 144, 0.42);
+}
+
+html.dark .usr-section-page [role='menu'] button,
+html.dark .usr-section-page [role='dialog'] button,
+html.dark .usr-section-page .absolute.z-20 a,
+html.dark .usr-section-page .absolute.z-20 button {
+  color: #e2e8f0;
+}
+
+html.dark .usr-section-page [role='menu'] button:hover,
+html.dark .usr-section-page .absolute.z-20 a:hover,
+html.dark .usr-section-page .absolute.z-20 button:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+html.dark .usr-message-own {
+  background: linear-gradient(135deg, #0f766e, #115d58);
+}
+
+html.dark .usr-message-bubble,
+html.dark .conversation-page.usr-section-page .messages-container {
+  background: rgba(15, 23, 42, 0.8);
+}
+
+html.dark .conversation-page.usr-section-page .message-action-menu button:hover {
+  background: rgba(20, 125, 117, 0.15);
+}
+
 

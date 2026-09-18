@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, CornerDownRight, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
-import { buildCommentThreads } from '@/lib/commentThreads'
+import { buildCommentThreads, sortCommentNodes } from '@/lib/commentThreads'
 import { filterValidUuidValues } from '@/lib/uuid'
 import Reactions from './Reactions'
 import UserProfileLink from './UserProfileLink'
@@ -176,7 +176,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     return () => window.clearTimeout(timer)
   }, [comments, focusCommentId, showAllComments])
 
-  const threads = useMemo(() => buildCommentThreads(comments, sortMode), [comments, sortMode])
+  const threads = useMemo(() => buildCommentThreads(comments, sortMode, userId), [comments, sortMode, userId])
   const totalCommentCount = comments.length
   const totalReplyCount = comments.filter((comment) => comment.parent_id).length
   const totalLikeCount = comments.reduce((sum, comment) => sum + countCommentLikes(comment), 0)
@@ -307,9 +307,10 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           }
         : null
       if (createdComment) {
-        setComments((previous) => previous.some((comment) => comment.id === createdComment.id)
-          ? previous
-          : [...previous, createdComment])
+        setComments((previous) => {
+          if (previous.some((comment) => comment.id === createdComment.id)) return previous
+          return sortCommentNodes([...previous, createdComment], 'relevant', userId)
+        })
       }
       void loadComments()
       window.dispatchEvent(new Event('daet-feed-refresh'))

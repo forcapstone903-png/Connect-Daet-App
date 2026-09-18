@@ -95,7 +95,7 @@ export default function ForumsPage() {
             forum_categories(name),
             info_users!forum_threads_created_by_fkey(full_name, email, profile_image_url)
           `)
-          .in('status', ['published', 'active'])
+          .eq('status', 'published')
           .order('last_activity_at', { ascending: false })
 
         if (!ignore) {
@@ -132,18 +132,14 @@ export default function ForumsPage() {
         return
       }
 
-      const tags = createForm.tags
-        .split(',')
-        .map((t) => t.trim())
-        .filter((t) => t.length > 0)
-
       const { data, error } = await supabase.from('forum_threads').insert({
         title: createForm.title.trim(),
         content: createForm.content.trim(),
         category_id: createForm.category_id || null,
-        tags,
         created_by: userId,
         status: 'published',
+        last_activity_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
       })
 
       if (error) {
@@ -160,7 +156,7 @@ export default function ForumsPage() {
             forum_categories(name),
             info_users!forum_threads_created_by_fkey(full_name, email, profile_image_url)
           `)
-          .in('status', ['published', 'active'])
+          .eq('status', 'published')
           .order('last_activity_at', { ascending: false })
         setThreads(newThreads || [])
       }
@@ -414,7 +410,7 @@ export default function ForumsPage() {
                             {formatDate(thread.last_activity_at || thread.created_at)}
                           </span>
                           <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 ${getStatusColor(thread.status)}`}>
-                            {thread.status === 'active' || thread.status === 'published' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status === 'published' ? 'active' : thread.status}
+                            {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status === 'active' ? 'published' : thread.status}
                           </span>
                         </div>
                       </div>

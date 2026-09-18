@@ -850,58 +850,71 @@ export default function UserNotificationsPage() {
   return (
     <main className="tourism-shell usr-section-page usr-notifications min-h-screen">
       <div className="usr-section-container mx-auto max-w-300 px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
-        <UserSectionHeader eyebrow="Your activity hub" title="Notifications" description="Reactions, conversations, and community updates—all in one place." emoji="🔔">
-          <span className="usr-section-counter" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
-        </UserSectionHeader>
-        <header className="usr-section-toolbar mb-4">
-          <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-2">
-            <h2 className="text-sm font-bold text-slate-900">Activity controls</h2>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={toggleSound} aria-pressed={soundEnabled} aria-label={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} title={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              </button>
-              <button type="button" onClick={toggleSearch} aria-expanded={searchOpen} aria-label="Search notifications" title="Search notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                <Search className="h-4 w-4" />
-              </button>
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
+          <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-5 sm:px-6 sm:py-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Your activity hub</p>
+                <div className="mt-2 flex items-center gap-3">
+                  <h1 className="text-3xl font-black leading-none tracking-[-0.04em] text-slate-900 sm:text-4xl">Notifications</h1>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-lg shadow-sm">🔔</span>
+                </div>
+                <p className="mt-3 max-w-xl text-base leading-7 text-slate-600">Reactions, conversations, and community updates—all in one place.</p>
+              </div>
+              <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-3 py-1.5 text-sm font-bold text-slate-700" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
             </div>
           </div>
 
-          {searchOpen && (
-            <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <Search className="h-4 w-4 shrink-0 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === 'Escape') toggleSearch() }}
-                placeholder="Search notifications"
-                aria-label="Search notifications"
-                className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear notification search" title="Clear search" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700">
-                  <X className="h-4 w-4" />
+          <header className="px-4 py-4 sm:px-6 sm:py-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-bold text-slate-900">Activity controls</h2>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={toggleSound} aria-pressed={soundEnabled} aria-label={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} title={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
+                  {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                 </button>
-              )}
+                <button type="button" onClick={toggleSearch} aria-expanded={searchOpen} aria-label="Search notifications" title="Search notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
+                  <Search className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-          )}
 
-          <div className="mt-2 flex items-center justify-between gap-3 px-1">
-            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-              <BellRing className="h-3.5 w-3.5" />
-              Alerts
+            {searchOpen && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onKeyDown={(event) => { if (event.key === 'Escape') toggleSearch() }}
+                  placeholder="Search notifications"
+                  aria-label="Search notifications"
+                  className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                />
+                {searchQuery && (
+                  <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear notification search" title="Clear search" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
+                <BellRing className="h-3.5 w-3.5" />
+                Alerts
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 disabled:opacity-40">
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Mark all read
+                </button>
+                <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="text-xs font-semibold text-red-600 disabled:opacity-40">
+                  Clear all
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 disabled:opacity-40">
-                <CheckCheck className="h-3.5 w-3.5" />
-                Mark all read
-              </button>
-              <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="text-xs font-semibold text-red-600 disabled:opacity-40">
-                Clear all
-              </button>
-            </div>
-          </div>
-        </header>
+          </header>
+        </div>
 
         {actionNotice && <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800">{actionNotice}</div>}
 

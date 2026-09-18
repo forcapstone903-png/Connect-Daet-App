@@ -5,7 +5,7 @@ function isMissingNotificationColumn(error) {
 // Audience data is deliberately not cached: each write uses current followers.
 // Notification failures must not turn an already-created post into a failed save.
 export async function notifyFollowers(db, { authorId, type, link, postId, title, actionText, subject, status = 'published', visibility = 'public' }) {
-  if (!db || !authorId || !link || !['published', 'active'].includes(status) || visibility === 'private') return 0
+  if (!db || !authorId || !link || !['published', 'draft', 'archived'].includes(status) || visibility === 'private') return 0
 
   let inserted = 0
   try {

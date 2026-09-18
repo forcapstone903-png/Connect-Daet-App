@@ -459,7 +459,7 @@ export default function BlogManagement() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-6">
-          <div className="space-y-4">
+          <div className="space-y-2">
             {filteredBlogs.map((blog) => {
               const category = getCategoryDisplay(blog.category);
               const isFeatured = Boolean(featuredIds[blog.id]);
@@ -510,7 +510,7 @@ export default function BlogManagement() {
             })}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2">
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
               <h3 className="text-lg font-bold text-gray-800 mb-3">Blog Categories</h3>
               <div className="flex flex-wrap gap-2 mb-3">
@@ -560,7 +560,7 @@ export default function BlogManagement() {
           <div className="bg-white rounded-2xl w-full max-w-4xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-800 mb-4">{editingBlog ? 'Edit Blog' : 'New Blog'}</h3>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Title *</label>
                 <input

@@ -317,7 +317,7 @@ export default function AdminForumPage() {
             )}
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-2">
             <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
               <h3 className="text-lg font-bold text-gray-800 mb-3">Forum Categories</h3>
               <div className="flex flex-wrap gap-2 mb-4">
@@ -378,7 +378,7 @@ export default function AdminForumPage() {
               <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">Close</button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Title</label>
                 <input

@@ -639,7 +639,7 @@ export default function PublicBlogDetailPage() {
           </div>
 
           {comments.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {comments.slice(0, visibleComments).map((comment) => {
                 const isCommentOwner = userId === comment.user_id
                 return (

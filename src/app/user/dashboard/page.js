@@ -52,6 +52,8 @@ import DailyFeedback from '@/app/components/user/DailyFeedback'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
+import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
+import { trackUserActivity } from '@/lib/trackActivity'
 
 // Database table constants
 const TABLES = {
@@ -529,14 +531,17 @@ export default function UserDashboardPage() {
 
     // Award points for engagement - async fire-and-forget
     if (userId) {
-      void supabase.from(TABLES.ACTIVITY_LOG).insert({
-        user_id: userId,
-        activity_type: 'react_content',
+      void trackUserActivity({
+        userId,
+        activityType: 'react_content',
+        entityType: item.type,
+        entityId: item.id,
         description: `${reactionType} on ${item.type}`,
-      }).then(({ error }) => {
-        if (error && error.code !== '42501' && error.code !== 'PGRST301') {
-          console.error('Reaction log error:', error)
-        }
+        metadata: {
+          contentType: item.type,
+          reactionType,
+          source: 'dashboard',
+        },
       })
     }
   }
@@ -854,9 +859,46 @@ export default function UserDashboardPage() {
           error: sessionError,
         } = await supabase.auth.getSession()
 
-        const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id, email: cookieSession.user_email, user_metadata: { full_name: cookieSession.user_name, user_type: cookieSession.role } } } : null)
-
         if (sessionError) throw sessionError
+
+        let activeSession = session
+
+        if (!activeSession?.user) {
+          const cookieUserId = cookieSession?.user_id || cookieSession?.id || cookieSession?.sub || cookieSession?.userId
+          try {
+            const { data: userData, error: userError } = await supabase.auth.getUser()
+            if (!userError && userData?.user) {
+              activeSession = { user: userData.user }
+            } else if (userError && userError.name === 'AuthSessionMissingError' && cookieUserId) {
+              activeSession = {
+                user: {
+                  id: cookieUserId,
+                  email: cookieSession?.user_email || cookieSession?.email || '',
+                  user_metadata: {
+                    full_name: cookieSession?.user_name || cookieSession?.full_name || cookieSession?.name || '',
+                  },
+                },
+              }
+            } else if (userError) {
+              throw userError
+            }
+          } catch (recoveryError) {
+            if (recoveryError?.name === 'AuthSessionMissingError' && cookieUserId) {
+              activeSession = {
+                user: {
+                  id: cookieUserId,
+                  email: cookieSession?.user_email || cookieSession?.email || '',
+                  user_metadata: {
+                    full_name: cookieSession?.user_name || cookieSession?.full_name || cookieSession?.name || '',
+                  },
+                },
+              }
+            } else {
+              throw recoveryError
+            }
+          }
+        }
+
         if (!activeSession?.user) {
           setAuthError('Please log in to continue')
           router.push('/login')
@@ -879,28 +921,15 @@ export default function UserDashboardPage() {
         setUserName(currentUserProfile?.full_name?.trim() || sessionUserName)
         setUserAvatarUrl(currentUserProfile?.profile_image_url || activeSession.user.user_metadata?.avatar_url || '')
 
-        // Track page visit (async - don't block render)
-        void (async () => {
-          try {
-            const { error } = await supabase.from(TABLES.ACTIVITY_LOG).insert({
-              user_id: sessionUserId,
-              activity_type: 'visit_dashboard',
-              description: 'Viewed dashboard',
-            })
-
-            if (error) {
-              const isPermissionIssue = error?.code === '42501' || error?.code === 'PGRST301'
-              if (!isPermissionIssue) {
-                console.error('Activity log error:', error)
-              }
-            }
-          } catch (err) {
-            const isPermissionIssue = err?.code === '42501' || err?.code === 'PGRST301'
-            if (!isPermissionIssue) {
-              console.error('Activity log error:', err)
-            }
-          }
-        })()
+        // Track page visit via the server route so RLS is handled safely.
+        void trackUserActivity({
+          userId: sessionUserId,
+          activityType: 'visit_dashboard',
+          entityType: 'dashboard',
+          entityId: null,
+          description: 'Viewed dashboard',
+          metadata: { source: 'dashboard' },
+        })
       } catch (err) {
         console.error('Auth error:', err)
         setAuthError(err.message || 'Authentication failed')
@@ -1366,6 +1395,7 @@ export default function UserDashboardPage() {
 
     if (feedScope === 'latest') {
       result = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
+      return result
     }
 
     const categoryWeights = new Map()
@@ -1402,40 +1432,44 @@ export default function UserDashboardPage() {
       interactedIds.add(`${favorite.item_type}-${favorite.item_id}`)
     })
 
+    const recommendationProfile = buildRecommendationProfile({
+      activities: userSignals.activities,
+      reactions: userSignals.reactions,
+      favorites: userSignals.favorites,
+      preferredCategories: userSignals.preferredCategories,
+      follows: [],
+      profile: {
+        contentTypes: Object.fromEntries([...typeWeights.entries()].map(([key, value]) => [key, value / 10])),
+        categories: Object.fromEntries([...categoryWeights.entries()].map(([key, value]) => [key, value / 10])),
+        authors: {},
+        destinations: {},
+        topics: Object.fromEntries([...categoryWeights.entries()].map(([key, value]) => [key, value / 12])),
+        interactions: Object.fromEntries([...interactedIds].map((key) => [key, 0.6])),
+      },
+    })
+
     let rankedResult
     if (feedScope === 'trending') {
       rankedResult = result.sort((left, right) => (Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0)) - (Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0)))
     } else {
-      rankedResult = result
-      .map((item, index) => {
-        const itemKey = `${item.type}-${item.id}`
-        const category = String(item.category || '').toLowerCase()
-        const itemType = String(item.type || '').toLowerCase()
-        const ageInDays = Math.max(0, (feedNow - new Date(item.published_at || item.start_date || item.last_activity_at || 0).getTime()) / 86400000)
-        const recencyScore = Number.isFinite(ageInDays) ? Math.max(0, 8 - ageInDays) : 0
-        const refreshVariation = feedRefreshKey > 0
-          ? ((String(item.id).charCodeAt(0) + feedRefreshKey) % 7) / 100
-          : 0
-        const score = recencyScore
-          + (categoryWeights.get(category) || 0)
-          + (typeWeights.get(itemType) || 0)
-          + (interactedIds.has(itemKey) ? 18 : 0)
-          + (reactionIds.has(itemKey) ? 22 : 0)
-          + (favoriteIds.has(itemKey) ? 20 : 0)
-          + (newRepostIds.has(item.id) ? 1000 : 0)
-          + refreshVariation
-
-        return { item, index, score }
-      })
-        .sort((left, right) => right.score - left.score || left.index - right.index)
-      .map(({ item }) => item)
+      rankedResult = rankFeedItems({
+        items: result,
+        profile: recommendationProfile,
+        userFollows: new Set(),
+        now: feedNow,
+        coldStart: result.length > 0 && Object.keys(recommendationProfile.categories || {}).length === 0,
+      }).sort((left, right) => {
+        const lhs = left.recommendationScore ?? 0
+        const rhs = right.recommendationScore ?? 0
+        return rhs - lhs
+      }).map(({ recommendationScore, recommendationKey, contributionBreakdown, ...item }) => item)
     }
 
     if (feedRefreshKey === 0 || rankedResult.length < 2) return rankedResult
 
     const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
     return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-      }, [feed, feedScope, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds])
+  }, [feed, feedScope, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds])
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -1744,7 +1778,9 @@ export default function UserDashboardPage() {
               <div className="usr-stagger space-y-3">
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
+                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
                   const actionContentId = item.is_repost ? (item.repost_id || item.id) : (item.original_post_id || item.id)
+                  const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
                   const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
@@ -1762,7 +1798,6 @@ export default function UserDashboardPage() {
                         ? getImageUrl(item.featured_image || item.images || item.gallery_images, null)
                         : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : item.type === 'post' ? item.video_url : eventVideoUrl
-                  const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
                   const contentText = String(item.excerpt || item.description || item.content || '').trim()
                   const normalizedTags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : []
                   const isLongContent = contentText.length > 260
@@ -1864,7 +1899,7 @@ export default function UserDashboardPage() {
                             )}
                           </div>
 
-                          <div className="relative shrink-0">
+                          <div className="relative z-30 shrink-0">
                             {canManageOriginalPost ? (
                               <PostActionMenu
                                 visibility={item.visibility}
@@ -1978,8 +2013,8 @@ export default function UserDashboardPage() {
                         )}
 
                         <div className="feed-actions mt-4">
-                          <SocialActionBar contentType={contentType} contentId={actionContentId} userId={userId} originalPost={{ ...item, id: actionContentId, author: item.is_repost ? item.original_author : item.author }} commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0} onToggleComments={() => openCommentsSheet({
-                            contentType,
+                          <SocialActionBar contentType={actionContentType} contentId={actionContentId} userId={userId} originalPost={{ ...item, id: actionContentId, author: item.is_repost ? item.original_author : item.author }} commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0} onToggleComments={() => openCommentsSheet({
+                            contentType: actionContentType,
                             contentId: actionContentId,
                             userId,
                             contentOwnerId: (item.is_repost ? item.original_author?.id : item.created_by) || author?.id || userId,

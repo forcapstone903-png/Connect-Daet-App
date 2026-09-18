@@ -1,5 +1,15 @@
-function sortNodes(nodes, sortMode) {
+function sortCommentNodes(nodes, sortMode, currentUserId = null) {
   return [...nodes].sort((a, b) => {
+    const newestForUser = (list, userId) => list
+      .filter((node) => node.user_id === userId)
+      .sort((left, right) => new Date(right.created_at) - new Date(left.created_at))[0]?.created_at
+
+    const aIsCurrentUserNewest = currentUserId && a.user_id === currentUserId && a.created_at === newestForUser(nodes, currentUserId)
+    const bIsCurrentUserNewest = currentUserId && b.user_id === currentUserId && b.created_at === newestForUser(nodes, currentUserId)
+
+    if (aIsCurrentUserNewest && !bIsCurrentUserNewest) return -1
+    if (!aIsCurrentUserNewest && bIsCurrentUserNewest) return 1
+
     if (sortMode === 'newest') return new Date(b.created_at) - new Date(a.created_at)
     if (sortMode === 'oldest') return new Date(a.created_at) - new Date(b.created_at)
     if (sortMode === 'most_liked') return (b.relevance_score || 0) - (a.relevance_score || 0)
@@ -8,7 +18,11 @@ function sortNodes(nodes, sortMode) {
   })
 }
 
-function buildCommentThreads(comments = [], sortMode = 'relevant') {
+function sortNodes(nodes, sortMode, currentUserId = null) {
+  return sortCommentNodes(nodes, sortMode, currentUserId)
+}
+
+function buildCommentThreads(comments = [], sortMode = 'relevant', currentUserId = null) {
   if (!Array.isArray(comments) || comments.length === 0) return []
 
   const map = new Map()
@@ -37,7 +51,7 @@ function buildCommentThreads(comments = [], sortMode = 'relevant') {
   })
 
   const walk = (nodes) => {
-    const sortedNodes = sortNodes(nodes, sortMode)
+    const sortedNodes = sortNodes(nodes, sortMode, currentUserId)
 
     sortedNodes.forEach((node) => {
       node.children = walk(node.children || [])
@@ -51,4 +65,5 @@ function buildCommentThreads(comments = [], sortMode = 'relevant') {
 
 module.exports = {
   buildCommentThreads,
+  sortCommentNodes,
 }

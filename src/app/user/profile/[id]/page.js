@@ -564,7 +564,7 @@ export default function PublicProfilePage() {
             <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
           </div>
 
-          <div className="px-3 pb-5 sm:px-5">
+          <div className="border-b border-slate-200 bg-white px-3 pb-5 sm:px-5">
             <div className="flex flex-col gap-4 pt-4 lg:flex-row lg:items-end lg:justify-between">
               <div className="flex min-w-0 items-end gap-3">
                 <div className="usr-profile-avatar -mt-14 flex shrink-0 items-center justify-center overflow-hidden sm:-mt-16">

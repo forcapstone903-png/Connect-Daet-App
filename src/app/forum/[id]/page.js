@@ -48,6 +48,7 @@ function getStatusColor(status) {
       return 'bg-red-50 text-red-700 border-red-200'
     case 'archived':
       return 'bg-slate-50 text-slate-700 border-slate-200'
+    case 'published':
     case 'active':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200'
     default:
@@ -375,7 +376,7 @@ export default function PublicThreadDetailPage() {
             </div>
 
             <div className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold flex-shrink-0 ${getStatusColor(thread.status)}`}>
-              {thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status}
+              {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status === 'active' ? 'published' : thread.status}
             </div>
           </div>
 
@@ -439,7 +440,7 @@ export default function PublicThreadDetailPage() {
         )}
 
         {/* Replies */}
-        <div className="space-y-4">
+        <div className="space-y-2">
           {replies.length > 0 ? (
             replies.slice(0, userId ? replies.length : 3).map((reply) => (
               <div key={reply.id} className={`rounded-[20px] border ${reply.is_best_answer ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'} p-4`}>

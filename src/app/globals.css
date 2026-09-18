@@ -240,7 +240,26 @@ select {
 .feed-card {
   width: 100%;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+}
+
+.dashboard-shell .feed-card,
+.dashboard-shell .feed-card-quote {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  overflow: visible;
+}
+
+.dashboard-shell .feed-card [role='menu'],
+.dashboard-shell .feed-card [role='dialog'],
+.dashboard-shell .feed-card .absolute.z-\[110\],
+.dashboard-shell .feed-card .absolute.z-\[130\],
+.dashboard-shell .feed-card .fixed {
+  z-index: 130;
 }
 
 /* Consistent visible focus for keyboard users on any interactive element. */
@@ -454,9 +473,19 @@ select {
     border-color 220ms var(--usr-ease);
 }
 
-.dashboard-shell .usr-card:hover {
-  border-color: color-mix(in srgb, var(--brand) 34%, var(--line));
-  box-shadow: var(--usr-shadow-raised);
+.dark .dashboard-shell .usr-card,
+.dark .dashboard-shell .usr-panel,
+.dark .dashboard-shell .usr-stat,
+.dark .dashboard-shell .usr-rail,
+.dark .dashboard-shell .feed-card-quote {
+  background: linear-gradient(180deg, rgba(17, 25, 38, 0.98), rgba(13, 19, 30, 0.98));
+  border-color: #2a3b52;
+  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.42);
+}
+
+.dark .dashboard-shell .usr-card:hover {
+  border-color: rgba(52, 211, 193, 0.42);
+  box-shadow: 0 18px 40px rgba(2, 6, 23, 0.52);
 }
 
 @media (min-width: 1024px) {
@@ -476,7 +505,13 @@ select {
   background-image:
     radial-gradient(120% 130% at 0% 0%, rgba(52, 211, 193, 0.16) 0%, rgba(52, 211, 193, 0) 58%),
     radial-gradient(120% 140% at 100% 0%, rgba(240, 180, 85, 0.14) 0%, rgba(240, 180, 85, 0) 55%),
-    linear-gradient(180deg, var(--paper) 1%, var(--paper-muted) 100%);
+    linear-gradient(180deg, rgba(17, 25, 38, 0.96), rgba(12, 18, 29, 0.94));
+}
+
+.dark .dashboard-shell .usr-hero,
+.dark .dashboard-shell .usr-panel,
+.dark .dashboard-shell .usr-card {
+  color: var(--ink);
 }
 
 .dashboard-shell .usr-glass {
@@ -580,6 +615,12 @@ select {
     background-color 160ms var(--usr-ease), color 160ms var(--usr-ease);
 }
 
+.dark .dashboard-shell .usr-chip {
+  background: rgba(17, 25, 38, 0.82);
+  border-color: #2a3b52;
+  color: #dfe9f6;
+}
+
 .dashboard-shell .usr-chip:hover {
   border-color: color-mix(in srgb, var(--brand) 40%, var(--line));
   color: var(--brand-dark);
@@ -606,9 +647,29 @@ select {
   transition: transform 180ms var(--usr-ease), background-color 180ms var(--usr-ease);
 }
 
+.dark .dashboard-shell .usr-stat {
+  background: rgba(17, 25, 38, 0.82);
+  border-color: #2a3b52;
+}
+
 .dashboard-shell .usr-stat:hover {
   transform: translateY(-1px);
   background: var(--paper);
+}
+
+.dark .dashboard-shell .text-slate-900,
+.dark .dashboard-shell .text-slate-800,
+.dark .dashboard-shell .text-slate-700,
+.dark .dashboard-shell .text-slate-600,
+.dark .dashboard-shell .text-slate-500,
+.dark .dashboard-shell .text-slate-950 {
+  color: #edf5ff;
+}
+
+.dark .dashboard-shell .text-slate-500,
+.dark .dashboard-shell .text-slate-600,
+.dark .dashboard-shell .text-slate-700 {
+  opacity: 0.9;
 }
 
 /* ─ Feed card accents ───────────────────────────────────────────────────

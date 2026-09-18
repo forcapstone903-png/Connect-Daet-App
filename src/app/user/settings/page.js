@@ -104,6 +104,11 @@ export default function UserSettingsPage() {
   const [resetStatus, setResetStatus] = useState('')
   const [confirmAction, setConfirmAction] = useState(null)
   const noticeTimerRef = useRef(null)
+  const tRef = useRef(t)
+
+  useEffect(() => {
+    tRef.current = t
+  }, [t])
 
   useEffect(() => () => {
     if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
@@ -145,12 +150,12 @@ export default function UserSettingsPage() {
       if (lifecycleResponse.ok && lifecycleResult.lifecycle) setAccountLifecycle(lifecycleResult.lifecycle)
     } catch (error) {
       console.error('Settings load failed:', error)
-      setNotice({ tone: 'error', text: t('settings.status.loadFailed') })
+      setNotice({ tone: 'error', text: tRef.current('settings.status.loadFailed') })
     } finally {
       setStorageUsage(getLocalStorageUsage())
       setLoading(false)
     }
-  }, [router, t, updateSettings])
+  }, [router, updateSettings])
 
   useEffect(() => {
     // Deferred so the effect itself does not trigger synchronous state updates
@@ -198,11 +203,12 @@ export default function UserSettingsPage() {
       }
 
       invalidateSettingsCaches(userId)
-      if (!result.partial) setSavedSnapshot(draft)
+      setSavedSnapshot(draft)
       window.dispatchEvent(new Event('daet-settings-updated'))
 
-      if (result.partial) setNotice({ tone: 'warning', text: t('settings.status.saveFailed') })
-      else {
+      if (result.partial) {
+        setNotice({ tone: 'warning', text: t('settings.status.saveFailed') })
+      } else {
         const savedMessage = t('common.saved')
         setNotice({ tone: 'success', text: savedMessage })
         if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
@@ -245,6 +251,7 @@ export default function UserSettingsPage() {
     const defaults = createDefaultSettings()
     resetSettings()
     setDraft(defaults)
+    setSavedSnapshot(defaults)
     setConfirmAction(null)
     setResetPending(false)
     setNotice({ tone: 'info', text: t('common.reset') })

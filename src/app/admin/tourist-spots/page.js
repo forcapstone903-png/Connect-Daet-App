@@ -614,7 +614,7 @@ export default function TouristSpotsManagement() {
               <h3 className="text-lg font-bold text-gray-800">Top attractions</h3>
               <span className="text-xs text-gray-500">By total engagement</span>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               {analyticsSummary.topSpots.length ? analyticsSummary.topSpots.map((spot, index) => {
                 const max = Math.max(...analyticsSummary.topSpots.map(item => item.totalEngagement), 1);
                 const width = (spot.totalEngagement / max) * 100;
@@ -937,7 +937,7 @@ export default function TouristSpotsManagement() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl">
             <h3 className="text-xl font-bold text-gray-800 mb-4">Manage Categories</h3>
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div className="flex gap-2">
                 <input
                   type="text"

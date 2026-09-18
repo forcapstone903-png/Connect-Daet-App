@@ -30,6 +30,8 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
   const originalHref = item.href || '#'
   const contentType = item.original_content_type || (item.type === 'blog' ? 'blog' : 'user_post')
   const originalId = item.original_content_id || original.id
+  const repostActionId = item.repost_id || item.id || originalId
+  const repostActionType = item.original_content_type || (item.type === 'blog' ? 'blog' : 'user_post')
   const images = Array.isArray(original.images) ? original.images : []
   const videos = Array.isArray(original.videos) ? original.videos : []
   const imageItems = images.length ? images : (original.featured_image ? [original.featured_image] : [])
@@ -62,7 +64,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
         <span>reposted</span>
         <span className="text-slate-400">·</span>
         <time dateTime={item.reposted_at || item.created_at || undefined}>{formatRelativeTime(item.reposted_at || item.created_at)}</time>
-        {reposterId === userId && (onEdit || onPrivacyChange || onDelete || onArchive || onRestore) && <div className="relative ml-auto">
+        {reposterId === userId && (onEdit || onPrivacyChange || onDelete || onArchive || onRestore) && <div className="relative z-30 ml-auto">
           <PostActionMenu
             isRepost
             visibility={item.visibility}
@@ -125,6 +127,15 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
           {original.title && <Link href={originalHref} className="mt-3 block px-3 text-base font-extrabold leading-6 text-slate-950 hover:text-sky-700">{original.title}</Link>}
           {originalText && <p className="mt-2 break-words whitespace-pre-wrap px-3 text-sm leading-6 text-slate-700">{originalText}</p>}
 
+          {originalHref && originalHref !== '#' && (
+            <div className="mt-3 px-3">
+              <Link href={originalHref} className="inline-flex items-center gap-1.5 text-sm font-semibold text-sky-700 hover:text-sky-800">
+                See original post
+                <span aria-hidden="true">→</span>
+              </Link>
+            </div>
+          )}
+
           {(imageItems.length > 0 || videos.length > 0 || original.video_url) && (
             <div className="mt-4 w-full overflow-hidden border-t border-slate-200 bg-slate-100">
               <div className="grid gap-1 sm:grid-cols-2">
@@ -134,7 +145,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
             </div>
           )}
 
-          {originalId && <div className="mt-3 px-3 pb-3"><SocialActionBar contentType={contentType} contentId={originalId} userId={userId} originalPost={{ ...original, id: originalId, author: originalAuthor }} commentCount={commentCount} onToggleComments={onToggleComments} isSaved={isSaved} onToggleSave={onToggleSave} /></div>}
+          {repostActionId && <div className="mt-3 px-3 pb-3"><SocialActionBar contentType={repostActionType} contentId={repostActionId} userId={userId} originalPost={{ ...original, id: originalId, author: originalAuthor }} commentCount={commentCount} onToggleComments={onToggleComments} isSaved={isSaved} onToggleSave={onToggleSave} /></div>}
         </div>
       </div>
     </>

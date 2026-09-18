@@ -62,6 +62,7 @@ function getStatusColor(status) {
       return 'bg-red-50 text-red-700 border-red-200'
     case 'archived':
       return 'bg-slate-50 text-slate-700 border-slate-200'
+    case 'published':
     case 'active':
       return 'bg-emerald-50 text-emerald-700 border-emerald-200'
     default:
@@ -76,6 +77,32 @@ function isMissingForumReplyColumnError(error) {
   const message = String(error?.message || '').toLowerCase()
   return ['42703', 'PGRST204'].includes(code)
     || message.includes('column') && message.includes('forum_replies')
+}
+
+function buildReplyTree(replies = []) {
+  const replyMap = new Map()
+  const rootReplies = []
+
+  replies.forEach((reply) => {
+    replyMap.set(reply.id, { ...reply, children: [] })
+  })
+
+  replyMap.forEach((reply) => {
+    if (reply.parent_reply_id && replyMap.has(reply.parent_reply_id)) {
+      replyMap.get(reply.parent_reply_id)?.children.push(reply)
+    } else {
+      rootReplies.push(reply)
+    }
+  })
+
+  const sortReplyTree = (items) => {
+    return [...items].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).map((item) => ({
+      ...item,
+      children: sortReplyTree(item.children || []),
+    }))
+  }
+
+  return sortReplyTree(rootReplies)
 }
 
 export default function ThreadDetailPage() {
@@ -105,6 +132,8 @@ export default function ThreadDetailPage() {
   const [gifError, setGifError] = useState('')
   const isThreadOwner = Boolean(userId && thread?.created_by === userId)
   const [replyMentionRefs, setReplyMentionRefs] = useState([])
+  const [replyTarget, setReplyTarget] = useState(null)
+  const [replyComposerResetKey, setReplyComposerResetKey] = useState(0)
   const [editingReplyId, setEditingReplyId] = useState(null)
   const [editingReplyContent, setEditingReplyContent] = useState('')
   const [poll, setPoll] = useState(null)
@@ -213,15 +242,15 @@ export default function ThreadDetailPage() {
             )
             .eq('thread_id', threadId)
             .eq('status', 'active')
-            .order('created_at', { ascending: true })
+            .order('created_at', { ascending: false })
 
           if (repliesResult.error && isMissingForumReplyColumnError(repliesResult.error)) {
             repliesResult = await supabase
               .from('forum_replies')
-              .select('id, thread_id, user_id, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)')
+              .select('id, thread_id, user_id, parent_reply_id, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)')
               .eq('thread_id', threadId)
               .eq('status', 'active')
-              .order('created_at', { ascending: true })
+              .order('created_at', { ascending: false })
           }
           if (repliesResult.error) throw repliesResult.error
           const repliesData = repliesResult.data || []
@@ -238,6 +267,7 @@ export default function ThreadDetailPage() {
           const profileImageByUserId = new Map(replyProfiles.map((profile) => [profile.user_id, profile.profile_image_url]))
           const repliesWithProfiles = repliesData.map((reply) => ({
             ...reply,
+            parent_reply_id: reply.parent_reply_id || null,
             info_users: {
               ...(reply.info_users || {}),
               profile_image_url: reply.info_users?.profile_image_url || profileImageByUserId.get(reply.user_id) || null,
@@ -304,6 +334,19 @@ export default function ThreadDetailPage() {
     }
   }
 
+  const resetReplyComposer = () => {
+    setReplyContent('')
+    setReplyMedia({ image_url: '', video_url: '' })
+    setReplyMentionRefs([])
+    setReplyGifUrl('')
+    setReplySticker('')
+    setShowReplyTools(false)
+    setShowGifPicker(false)
+    setShowStickerPicker(false)
+    setReplyTarget(null)
+    setReplyComposerResetKey((value) => value + 1)
+  }
+
   const handleReplySubmit = async () => {
     if (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker) return
 
@@ -317,6 +360,7 @@ export default function ThreadDetailPage() {
       const replyPayload = {
         thread_id: threadId,
         user_id: userId,
+        parent_reply_id: replyTarget?.id || null,
         content: replyContent.trim(),
         image_url: replyMedia.image_url || null,
         video_url: replyMedia.video_url || null,
@@ -327,7 +371,7 @@ export default function ThreadDetailPage() {
       }
       let replyResult = await supabase.from('forum_replies').insert(replyPayload)
       if (replyResult.error && isMissingForumReplyColumnError(replyResult.error)) {
-        const { image_url: _imageUrl, video_url: _videoUrl, gif_url: _gifUrl, sticker_url: _stickerUrl, mention_data: _mentionData, ...legacyReplyPayload } = replyPayload
+        const { parent_reply_id: _parentReplyId, image_url: _imageUrl, video_url: _videoUrl, gif_url: _gifUrl, sticker_url: _stickerUrl, mention_data: _mentionData, ...legacyReplyPayload } = replyPayload
         replyResult = await supabase.from('forum_replies').insert(legacyReplyPayload)
       }
       const { error } = replyResult
@@ -336,23 +380,18 @@ export default function ThreadDetailPage() {
         console.error('Error posting reply:', error)
         alert('Failed to post reply')
       } else {
-        setReplyContent('')
-        setReplyMedia({ image_url: '', video_url: '' })
-        setReplyMentionRefs([])
-        setReplyGifUrl('')
-        setReplySticker('')
-        // Reload replies
+        resetReplyComposer()
         const { data: newReplies, error: reloadError } = await supabase
           .from('forum_replies')
           .select(
             `
             *,
-            info_users(full_name, email)
+            info_users(full_name, email, profile_image_url)
           `
           )
           .eq('thread_id', threadId)
           .eq('status', 'active')
-          .order('created_at', { ascending: true })
+          .order('created_at', { ascending: false })
 
         if (reloadError) throw reloadError
         setReplies(newReplies || [])
@@ -405,7 +444,7 @@ export default function ThreadDetailPage() {
       alert('Please log in to report a reply.')
       return
     }
-    if (!reportTarget || !reportReason) return
+    if (!reportTarget || !reportReason || userId === reportTarget.user_id) return
 
     setSubmittingReport(true)
     try {
@@ -474,6 +513,85 @@ export default function ThreadDetailPage() {
       setPoll((current) => ({ ...current, total_votes: (current?.total_votes || 0) + 1 }))
     }
     setVotingPoll(false)
+  }
+
+  const renderReplyTree = (reply, depth = 0) => {
+    const isOwnReply = Boolean(userId && reply.user_id === userId)
+    const isReplyingToThis = Boolean(replyTarget && replyTarget.id === reply.id)
+
+    return (
+      <div key={reply.id} className={`feed-card border-b border-slate-200 ${reply.is_best_answer ? 'bg-emerald-50' : 'bg-white'} ${depth > 0 ? 'ml-4 border-l border-slate-200 pl-4' : ''} p-4 sm:p-5`}>
+        {reply.is_best_answer && (
+          <div className="mb-3 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+            ✓ Best Answer
+          </div>
+        )}
+
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Link
+              href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
+              className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700 hover:ring-2 hover:ring-sky-300"
+              aria-label={`View ${reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}'s profile`}
+            >
+              {reply.info_users?.profile_image_url ? (
+                <img src={reply.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
+              ) : (
+                (reply.info_users?.full_name || reply.info_users?.email || 'A').charAt(0).toUpperCase()
+              )}
+            </Link>
+            <div className="min-w-0">
+              <Link
+                href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
+                className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700"
+              >
+                {reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}
+              </Link>
+              <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
+            </div>
+          </div>
+          {!isOwnReply && (
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setReplyTarget(reply)} className="inline-flex h-8 items-center justify-center rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Reply</button>
+              {userId && <button type="button" onClick={() => setReportTarget(reply)} className="inline-flex h-8 items-center justify-center rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Report</button>}
+            </div>
+          )}
+          {isOwnReply && (
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => { setEditingReplyId(reply.id); setEditingReplyContent(reply.content || '') }} aria-label="Edit comment" className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button>
+              <button type="button" onClick={() => deleteReply(reply.id)} aria-label="Delete comment" className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          )}
+        </div>
+
+        {editingReplyId === reply.id ? <div className="mt-3"><textarea value={editingReplyContent} onChange={(event) => setEditingReplyContent(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 p-2 text-sm outline-none" /><div className="mt-2 flex gap-2"><button type="button" onClick={() => saveReplyEdit(reply.id)} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Save</button><button type="button" onClick={() => setEditingReplyId(null)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button></div></div> : <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{reply.content}</p>}
+        {reply.image_url && <img src={reply.image_url} alt="Comment attachment" className="mt-3 max-h-64 rounded-xl object-cover" />}
+        {reply.video_url && <video src={reply.video_url} controls className="mt-3 max-h-64 rounded-xl" />}
+        {reply.gif_url && <img src={reply.gif_url} alt="GIF" className="mt-3 max-h-48 rounded-xl" />}
+        {reply.sticker_url && <span className="mt-2 block text-3xl">{reply.sticker_url}</span>}
+
+        <div className="mt-4 flex items-center gap-3 text-xs">
+          <Reactions contentType="forum_reply" contentId={reply.id} userId={userId} compact label="" />
+        </div>
+
+        {isReplyingToThis && (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Replying to {reply.info_users?.full_name || 'this reply'}</p>
+            <MentionsAutoSuggest value={replyContent} onChange={setReplyContent} placeholder="Write a reply to this comment..." rows={2} userId={userId} onMentionAdded={(mention) => setReplyMentionRefs((current) => [...current.filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }])} />
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setReplyTarget(null)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button>
+              <button type="button" onClick={handleReplySubmit} disabled={submittingReply || (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker)} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">{submittingReply ? 'Posting...' : 'Reply'}</button>
+            </div>
+          </div>
+        )}
+
+        {reply.children?.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {reply.children.map((child) => renderReplyTree(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    )
   }
 
   if (loading) {
@@ -559,7 +677,7 @@ export default function ThreadDetailPage() {
             </div>
 
             <div className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold flex-shrink-0 ${getStatusColor(thread.status)}`}>
-              {thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status}
+              {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status === 'active' ? 'published' : thread.status}
             </div>
           </div>
 
@@ -610,7 +728,7 @@ export default function ThreadDetailPage() {
               <button type="button" onClick={handleReplySubmit} disabled={submittingReply || (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker)} aria-label="Post reply" title="Post reply" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"><Send className="h-4 w-4" /></button>
             </div>
             {(replyGifUrl || replySticker) && <div className="mt-2 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">{replyGifUrl ? <img src={replyGifUrl} alt="Selected GIF preview" className="h-20 max-w-36 rounded-lg object-cover" /> : null}{replySticker ? <span className="flex h-20 w-20 items-center justify-center rounded-lg bg-white text-4xl">{replySticker}</span> : null}<button type="button" onClick={() => { setReplyGifUrl(''); setReplySticker('') }} className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 hover:bg-slate-100 hover:text-red-600" aria-label="Remove selected GIF or sticker" title="Remove preview"><X className="h-4 w-4" /></button></div>}
-            {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} /><MediaUpload bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} /></div>}
+            {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload key={replyComposerResetKey} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} /><MediaUpload key={`${replyComposerResetKey}-video`} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} /></div>}
 
             {showGifPicker && <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={gifQuery} onChange={(event) => setGifQuery(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>{gifLoading ? <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading GIFs...</div> : gifError ? <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">{gifError}</div> : <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto p-2">{gifResults.map((gif) => <button key={gif.id || gif.url} type="button" onClick={() => { setReplyGifUrl(gif.url); setReplySticker(''); setShowGifPicker(false); setGifQuery('') }} className="overflow-hidden rounded-lg border border-slate-100 bg-slate-50 hover:ring-2 hover:ring-sky-500"><img src={gif.url} alt={gif.title || 'GIF'} className="h-20 w-full object-cover" /></button>)}</div>}</div>}
             {showStickerPicker && <div className="mt-2 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-2">{STICKERS.map((sticker) => <button key={sticker} type="button" onClick={() => { setReplySticker(sticker); setReplyGifUrl(''); setShowStickerPicker(false) }} className="flex h-10 w-10 items-center justify-center rounded-lg text-xl hover:bg-slate-100">{sticker}</button>)}</div>}
@@ -625,57 +743,7 @@ export default function ThreadDetailPage() {
         {/* Replies */}
         <div className="mt-3 space-y-0 lg:sticky lg:top-3 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
           {replies.length > 0 ? (
-            replies.map((reply) => (
-              <div key={reply.id} className={`feed-card border-b border-slate-200 ${reply.is_best_answer ? 'bg-emerald-50' : 'bg-white'} p-4 sm:p-5`}>
-                {reply.is_best_answer && (
-                  <div className="mb-3 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                    ✓ Best Answer
-                  </div>
-                )}
-
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 flex-1 items-center gap-2">
-                    <Link
-                      href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
-                      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700 hover:ring-2 hover:ring-sky-300"
-                      aria-label={`View ${reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}'s profile`}
-                    >
-                      {reply.info_users?.profile_image_url ? (
-                        <img src={reply.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        (reply.info_users?.full_name || reply.info_users?.email || 'A').charAt(0).toUpperCase()
-                      )}
-                    </Link>
-                    <div className="min-w-0">
-                      <Link
-                        href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
-                        className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700"
-                      >
-                        {reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}
-                      </Link>
-                      <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
-                    </div>
-                  </div>
-                  {userId === reply.user_id && <div className="flex items-center gap-1"><button type="button" onClick={() => { setEditingReplyId(reply.id); setEditingReplyContent(reply.content || '') }} aria-label="Edit comment" className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteReply(reply.id)} aria-label="Delete comment" className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button></div>}
-                </div>
-
-                {editingReplyId === reply.id ? <div className="mt-3"><textarea value={editingReplyContent} onChange={(event) => setEditingReplyContent(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 p-2 text-sm outline-none" /><div className="mt-2 flex gap-2"><button type="button" onClick={() => saveReplyEdit(reply.id)} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Save</button><button type="button" onClick={() => setEditingReplyId(null)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button></div></div> : <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{reply.content}</p>}
-                {reply.image_url && <img src={reply.image_url} alt="Comment attachment" className="mt-3 max-h-64 rounded-xl object-cover" />}
-                {reply.video_url && <video src={reply.video_url} controls className="mt-3 max-h-64 rounded-xl" />}
-                {reply.gif_url && <img src={reply.gif_url} alt="GIF" className="mt-3 max-h-48 rounded-xl" />}
-                {reply.sticker_url && <span className="mt-2 block text-3xl">{reply.sticker_url}</span>}
-
-                {/* Actions */}
-                <div className="mt-4 flex items-center gap-3 text-xs">
-                  <Reactions contentType="forum_reply" contentId={reply.id} userId={userId} compact label="" />
-
-                  <button type="button" onClick={() => setReportTarget(reply)} className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
-                    <Flag className="h-3.5 w-3.5" />
-                    Report
-                  </button>
-                </div>
-              </div>
-            ))
+            buildReplyTree(replies).map((reply) => renderReplyTree(reply))
           ) : (
             <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
               <MessageSquare className="mx-auto mb-3 h-8 w-8 text-slate-400" />

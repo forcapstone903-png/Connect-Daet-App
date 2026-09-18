@@ -41,7 +41,7 @@ export async function POST(request) {
         .insert({
           title,
           content,
-          status: 'active',
+          status: 'published',
           created_by: userId,
         })
         .select('id')

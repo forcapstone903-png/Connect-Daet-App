@@ -59,8 +59,10 @@ export function getSupabase() {
 export function isSupabaseConfigured() {
   const configured = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && 
          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
-  
-  console.log('🔍 Supabase Configured Check:', configured)
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('🔍 Supabase Configured Check:', configured)
+  }
   return configured
 }
 

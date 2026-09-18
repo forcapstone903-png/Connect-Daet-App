@@ -63,7 +63,7 @@ export default function AdminSettingsEmail() {
 {/* Notification Settings */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
               <h3 className="text-lg font-bold text-gray-800 mb-4">Notification Settings</h3>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={notificationSettings.emailAlerts} onChange={e => setNotificationSettings(p => ({ ...p, emailAlerts: e.target.checked }))} className="w-4 h-4 text-blue-600" />
                   <span className="text-sm text-gray-700">Email alerts for system events</span>

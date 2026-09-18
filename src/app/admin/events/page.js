@@ -1691,7 +1691,7 @@ export default function AdminEventsPage() {
               </h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
                 <input

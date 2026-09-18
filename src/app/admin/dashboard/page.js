@@ -1830,7 +1830,7 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-gray-800 mb-4">{eventForm.id ? 'Edit Event' : 'Create New Event'}</h3>
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Event Title *</label>
                 <input autoFocus type="text" value={eventForm.title} onChange={e => setEventForm(p => ({ ...p, title: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500" placeholder="e.g., Pinyasan Festival" />
@@ -2036,7 +2036,7 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-500">Pre-filled advisory based on conditions</p>
               </div>
             </div>
-            <div className="space-y-4">
+            <div className="space-y-2">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Alert Message</label>
                 <textarea value={weatherAlertMessage} onChange={e => setWeatherAlertMessage(e.target.value)} rows="4" className="w-full px-3 py-2 border border-gray-300 rounded-2xl" />
