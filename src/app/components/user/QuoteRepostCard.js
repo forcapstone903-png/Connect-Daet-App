@@ -61,7 +61,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
         <span aria-hidden="true" className="text-emerald-600">🔄</span>
         <span>reposted</span>
         <span className="text-slate-400">·</span>
-        <time dateTime={item.created_at || undefined}>{formatRelativeTime(item.created_at)}</time>
+        <time dateTime={item.reposted_at || item.created_at || undefined}>{formatRelativeTime(item.reposted_at || item.created_at)}</time>
         {reposterId === userId && (onEdit || onPrivacyChange || onDelete || onArchive || onRestore) && <div className="relative ml-auto">
           <PostActionMenu
             isRepost

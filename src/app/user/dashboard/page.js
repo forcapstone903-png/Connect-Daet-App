@@ -1160,9 +1160,11 @@ export default function UserDashboardPage() {
               original_post_id: originalPost.id,
               repost_id: repost.id,
               reposted_by: repost.user_id,
+              reposted_at: repost.created_at,
               repost_quote: repost.quote_text,
               visibility: repost.visibility || 'public',
               created_by: repost.user_id,
+              created_at: repost.created_at,
               published_at: repost.created_at,
               excerpt: originalPost.content,
               category: 'Repost',
@@ -1742,13 +1744,13 @@ export default function UserDashboardPage() {
               <div className="usr-stagger space-y-3">
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
-                  const actionContentId = item.original_post_id || item.id
+                  const actionContentId = item.is_repost ? (item.repost_id || item.id) : (item.original_post_id || item.id)
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
                   const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
                   const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
                   const authorRoleLabel = getAuthorRoleLabel(author || {})
-                  const itemDate = item.last_activity_at || item.published_at || item.created_at || item.start_date
+                  const itemDate = item.reposted_at || item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = (item.type === 'event' || item.type === 'tourist_spot') ? getImageUrl(item.featured_image || item.images || item.gallery_images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
                   const postGallery = ['blog', 'post'].includes(item.type) ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
@@ -1978,7 +1980,7 @@ export default function UserDashboardPage() {
                         <div className="feed-actions mt-4">
                           <SocialActionBar contentType={contentType} contentId={actionContentId} userId={userId} originalPost={{ ...item, id: actionContentId, author: item.is_repost ? item.original_author : item.author }} commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0} onToggleComments={() => openCommentsSheet({
                             contentType,
-                            contentId: item.id,
+                            contentId: actionContentId,
                             userId,
                             contentOwnerId: (item.is_repost ? item.original_author?.id : item.created_by) || author?.id || userId,
                             contentTitle: item.title,
