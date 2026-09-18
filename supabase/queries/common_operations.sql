@@ -460,11 +460,6 @@ ORDER BY c.created_at ASC;
 --   AND user_type = 'tourist'
 -- RETURNING id, email, last_login;
 
--- Batch Delete: Remove Test Data
--- DELETE FROM info_users
--- WHERE email LIKE '%test%' OR email LIKE '%demo%'
--- AND created_at < NOW() - INTERVAL '30 days';
-
 -- ============================================================================
 -- PERFORMANCE TUNING
 -- ============================================================================

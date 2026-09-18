@@ -23,6 +23,8 @@ function dedupeAndInsertNotifications(adminSupabase, rows) {
 
       if (!hasChanged) return null
 
+      // A newer activity from the same actor replaces the older one, moves it back to
+      // the top of the inbox, and marks it unread again so it is not missed.
       return adminSupabase
         .from('info_notifications')
         .update({
@@ -31,7 +33,10 @@ function dedupeAndInsertNotifications(adminSupabase, rows) {
           comment_id: row.comment_id,
           reply_id: row.reply_id,
           post_id: row.post_id,
+          link: row.link,
+          is_read: false,
           updated_at: new Date().toISOString(),
+          created_at: row.created_at,
         })
         .eq('id', current.id)
     }

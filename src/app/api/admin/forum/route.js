@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { notifyFollowers } from '@/lib/notificationAudience'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -82,51 +83,16 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    const link = `/user/forums/${data.id}`
-    const contentType = 'forum'
-    const recipients = await adminSupabase
-      .from('user_follows')
-      .select('follower_id')
-      .eq('following_id', actorId)
-      .neq('follower_id', actorId)
-
-    if (!recipients.error && Array.isArray(recipients.data)) {
-      const rows = []
-      for (const follow of recipients.data) {
-        const recipientId = follow?.follower_id
-        if (!recipientId) continue
-
-        const { data: existing } = await adminSupabase
-          .from('info_notifications')
-          .select('id')
-          .eq('user_id', recipientId)
-          .eq('link', link)
-          .limit(1)
-
-        if (existing && existing.length > 0) continue
-
-        rows.push({
-          user_id: recipientId,
-          title: 'New forum post from Administrator',
-          message: title,
-          type: contentType,
-          is_read: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          link,
-          post_id: data.id,
-          post_owner_id: actorId,
-          actor_id: actorId,
-        })
-      }
-
-      if (rows.length) {
-        const { error: notificationError } = await adminSupabase.from('info_notifications').insert(rows)
-        if (notificationError && notificationError.code !== '23505') {
-          console.error('Forum follower notification insert failed:', notificationError.message || notificationError)
-        }
-      }
-    }
+    await notifyFollowers(adminSupabase, {
+      authorId: actorId,
+      type: 'forum',
+      link: `/user/forums/${data.id}`,
+      postId: data.id,
+      title: 'New forum discussion',
+      actionText: 'started a new discussion',
+      subject: title,
+      status: data.status,
+    })
 
     return NextResponse.json({ success: true, thread: data })
   } catch (error) {

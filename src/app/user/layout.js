@@ -1,11 +1,12 @@
 'use client'
 
+import './user-sections.css'
 import MobileNav from '@/app/components/user/MobileNav'
 import { usePathname } from 'next/navigation'
 
 export default function UserLayout({ children }) {
   const pathname = usePathname()
-  const isConversationPage = /^\/user\/messaging\/[^/]+$/.test(pathname || '')
+  const isConversationPage = /^\/user\/messaging\/(?!archived(?:\/|$))[^/]+$/.test(pathname || '')
 
   return (
     <>

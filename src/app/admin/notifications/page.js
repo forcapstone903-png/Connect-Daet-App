@@ -1,93 +1,127 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import AdminSidebar from '@/app/components/AdminSidebar'
-import { Icon } from '@/app/components/Icon'
-import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession } from '@/lib/authCookies'
+import {
+  AdminButton,
+  AdminNavCard,
+  AdminPanel,
+  AdminShell,
+  AdminStatCard,
+  AdminStatGrid,
+} from '@/app/components/admin'
+import useAdminMetrics from '@/lib/adminMetrics'
+import { supabase } from '@/lib/supabase'
+
+const NOTIFICATION_DESTINATIONS = [
+  {
+    title: 'Send announcement',
+    description: 'Compose and broadcast a notice to the chosen audience.',
+    icon: 'notifications',
+    href: '/admin/announcement',
+  },
+  {
+    title: 'Scheduled & templates',
+    description: 'Manage categories, templates, quiet hours, and emergency protocol.',
+    icon: 'calendar',
+    href: '/admin/announcement-settings',
+  },
+  {
+    title: 'Delivery history',
+    description: 'Audit previously published and archived announcements.',
+    icon: 'data',
+    href: '/admin/announcement?tab=history',
+  },
+]
+
+// Announcement metrics need per-row status and reach, so one small projection
+// is fetched and reduced client-side (the admin list already loads in full).
+const loadAnnouncementMetrics = async () => {
+  const { data, error } = await supabase
+    .from('info_announcements')
+    .select('id, status, view_count')
+
+  if (error) throw error
+
+  const rows = data || []
+  const countStatus = (status) => rows.filter((row) => row.status === status).length
+
+  return {
+    total: rows.length,
+    published: countStatus('published'),
+    drafts: countStatus('draft'),
+    views: rows.reduce((sum, row) => sum + Number(row.view_count || 0), 0),
+  }
+}
 
 export default function NotificationsHubOverview() {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const session = getStoredSession()
-    if (!session) {
-      window.location.href = '/login'
-      return
-    }
-
-    try {
-      const userData = JSON.parse(session)
-      if (!hasAdminAccess(userData.role)) {
-        window.location.href = '/admin/dashboard'
-        return
-      }
-      setUser(userData)
-    } catch (error) {
-      console.error('Error loading session:', error)
-      window.location.href = '/login'
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  if (loading) {
-    return <div className="flex h-screen items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div></div>
-  }
-
-  const notificationItems = [
-    { title: 'Send Announcement', description: 'Create and broadcast system announcements', icon: 'notifications', href: '/admin/notifications/send', color: 'from-blue-500 to-cyan-600' },
-    { title: 'Scheduled', description: 'View and manage scheduled announcements', icon: 'analytics', href: '/admin/notifications/scheduled', color: 'from-amber-500 to-orange-600' },
-    { title: 'History', description: 'View past announcements and delivery status', icon: 'data', href: '/admin/notifications/history', color: 'from-emerald-500 to-green-600' },
-    { title: 'Emergency Alert', description: 'Send urgent alerts to all users', icon: 'warning', href: '/admin/notifications', color: 'from-red-500 to-pink-600' },
-  ]
+  const { metrics, loading, error, refresh } = useAdminMetrics('notifications', loadAnnouncementMetrics)
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      <AdminSidebar user={user} roleLabel="Administrator" userRole={user?.role} />
+    <AdminShell
+      eyebrow="Notifications"
+      title="Notifications & announcements"
+      description="Plan, schedule, and audit every public notice and emergency alert issued from the admin console."
+      headerIcon="notifications"
+      roleLabel="Administrator"
+      loadingLabel="Loading announcements console…"
+      actions={
+        <AdminButton icon="refresh" onClick={refresh} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh metrics'}
+        </AdminButton>
+      }
+    >
+      {error ? (
+        <AdminPanel className="mb-4">
+          <p className="text-sm text-amber-700">{error}</p>
+        </AdminPanel>
+      ) : null}
 
-      <main className="flex-1 overflow-auto">
-        <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Notifications & Announcements</h1>
-            <p className="mt-2 text-slate-600">Manage system announcements and alerts</p>
-          </div>
+      <AdminStatGrid>
+        <AdminStatCard
+          label="All announcements"
+          value={metrics?.total}
+          icon="notifications"
+          tone="brand"
+          loading={loading}
+          meta="Drafts, published, archived"
+        />
+        <AdminStatCard
+          label="Published"
+          value={metrics?.published}
+          icon="check"
+          tone="success"
+          loading={loading}
+          meta="Currently visible"
+        />
+        <AdminStatCard
+          label="Drafts"
+          value={metrics?.drafts}
+          icon="edit"
+          tone="warning"
+          loading={loading}
+          meta="Awaiting review"
+        />
+        <AdminStatCard
+          label="Total views"
+          value={metrics?.views}
+          icon="eye"
+          tone="info"
+          loading={loading}
+          meta="Recorded impressions"
+        />
+      </AdminStatGrid>
 
-          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-blue-600">5</div>
-              <p className="mt-2 text-sm text-slate-600">Drafts</p>
-            </div>
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-amber-600">3</div>
-              <p className="mt-2 text-sm text-slate-600">Scheduled</p>
-            </div>
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-green-600">28</div>
-              <p className="mt-2 text-sm text-slate-600">Sent This Month</p>
-            </div>
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-purple-600">94%</div>
-              <p className="mt-2 text-sm text-slate-600">Delivery Rate</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {notificationItems.map((item) => (
-              <Link key={item.href} href={item.href} className="group rounded-xl bg-white p-6 shadow transition-all hover:shadow-lg">
-                <div className={`inline-block rounded-lg bg-gradient-to-br ${item.color} p-4 text-white`}>
-                  <Icon name={item.icon} className="w-8 h-8" />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900 group-hover:text-sky-600">{item.title}</h3>
-                <p className="mt-2 text-sm text-slate-600">{item.description}</p>
-                <div className="mt-4 flex items-center text-sm font-medium text-sky-600">Manage <Icon name="arrow" className="inline-block w-4 h-4 ml-2" /></div>
-              </Link>
-            ))}
-          </div>
+      <AdminPanel
+        title="Workspaces"
+        description="Publish once — reach visitors on the website and in the app."
+        padded={false}
+        bodyClassName="p-4"
+      >
+        <div className="admin-nav-grid">
+          {NOTIFICATION_DESTINATIONS.map((destination) => (
+            <AdminNavCard key={destination.href} {...destination} />
+          ))}
         </div>
-      </main>
-    </div>
+      </AdminPanel>
+    </AdminShell>
   )
 }

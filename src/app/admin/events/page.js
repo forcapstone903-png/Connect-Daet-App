@@ -7,10 +7,13 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
+import '@/app/components/admin/AdminCalendar.css';
 import FullCalendar from '@fullcalendar/react';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/components/MediaUpload';
 
@@ -50,35 +53,6 @@ const getCategoryColor = (category) => {
   return colors[category] || '#0f3b2c';
 };
 
-const addOneCalendarDay = (dateString) => {
-  if (!dateString) return null;
-  const base = new Date(dateString + 'T00:00:00');
-  if (Number.isNaN(base.getTime())) return null;
-  const next = new Date(base);
-  next.setDate(next.getDate() + 1);
-  const year = next.getFullYear();
-  const month = String(next.getMonth() + 1).padStart(2, '0');
-  const day = String(next.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-// FullCalendar's `select` callback reports the end date EXCLUSIVE (the day
-// after the last highlighted cell), but our form/DB store an INCLUSIVE end
-// date (the actual last day of the event). Any date coming straight out of
-// a calendar date-highlight must be shifted back one day before it's used
-// as `end_date`, otherwise every event created by highlighting dates ends
-// up one day longer than what the admin actually selected.
-const subtractOneCalendarDay = (dateString) => {
-  if (!dateString) return null;
-  const base = new Date(dateString + 'T00:00:00');
-  if (Number.isNaN(base.getTime())) return null;
-  const prev = new Date(base);
-  prev.setDate(prev.getDate() - 1);
-  const year = prev.getFullYear();
-  const month = String(prev.getMonth() + 1).padStart(2, '0');
-  const day = String(prev.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 export default function AdminEventsPage() {
   const router = useRouter();
@@ -99,7 +73,6 @@ export default function AdminEventsPage() {
   const [showTrashDropZone, setShowTrashDropZone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
-  const [calendarKey, setCalendarKey] = useState(0);
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [venues, setVenues] = useState([]);
@@ -257,7 +230,6 @@ export default function AdminEventsPage() {
       
       setEvents(formattedEvents);
       updateStats(formattedEvents);
-      setCalendarKey(prev => prev + 1);
       return formattedEvents;
     } catch (err) {
       console.error('Error fetching events:', err);
@@ -430,53 +402,15 @@ export default function AdminEventsPage() {
     }
   };
 
-  const updateEventDates = async (eventId, newStartDate, newEndDate) => {
+  const updateEventDates = async (eventId, newStartDate, newEndDate, allDay) => {
     try {
-      const formatDate = (date) => {
-        if (!date) return null;
-
-        if (typeof date === 'string') {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-          if (/^\d{4}-\d{2}-\d{2}T/.test(date)) return date.split('T')[0];
-
-          const d = new Date(date);
-          if (Number.isNaN(d.getTime())) return null;
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-
-        if (date instanceof Date) {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-
-        return null;
-      };
-
-      const formatInclusiveEndDate = (date) => {
-        const exclusive = formatDate(date);
-        if (!exclusive) return null;
-        const [year, month, day] = exclusive.split('-').map(Number);
-        const parsed = new Date(year, month - 1, day);
-        parsed.setDate(parsed.getDate() - 1);
-        const y = parsed.getFullYear();
-        const m = String(parsed.getMonth() + 1).padStart(2, '0');
-        const d = String(parsed.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-      };
-      
-      const formattedStart = formatDate(newStartDate);
-      const formattedEnd = formatInclusiveEndDate(newEndDate || newStartDate);
-      
+      const schedule = fromCalendarSchedule(newStartDate, newEndDate, allDay);
+      const formattedStart = schedule.start_date;
       if (!formattedStart) throw new Error('Invalid start date');
       
       const { error } = await supabase
         .from('info_events')
-        .update({ start_date: formattedStart, end_date: formattedEnd || formattedStart })
+        .update({ ...schedule, start_time: schedule.start_time || null, end_time: schedule.end_time || null })
         .eq('id', eventId);
       
       if (error) throw error;
@@ -619,14 +553,13 @@ export default function AdminEventsPage() {
   // info.endStr), which uses an EXCLUSIVE end date (the day after the last
   // highlighted cell). Shift it back one day so the form's end_date matches
   // the actual last day the admin highlighted.
-  const openCreateModal = (startStr = null, endStr = null) => {
+  const openCreateModal = (startStr = null, endStr = null, allDay = true) => {
     setSelectedEvent(null);
     setSelectedEventDetails(null);
     setEventDetailsSearch('');
-    const inclusiveEnd = endStr ? subtractOneCalendarDay(endStr) : (startStr || '');
+    const schedule = fromCalendarSchedule(startStr, endStr, allDay);
     setEventForm({
-      id: '', title: '', description: '', location: '', start_date: startStr || '', end_date: inclusiveEnd || startStr || '',
-      start_time: '', end_time: '', category: 'festival', is_free: true, ticket_price: '',
+      id: '', title: '', description: '', location: '', ...schedule, category: 'festival', is_free: true, ticket_price: '',
       max_attendees: '', current_attendees: 0, organizer: 'Daet Tourism Office', status: 'draft',
       imageUrl: '', videoUrl: '', galleryImages: [], galleryVideos: [],
       recurrence: '', tags: [], featured: false
@@ -847,14 +780,10 @@ export default function AdminEventsPage() {
   };
 
   const calendarEvents = events.filter(ev => ev.status !== 'cancelled').map(ev => {
-    const start = ev.start || ev.start_date;
-    const end = ev.end || ev.end_date || ev.start;
     return {
       id: String(ev.id),
       title: ev.title,
-      start,
-      end: addOneCalendarDay(end),
-      allDay: true,
+      ...toCalendarSchedule(ev),
       extendedProps: {
         description: ev.description || '',
         location: ev.location || '',
@@ -986,14 +915,14 @@ export default function AdminEventsPage() {
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
       <AdminSidebar user={user} roleLabel="Events Manager" />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         {/* Header */}
-        <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-5 shadow-[0_25px_60px_rgba(15,23,42,0.04)] backdrop-blur-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-sky-700">Events Management</p>
-              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">Events & Activities Manager</h1>
-              <p className="mt-2 text-sm text-slate-600">Create, manage, and schedule all tourism events in Daet with photos and videos</p>
+        <div className="admin-page-header">
+          <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="admin-eyebrow">Content</p>
+              <h1>Events &amp; activities manager</h1>
+              <p className="admin-subtitle">Create, manage, and schedule all tourism events in Daet with photos and videos.</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -1169,36 +1098,41 @@ export default function AdminEventsPage() {
           )}
         </div>
 
-        {/* Calendar and Events List - Matching Dashboard Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Calendar Section - Matching Dashboard Design */}
-          <div className="lg:col-span-2 bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-wrap justify-between items-center mb-4">
+        {/* Calendar and upcoming events sit side by side on desktop. */}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] items-start gap-6">
+          <div className="admin-events-calendar admin-panel min-w-0 p-3 sm:p-5">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Calendar</p>
-                <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                  Event Calendar
-                </h2>
+                <p className="admin-eyebrow">Schedule</p>
+                <h2 className="text-lg font-bold">Event calendar</h2>
+                <p className="admin-subtitle">Select dates to create an event. Drag an event to reschedule.</p>
               </div>
-              <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
-                Click any date to create event • Drag to reschedule
-              </div>
+              <button type="button" onClick={() => openCreateModal()} className="admin-btn admin-btn-primary">
+                + New event
+              </button>
             </div>
+            <div className="admin-events-calendar-scroll" role="region" aria-label="Event calendar" tabIndex={0}>
             <FullCalendar
-              key={calendarKey}
               ref={calendarRef}
-              plugins={[dayGridPlugin, interactionPlugin]}
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView="dayGridMonth"
               selectable={true}
               editable={true}
               eventStartEditable={true}
               eventDurationEditable={true}
               events={calendarEvents}
-              fixedWeekCount={false}
-              dayMaxEvents={true}
-              height="auto"
-              contentHeight="auto"
-              select={(info) => openCreateModal(info.startStr, info.endStr)}
+              fixedWeekCount={true}
+              dayMaxEvents={3}
+              eventDisplay="block"
+              views={{ dayGridMonth: { displayEventTime: false }, timeGridWeek: { displayEventTime: true } }}
+              slotDuration="00:30:00"
+              slotLabelInterval="01:00:00"
+              scrollTime="07:00:00"
+              slotEventOverlap={false}
+              eventTimeFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }}
+              noEventsContent="No events scheduled for this month with the current filters."
+              height={850}
+              select={(info) => openCreateModal(info.startStr, info.endStr, info.allDay)}
               eventClick={(info) => {
                 const event = events.find(e => e.id === info.event.id);
                 if (event) {
@@ -1223,45 +1157,40 @@ export default function AdminEventsPage() {
                   eventElListenersRef.current.delete(info.event.id);
                 } catch (err) {}
               }}
-              dayCellDidMount={(info) => {
-                const frame = info.el;
-                frame.style.borderRadius = '0';
-                frame.style.background = '#ffffff';
-                frame.style.border = '1px solid #e2e8f0';
-                frame.style.boxShadow = 'inset 0 0 0 1px rgba(15, 23, 42, 0.03)';
-                const hasEvents = info.el.querySelector('.fc-daygrid-day-events') &&
-                  info.el.querySelector('.fc-daygrid-day-events')?.childElementCount > 0;
-                if (hasEvents) {
-                  frame.style.background = '#dbeafe';
-                  frame.style.borderColor = '#93c5fd';
-                  frame.style.boxShadow = 'inset 0 0 0 1px rgba(59,130,246,0.18)';
-                }
-              }}
               eventDragStart={handleEventDragStart}
               eventDragStop={handleEventDragStop}
               eventDrop={async (info) => {
-                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr);
+                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr, info.event.allDay);
                 if (!success) info.revert();
               }}
               eventResize={async (info) => {
-                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr);
+                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr, info.event.allDay);
                 if (!success) info.revert();
               }}
               headerToolbar={{
-                left: 'prev,next today',
-                center: 'title',
-                right: ''
+                left: 'title',
+                center: '',
+                right: 'prev,next today dayGridMonth,timeGridWeek'
               }}
-              buttonText={{ today: 'Today' }}
+              buttonText={{ today: 'Today', month: 'Month', week: 'Week' }}
               nowIndicator={true}
               weekends={true}
               selectMirror={true}
               unselectAuto={false}
             />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs" aria-label="Event categories">
+              {EVENT_CATEGORIES.map(category => (
+                <span key={category.value} className="inline-flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getCategoryColor(category.value) }} aria-hidden="true" />
+                  {category.label}
+                </span>
+              ))}
+            </div>
           </div>
 
           {/* Upcoming Events Widget - Matching Dashboard Design */}
-          <div className="bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+          <div className="admin-panel admin-upcoming-panel min-w-0 p-3 sm:p-5">
             <div className="flex justify-between items-center mb-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Upcoming</p>
@@ -2245,65 +2174,6 @@ export default function AdminEventsPage() {
         .animate-toast-in {
           animation: toast-in 0.25s ease-out;
         }
-        .fc-event {
-          cursor: grab !important;
-          border-radius: 0 !important;
-          border: none !important;
-          padding: 2px 6px !important;
-          font-weight: 500 !important;
-          font-size: 0.75rem !important;
-        }
-        .fc-event:active {
-          cursor: grabbing !important;
-        }
-        .fc-daygrid-day-frame:hover {
-          background-color: #eff6ff !important;
-          cursor: pointer;
-        }
-        .fc-day-today {
-          background-color: #fefce8 !important;
-        }
-        .fc-daygrid-day-events {
-          padding: 0.2rem 0.4rem 0.4rem;
-        }
-        .fc-daygrid-event {
-          border-radius: 0 !important;
-          box-shadow: 0 2px 8px rgba(37, 99, 235, 0.18);
-          font-weight: 600 !important;
-        }
-        .fc .fc-daygrid-day-frame {
-          background: rgba(255, 255, 255, 0.75);
-          border-radius: 0;
-          min-height: 108px;
-        }
-        .fc .fc-view-harness {
-          min-height: auto;
-        }
-        .fc .fc-scroller {
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-          overflow: visible !important;
-        }
-        .fc .fc-daygrid-day-frame {
-          min-height: 70px !important;
-          height: 70px;
-          background: #fff;
-          border-radius: 0 !important;
-          overflow: hidden;
-        }
-        .fc .fc-daygrid-day-number {
-          width: 100%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 24px;
-          border-bottom: 1px solid rgba(226, 232, 240, 0.8);
-          background: rgba(248, 250, 252, 0.85);
-        }
-        .fc .fc-daygrid-day-events {
-          min-height: 44px;
-          padding: 4px 6px !important;
-        }
         .admin-event-modal {
           border-radius: 0 !important;
           border: 1px solid rgba(30, 41, 59, 0.08);
@@ -2330,22 +2200,6 @@ export default function AdminEventsPage() {
           min-height: 40px;
           padding: 0.5rem 1rem;
           font-weight: 700;
-        }
-        .fc .fc-button-primary {
-          background-color: #2563eb !important;
-          border-color: #2563eb !important;
-          border-radius: 9999px !important;
-        }
-        .fc .fc-button-primary:hover {
-          background-color: #1d4ed8 !important;
-          border-color: #1d4ed8 !important;
-        }
-        .fc .fc-button {
-          border-radius: 9999px !important;
-        }
-        .fc .fc-toolbar-title {
-          font-size: 1.25rem !important;
-          font-weight: 600 !important;
         }
         .line-clamp-1 {
           display: -webkit-box;

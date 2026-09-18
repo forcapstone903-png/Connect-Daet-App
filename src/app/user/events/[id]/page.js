@@ -94,10 +94,10 @@ export default function EventDetailPage() {
 
   if (authChecking || loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9]">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
-          <p className="text-slate-600">Loading...</p>
+      <main className="tourism-shell usr-section-page usr-detail usr-events flex min-h-screen items-center justify-center p-6 text-slate-900">
+        <div role="status" aria-live="polite" className="usr-card usr-pop-in p-6 text-center">
+          <Loader className="usr-spin mx-auto mb-3 h-6 w-6 text-teal-700" aria-hidden="true" />
+          <p className="text-sm font-semibold text-slate-600">Loading this event...</p>
         </div>
       </main>
     )
@@ -105,12 +105,27 @@ export default function EventDetailPage() {
 
   if (error || !event) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] p-6">
-        <div className="w-full max-w-md rounded-[24px] border border-red-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-red-600">{error || 'Event not found'}</p>
-          <Link href="/user/events" className="mt-4 inline-block rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white">
-            Back to Events
-          </Link>
+      <main className="tourism-shell usr-section-page usr-detail usr-events flex min-h-screen items-center justify-center p-6 text-slate-900">
+        <div className="usr-empty-state max-w-xl">
+          <CalendarDays className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
+          <p className="mt-3 text-sm font-semibold text-slate-700">{error || 'Event not found'}</p>
+          <p className="mt-1 text-xs text-slate-500">This event may have been removed or is no longer published.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setError(null)
+                setLoading(true)
+                void fetchEvent()
+              }}
+              className="usr-section-secondary"
+            >
+              Try again
+            </button>
+            <Link href="/user/events" className="usr-section-primary">
+              Back to events
+            </Link>
+          </div>
         </div>
       </main>
     )
@@ -121,8 +136,8 @@ export default function EventDetailPage() {
   const primaryMedia = firstVideo || firstImage
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-6xl px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+    <main className="tourism-shell usr-section-page usr-detail usr-events min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto max-w-6xl px-3 pb-10 pt-3 sm:px-4 lg:px-6">
           <Link href="/user/events" aria-label="Back to events" title="Back to events" className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
         </Link>

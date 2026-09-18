@@ -34,8 +34,6 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
         </div>
       </div>
 
-      <p role="note" className="text-sm text-slate-500">{t('settings.privacy.unavailable')}</p>
-      <fieldset disabled className="space-y-3 opacity-60">
       <SelectField
         id="settings-message-privacy"
         label={t('settings.privacy.allowMessagesFrom')}
@@ -76,7 +74,6 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
         onChange={(next) => onPrivacyChange('searchable', next)}
       />
 
-      </fieldset>
       <ActionRow
         icon={ShieldCheck}
         label={t('settings.legal.privacy')}

@@ -1,0 +1,21 @@
+/* Visible without JavaScript. Progress is tied to the viewport rather than
+   the nearest overflow container, which may be a horizontal mobile list. */
+.page [data-scroll-card] {
+  opacity: var(--scroll-opacity, 1);
+  transform: translate3d(0, var(--scroll-lift, 0px), 0);
+  transition-property: box-shadow, background-color, border-color;
+}
+
+.page [data-scroll-card]:focus-within,
+:global(html[data-reduce-motion='true']) .page [data-scroll-card] {
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page [data-scroll-card] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}

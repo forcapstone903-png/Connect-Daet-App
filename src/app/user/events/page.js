@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CalendarDays, ChevronRight, Loader, MapPin, Ticket } from 'lucide-react'
@@ -119,15 +120,13 @@ export default function UserEventsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="tourism-shell usr-section-page usr-events min-h-screen text-slate-900">
       <UserTopHeader />
-      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-2 sm:px-4 lg:px-6">
+      <div className="usr-section-container mx-auto max-w-[1200px] px-3 pb-10 pt-2 sm:px-4 lg:px-6">
 
-        <div className="mb-6">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">Events</p>
-          <h1 className="mt-1 text-2xl font-black text-slate-900 md:text-3xl">Discover Local Events</h1>
-          <p className="mt-1 text-sm text-slate-600">Festivals, concerts, workshops, and more happening in Daet</p>
-        </div>
+        <UserSectionHeader eyebrow="Make room for something memorable" title="Discover local events" description="Festivals, workshops, and community gatherings. Find your next reason to get out and explore Daet." emoji="🎉">
+          <span className="usr-section-counter">{loading ? 'Finding events…' : `${eventSummary.upcoming.length} upcoming`}</span>
+        </UserSectionHeader>
 
         <section className="mb-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="event-calendar-heading">
           <div className="flex items-center gap-2">
@@ -153,7 +152,7 @@ export default function UserEventsPage() {
 
           {(eventSummary.ongoing.length > 0 || eventSummary.upcoming.length > 0) && (
             <div className="mt-4 border-t border-slate-100 pt-3">
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {[...eventSummary.ongoing, ...eventSummary.upcoming].slice(0, 3).map((event) => (
                   <Link key={event.id} href={`/user/events/${event.id}`} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 transition hover:bg-sky-50">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-sky-700 shadow-sm"><CalendarDays className="h-4 w-4" /></span>
@@ -186,7 +185,7 @@ export default function UserEventsPage() {
 
         {/* Events List */}
         {loading ? (
-          <div className="space-y-4">
+          <div className="space-y-1.5">
             {[1, 2, 3].map((i) => (
               <div key={i} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-5">
                 <div className="h-5 w-1/3 rounded bg-slate-200" />
@@ -224,7 +223,7 @@ export default function UserEventsPage() {
               <Link
                 key={event.id}
                 href={`/user/events/${event.id}`}
-                className="group overflow-hidden rounded-[22px] border border-slate-200 border-l-4 border-l-amber-300 bg-white shadow-sm transition hover:border-sky-200 hover:shadow-md"
+                className="usr-event-card group min-w-0 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
               >
                 {primaryMedia ? (
                   <div className="relative h-40 w-full overflow-hidden">

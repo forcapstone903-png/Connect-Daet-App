@@ -1,93 +1,121 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
-import AdminSidebar from '@/app/components/AdminSidebar'
-import { Icon } from '@/app/components/Icon'
-import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession } from '@/lib/authCookies'
+import {
+  AdminButton,
+  AdminNavCard,
+  AdminPanel,
+  AdminShell,
+  AdminStatCard,
+  AdminStatGrid,
+} from '@/app/components/admin'
+import useAdminMetrics, { countRows, resolveMetricEntries } from '@/lib/adminMetrics'
+
+const DATA_DESTINATIONS = [
+  {
+    title: 'Media library',
+    description: 'Browse uploaded images, videos, and documents with storage details.',
+    icon: 'image',
+    href: '/admin/file-management',
+  },
+  {
+    title: 'Backups',
+    description: 'Create, schedule, and restore database snapshots.',
+    icon: 'save',
+    href: '/admin/data?tab=backups',
+  },
+  {
+    title: 'Import / Export',
+    description: 'Move attractions and events in or out as CSV and JSON.',
+    icon: 'data',
+    href: '/admin/data-management',
+  },
+  {
+    title: 'Data retention',
+    description: 'Define how long visitor activity and records are kept.',
+    icon: 'delete',
+    href: '/admin/data?tab=retention',
+  },
+]
+
+// Module-scope loader keeps the metrics hook identity stable between renders.
+const loadDataMetrics = () =>
+  resolveMetricEntries([
+    ['attractions', () => countRows('info_tourist_spots')],
+    ['events', () => countRows('info_events')],
+    ['blogs', () => countRows('info_blogs')],
+    ['userPosts', () => countRows('info_user_posts')],
+  ])
 
 export default function DataHubOverview() {
-  const [user, setUser] = useState(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const session = getStoredSession()
-    if (!session) {
-      window.location.href = '/login'
-      return
-    }
-
-    try {
-      const userData = JSON.parse(session)
-      if (!hasAdminAccess(userData.role)) {
-        window.location.href = '/admin/dashboard'
-        return
-      }
-      setUser(userData)
-    } catch (error) {
-      console.error('Error loading session:', error)
-      window.location.href = '/login'
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  if (loading) {
-    return <div className="flex h-screen items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div></div>
-  }
-
-  const dataItems = [
-    { title: 'Media Library', description: 'Manage images, videos, and files', icon: 'data', href: '/admin/data/media', color: 'from-blue-500 to-cyan-600' },
-    { title: 'Backups', description: 'Schedule and restore database backups', icon: 'save', href: '/admin/data/backups', color: 'from-green-500 to-emerald-600' },
-    { title: 'Import / Export', description: 'Import CSV/JSON data or export reports', icon: 'arrow', href: '/admin/data/import-export', color: 'from-purple-500 to-pink-600' },
-    { title: 'Data Retention', description: 'Manage data deletion and retention policies', icon: 'delete', href: '/admin/data/retention', color: 'from-red-500 to-orange-600' },
-  ]
+  const { metrics, loading, error, refresh } = useAdminMetrics('data', loadDataMetrics)
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      <AdminSidebar user={user} roleLabel="Administrator" userRole={user?.role} />
+    <AdminShell
+      eyebrow="Data"
+      title="Data management"
+      description="Backups, media, imports, and retention policy for the records that power the tourism platform."
+      headerIcon="data"
+      roleLabel="Administrator"
+      loadingLabel="Loading data console…"
+      actions={
+        <AdminButton icon="refresh" onClick={refresh} disabled={loading}>
+          {loading ? 'Refreshing…' : 'Refresh metrics'}
+        </AdminButton>
+      }
+    >
+      {error ? (
+        <AdminPanel className="mb-4">
+          <p className="text-sm text-amber-700">{error}</p>
+        </AdminPanel>
+      ) : null}
 
-      <main className="flex-1 overflow-auto">
-        <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-slate-900">Data Management</h1>
-            <p className="mt-2 text-slate-600">Manage backups, media, imports, and data retention</p>
-          </div>
+      <AdminStatGrid>
+        <AdminStatCard
+          label="Tourist spots"
+          value={metrics?.attractions}
+          icon="attractions"
+          tone="brand"
+          loading={loading}
+          meta="Destination records"
+        />
+        <AdminStatCard
+          label="Events"
+          value={metrics?.events}
+          icon="events"
+          tone="violet"
+          loading={loading}
+          meta="Event calendar entries"
+        />
+        <AdminStatCard
+          label="Blog articles"
+          value={metrics?.blogs}
+          icon="blog"
+          tone="info"
+          loading={loading}
+          meta="Editorial content"
+        />
+        <AdminStatCard
+          label="Community posts"
+          value={metrics?.userPosts}
+          icon="community"
+          tone="success"
+          loading={loading}
+          meta="User-generated content"
+        />
+      </AdminStatGrid>
 
-          <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-blue-600">4.2GB</div>
-              <p className="mt-2 text-sm text-slate-600">Total Storage</p>
-            </div>
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-green-600">2.1GB</div>
-              <p className="mt-2 text-sm text-slate-600">Used Storage</p>
-            </div>
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-amber-600">Yesterday</div>
-              <p className="mt-2 text-sm text-slate-600">Last Backup</p>
-            </div>
-            <div className="rounded-lg bg-white p-6 shadow">
-              <div className="text-3xl font-bold text-purple-600">1,240</div>
-              <p className="mt-2 text-sm text-slate-600">Media Files</p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {dataItems.map((item) => (
-              <Link key={item.href} href={item.href} className="group rounded-xl bg-white p-6 shadow transition-all hover:shadow-lg">
-                <div className={`inline-block rounded-lg bg-gradient-to-br ${item.color} p-4 text-white`}>
-                  <Icon name={item.icon} className="w-8 h-8" />
-                </div>
-                <h3 className="mt-4 text-lg font-semibold text-slate-900 group-hover:text-sky-600">{item.title}</h3>
-                <p className="mt-2 text-sm text-slate-600">{item.description}</p>
-                <div className="mt-4 flex items-center text-sm font-medium text-sky-600">Manage <Icon name="arrow" className="inline-block w-4 h-4 ml-2" /></div>
-              </Link>
-            ))}
-          </div>
+      <AdminPanel
+        title="Workspaces"
+        description="Every dataset task in one place."
+        padded={false}
+        bodyClassName="p-4"
+      >
+        <div className="admin-nav-grid">
+          {DATA_DESTINATIONS.map((destination) => (
+            <AdminNavCard key={destination.href} {...destination} />
+          ))}
         </div>
-      </main>
-    </div>
+      </AdminPanel>
+    </AdminShell>
   )
 }

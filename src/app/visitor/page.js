@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { Search, ArrowRight, MapPin, Sparkles, Plane, Newspaper, Menu, X, Star, Calendar, ChevronLeft, ChevronRight, Megaphone, MessageCircle, Heart, Clock, Lock, ThumbsUp, Bookmark, Reply, PhoneCall, Radio } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
-import { isVisitorVisibleContent } from '@/lib/visitorContentFilter'
+import VisitorScrollEffects from './VisitorScrollEffects'
 import bagasbasImage from '../assets/images/bagasbasbeach.webp'
 import morgaImage from '../assets/images/morga.jpg'
 import ElevatedTownPlazaImage from '../assets/images/elevated-town-plaza.jpg'
@@ -71,7 +71,6 @@ export default function VisitorPage() {
   const [categories, setCategories] = useState(['All'])
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authAction, setAuthAction] = useState('')
-  const [toastMessage, setToastMessage] = useState('')
   const [tripStage, setTripStage] = useState('dreaming')
 
   const navigationItems = [
@@ -123,6 +122,25 @@ export default function VisitorPage() {
         setLoading(true)
         setContentError('')
 
+        const failures = new Set()
+        const reportError = (section, error) => {
+          if (!error) return
+          console.error(`Visitor page: ${section} could not load:`, error.message)
+          failures.add(section)
+          setContentError(`Could not load ${[...failures].join(', ')}. Please refresh to retry.`)
+        }
+        // Use the deployed schema, not optional counters that do not exist.
+        const fetchPublished = async (table, select, orderBy) => {
+          const { data, error } = await supabase
+            .from(table)
+            .select(select)
+            .eq('status', 'published')
+            .order(orderBy, { ascending: false })
+            .limit(12)
+          reportError(table === 'info_blogs' ? 'stories' : 'discussions', error)
+          return data || []
+        }
+
         // Fetch tourist spots
         const { data: spots, error: spotsError } = await supabase
           .from('info_tourist_spots')
@@ -131,6 +149,8 @@ export default function VisitorPage() {
           .order('rating', { ascending: false })
           .limit(9)
 
+        reportError('destinations', spotsError)
+
         if (!spotsError && spots?.length) {
           setPopularSpots(spots.slice(0, MAX_VISITOR_ITEMS))
           const uniqueCategories = ['All', ...new Set(spots.map(spot => spot.category).filter(Boolean))]
@@ -138,50 +158,24 @@ export default function VisitorPage() {
         }
 
         // Fetch blogs
-        const { data: blogs, error: blogsError } = await supabase
-          .from('info_blogs')
-          .select('id, title, excerpt, featured_image, category, created_at, views, likes, comments_count, shares_count, bookmarks_count, slug, created_by')
-          .eq('status', 'published')
-          .order('published_at', { ascending: false })
-          .limit(12)
+        const blogs = await fetchPublished(
+          'info_blogs',
+          'id, title, excerpt, featured_image, category, created_at, views, likes, comments_count, slug, created_by',
+          'published_at',
+        )
 
-        if (!blogsError && blogs?.length) {
-          const authorIds = [...new Set((blogs || []).map((blog) => blog.created_by).filter(Boolean))]
-          let authorTypes = {}
-          if (authorIds.length) {
-            const { data: authorRows } = await supabase.from('info_users').select('id, user_type').in('id', authorIds)
-            authorTypes = Object.fromEntries((authorRows || []).map((author) => [author.id, author.user_type]))
-          }
-
-          const visibleBlogs = (blogs || []).filter((blog) => {
-            const authorType = String(authorTypes[blog.created_by] || '').trim().toLowerCase()
-            return isVisitorVisibleContent({ ...blog, author_type: authorType }, { authorType })
-          }).slice(0, MAX_VISITOR_ITEMS)
-          setTrendingBlogs(visibleBlogs)
-        }
+        // Publication status and database RLS determine public visibility.
+        // Engagement is not a prerequisite for showing real published stories.
+        setTrendingBlogs(blogs.slice(0, MAX_VISITOR_ITEMS))
 
         // Fetch forum threads
-        const { data: threads, error: threadsError } = await supabase
-          .from('forum_threads')
-          .select('id, title, content, reply_count, created_at, last_activity_at, created_by, category_id, views, likes, shares_count, comments_count, bookmarks_count')
-          .eq('status', 'published')
-          .order('last_activity_at', { ascending: false })
-          .limit(12)
+        const threads = await fetchPublished(
+          'forum_threads',
+          'id, title, content, reply_count, created_at, last_activity_at, created_by, category_id, views',
+          'last_activity_at',
+        )
 
-        if (!threadsError && threads?.length) {
-          const authorIds = [...new Set((threads || []).map((thread) => thread.created_by).filter(Boolean))]
-          let authorTypes = {}
-          if (authorIds.length) {
-            const { data: authorRows } = await supabase.from('info_users').select('id, user_type').in('id', authorIds)
-            authorTypes = Object.fromEntries((authorRows || []).map((author) => [author.id, author.user_type]))
-          }
-
-          const visibleThreads = (threads || []).filter((thread) => {
-            const authorType = String(authorTypes[thread.created_by] || '').trim().toLowerCase()
-            return isVisitorVisibleContent({ ...thread, author_type: authorType }, { authorType })
-          }).slice(0, MAX_VISITOR_ITEMS)
-          setForumThreads(visibleThreads)
-        }
+        setForumThreads(threads.slice(0, MAX_VISITOR_ITEMS))
 
         // Fetch featured events
         const { data: events, error: eventsError } = await supabase
@@ -191,6 +185,8 @@ export default function VisitorPage() {
           .eq('featured', true)
           .order('start_date', { ascending: true })
           .limit(MAX_VISITOR_ITEMS)
+
+        reportError('featured events', eventsError)
 
         if (!eventsError && events?.length) {
           setFeaturedEvents(events)
@@ -205,6 +201,7 @@ export default function VisitorPage() {
           .order('start_date', { ascending: true })
           .limit(12)
 
+        reportError('upcoming events', upcomingError)
         if (!upcomingError) {
           setUpcomingEvents((upcoming || []).slice(0, MAX_VISITOR_ITEMS))
         }
@@ -218,6 +215,7 @@ export default function VisitorPage() {
           .order('published_at', { ascending: false })
           .limit(MAX_VISITOR_ITEMS)
 
+        reportError('announcements', noticeError)
         if (!noticeError) {
           setAnnouncements(noticeData || [])
         }
@@ -326,30 +324,6 @@ export default function VisitorPage() {
     router.push(`/tourist-spots/${spotId}`)
   }
 
-  const handleLike = (e, type, id) => {
-    e.stopPropagation()
-    if (!user) {
-      setAuthAction('like')
-      setShowAuthModal(true)
-      return
-    }
-    // Handle like logic here
-    setToastMessage('Feature coming soon!')
-    setTimeout(() => setToastMessage(''), 3000)
-  }
-
-  const handleBookmark = (e, type, id) => {
-    e.stopPropagation()
-    if (!user) {
-      setAuthAction('bookmark')
-      setShowAuthModal(true)
-      return
-    }
-    // Handle bookmark logic here
-    setToastMessage('Feature coming soon!')
-    setTimeout(() => setToastMessage(''), 3000)
-  }
-
   const handleReply = (e, threadId) => {
     e.stopPropagation()
     if (!user) {
@@ -361,13 +335,7 @@ export default function VisitorPage() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg animate-in slide-in-from-top-2">
-          {toastMessage}
-        </div>
-      )}
+    <VisitorScrollEffects className="min-h-screen overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
 
       {/* Auth Required Modal */}
       {showAuthModal && (
@@ -793,7 +761,7 @@ export default function VisitorPage() {
                       {day && (
                         <>
                           <span className="mb-1 block text-[10px] font-bold text-slate-700 sm:text-xs">{day.getDate()}</span>
-                          <div className="space-y-1">
+                          <div className="space-y-1.5">
                             {dayEvents.slice(0, 2).map((event) => (
                               <Link
                                 key={event.id}
@@ -816,12 +784,12 @@ export default function VisitorPage() {
             <div className="space-y-5">
               <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-700">Next up</p><h3 className="mt-1 text-xl font-black text-slate-900">Save the date</h3></div><Calendar className="h-5 w-5 text-amber-600" /></div>
-                <div className="mt-4 space-y-3">{upcomingEvents.slice(0, 3).map((event) => <Link key={event.id} href={`/events/${event.id}`} className="flex gap-3 rounded-2xl border border-slate-200 p-3 transition hover:border-sky-300 hover:bg-sky-50/40"><div className="min-w-12 rounded-xl bg-sky-50 px-2 py-1 text-center"><span className="block text-[9px] font-bold uppercase text-sky-700">{new Date(`${event.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short' })}</span><span className="block text-lg font-black text-sky-900">{new Date(`${event.start_date}T00:00:00`).getDate()}</span></div><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{event.title}</p><p className="mt-1 truncate text-xs text-slate-500">{event.location || event.venue || 'Daet'} · {event.is_free ? 'Free' : event.ticket_price ? `₱${event.ticket_price}` : 'Details inside'}</p></div></Link>)}{upcomingEvents.length === 0 && <p className="text-sm text-slate-500">New events will appear here as soon as they are announced.</p>}</div>
+                <div className="mt-4 space-y-3">{upcomingEvents.slice(0, 3).map((event) => <Link key={event.id} data-scroll-card href={`/events/${event.id}`} className="flex gap-3 rounded-2xl border border-slate-200 p-3 transition hover:border-sky-300 hover:bg-sky-50/40"><div className="min-w-12 rounded-xl bg-sky-50 px-2 py-1 text-center"><span className="block text-[9px] font-bold uppercase text-sky-700">{new Date(`${event.start_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short' })}</span><span className="block text-lg font-black text-sky-900">{new Date(`${event.start_date}T00:00:00`).getDate()}</span></div><div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{event.title}</p><p className="mt-1 truncate text-xs text-slate-500">{event.location || event.venue || 'Daet'} · {event.is_free ? 'Free' : event.ticket_price ? `₱${event.ticket_price}` : 'Details inside'}</p></div></Link>)}{upcomingEvents.length === 0 && <p className="text-sm text-slate-500">New events will appear here as soon as they are announced.</p>}</div>
               </div>
 
               <div className="rounded-[24px] border border-amber-200 bg-amber-50 p-4 sm:p-5">
                 <div className="flex items-center gap-2"><Megaphone className="h-5 w-5 text-amber-700" /><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-800">Visitor notices</p><h3 className="mt-1 text-xl font-black text-slate-900">Announcements</h3></div></div>
-                <div className="mt-4 space-y-3">{announcements.map((notice) => <article key={notice.id} className="rounded-2xl bg-white/80 p-3"><div className="flex items-center justify-between gap-2"><span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-800">{notice.announcement_type || 'Info'}</span><span className="text-[10px] text-slate-400">{formatTimeAgo(notice.published_at)}</span></div><h4 className="mt-2 text-sm font-bold text-slate-900">{notice.title}</h4><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{notice.content}</p></article>)}{announcements.length === 0 && <p className="text-sm text-slate-600">No active announcements right now. Check back before your trip.</p>}</div>
+                <div className="mt-4 space-y-3">{announcements.map((notice) => <article key={notice.id} data-scroll-card className="rounded-2xl bg-white/80 p-3"><div className="flex items-center justify-between gap-2"><span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-amber-800">{notice.announcement_type || 'Info'}</span><span className="text-[10px] text-slate-400">{formatTimeAgo(notice.published_at)}</span></div><h4 className="mt-2 text-sm font-bold text-slate-900">{notice.title}</h4><p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-600">{notice.content}</p></article>)}{announcements.length === 0 && <p className="text-sm text-slate-600">No active announcements right now. Check back before your trip.</p>}</div>
               </div>
             </div>
           </div>
@@ -898,7 +866,7 @@ export default function VisitorPage() {
               <div className="flex gap-3 sm:contents">
                 {filteredSpots.map((spot) => (
                   <article 
-                    key={spot.id} 
+                    key={spot.id} data-scroll-card
                     onClick={() => handleSpotClick(spot.id)}
                     className="flex-shrink-0 w-[min(82vw,20rem)] snap-start sm:w-auto group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)] sm:rounded-3xl cursor-pointer"
                   >
@@ -972,14 +940,14 @@ export default function VisitorPage() {
           </div>
         ) : trendingBlogs.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-slate-600 sm:rounded-3xl">
-            No blog posts available yet.
+            No published stories are available right now.
           </div>
         ) : (
           <div className="-mx-4 overflow-x-auto scrollbar-hide px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
             <div className="flex gap-3 sm:contents">
               {trendingBlogs.map((blog) => (
                 <article 
-                  key={blog.id} 
+                  key={blog.id} data-scroll-card
                   className="flex-shrink-0 w-[min(82vw,20rem)] snap-start sm:w-auto group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_30px_70px_rgba(15,23,42,0.09)] sm:rounded-3xl"
                 >
                   <div 
@@ -997,14 +965,10 @@ export default function VisitorPage() {
                     <div className="mb-2 flex items-center justify-between gap-2 text-[8px] font-semibold uppercase tracking-[0.18em] text-slate-500 sm:text-[10px]">
                       <span>{blog.category || 'Travel'}</span>
                       <div className="flex items-center gap-2">
-                        <button 
-                          onClick={(e) => handleLike(e, 'blog', blog.id)}
-                          className="flex items-center gap-1 transition hover:text-amber-600"
-                          aria-label="Like this post"
-                        >
+                        <span className="flex items-center gap-1" aria-label="Post likes">
                           <Heart size={10} className="sm:size-3" />
                           {blog.likes || 0}
-                        </button>
+                        </span>
                         <span className="flex items-center gap-1">
                           <MessageCircle size={10} className="sm:size-3" />
                           {blog.comments_count || 0}
@@ -1025,13 +989,6 @@ export default function VisitorPage() {
                         className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 transition hover:text-amber-800 sm:mt-4 sm:text-sm"
                       >
                         Read story
-                      </button>
-                      <button
-                        onClick={(e) => handleBookmark(e, 'blog', blog.id)}
-                        className="p-1.5 rounded-full hover:bg-slate-100 transition"
-                        aria-label="Bookmark this post"
-                      >
-                        <Bookmark size={14} className="text-slate-400 hover:text-amber-600" />
                       </button>
                     </div>
                   </div>
@@ -1069,14 +1026,14 @@ export default function VisitorPage() {
             </div>
           ) : forumThreads.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-white/20 bg-white/5 px-6 py-10 text-center text-slate-400 sm:rounded-3xl">
-              No forum discussions yet. Be the first to start one!
+              No published discussions are available right now.
             </div>
           ) : (
             <div className="-mx-4 overflow-x-auto scrollbar-hide px-4 sm:grid sm:gap-4 sm:grid-cols-2 xl:grid-cols-3 sm:mx-0 sm:px-0">
               <div className="flex gap-3 sm:contents">
                 {forumThreads.map((thread) => (
                   <div 
-                    key={thread.id} 
+                    key={thread.id} data-scroll-card
                     className="flex-shrink-0 w-[min(82vw,20rem)] snap-start sm:w-auto rounded-2xl border border-white/10 bg-white/5 p-3.5 backdrop-blur-sm transition duration-300 hover:-translate-y-1 hover:border-emerald-300/40 hover:bg-white/[0.07] sm:rounded-3xl sm:p-5"
                   >
                     <div className="mb-2 flex items-center justify-between text-[8px] uppercase tracking-[0.18em] text-slate-300 sm:text-[10px]">
@@ -1312,6 +1269,6 @@ export default function VisitorPage() {
         </div>
       </footer>
 
-    </main>
+    </VisitorScrollEffects>
   )
 }

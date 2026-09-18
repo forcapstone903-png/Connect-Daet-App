@@ -10,7 +10,6 @@ supabase/
 │   ├── 001_init_schema.sql                    # Core database tables and indexes
 │   ├── 002_rls_policies.sql                   # Row-level security policies
 │   ├── 003_functions_and_helpers.sql          # PostgreSQL functions and helpers
-│   └── sample_data.sql                        # Test/demo data
 ├── queries/                 # Common SQL queries
 │   └── common_operations.sql                  # Useful queries for operations
 └── README.md               # This file
@@ -40,7 +39,6 @@ In Supabase Dashboard → SQL Editor, execute in order:
 1. `migrations/001_init_schema.sql` - Create tables
 2. `migrations/002_rls_policies.sql` - Enable security
 3. `migrations/003_functions_and_helpers.sql` - Add functions
-4. `migrations/sample_data.sql` - (Optional) Load test data
 
 ### 4. Set Up Storage
 Create these storage buckets in Supabase Dashboard → Storage:
@@ -122,28 +120,6 @@ Create these storage buckets in Supabase Dashboard → Storage:
 
 **Execution Time:** 3-5 seconds
 **Size:** ~25KB
-
----
-
-#### sample_data.sql
-**Purpose:** Provides test data for development and testing
-
-**Data Included:**
-- 6 users (admin, moderator, business owner, 3 tourists)
-- 9 amenities (hotels, restaurants, transport)
-- 5 events (festivals, tours, workshops)
-- 5 blog posts with various categories
-- 4 announcements
-- 5 tourist spots
-- 2 blog comments
-
-**Usage:**
-1. Run migrations 001-003 first
-2. Run this file to populate test data
-3. Login with: `admin@daet-tourism.com` / `Admin@123456`
-
-**Execution Time:** 2-3 seconds
-**Size:** ~12KB
 
 ---
 
@@ -329,7 +305,7 @@ EXPLAIN ANALYZE SELECT * FROM info_amenities;
 - [ ] 6 storage buckets created
 - [ ] Storage policies configured
 - [ ] Environment variables set
-- [ ] Sample data loaded (optional)
+- [ ] Only office-approved production content loaded
 - [ ] Admin user created
 - [ ] Connection tested
 - [ ] RLS policies verified

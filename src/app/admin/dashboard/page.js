@@ -6,10 +6,14 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Bell, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import '@/app/components/admin/AdminCalendar.css';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/components/MediaUpload';
+import AdminAvatar from '@/app/components/admin/AdminAvatar';
 import AdminSidebar from '@/app/components/AdminSidebar';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess, canAccessAdminDashboard } from '@/lib/adminRoles'
@@ -19,6 +23,18 @@ import { performLogout } from '@/lib/clientLogout';
 // Weather API configuration
 const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
 const DAET_COORDS = { lat: 14.1122, lon: 122.9553 };
+
+// Weather advisories persist for one week before expiring.
+const WEATHER_ALERT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Timestamps are generated at publish time in module scope, never during render.
+const createWeatherAnnouncementTimestamps = () => {
+  const publishedAt = new Date();
+  return {
+    published_at: publishedAt.toISOString(),
+    expires_at: new Date(publishedAt.getTime() + WEATHER_ALERT_TTL_MS).toISOString(),
+  };
+};
 
 // Venues (fetched from DB) will populate location suggestions
 const EVENT_CATEGORIES = ['festival', 'concert', 'exhibition', 'workshop', 'sports', 'cultural'];
@@ -46,15 +62,29 @@ const withTimeout = (promise, timeoutMs, label) => Promise.race([
   }),
 ]);
 
-const getUserInitials = (user) => {
-  const name = user?.full_name || user?.email || 'User';
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'U';
-};
+
+// Deterministic fallback built from an explicit timestamp so render output
+// never depends on the current clock.
+const buildFallbackWeatherData = (now = new Date()) => ({
+  current: {
+    temp: 27,
+    feelsLike: 27,
+    condition: 'Rain',
+    description: 'moderate rain',
+    humidity: 92,
+    windSpeed: 2,
+    pressure: 1007,
+    icon: '10d',
+    rainAmount: 2,
+  },
+  forecast: [
+    { date: now.toISOString().slice(0, 10), temp: 27, temp_min: 25, temp_max: 29, condition: 'Rain', description: 'moderate rain', icon: '10d' },
+    { date: new Date(now.getTime() + 86400000).toISOString().slice(0, 10), temp: 26, temp_min: 24, temp_max: 28, condition: 'Rain', description: 'light rain', icon: '10d' },
+    { date: new Date(now.getTime() + 172800000).toISOString().slice(0, 10), temp: 28, temp_min: 25, temp_max: 30, condition: 'Clouds', description: 'partly cloudy', icon: '03d' },
+  ],
+  lastUpdated: now,
+  alert: null,
+});
 
 const loadStoredNotifications = () => {
   if (typeof window === 'undefined') return [];
@@ -87,33 +117,6 @@ const saveSentCache = (key, value) => {
   }
 };
 
-const addOneCalendarDay = (dateString) => {
-  if (!dateString) return null;
-  const base = new Date(dateString + 'T00:00:00');
-  if (Number.isNaN(base.getTime())) return null;
-  const next = new Date(base);
-  next.setDate(next.getDate() + 1);
-  const year = next.getFullYear();
-  const month = String(next.getMonth() + 1).padStart(2, '0');
-  const day = String(next.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-// FullCalendar treats `end` as exclusive (the day AFTER the last highlighted
-// day). Our DB stores an inclusive end_date, so this is the inverse of
-// addOneCalendarDay - used to convert exclusive dates coming back from
-// select()/eventClick() into the inclusive end_date the form/DB expect.
-const subtractOneCalendarDay = (dateString) => {
-  if (!dateString) return null;
-  const base = new Date(dateString + 'T00:00:00');
-  if (Number.isNaN(base.getTime())) return null;
-  const prev = new Date(base);
-  prev.setDate(prev.getDate() - 1);
-  const year = prev.getFullYear();
-  const month = String(prev.getMonth() + 1).padStart(2, '0');
-  const day = String(prev.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
 
 // Rate-limit recurring error notifications so they do not repopulate the
 // notification bell on every page refresh.
@@ -183,7 +186,6 @@ export default function AdminDashboard() {
   const [locationSuggestions, setLocationSuggestions] = useState([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [selectedDate, setSelectedDate] = useState(null);
-  const [calendarKey, setCalendarKey] = useState(0);
 
   const unreadNotificationCount = notifications.filter((notification) => !notification.read).length;
 
@@ -295,7 +297,6 @@ export default function AdminDashboard() {
       }));
       
       setEvents(formattedEvents);
-      setCalendarKey(prev => prev + 1);
       return formattedEvents;
     } catch (err) {
       console.error('Error fetching events:', err);
@@ -379,53 +380,15 @@ export default function AdminDashboard() {
     }
   };
 
-  const updateEventDates = async (eventId, newStartDate, newEndDate) => {
+  const updateEventDates = async (eventId, newStartDate, newEndDate, allDay) => {
     try {
-      const formatDate = (date) => {
-        if (!date) return null;
-
-        if (typeof date === 'string') {
-          if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
-          if (/^\d{4}-\d{2}-\d{2}T/.test(date)) return date.split('T')[0];
-
-          const d = new Date(date);
-          if (Number.isNaN(d.getTime())) return null;
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-
-        if (date instanceof Date) {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        }
-
-        return null;
-      };
-
-      const formatInclusiveEndDate = (date) => {
-        const exclusive = formatDate(date);
-        if (!exclusive) return null;
-        const [year, month, day] = exclusive.split('-').map(Number);
-        const parsed = new Date(year, month - 1, day);
-        parsed.setDate(parsed.getDate() - 1);
-        const y = parsed.getFullYear();
-        const m = String(parsed.getMonth() + 1).padStart(2, '0');
-        const d = String(parsed.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
-      };
-      
-      const formattedStart = formatDate(newStartDate);
-      const formattedEnd = formatInclusiveEndDate(newEndDate || newStartDate);
-      
+      const schedule = fromCalendarSchedule(newStartDate, newEndDate, allDay);
+      const formattedStart = schedule.start_date;
       if (!formattedStart) throw new Error('Invalid start date');
       
       const { error } = await supabase
         .from('info_events')
-        .update({ start_date: formattedStart, end_date: formattedEnd || formattedStart })
+        .update({ ...schedule, start_time: schedule.start_time || null, end_time: schedule.end_time || null })
         .eq('id', eventId);
       
       if (error) throw error;
@@ -551,8 +514,7 @@ export default function AdminDashboard() {
           priority: alertType === 'critical' ? 3 : 2,
           created_by: user?.user_id || user?.id || null,
           status: 'published',
-          published_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+          ...createWeatherAnnouncementTimestamps(),
         }])
         .select()
         .single();
@@ -677,7 +639,7 @@ export default function AdminDashboard() {
       checkWeatherNotifications(weatherData);
     } catch (err) {
       console.error('Weather fetch error:', err);
-      const fallback = getFallbackWeatherData();
+      const fallback = buildFallbackWeatherData(new Date());
       setWeather(prev => ({ ...fallback, loading: false, error: 'Weather feed unavailable — showing Daet fallback conditions.', alert: null }));
       if (!markErrorNotified('weather_api_error')) {
         addNotification('Weather API Disconnected', 'Weather API could not be reached. The dashboard is using the fallback forecast data.', 'error', null, 0);
@@ -709,8 +671,7 @@ export default function AdminDashboard() {
           priority: alertType === 'critical' ? 3 : 2,
           created_by: user?.user_id || user?.id,
           status: 'published',
-          published_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+          ...createWeatherAnnouncementTimestamps(),
         }])
         .select()
         .single();
@@ -814,17 +775,12 @@ export default function AdminDashboard() {
     eventsRef.current = events;
   }, [events]);
 
-  const openCreateModal = (startStr, endStr) => {
-    // FullCalendar's select() gives an EXCLUSIVE end date (the day after the
-    // last highlighted cell) - even for a single click, end = start + 1 day.
-    // Convert back to an inclusive end date so the form (and the resulting
-    // event highlight) matches exactly what the admin dragged/clicked.
-    const inclusiveEnd = endStr ? subtractOneCalendarDay(endStr) : startStr;
-    const normalizedEnd = (inclusiveEnd && inclusiveEnd >= startStr) ? inclusiveEnd : startStr;
-    setSelectedDate(startStr);
+  const openCreateModal = (startStr, endStr, allDay = true) => {
+    const schedule = fromCalendarSchedule(startStr, endStr, allDay);
+    setSelectedDate(schedule.start_date);
     setEventForm({ 
-      id: '', title: '', description: '', location: '', start_date: startStr, end_date: normalizedEnd,
-      start_time: '', end_time: '', category: '', is_free: true, ticket_price: '', max_attendees: '', 
+      id: '', title: '', description: '', location: '', ...schedule,
+      category: '', is_free: true, ticket_price: '', max_attendees: '',
       organizer: 'Daet Tourism Office', status: 'published', imageUrl: '', videoUrl: ''
     });
     setShowEventModal(true);
@@ -1239,16 +1195,10 @@ export default function AdminDashboard() {
   };
 
   const calendarEvents = events.filter(ev => ev.status === 'published').map(ev => {
-    const startDate = ev.start || ev.start_date;
-    const endDate = ev.end || ev.end_date || ev.start;
-    const eventEndDate = endDate ? addOneCalendarDay(endDate) : startDate;
-
     return {
       id: String(ev.id),
       title: ev.title + (ev.category ? ` (${ev.category})` : ''),
-      start: startDate,
-      end: eventEndDate,
-      allDay: true,
+      ...toCalendarSchedule(ev),
       extendedProps: {
         location: ev.location || '', description: ev.description || '', category: ev.category || '',
         start_time: ev.start_time, end_time: ev.end_time, is_free: ev.is_free, ticket_price: ev.ticket_price,
@@ -1282,27 +1232,6 @@ export default function AdminDashboard() {
       default: return 'bg-slate-50 border-slate-200';
     }
   };
-
-  const getFallbackWeatherData = () => ({
-    current: {
-      temp: 27,
-      feelsLike: 27,
-      condition: 'Rain',
-      description: 'moderate rain',
-      humidity: 92,
-      windSpeed: 2,
-      pressure: 1007,
-      icon: '10d',
-      rainAmount: 2,
-    },
-    forecast: [
-      { date: new Date().toISOString().slice(0, 10), temp: 27, temp_min: 25, temp_max: 29, condition: 'Rain', description: 'moderate rain', icon: '10d' },
-      { date: new Date(Date.now() + 86400000).toISOString().slice(0, 10), temp: 26, temp_min: 24, temp_max: 28, condition: 'Rain', description: 'light rain', icon: '10d' },
-      { date: new Date(Date.now() + 172800000).toISOString().slice(0, 10), temp: 28, temp_min: 25, temp_max: 30, condition: 'Clouds', description: 'partly cloudy', icon: '03d' },
-    ],
-    lastUpdated: new Date(),
-    alert: null,
-  });
 
   const getUpcomingEvents = () => {
     const now = new Date();
@@ -1377,14 +1306,14 @@ export default function AdminDashboard() {
       <AdminSidebar user={user} roleLabel="System Administrator" />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         {/* Header */}
-        <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-5 shadow-[0_25px_60px_rgba(15,23,42,0.04)] backdrop-blur-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-sky-700">Dashboard Home</p>
-              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">Administrator Command Center</h1>
-              <p className="mt-2 text-sm text-slate-600">Welcome back, {user?.full_name || user?.user_name || 'Administrator'} — here’s a live view of your Daet tourism operations.</p>
+        <div className="admin-page-header">
+          <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="admin-eyebrow">Dashboard Home</p>
+              <h1>Administrator Command Center</h1>
+              <p className="admin-subtitle">Welcome back, {user?.full_name || user?.user_name || 'Administrator'} — here’s a live view of your Daet tourism operations.</p>
             </div>
 
             <div className="flex items-center gap-3">
@@ -1597,10 +1526,10 @@ export default function AdminDashboard() {
         </div>
 
         {/* Calendar and Upcoming Events Side by Side (moved up under analytics) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] items-start gap-6 mb-6">
           {/* Calendar Section */}
-          <div className="lg:col-span-2 bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)] admin-calendar-panel">
-            <div className="flex flex-wrap justify-between items-center mb-4">
+          <div className="admin-events-calendar admin-panel min-w-0 p-3 sm:p-5">
+            <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Calendar</p>
                 <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
@@ -1612,10 +1541,10 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+            <div className="admin-events-calendar-scroll" role="region" aria-label="Dashboard event calendar" tabIndex={0}>
             <FullCalendar
-              key={calendarKey}
               ref={calendarRef}
-              plugins={[dayGridPlugin, interactionPlugin]}
+              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
               initialView="dayGridMonth"
               selectable={true}
               editable={true}
@@ -1623,11 +1552,17 @@ export default function AdminDashboard() {
               eventDurationEditable={true}
               eventResizableFromStart={true}
               events={calendarEvents}
-              fixedWeekCount={false}
-              dayMaxEvents={true}
-              height="auto"
-              contentHeight="auto"
-              select={(info) => openCreateModal(info.startStr, info.endStr)}
+              fixedWeekCount={true}
+              dayMaxEvents={3}
+              eventDisplay="block"
+              views={{ dayGridMonth: { displayEventTime: false }, timeGridWeek: { displayEventTime: true } }}
+              slotDuration="00:30:00"
+              slotLabelInterval="01:00:00"
+              scrollTime="07:00:00"
+              slotEventOverlap={false}
+              eventTimeFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }}
+              height={850}
+              select={(info) => openCreateModal(info.startStr, info.endStr, info.allDay)}
               eventClick={(info) => {
                 // Look up the canonical event record (real inclusive start/end
                 // straight from the DB) rather than FullCalendar's internal
@@ -1641,6 +1576,7 @@ export default function AdminDashboard() {
                 }
               }}
               eventDidMount={(info) => {
+                info.el.title = info.event.title;
                 try {
                   const handler = () => {
                     const event = events.find(e => String(e.id) === String(info.event.id));
@@ -1661,7 +1597,7 @@ export default function AdminDashboard() {
                 const eventEl = info.el;
                 const originalOpacity = eventEl.style.opacity;
                 eventEl.style.opacity = '0.5';
-                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr);
+                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr, info.event.allDay);
                 eventEl.style.opacity = originalOpacity;
                 if (!success) { info.revert(); showToast('Failed to reschedule event. Please try again.', true); }
               }}
@@ -1669,19 +1605,28 @@ export default function AdminDashboard() {
                 const eventEl = info.el;
                 const originalOpacity = eventEl.style.opacity;
                 eventEl.style.opacity = '0.5';
-                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr);
+                const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr, info.event.allDay);
                 eventEl.style.opacity = originalOpacity;
                 if (!success) { info.revert(); showToast('Failed to resize event. Please try again.', true); }
               }}
-              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth' }}
-              buttonText={{ today: 'Today', month: 'Month' }}
+              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' }}
+              buttonText={{ today: 'Today', month: 'Month', week: 'Week' }}
               nowIndicator={true}
               weekends={true}
             />
+            </div>
+            <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-[var(--muted-ink)]" aria-label="Event categories">
+              {[...EVENT_CATEGORIES, 'other'].map(category => (
+                <span key={category} className="inline-flex items-center gap-1.5 capitalize">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: getCategoryColor(category) }} aria-hidden="true" />
+                  {category}
+                </span>
+              ))}
+            </div>
           </div>
 
           {/* Upcoming Events Widget */}
-          <div className="bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)] admin-upcoming-panel">
+          <div className="admin-panel min-w-0 p-3 sm:p-5 admin-upcoming-panel">
             <div className="flex justify-between items-center mb-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Upcoming</p>
@@ -1825,13 +1770,7 @@ export default function AdminDashboard() {
                   <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        {u.profile_image_url ? (
-                          <img src={u.profile_image_url} alt={u.full_name || 'User'} className="h-9 w-9 rounded-full object-cover ring-2 ring-white" />
-                        ) : (
-                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-700 ring-2 ring-white">
-                            {getUserInitials(u)}
-                          </div>
-                        )}
+                        <AdminAvatar user={u} />
                         <span className="text-sm font-medium text-gray-900">{u.full_name || u.user_name || 'Unnamed user'}</span>
                       </div>
                     </td>
@@ -2157,39 +2096,13 @@ export default function AdminDashboard() {
         .animate-toast-in {
           animation: toast-in 0.25s ease-out;
         }
-        .fc-event {
-          cursor: grab !important;
-          border-radius: 12px !important;
-          border: none !important;
-          padding: 2px 6px !important;
-          font-weight: 500 !important;
-          font-size: 0.75rem !important;
+        .admin-upcoming-panel img {
+          width: 100%;
+          height: 96px;
+          object-fit: cover;
         }
-        .fc-event:active {
-          cursor: grabbing !important;
-        }
-        .fc-daygrid-day-frame:hover {
-          background-color: #eff6ff !important;
-        }
-        .fc-day-today {
-          background-color: #fefce8 !important;
-        }
-        .fc .fc-button-primary {
-          background-color: #2563eb !important;
-          border-color: #2563eb !important;
-          border-radius: 9999px !important;
-        }
-        .fc .fc-button-primary:hover {
-          background-color: #1d4ed8 !important;
-          border-color: #1d4ed8 !important;
-        }
-        .fc .fc-button {
-          border-radius: 9999px !important;
-        }
-        .fc .fc-toolbar-title {
-          font-size: 1.25rem !important;
-          font-weight: 600 !important;
-        }
+        .admin-upcoming-panel .flex-1 { min-width: 0; overflow-wrap: anywhere; }
+        .admin-upcoming-panel .text-right { flex-shrink: 0; margin-left: 8px; }
         .line-clamp-1 {
           display: -webkit-box;
           -webkit-line-clamp: 1;

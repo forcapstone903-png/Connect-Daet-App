@@ -51,7 +51,6 @@ I've created a **complete, production-ready Supabase backend** for your Connect-
 | `001_init_schema.sql` | Database tables & indexes | `supabase/migrations/` |
 | `002_rls_policies.sql` | Security policies | `supabase/migrations/` |
 | `003_functions_and_helpers.sql` | PostgreSQL functions | `supabase/migrations/` |
-| `sample_data.sql` | Test data | `supabase/migrations/` |
 | `common_operations.sql` | Query reference | `supabase/queries/` |
 | `supabaseUtils.js` | Frontend functions | `src/lib/` |
 
@@ -89,7 +88,6 @@ In Supabase Dashboard → SQL Editor:
 1. Run: supabase/migrations/001_init_schema.sql
 2. Run: supabase/migrations/002_rls_policies.sql
 3. Run: supabase/migrations/003_functions_and_helpers.sql
-4. (Optional) Run: supabase/migrations/sample_data.sql
 ```
 
 ### Step 4: Create Storage Buckets
@@ -425,7 +423,6 @@ project-root/
 │   │   ├── 001_init_schema.sql              ✅ Create tables
 │   │   ├── 002_rls_policies.sql             ✅ Enable security
 │   │   ├── 003_functions_and_helpers.sql    ✅ Add functions
-│   │   └── sample_data.sql                  ✅ Test data
 │   ├── queries/
 │   │   └── common_operations.sql            📊 Query reference
 │   └── README.md                            📖 Guide
@@ -504,7 +501,7 @@ Render UI
 - [ ] Environment variables configured
 - [ ] RLS policies tested and verified
 - [ ] Admin account created and tested
-- [ ] Sample data loaded (optional)
+- [ ] Only office-approved production content loaded
 - [ ] Backups enabled in Supabase
 - [ ] Monitoring/alerts configured
 - [ ] Rate limiting configured

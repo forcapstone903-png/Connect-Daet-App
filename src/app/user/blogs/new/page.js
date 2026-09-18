@@ -7,6 +7,8 @@ import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, M
 import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/components/MediaUpload'
 import MultiMediaUpload from '@/app/components/MultiMediaUpload'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
+import { SectionLoading } from '@/app/components/user/UserSectionHeader'
 import { normalizeErrorMessage, trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
@@ -125,7 +127,8 @@ export default function CreateBlogPage() {
         }
 
         setSuccess(true)
-  window.setTimeout(() => router.push('/user/dashboard'), 1200)
+        const shareDestinations = { forum: '/user/forums', event: '/user/events', feedback: '/user/feedback', blog: '/user/blogs' }
+        window.setTimeout(() => router.push(shareDestinations[shareType] || '/user/dashboard'), 1200)
         return
       }
 
@@ -183,7 +186,10 @@ export default function CreateBlogPage() {
       })
 
       setSuccess(true)
-      window.setTimeout(() => router.push('/user/dashboard'), 1200)
+      const destination = form.status === 'published' && createdBlogId
+        ? `/user/blogs/${createdBlogId}`
+        : '/user/drafts'
+      window.setTimeout(() => router.push(destination), 1200)
     } catch (error) {
       const errorMessage = normalizeErrorMessage(error)
       console.warn('Error creating blog:', errorMessage)
@@ -195,10 +201,10 @@ export default function CreateBlogPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mx-auto max-w-3xl rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="h-6 w-32 animate-pulse rounded bg-slate-200" />
-          <div className="mt-5 h-16 animate-pulse rounded bg-slate-200" />
+      <main className="tourism-shell usr-section-page usr-editor usr-stories min-h-screen text-slate-900">
+        <UserTopHeader />
+        <div className="usr-section-container mx-auto max-w-4xl px-3 pb-24 pt-2 sm:px-4 lg:px-6">
+          <SectionLoading label="Preparing the writing studio" />
         </div>
       </main>
     )
@@ -206,16 +212,14 @@ export default function CreateBlogPage() {
 
   if (!session?.user) {
     return (
-      <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mx-auto max-w-xl rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Restricted</p>
-          <h1 className="mt-3 text-2xl font-bold text-slate-900">Log in to publish an article</h1>
-          <p className="mt-3 text-slate-600">You need an active account before creating a blog post for the community.</p>
-          <div className="mt-6 flex justify-center gap-3">
-            <Link href="/user/dashboard" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-              Back
-            </Link>
-            <Link href="/login" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">
+      <main className="tourism-shell usr-section-page usr-editor usr-stories flex min-h-screen items-center justify-center p-6 text-slate-900">
+        <div className="usr-empty-state max-w-xl">
+          <FilePenLine className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
+          <p className="mt-4 usr-section-eyebrow">Restricted</p>
+          <h1 className="mt-2 text-xl font-black text-slate-900">Log in to publish an article</h1>
+          <p className="mt-2 text-sm text-slate-600">You need an active account before creating a blog post for the community.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Link href="/login" className="usr-section-primary">
               Log in
             </Link>
           </div>
@@ -225,13 +229,10 @@ export default function CreateBlogPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] pb-24 text-slate-900">
-      <div className="mx-auto max-w-4xl px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mb-6 flex items-center justify-between">
-          <Link href="/user/dashboard" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Link>
+    <main className="tourism-shell usr-section-page usr-editor usr-stories min-h-screen pb-24 text-slate-900">
+      <UserTopHeader />
+      <div className="usr-section-container mx-auto max-w-4xl px-3 pb-10 pt-2 sm:px-4 lg:px-6">
+        <div className="mb-6 flex flex-wrap items-center justify-end gap-3">
           <div className="inline-flex items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-sky-700 border border-sky-200">
             <FileText className="h-3.5 w-3.5" />
             Create Post

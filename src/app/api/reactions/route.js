@@ -81,18 +81,7 @@ async function createReactionNotification(adminSupabase, { contentType, contentI
   }
 
   const postOwnerId = await resolvePostOwner(adminSupabase, postType, postId)
-  if (!postOwnerId || postOwnerId === actorId || commentAuthorId === actorId) return
-
-  const { data: recipient, error: recipientError } = await adminSupabase
-    .from('info_users')
-    .select('id')
-    .eq('id', postOwnerId)
-    .maybeSingle()
-  if (recipientError) throw recipientError
-  if (!recipient) {
-    console.warn('Skipping reaction notification for missing user profile:', postOwnerId)
-    return
-  }
+  if (!postOwnerId && !commentAuthorId) return
 
   const parentLink = routeForEntity(postType, postId)
   if (!parentLink) return
@@ -105,43 +94,67 @@ async function createReactionNotification(adminSupabase, { contentType, contentI
 
   const actorName = actor?.full_name || 'Someone'
   const link = commentId ? `${parentLink}#comment-${commentId}` : parentLink
-  const notification = {
-    user_id: postOwnerId,
-    title: commentId ? 'New comment reaction' : 'New post reaction',
-    message: commentId
-      ? `${actorName} reacted to a comment on your post (${reactionType}).`
-      : `${actorName} reacted to your post (${reactionType}).`,
-    type: 'reaction',
-    is_read: false,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    link,
-    post_id: postId,
-    comment_id: commentId,
-    post_owner_id: postOwnerId,
-    actor_id: actorId,
+
+  // A comment reaction interests the comment author, and when the comment lives on
+  // someone else's content, the content owner is told about it as well.
+  const recipients = []
+  if (commentId && commentAuthorId && commentAuthorId !== actorId) {
+    recipients.push({
+      userId: commentAuthorId,
+      title: 'New reaction to your comment',
+      message: `${actorName} reacted to your comment (${reactionType}).`,
+    })
   }
 
-  let { error } = await adminSupabase
-    .from('info_notifications')
-    .insert(notification)
+  if (postOwnerId && postOwnerId !== actorId && postOwnerId !== commentAuthorId) {
+    recipients.push({
+      userId: postOwnerId,
+      title: commentId ? 'New comment reaction' : 'New post reaction',
+      message: commentId
+        ? `${actorName} reacted to a comment on your post (${reactionType}).`
+        : `${actorName} reacted to your post (${reactionType}).`,
+    })
+  }
 
-  // Optional notification columns can lag behind the database during a
-  // PostgREST schema-cache refresh. Keep the persisted notification reliable
-  // while the cache catches up.
-  if (error && /column .* does not exist|could not find the .* column/i.test(error.message || '')) {
-    const fallbackNotification = { ...notification }
-    delete fallbackNotification.post_owner_id
-    delete fallbackNotification.comment_id
-    delete fallbackNotification.reply_id
-    const fallbackResult = await adminSupabase
+  if (!recipients.length) return
+
+  for (const recipient of recipients) {
+    const notification = {
+      user_id: recipient.userId,
+      title: recipient.title,
+      message: recipient.message,
+      type: 'reaction',
+      is_read: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      link,
+      post_id: postId,
+      comment_id: commentId,
+      post_owner_id: postOwnerId,
+      actor_id: actorId,
+    }
+
+    let { error } = await adminSupabase
       .from('info_notifications')
-      .insert(fallbackNotification)
-    error = fallbackResult.error
-  }
+      .insert(notification)
 
-  if (error && error.code !== '23505') {
-    console.error('Reaction notification failed after reaction was saved:', error)
+    // Optional notification columns can lag behind the database during a
+    // PostgREST schema-cache refresh. Keep the persisted notification reliable
+    // while the cache catches up.
+    if (error && /column .* does not exist|could not find the .* column/i.test(error.message || '')) {
+      const fallbackNotification = { ...notification }
+      delete fallbackNotification.post_owner_id
+      delete fallbackNotification.comment_id
+      delete fallbackNotification.reply_id
+      const fallbackResult = await adminSupabase
+        .from('info_notifications')
+        .insert(fallbackNotification)
+      error = fallbackResult.error
+    }
+
+    if (error && error.code !== '23505') {
+      console.error('Reaction notification failed after reaction was saved:', error)
+    }
   }
 }
 

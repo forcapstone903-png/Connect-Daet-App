@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
@@ -218,35 +219,24 @@ export default function FeedbackAndComplaintPage() {
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={adminUser} roleLabel="Administrator" onLogout={handleLogout} />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Feedback & Complaint Management</h1>
-            <p className="mt-1 text-sm text-slate-500">Track messages, allocate follow-up, and resolve visitor concerns.</p>
-          </div>
-          <button
-            onClick={exportCSV}
-            className="rounded-full bg-slate-700 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800"
-          >
-            Export CSV
-          </button>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Community"
+          title="Feedback & complaint management"
+          description="Track incoming messages, assign follow-up, and resolve visitor concerns."
+          icon="feedback"
+          actions={
+            <AdminButton icon="downloads" onClick={exportCSV}>Export CSV</AdminButton>
+          }
+        />
 
-        <div className="mb-6 grid gap-3 md:grid-cols-5">
-          {[
-            { label: 'Total', value: stats.total, tone: 'violet', icon: 'Inbox' },
-            { label: 'Open', value: stats.open, tone: 'amber', icon: 'Open' },
-            { label: 'In Progress', value: stats.inProgress, tone: 'blue', icon: 'In progress' },
-            { label: 'Answered', value: stats.answered, tone: 'green', icon: 'Answered' },
-            { label: 'Safety Reports', value: stats.safety, tone: 'red', icon: 'Reports' },
-          ].map((card) => (
-            <div key={card.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-sm text-gray-600">{card.icon}</div>
-              <div className="text-2xl font-bold text-slate-800">{card.value}</div>
-              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{card.label}</div>
-            </div>
-          ))}
-        </div>
+        <AdminStatGrid columns={5}>
+          <AdminStatCard label="Total" value={stats.total} icon="feedback" tone="violet" meta="All submissions" />
+          <AdminStatCard label="Open" value={stats.open} icon="notifications" tone="warning" meta="Awaiting triage" />
+          <AdminStatCard label="In progress" value={stats.inProgress} icon="refresh" tone="info" meta="Being handled" />
+          <AdminStatCard label="Answered" value={stats.answered} icon="check" tone="success" meta="Response sent" />
+          <AdminStatCard label="Safety reports" value={stats.safety} icon="warning" tone="danger" meta="Escalated cases" />
+        </AdminStatGrid>
 
         <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap gap-3">

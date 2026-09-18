@@ -15,19 +15,19 @@ import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowUp,
-  Bell,
+  CalendarDays,
   Flame,
+  Gift,
+  ImagePlus,
   Loader,
   LogOut,
   Mail,
-  MessageCircle,
-  Menu,
+  Megaphone,
   MapPinned,
-  MoreHorizontal,
   MapPin,
+  PenLine,
   RefreshCw,
   ShieldCheck,
-  Search,
   Settings,
   Sparkles,
   Star,
@@ -46,6 +46,7 @@ import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDispla
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
+import PostActionMenu from '@/app/components/user/PostActionMenu'
 import Comments from '@/app/components/user/Comments'
 import DailyFeedback from '@/app/components/user/DailyFeedback'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
@@ -67,6 +68,25 @@ const TABLES = {
 const DASHBOARD_CACHE_TTL_MS = 120000
 const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
 const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
+
+// Feed sort modes shown in the segmented control (desktop toolbar + mobile rail).
+const FEED_SCOPES = [
+  { value: 'for-you', label: 'For you', icon: Sparkles },
+  { value: 'latest', label: 'Latest', icon: Clock3 },
+  { value: 'trending', label: 'Trending', icon: Flame },
+]
+
+// Visual identity per content type: emoji for the badge, icon for quick actions.
+const POST_TYPE_META = {
+  blog: { emoji: '📝', label: 'Blog', tone: 'bg-violet-50 text-violet-700 border-violet-200' },
+  event: { emoji: '🎉', label: 'Event', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
+  forum: { emoji: '💬', label: 'Forum', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  tourist_spot: { emoji: '📍', label: 'Tourist spot', tone: 'bg-sky-50 text-sky-700 border-sky-200' },
+  announcement: { emoji: '📣', label: 'Announcement', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
+  post: { emoji: '✍️', label: 'Post', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
+}
+
+const getPostTypeMeta = (type) => POST_TYPE_META[type] || POST_TYPE_META.post
 
 function readStoredSet(key) {
   if (typeof window === 'undefined') return new Set()
@@ -140,18 +160,12 @@ export default function UserDashboardPage() {
 
   // Data state
   const [feed, setFeed] = useState([])
-  const [categories, setCategories] = useState([])
   const [stats, setStats] = useState({ blogs: 0, events: 0, announcements: 0 })
   const [announcements, setAnnouncements] = useState([])
   const [userSignals, setUserSignals] = useState({ activities: [], reactions: [], favorites: [], preferredCategories: [] })
 
   // UI state
   const [loading, setLoading] = useState(true)
-  const [search, setSearch] = useState('')
-  const [searchFocused, setSearchFocused] = useState(false)
-  const [recentSearches, setRecentSearches] = useState([])
-  const [profileSearchResults, setProfileSearchResults] = useState([])
-  const [activeCategory, setActiveCategory] = useState('all')
   const [feedScope, setFeedScope] = useState('for-you')
   const [error, setError] = useState(null)
 
@@ -180,7 +194,6 @@ export default function UserDashboardPage() {
   const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
   const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
   const [openPostMenu, setOpenPostMenu] = useState(null)
-  const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [blogActionConfirm, setBlogActionConfirm] = useState(null)
@@ -384,33 +397,6 @@ export default function UserDashboardPage() {
   }, [feed])
 
   useEffect(() => {
-    const normalizedQuery = search.trim()
-    if (normalizedQuery.length < 2) {
-      startTransition(() => setProfileSearchResults([]))
-      return undefined
-    }
-
-    const controller = new AbortController()
-    const timer = setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/search/users?q=${encodeURIComponent(normalizedQuery)}&limit=5`, {
-          credentials: 'same-origin',
-          signal: controller.signal,
-        })
-        const data = await response.json()
-        if (!controller.signal.aborted) setProfileSearchResults(data.success ? data.users || [] : [])
-      } catch (error) {
-        if (error.name !== 'AbortError') setProfileSearchResults([])
-      }
-    }, 300)
-
-    return () => {
-      controller.abort()
-      clearTimeout(timer)
-    }
-  }, [search])
-
-  useEffect(() => {
     if (!userId) return
     startTransition(() => {
       setHiddenPosts(readStoredSet(`${HIDDEN_POSTS_KEY}_${userId}`))
@@ -438,31 +424,6 @@ export default function UserDashboardPage() {
       isMounted = false
     }
   }, [userId])
-
-  useEffect(() => {
-    try {
-      const storedSearches = JSON.parse(localStorage.getItem('daet_recent_searches') || '[]')
-      startTransition(() => setRecentSearches(Array.isArray(storedSearches) ? storedSearches.slice(0, 5) : []))
-    } catch {
-      startTransition(() => setRecentSearches([]))
-    }
-  }, [])
-
-  const saveRecentSearch = (value) => {
-    const normalizedValue = value.trim()
-    if (!normalizedValue) return
-    const nextSearches = [normalizedValue, ...recentSearches.filter((entry) => entry.toLowerCase() !== normalizedValue.toLowerCase())].slice(0, 5)
-    setRecentSearches(nextSearches)
-    localStorage.setItem('daet_recent_searches', JSON.stringify(nextSearches))
-  }
-
-  const submitSearch = (event) => {
-    event?.preventDefault()
-    if (!search.trim()) return
-    saveRecentSearch(search)
-    router.push(`/search?q=${encodeURIComponent(search.trim())}`)
-    setSearchFocused(false)
-  }
 
   // Persist reactions and saved items
   useEffect(() => {
@@ -630,21 +591,6 @@ export default function UserDashboardPage() {
       .map(([name, count]) => ({ name, count }))
   }, [feed, savedItems])
 
-  const searchSuggestions = useMemo(() => {
-    const query = search.trim().toLowerCase()
-    if (!query) return []
-
-    const suggestions = new Map()
-    feed.forEach((item) => {
-      const values = [item.title, item.category, ...(Array.isArray(item.tags) ? item.tags : [])]
-      values.filter(Boolean).forEach((value) => {
-        const suggestion = String(value).replace(/^#/, '').trim()
-        if (suggestion.toLowerCase().startsWith(query)) suggestions.set(suggestion.toLowerCase(), suggestion)
-      })
-    })
-    return [...suggestions.values()].slice(0, 5)
-  }, [feed, search])
-
   const suggestions = useMemo(() => {
     const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId && !followedSuggestions.has(item.author.id))
     const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
@@ -696,6 +642,22 @@ export default function UserDashboardPage() {
     })
     setOpenPostMenu(null)
     setToastMessage('We will show fewer posts like this')
+    setTimeout(() => setToastMessage(''), 2500)
+  }
+
+  const updateOwnRepostPrivacy = async (item, visibility) => {
+    if (!item?.repost_id || item.reposted_by !== userId) return
+    const response = await fetch(`/api/reposts/${item.repost_id}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update repost privacy.')
+    setFeed((previous) => previous.map((feedItem) => feedItem.repost_id === item.repost_id ? { ...feedItem, visibility } : feedItem))
+    invalidateCache(getDashboardCacheKey(userId))
+    setToastMessage('Repost privacy updated.')
     setTimeout(() => setToastMessage(''), 2500)
   }
 
@@ -841,6 +803,22 @@ export default function UserDashboardPage() {
       setToastMessage(actionError.message || 'Unable to edit post.')
       setTimeout(() => setToastMessage(''), 2500)
     }
+  }
+
+  const updateOwnPostPrivacy = async (item, visibility) => {
+    if (item?.type !== 'post' || item?.is_repost || item.user_id !== userId) return
+    const response = await fetch(`/api/posts/${item.id}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update post privacy.')
+    setFeed((previous) => previous.map((feedItem) => feedItem.id === item.id ? { ...feedItem, visibility } : feedItem))
+    invalidateCache(getDashboardCacheKey(userId))
+    setToastMessage('Post privacy updated.')
+    setTimeout(() => setToastMessage(''), 2500)
   }
 
   const copyPostLink = async (item) => {
@@ -1049,7 +1027,6 @@ export default function UserDashboardPage() {
         const cachedDashboard = getDashboardCache(userId)
         if (cachedDashboard && feedRefreshKey === 0) {
           if (!isMounted) return
-          setCategories(cachedDashboard.categories || [])
           setAnnouncements(cachedDashboard.announcements || [])
           setStats(cachedDashboard.stats || { blogs: 0, events: 0, announcements: 0 })
           setFeed(cachedDashboard.feed || [])
@@ -1110,7 +1087,7 @@ export default function UserDashboardPage() {
             }),
             supabase
               .from('info_user_posts')
-              .select('id, user_id, title, content, created_at, updated_at, status')
+              .select('id, user_id, title, content, created_at, updated_at, status, visibility')
               .eq('status', 'published')
               .order('created_at', { ascending: false })
               .limit(50),
@@ -1130,7 +1107,7 @@ export default function UserDashboardPage() {
           ...(followsFeed.data || []).map((row) => row.following_id).filter(Boolean),
         ])
         const followedPosts = (userPostsFeed.data || [])
-          .filter((post) => followedUserIds.has(post.user_id))
+          .filter((post) => followedUserIds.has(post.user_id) && (post.visibility !== 'private' || post.user_id === userId))
           .map((post) => ({
             ...post,
             created_by: post.user_id,
@@ -1142,7 +1119,7 @@ export default function UserDashboardPage() {
         const { data: followedReposts } = followedUserIdsArray.length
           ? await supabase
             .from('reposts')
-            .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+            .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
             .in('user_id', followedUserIdsArray)
             .in('original_content_type', ['user_post', 'blog'])
             .eq('status', 'active')
@@ -1153,7 +1130,7 @@ export default function UserDashboardPage() {
         const { data: repostedPosts } = repostedPostIds.length
           ? await supabase
             .from('info_user_posts')
-            .select('id, user_id, title, content, created_at, updated_at, status')
+            .select('id, user_id, title, content, created_at, updated_at, status, visibility')
             .in('id', repostedPostIds)
             .eq('status', 'published')
           : { data: [] }
@@ -1169,10 +1146,14 @@ export default function UserDashboardPage() {
         const repostedBlogMap = new Map((repostedBlogs || []).map((blog) => [blog.id, blog]))
         const repostFeed = (followedReposts || [])
           .map((repost) => {
+            if (repost.visibility === 'private' && repost.user_id !== userId) return null
             const originalPost = repost.original_content_type === 'blog'
               ? repostedBlogMap.get(repost.original_content_id)
               : repostedPostMap.get(repost.original_content_id)
             if (!originalPost) return null
+            const originalOwnerId = originalPost.user_id || originalPost.created_by
+            if (originalPost.visibility === 'private' && originalOwnerId !== userId) return null
+            if (originalPost.visibility === 'followers' && !followedUserIds.has(originalOwnerId)) return null
             return {
               ...originalPost,
               id: repost.id,
@@ -1180,6 +1161,7 @@ export default function UserDashboardPage() {
               repost_id: repost.id,
               reposted_by: repost.user_id,
               repost_quote: repost.quote_text,
+              visibility: repost.visibility || 'public',
               created_by: repost.user_id,
               published_at: repost.created_at,
               excerpt: originalPost.content,
@@ -1212,7 +1194,6 @@ export default function UserDashboardPage() {
           gallery_images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
         }))
 
-        const nextCategories = categoriesResult.data || []
         const nextAnnouncements = (announcementsResult.data || []).map(normalizeAnnouncementRecord)
         const authorIds = [
           ...(blogsFeed.data || []).map((item) => item.created_by),
@@ -1290,7 +1271,6 @@ export default function UserDashboardPage() {
         ].sort((a, b) => new Date(b.published_at || b.last_activity_at || 0) - new Date(a.published_at || a.last_activity_at || 0))
 
         const nextDashboardData = {
-          categories: nextCategories,
           announcements: nextAnnouncements,
           stats: { blogs: 0, events: 0, announcements: nextAnnouncements.length },
           feed: mixedFeed,
@@ -1300,7 +1280,6 @@ export default function UserDashboardPage() {
 
         if (!isMounted) return
 
-        setCategories(nextCategories)
         setAnnouncements(nextAnnouncements)
         setStats(nextDashboardData.stats)
         setFeed(mixedFeed)
@@ -1331,7 +1310,6 @@ export default function UserDashboardPage() {
   }, [authenticated, userId, feedRefreshKey])
 
   const handleLogout = () => {
-    setShowProfileMenu(false)
     setShowLogoutConfirm(true)
   }
 
@@ -1383,26 +1361,6 @@ export default function UserDashboardPage() {
       if (item.category && notInterestedTopics.has(`category:${String(item.category).toLowerCase()}`)) return false
       return true
     })
-
-    if (activeCategory !== 'all') {
-      result = result.filter((item) => {
-        const topics = [
-          item.category,
-          item.type,
-          ...(Array.isArray(item.tags) ? item.tags : []),
-          ...(String(item.excerpt || item.description || '').match(/#[a-z0-9_]+/gi) || []),
-        ].filter(Boolean).map((topic) => String(topic).replace(/^#/, '').toLowerCase())
-        return topics.includes(activeCategory.replace(/^#/, '').toLowerCase())
-      })
-    }
-
-    if (search.trim()) {
-      const query = search.toLowerCase()
-      result = result.filter((item) => {
-        const haystack = [item.title, item.excerpt, item.description, ...(Array.isArray(item.tags) ? item.tags : [])].filter(Boolean).join(' ').toLowerCase()
-        return haystack.includes(query)
-      })
-    }
 
     if (feedScope === 'latest') {
       result = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
@@ -1475,7 +1433,7 @@ export default function UserDashboardPage() {
 
     const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
     return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-      }, [feed, activeCategory, feedScope, search, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds])
+      }, [feed, feedScope, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds])
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -1540,6 +1498,26 @@ export default function UserDashboardPage() {
   const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
 
+  // Time-aware greeting. This only runs on the client (the page renders the
+  // auth loader until the session resolves), so there is no hydration drift.
+  const currentHour = new Date().getHours()
+  const greeting = currentHour < 12 ? 'Good morning' : currentHour < 18 ? 'Good afternoon' : 'Good evening'
+  const firstName = String(userName || 'Traveler').trim().split(/\s+/)[0] || 'Traveler'
+  const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
+
+  const statTiles = [
+    { key: 'blogs', label: 'Blogs', value: stats.blogs, icon: PenLine, href: '/user/blogs' },
+    { key: 'events', label: 'Events', value: stats.events, icon: CalendarDays, href: '/user/events' },
+    { key: 'announcements', label: 'Notices', value: stats.announcements, icon: Megaphone, href: '/user/announcements' },
+  ]
+
+  const quickActions = [
+    { href: '/user/blogs/new', label: 'Write a story', icon: PenLine, tone: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
+    { href: '/user/blogs/new?share=media', label: 'Photo or video', icon: ImagePlus, tone: 'bg-sky-50 text-sky-700 hover:bg-sky-100' },
+    { href: '/user/events', label: 'Events', icon: CalendarDays, tone: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+    { href: '/user/rewards', label: 'Rewards', icon: Gift, tone: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+  ]
+
   useEffect(() => {
     const handleDocumentScroll = () => {
       if (window.innerHeight + window.scrollY < document.documentElement.scrollHeight - 180) return
@@ -1557,10 +1535,17 @@ export default function UserDashboardPage() {
 
   if (!authenticated) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
-          <p className="text-slate-600">Loading...</p>
+      <main className="tourism-shell flex min-h-screen items-center justify-center px-4">
+        <div className="usr-enter w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <span className="usr-ring-pulse mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
+            <Loader className="h-5 w-5 animate-spin" aria-hidden="true" />
+          </span>
+          <p className="mt-4 text-sm font-bold text-slate-800">Preparing your feed</p>
+          <p className="mt-1 text-xs text-slate-500">Verifying your session…</p>
+          <div className="mt-5 space-y-2">
+            <div className="usr-skeleton h-3 w-full rounded-full" />
+            <div className="usr-skeleton h-3 w-4/5 rounded-full" />
+          </div>
         </div>
       </main>
     )
@@ -1568,84 +1553,39 @@ export default function UserDashboardPage() {
 
   if (authError) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] px-4">
-        <div className="rounded-[24px] border border-red-200 bg-red-50 p-6 text-center shadow-sm">
-          <AlertCircle className="mx-auto mb-4 text-red-600" />
-          <p className="text-red-700">{authError}</p>
+      <main className="tourism-shell flex min-h-screen items-center justify-center px-4">
+        <div className="usr-enter w-full max-w-md rounded-[24px] border border-red-200 bg-red-50 p-8 text-center shadow-sm">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-red-600">
+            <AlertCircle className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <p className="mt-4 text-sm font-bold text-red-800">{authError}</p>
+          <Link href="/login" className="usr-press mt-4 inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-700">
+            Go to sign in
+          </Link>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="tourism-shell relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
+    <main className="tourism-shell dashboard-shell relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
       <UserTopHeader />
       {toastMessage && (
-        <div className="fixed left-1/2 top-4 z-50 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl">
+        <div role="status" aria-live="polite" className="usr-toast fixed left-1/2 top-[76px] z-[60] max-w-[calc(100%-2rem)] -translate-x-1/2 truncate rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl lg:top-6">
           {toastMessage}
         </div>
       )}
 
       {(pullDistance > 0 || feedRefreshing) && (
-        <div className="pointer-events-none fixed left-1/2 top-4 z-[70] -translate-x-1/2">
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700 shadow-lg backdrop-blur-md">
-            <RefreshCw className={`h-3.5 w-3.5 ${feedRefreshing ? 'animate-spin' : ''}`} />
+        <div className="pointer-events-none fixed left-1/2 top-4 z-[70] -translate-x-1/2 lg:top-20">
+          <div className="usr-pop-in flex items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-3.5 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700 shadow-lg backdrop-blur-md">
+            <RefreshCw className={`h-3.5 w-3.5 ${feedRefreshing ? 'usr-spin' : ''}`} aria-hidden="true" />
             <span>{feedRefreshing ? 'Refreshing' : pullDistance >= 72 ? 'Release to refresh' : 'Pull to refresh'}</span>
           </div>
         </div>
       )}
 
       <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
-        <header className="hidden">
-          <div className="flex items-center justify-between gap-3">
-            <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2 lg:hidden">
-              <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
-                <span className="block truncate text-[10px] font-medium text-slate-500 sm:text-xs">Daet community</span>
-              </span>
-            </Link>
-
-            <div className="relative hidden min-w-0 flex-1 px-4 lg:hidden">
-              <form onSubmit={submitSearch} className="mx-auto flex max-w-[520px] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 focus-within:border-sky-400 focus-within:bg-white">
-                <Search className="h-4 w-4 shrink-0" />
-                <input value={search} onFocus={() => setSearchFocused(true)} onChange={(e) => setSearch(e.target.value)} placeholder="Search the community" className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" />
-              </form>
-              {searchFocused && (
-                <div className="absolute left-4 right-4 top-[calc(100%+0.5rem)] z-40 mx-auto max-w-[520px] overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-                  <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{search.trim() ? 'Suggestions' : 'Recent searches'}</p>
-                  {(search.trim() ? searchSuggestions : recentSearches).length ? (
-                    <div className="space-y-1">{(search.trim() ? searchSuggestions : recentSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setSearch(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`); setSearchFocused(false) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><Search className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>
-                  ) : <p className="px-3 py-2 text-sm text-slate-500">{search.trim() ? 'No suggestions yet.' : 'No recent searches yet.'}</p>}
-                  {search.trim() && profileSearchResults.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>{profileSearchResults.map((person) => <UserProfileLink key={person.id} user={person} href={`/user/profile/${person.id}`} onClick={() => setSearchFocused(false)} className="flex items-center gap-2 rounded-xl px-3 py-2 hover:bg-sky-50"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-bold text-sky-700">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="min-w-0 flex-1 truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>{person.mutual_friends?.length > 0 && <span className="shrink-0 text-[10px] font-semibold text-sky-700">{person.mutual_friends.length} mutual</span>}</UserProfileLink>)}</div>}
-                  <Link href="/search" className="mt-1 block border-t border-slate-100 px-3 pt-3 text-xs font-bold text-sky-700 hover:text-sky-800">View search history</Link>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 lg:hidden">
-              <Link href="/search" aria-label="Search" title="Search" className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-sky-700">
-                <Search className="h-4 w-4" />
-              </Link>
-              <Link href="/user/notifications" aria-label="Alerts" title="Alerts" className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-white hover:text-sky-700">
-                <Bell className="h-4 w-4" />
-                {unreadAlerts > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-white">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>}
-              </Link>
-              <div className="relative">
-                <button type="button" onClick={() => setShowProfileMenu((value) => !value)} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
-                  <Menu className="h-5 w-5" />
-                </button>
-                {showProfileMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                  <Link href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Profile</Link>
-                  <Link href="/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />Messages</Link>
-                  <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
-                </div>}
-              </div>
-            </div>
-          </div>
-
-        </header>
-
         <ConfirmationModal
           isOpen={showLogoutConfirm}
           title="Confirm Logout"
@@ -1679,33 +1619,73 @@ export default function UserDashboardPage() {
 
         <div className="dashboard-feed-layout">
           <div className="dashboard-feed-main min-w-0 lg:pr-3">
-        <div className="tourism-panel mb-3 rounded-[20px] border border-slate-200 bg-white/95 p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4 lg:rounded-[18px]">
+        <section className="usr-hero usr-card usr-enter mb-3 rounded-[22px] p-3.5 sm:p-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-sm font-black text-white">
+              {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#16766f]">{todayLabel}</p>
+              <h1 className="mt-0.5 truncate text-lg font-black leading-tight text-slate-950 sm:text-xl">
+                {greeting}, {firstName}<span className="usr-wave ml-1" aria-hidden="true">👋</span>
+              </h1>
+              <p className="mt-1 line-clamp-2 text-[12px] font-medium text-slate-500 sm:text-sm">
+                Fresh stories, events, and places from the Daet community.
+              </p>
+            </div>
+            <Link href="/user/rewards" className="usr-press usr-lift hidden shrink-0 items-center gap-2 rounded-full bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 sm:flex" title="Your rewards and streak">
+              <Flame className="usr-flame h-4 w-4 text-amber-300" aria-hidden="true" />
+              {gamification.streak}-day streak
+            </Link>
+          </div>
+
+        </section>
+
+        <section className="usr-card mb-3 rounded-[22px] p-3 sm:p-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-sm font-bold text-white lg:hidden">{userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}</div>
-            <Link href="/user/blogs/new" className="flex min-h-[54px] flex-1 items-center rounded-2xl border border-[#dfe7e1] bg-[#f5f7f4] px-4 text-sm font-medium text-[#66736e] transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-[11px] font-black text-white">
+              {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
+            </span>
+            <Link href="/user/blogs/new" className="usr-press flex min-h-[50px] flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
               Share something with Daet...
             </Link>
-            <Link href="/user/blogs/new" aria-label="Create a post" className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-[0_8px_18px_rgba(22,118,111,0.22)] transition hover:bg-[#0e514d]">
-              <Zap className="h-4 w-4" />
+            <Link href="/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-[0_8px_18px_rgba(22,118,111,0.22)] transition hover:bg-[#0e514d]">
+              <Zap className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
-          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 text-center text-[11px] font-semibold text-slate-500">
-            <Link href="/user/blogs/new" className="rounded-xl border border-transparent bg-slate-50 px-3 py-2.5 transition hover:border-slate-200 hover:bg-white">Write a story</Link>
-            <Link href="/user/blogs/new?share=media" className="rounded-xl border border-transparent bg-slate-50 px-3 py-2.5 transition hover:border-slate-200 hover:bg-white">Post a photo or video</Link>
+          <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3 sm:grid-cols-4">
+            {quickActions.map(({ href, label, icon: Icon, tone }) => (
+              <Link key={href} href={href} className={`usr-press usr-lift flex items-center justify-center gap-2 rounded-xl border border-transparent px-3 py-2.5 text-[11px] font-bold ${tone}`}>
+                <Icon className="h-4 w-4" aria-hidden="true" />
+                <span className="truncate">{label}</span>
+              </Link>
+            ))}
           </div>
+        </section>
+
+        <div className="usr-rail mb-3" role="tablist" aria-label="Sort your feed">
+          {FEED_SCOPES.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={feedScope === value}
+              onClick={() => setFeedScope(value)}
+              className="usr-chip flex-1 justify-center"
+            >
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}
+            </button>
+          ))}
         </div>
 
         <div>
-          <section className="min-w-0 space-y-0">
-            <div className="hidden items-center border-b border-slate-200 lg:flex">
-              {[['for-you', 'For you'], ['latest', 'Latest'], ['trending', 'Trending']].map(([value, label]) => <button key={value} type="button" onClick={() => setFeedScope(value)} className={`relative px-4 py-3 text-sm font-bold ${feedScope === value ? 'text-sky-700' : 'text-slate-500 hover:text-slate-800'}`}>{label}{feedScope === value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-sky-600" />}</button>)}
-            </div>
+          <section className="min-w-0 space-y-3">
 
             <DailyFeedback userId={userId} />
 
-            {!loading && false && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
-              <section className="rounded-[22px] border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
-                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+              <section className="usr-card usr-enter rounded-[22px] p-4 sm:p-5 lg:hidden">
+                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {suggestions.suggestedPost && (
                     <Link href={suggestions.suggestedPost.href} className="rounded-xl bg-sky-50 p-3 transition hover:bg-sky-100">
@@ -1734,11 +1714,32 @@ export default function UserDashboardPage() {
             )}
 
             {loading ? (
-              <div className="space-y-4">{[1, 2, 3].map((i) => <div key={i} className="animate-pulse rounded-[22px] border border-slate-200 bg-white p-4"><div className="h-4 w-1/2 rounded bg-slate-200" /><div className="mt-4 h-3 w-full rounded bg-slate-200" /><div className="mt-2 h-3 w-4/5 rounded bg-slate-200" /></div>)}</div>
+              <div className="space-y-3" aria-busy="true" aria-live="polite">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="usr-card usr-enter rounded-[22px] p-4" style={{ animationDelay: `${i * 60}ms` }}>
+                    <div className="flex items-center gap-3">
+                      <div className="usr-skeleton h-10 w-10 rounded-full" />
+                      <div className="min-w-0 flex-1">
+                        <div className="usr-skeleton h-3 w-32 rounded-full" />
+                        <div className="usr-skeleton mt-2 h-2.5 w-20 rounded-full" />
+                      </div>
+                    </div>
+                    <div className="usr-skeleton mt-4 h-3 w-3/4 rounded-full" />
+                    <div className="usr-skeleton mt-2 h-3 w-full rounded-full" />
+                    <div className="usr-skeleton mt-2 h-3 w-4/5 rounded-full" />
+                    <div className="usr-skeleton mt-4 h-40 w-full rounded-[14px]" />
+                  </div>
+                ))}
+                <span className="sr-only">Loading your feed</span>
+              </div>
             ) : filteredFeed.length === 0 ? (
-              <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">No posts found. Try another topic or search.</div>
+              <div className="usr-card rounded-[22px] border-dashed p-8 text-center">
+                <span className="text-3xl" aria-hidden="true">🧭</span>
+                <p className="mt-3 text-sm font-bold text-slate-800">Nothing here yet</p>
+                <p className="mt-1 text-xs text-slate-500">Try another topic, clear the filters, or search the community.</p>
+              </div>
             ) : (
-              <div className="space-y-0">
+              <div className="usr-stagger space-y-3">
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const actionContentId = item.original_post_id || item.id
@@ -1765,17 +1766,7 @@ export default function UserDashboardPage() {
                   const isLongContent = contentText.length > 260
                   const isExpanded = expandedPosts.has(itemKey)
                   const renderedContent = isLongContent && !isExpanded ? `${contentText.slice(0, 260).trim()}...` : contentText
-                  const cardAccentClass = item.type === 'announcement'
-                    ? 'border-l-4 border-l-amber-300 bg-amber-50/50'
-                    : item.type === 'event'
-                      ? 'border-l-4 border-l-amber-200 bg-amber-50/30'
-                      : item.type === 'forum'
-                        ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40'
-                        : item.type === 'tourist_spot'
-                          ? 'border-l-4 border-l-sky-300 bg-sky-50/30'
-                          : item.type === 'blog'
-                            ? 'border-l-4 border-l-violet-300 bg-violet-50/30'
-                            : 'border-l-4 border-l-slate-200 bg-white'
+                  const typeMeta = getPostTypeMeta(item.type)
                   const announcementToneClass = item.announcement_type === 'urgent'
                     ? 'bg-red-50 text-red-700 border-red-200'
                     : item.announcement_type === 'important'
@@ -1784,7 +1775,7 @@ export default function UserDashboardPage() {
                   const isPhotoFirstContent = ['blog', 'event', 'tourist_spot'].includes(item.type)
                   const readingMinutes = Math.max(1, Math.ceil((contentText.length || 0) / 180))
                   const ownsOriginalPost = isOwnOriginalPost(item, userId)
-                  const canManageOriginalPost = ownsOriginalPost && item.type === 'post'
+                  const canManageOriginalPost = ownsOriginalPost && ['post', 'user_post'].includes(item.type)
                   const canManageOwnBlog = ownsOriginalPost && item.type === 'blog'
 
                   if (process.env.NODE_ENV !== 'production' && openPostMenu === itemKey) {
@@ -1800,7 +1791,7 @@ export default function UserDashboardPage() {
 
                   if (item.is_repost) {
                     return (
-                      <article key={itemKey} data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} className="tourism-panel overflow-hidden rounded-[22px] border border-slate-200 bg-slate-50 lg:rounded-[16px]">
+                      <article key={itemKey} data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} className="usr-card feed-card feed-card-quote usr-enter overflow-hidden rounded-[22px]">
                         <div className="p-4 sm:p-5 lg:p-6">
                           <QuoteRepostCard
                             item={item}
@@ -1819,6 +1810,7 @@ export default function UserDashboardPage() {
                             })}
                             onToggleSave={(event) => handleBookmark(event, item)}
                             onEdit={(quoteText) => void editOwnRepost(item, quoteText)}
+                            onPrivacyChange={(visibility) => updateOwnRepostPrivacy(item, visibility)}
                             onDelete={() => void updateOwnRepost(item, 'delete')}
                             onArchive={() => void updateOwnRepost(item, 'archive')}
                           />
@@ -1828,7 +1820,7 @@ export default function UserDashboardPage() {
                   }
 
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white lg:rounded-[16px] ${cardAccentClass}`}>
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card usr-enter overflow-hidden rounded-[22px]">
                       <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
                           <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
@@ -1843,10 +1835,13 @@ export default function UserDashboardPage() {
                               <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
                             </div>
 
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700">
-                              <span>{item.is_repost ? 'Repost' : item.type === 'tourist_spot' ? 'Tourist spot' : item.type === 'announcement' ? 'Announcement' : item.type === 'forum' ? 'Forum' : item.type === 'event' ? 'Event' : item.type === 'blog' ? 'Blog' : 'Post'}</span>
+                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${typeMeta.tone}`}>
+                                <span aria-hidden="true">{typeMeta.emoji}</span>
+                                {typeMeta.label}
+                              </span>
                               {item.type === 'blog' && (
-                                <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">{readingMinutes} min read</span>
+                                <span className="text-[10px] font-semibold text-slate-500">{readingMinutes} min read</span>
                               )}
                             </div>
 
@@ -1868,22 +1863,29 @@ export default function UserDashboardPage() {
                           </div>
 
                           <div className="relative shrink-0">
-                            <button type="button" aria-label="Post options" onClick={() => setOpenPostMenu(openPostMenu === itemKey ? null : itemKey)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
-                            {openPostMenu === itemKey && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              {canManageOriginalPost ? <>
-                                <button type="button" onClick={() => void editOwnPost(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50">Edit post</button>
-                                <button type="button" onClick={() => void updateOwnPost(item, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
-                                <button type="button" onClick={() => void updateOwnPost(item, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
-                              </> : canManageOwnBlog ? <>
-                                <button type="button" onClick={() => editOwnBlog(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50">Edit post</button>
-                                <button type="button" onClick={() => requestBlogAction(item, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
-                                <button type="button" onClick={() => requestBlogAction(item, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
-                              </> : !ownsOriginalPost ? <>
-                                <button type="button" onClick={() => hidePost(itemKey)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Hide post</button>
-                                <button type="button" onClick={() => markNotInterested(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Not interested</button>
-                              </> : null}
-                              <button type="button" onClick={() => void copyPostLink(item)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
-                            </div>}
+                            {canManageOriginalPost ? (
+                              <PostActionMenu
+                                visibility={item.visibility}
+                                onEdit={() => void editOwnPost(item)}
+                                onPrivacyChange={(visibility) => updateOwnPostPrivacy(item, visibility)}
+                                onArchive={() => void updateOwnPost(item, 'archive')}
+                                onDelete={() => void updateOwnPost(item, 'delete')}
+                                onCopyLink={() => void copyPostLink(item)}
+                              />
+                            ) : canManageOwnBlog ? (
+                              <PostActionMenu
+                                onEdit={() => editOwnBlog(item)}
+                                onArchive={() => requestBlogAction(item, 'archive')}
+                                onDelete={() => requestBlogAction(item, 'delete')}
+                                onCopyLink={() => void copyPostLink(item)}
+                              />
+                            ) : !ownsOriginalPost ? (
+                              <PostActionMenu
+                                onHide={() => hidePost(itemKey)}
+                                onNotInterested={() => markNotInterested(item)}
+                                onCopyLink={() => void copyPostLink(item)}
+                              />
+                            ) : null}
                           </div>
                         </div>
 
@@ -1901,12 +1903,12 @@ export default function UserDashboardPage() {
                         )}
 
                         {isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
-                          <div className={`feed-media mt-4 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
+                          <div className={`feed-media mt-4 w-full overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
                             {postGallery.length > 0 ? postGallery.map((media, mediaIndex) => (
-                              <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>
-                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
+                              <div key={`${media.url || media}-${mediaIndex}`} className={`w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : 'min-w-full'}`}>
+                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
                               </div>
-                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
+                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
                           </div>
                         )}
 
@@ -1964,12 +1966,12 @@ export default function UserDashboardPage() {
                         )}
 
                         {!isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
-                          <div className={`feed-media mt-4 overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
+                          <div className={`feed-media mt-4 w-full overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
                             {postGallery.length > 0 ? postGallery.map((media, mediaIndex) => (
-                              <div key={`${media.url || media}-${mediaIndex}`} className={`min-w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : ''}`}>
-                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
+                              <div key={`${media.url || media}-${mediaIndex}`} className={`w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : 'min-w-full'}`}>
+                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
                               </div>
-                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block min-w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
+                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
                           </div>
                         )}
 
@@ -1989,49 +1991,136 @@ export default function UserDashboardPage() {
                 })}
               </div>
             )}
-            {!loading && filteredFeed.length > 0 && (hasMoreFeed || feedEndReached) && <div className="mt-5 rounded-[16px] border border-dashed border-slate-300 bg-white p-4 text-center"><p className="text-xs text-slate-500">{hasMoreFeed ? 'More community posts are ready.' : 'You have reached the end of this feed.'}</p>{hasMoreFeed ? <button type="button" onClick={() => setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))} className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700">Load more</button> : <button type="button" onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))} className="mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-xs font-bold text-slate-700 hover:border-sky-300 hover:text-sky-700"><RefreshCw className="h-3.5 w-3.5" />Refresh feed</button>}</div>}
+            {!loading && filteredFeed.length > 0 && (hasMoreFeed || feedEndReached) && (
+              <div className="usr-card rounded-[18px] border-dashed p-5 text-center">
+                {hasMoreFeed ? (
+                  <>
+                    <p className="text-xs font-semibold text-slate-600">More community posts are ready.</p>
+                    <button
+                      type="button"
+                      onClick={() => setFeedVisibleCount((count) => Math.min(count + 10, filteredFeed.length))}
+                      className="usr-press usr-lift mt-3 inline-flex items-center gap-2 rounded-full bg-[#16766f] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#0e514d]"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                      Load more stories
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-semibold text-slate-600">You have reached the end of this feed. 🎉</p>
+                    <button
+                      type="button"
+                      onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))}
+                      className="usr-press usr-lift mt-3 inline-flex items-center gap-2 rounded-full border border-slate-200 px-5 py-2.5 text-xs font-bold text-slate-700 hover:border-sky-300 hover:text-sky-700"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                      Refresh feed
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
           </section>
 
           </div>
           </div>
 
-          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-4 lg:block lg:pr-1">
-            <div className="border-b border-slate-200 pb-3 lg:bg-transparent lg:p-0 lg:shadow-none">
-              <div className="border-b border-slate-100 px-2 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-700 text-xs font-bold text-white">
-                    {userAvatarUrl ? <img src={userAvatarUrl} alt={userName} className="h-full w-full object-cover" /> : getInitials(userName)}
-                  </div>
-                  <div className="min-w-0"><p className="truncate text-sm font-bold text-slate-900">{userName}</p><Link href="/user/profile" className="text-[11px] font-semibold text-sky-700 hover:text-sky-800">View profile</Link></div>
+          <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-3 lg:block lg:pr-1">
+            <section className="usr-card usr-enter rounded-[18px] p-4">
+              <div className="flex items-center gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-sm font-black text-white">
+                  {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-black text-slate-900">{userName}</p>
+                  <p className="truncate text-[11px] font-semibold text-slate-500">{todayLabel}</p>
                 </div>
+                <Link href="/user/profile" className="usr-press usr-lift shrink-0 rounded-full border border-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:border-sky-300 hover:text-sky-700">Profile</Link>
               </div>
-            </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
+                <Link href="/user/settings" className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100">
+                  <Settings className="h-3.5 w-3.5" aria-hidden="true" />Settings
+                </Link>
+                <button type="button" onClick={handleLogout} className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-red-600 hover:bg-red-50">
+                  <LogOut className="h-3.5 w-3.5" aria-hidden="true" />Log out
+                </button>
+              </div>
+            </section>
 
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p><Flame className="h-4 w-4 text-amber-500" /></div>
-              <p className="mt-3 text-3xl font-black text-slate-950">{gamification.points}<span className="ml-1 text-sm font-semibold text-slate-500">pts</span></p>
-              <p className="mt-1 text-xs text-slate-500">Level {gamification.level} · {gamification.streak}-day streak</p>
-              <Link href="/user/rewards" className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800"><Star className="h-3.5 w-3.5 text-amber-300" />View rewards</Link>
-            </div>
+            <section className="usr-card usr-enter rounded-[18px] p-4">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p>
+                <Flame className="usr-flame h-4 w-4 text-amber-500" aria-hidden="true" />
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                {[
+                  { key: 'points', label: 'Points', value: gamification.points },
+                  { key: 'level', label: 'Level', value: gamification.level },
+                  { key: 'streak', label: 'Streak', value: gamification.streak },
+                ].map((item) => (
+                  <div key={item.key} className="usr-stat px-1.5 py-2.5">
+                    <p key={item.value} className="usr-count-pop text-lg font-black leading-none text-slate-950">{item.value}</p>
+                    <p className="mt-1 text-[9px] font-bold uppercase tracking-[0.1em] text-slate-500">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+              <Link href="/user/rewards" className="usr-press usr-lift mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800">
+                <Star className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />View rewards
+              </Link>
+            </section>
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
-              <section className="rounded-[16px] border border-sky-100 bg-white p-4 shadow-sm">
-                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
+              <section className="usr-card usr-enter rounded-[18px] p-4">
+                <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
                 <div className="space-y-3">
-                  {suggestions.suggestedPost && <Link href={suggestions.suggestedPost.href} className="block rounded-xl bg-sky-50 p-3 hover:bg-sky-100"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p><p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p></Link>}
-                  {suggestions.suggestedPeople.length > 0 && <div className="rounded-xl bg-emerald-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p><div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><UserProfileLink user={person} className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</UserProfileLink><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="shrink-0 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : 'Follow'}</button></div>)}</div></div>}
+                  {suggestions.suggestedPost && (
+                    <Link href={suggestions.suggestedPost.href} className="usr-press block rounded-xl bg-sky-50 p-3 hover:bg-sky-100">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p>
+                      <p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p>
+                    </Link>
+                  )}
+                  {suggestions.suggestedPeople.length > 0 && (
+                    <div className="rounded-xl bg-emerald-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
+                      <div className="mt-2 space-y-2">
+                        {suggestions.suggestedPeople.map((person) => (
+                          <div key={person.id} className="flex items-center justify-between gap-2">
+                            <UserProfileLink user={person} className="flex min-w-0 items-center gap-2">
+                              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[9px] font-bold text-white">
+                                {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}
+                              </span>
+                              <span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>
+                            </UserProfileLink>
+                            <button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="usr-press shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">
+                              {followedSuggestions.has(person.id) ? 'Following' : 'Follow'}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {suggestions.suggestedLocations.length > 0 && (
+                    <div className="rounded-xl bg-violet-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Places to explore</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {suggestions.suggestedLocations.map((location) => (
+                          <Link key={location} href={`/search?q=${encodeURIComponent(location)}`} className="usr-press inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:text-violet-700">
+                            <MapPinned className="h-3 w-3 text-violet-600" aria-hidden="true" />{location}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </section>
             )}
 
-            <div className="rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Based on activity</p><h2 className="mt-1 font-extrabold text-slate-950">Trending topics</h2></div><TrendingUp className="h-4 w-4 text-sky-700" /></div>
-              <div className="space-y-2">{trendingTopics.map((topic) => <button key={topic.name} type="button" onClick={() => setActiveCategory(topic.name)} className="flex min-h-10 w-full items-center justify-between rounded-xl bg-sky-50 px-3 text-left text-sm font-semibold text-slate-700 hover:bg-sky-100"><span>#{topic.name}</span><span className="text-xs text-sky-700">{topic.count}</span></button>)}</div>
-            </div>
 
           </aside>
         </div>
-        <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="fixed bottom-8 right-8 z-20 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex"><ArrowUp className="h-4 w-4" /></button>
+        <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="usr-press usr-lift fixed bottom-8 right-8 z-20 hidden h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex">
+          <ArrowUp className="h-4 w-4" aria-hidden="true" />
+        </button>
       </div>
 
       {activeCommentsSheet && (

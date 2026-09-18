@@ -18,6 +18,7 @@ import {
 import MediaUpload from '@/app/components/MediaUpload'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import ProfileFeedActions from '@/app/components/user/ProfileFeedActions'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
@@ -601,39 +602,40 @@ export default function UserProfilePage() {
   }
 
   return (
-    <main className="tourism-shell min-h-screen w-full overflow-x-clip">
-      <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:px-6 lg:pb-10">
-        <div className="tourism-panel overflow-hidden rounded-[22px]">
-          <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-700 via-cyan-600 to-emerald-600 sm:h-56">
+    <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
+      <UserTopHeader />
+      <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-2 sm:px-4 lg:px-6 lg:pb-10">
+        <div className="usr-surface usr-enter mb-5 overflow-hidden">
+          <div className="profile-cover-frame h-40 bg-gradient-to-r from-teal-700 via-cyan-700 to-emerald-600 sm:h-56">
             {profile.cover_photo_url ? (
               <img src={profile.cover_photo_url} alt="Cover photo" className="profile-cover-image" />
             ) : null}
             <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
           </div>
 
-          <div className="border-b border-slate-200 px-4 pb-4 sm:px-7 sm:pb-5">
+          <div className="border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
             <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-end gap-3">
-                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-sky-100 text-2xl font-black text-sky-700 shadow-lg sm:h-24 sm:w-24">
+                <div className="usr-profile-avatar -mt-14 flex shrink-0 items-center justify-center overflow-hidden sm:-mt-16">
                   {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                 </div>
                 <div className="min-w-0 pb-1">
                   <h1 className="break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{profile.full_name}</h1>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-teal-700" />{profile.location}</p>
                 </div>
               </div>
               <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-                <Link href="/user/blogs/new" className="inline-flex h-10 items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-4 text-sm font-bold text-sky-700 hover:bg-sky-100">Create post</Link>
-                <Link href="/user/profile/edit" className="inline-flex h-10 items-center gap-1.5 rounded-full bg-slate-900 px-4 text-sm font-bold text-white shadow-sm hover:bg-slate-800">Edit profile</Link>
+                <Link href="/user/blogs/new" className="usr-section-secondary">Create post</Link>
+                <Link href="/user/profile/edit" className="usr-section-primary">Edit profile</Link>
                 <div className="relative">
-                  <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50">
+                  <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="usr-press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
                     <MoreHorizontal className="h-5 w-5" />
                   </button>
                   {profileActionsOpen && (
-                    <div className="absolute right-0 top-12 z-20 w-44 overflow-hidden border border-slate-200 bg-white p-1.5 shadow-xl">
-                      <Link href="/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><Trophy className="h-4 w-4" />Rewards</Link>
-                      <Link href="/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
-                      <Link href="/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
+                    <div className="usr-pop-in absolute right-0 top-12 z-20 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                      <Link href="/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
+                      <Link href="/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
+                      <Link href="/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
                     </div>
                   )}
                 </div>
@@ -641,17 +643,17 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 border-b border-[#dfe7e1] bg-[#fffefa] text-center">
-            <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="text-[11px] text-slate-500">Posts</p></div>
-            <Link href="/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="text-[11px] text-slate-500">Followers</p></Link>
-            <Link href="/user/profile/connections?tab=following" className="px-2 py-3 hover:bg-slate-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="text-[11px] text-slate-500">Following</p></Link>
+          <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-center">
+            <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="usr-stat-label mt-0.5">Posts</p></div>
+            <Link href="/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
+            <Link href="/user/profile/connections?tab=following" className="px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="usr-stat-label mt-0.5">Following</p></Link>
           </div>
 
-          <div className="p-0">
-            <section className="tourism-panel mb-5 rounded-[22px] p-4 sm:p-5">
+          <div className="px-3 py-4 sm:px-5 sm:py-5">
+            <section className="usr-card mb-5 p-4 sm:p-5">
               <div className="mb-3 flex items-center justify-between">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">About</p>
-                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">{levelName}</span>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">About</p>
+                  <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-bold text-teal-700">{levelName}</span>
               </div>
               <p className="max-w-3xl text-sm leading-6 text-slate-700">{profile.bio}</p>
 
@@ -672,33 +674,30 @@ export default function UserProfilePage() {
 
             </section>
 
-          <div>
-            <div className="min-w-0 p-0 sm:p-2">
-            {pinnedPosts.length > 0 && <section className="mb-5 rounded-[22px] border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="rounded-xl bg-white/80 p-3 hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
+          {pinnedPosts.length > 0 && <section className="usr-card mb-5 !border-amber-200 !bg-amber-50 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="usr-press rounded-2xl bg-white/80 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
 
-            <section className="space-y-6">
-              <div className="rounded-[16px] border border-slate-200 bg-white px-0 py-4 sm:py-5">
-                <div className="mb-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="pl-2"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
+            <section className="space-y-4">
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
                   <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-                    <Link href="/user/blogs/new" className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-none">
+                    <Link href="/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
-                    <Link href="/user/forums" className="inline-flex min-w-0 flex-1 items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium text-slate-700 sm:flex-none">
+                    <Link href="/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
                 </div>
 
-                <div className="space-y-0">
+                <div className="space-y-1.5">
                     {visiblePosts.length ? visiblePosts.map((post) => (
-                      <article key={`${post.type}-${post.id}`} className={`tourism-panel feed-card overflow-hidden rounded-[22px] border border-slate-200 bg-white lg:rounded-[16px] ${post.type === 'Blog' ? 'border-l-4 border-l-violet-300 bg-violet-50/30' : post.type === 'Forum' ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40' : post.type === 'Event' ? 'border-l-4 border-l-amber-200 bg-amber-50/30' : 'border-l-4 border-l-slate-200'}`}>
+                      <article key={`${post.type}-${post.id}`} className={`usr-card usr-content-card feed-card overflow-hidden ${post.type === 'Blog' ? 'border-l-4 border-l-violet-300 bg-violet-50/30' : post.type === 'Forum' ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40' : post.type === 'Event' ? 'border-l-4 border-l-amber-200 bg-amber-50/30' : 'border-l-4 border-l-slate-200'}`}>
                         <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12">
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black uppercase text-teal-700 lg:h-12 lg:w-12">
                             {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                           </span>
-                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{post.isRepost ? `${profile.full_name} 🔄 reposted` : profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700"><span>{post.isRepost ? 'Repost' : post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
+                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{post.isRepost ? `${profile.full_name} 🔄 reposted` : profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-teal-700"><span>{post.isRepost ? 'Repost' : post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
                           <div className="relative shrink-0">
                             <button type="button" aria-label="Post options" aria-expanded={openPostMenu === `${post.type}-${post.id}`} onClick={() => setOpenPostMenu(openPostMenu === `${post.type}-${post.id}` ? null : `${post.type}-${post.id}`)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                             {openPostMenu === `${post.type}-${post.id}` && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
@@ -706,20 +705,20 @@ export default function UserProfilePage() {
                                 <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive repost</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete repost</button>
                               </> : isOwnOriginalPost(post, userId) && post.type === 'Post' ? <>
-                                <button type="button" onClick={() => void editProfilePost(post)} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-sky-700 hover:bg-sky-50">Edit post</button>
+                                <button type="button" onClick={() => void editProfilePost(post)} className="block w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-teal-700 hover:bg-sky-50">Edit post</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
                               </> : null}
-                              <button type="button" onClick={() => { void navigator.clipboard?.writeText(`${window.location.origin}${post.href}`); setOpenPostMenu(null) }} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50">Copy link</button>
+                              <button type="button" onClick={() => { void navigator.clipboard?.writeText(`${window.location.origin}${post.href}`); setOpenPostMenu(null) }} className="block w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50">Copy link</button>
                             </div>}
                           </div>
                         </div>
 
                         {post.isRepost && post.repostQuote && <p className="mb-3 text-[13px] leading-6 text-slate-700">{post.repostQuote}</p>}
                         {post.isRepost && <div className="mb-3 flex items-center gap-2 text-xs text-slate-500"><span className="font-semibold text-slate-700">Originally shared by</span><span>{post.originalAuthor?.full_name || 'Community member'}</span></div>}
-                        <Link href={post.href} className="mt-2 block w-full pl-0 text-left"><h3 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
+                        <Link href={post.href} className="mt-2 block w-full pl-0 text-left"><h3 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-teal-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
                         <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
-                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 grid gap-1 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] sm:grid-cols-2">
+                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 grid gap-1 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-2xl sm:grid-cols-2">
                           {(post.images?.length ? post.images : (post.media ? [post.media] : [])).map((url, index) => <Link key={`${url}-${index}`} href={post.href} className="block"><img src={url} alt={`${post.title || 'Post'} ${index + 1}`} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>)}
                           {(post.videos?.length ? post.videos : (post.video_url ? [post.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
                         </div>}
@@ -728,26 +727,27 @@ export default function UserProfilePage() {
                         </div>
                       </article>
                     )) : (
-                      <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
-                        You haven’t shared anything yet.
+                      <div className="usr-empty-state !border-dashed text-sm text-slate-500">
+                        <p className="font-semibold text-slate-700">Nothing on your wall yet</p>
+                        <p className="mt-1">Share a story or start a forum discussion to fill it with your latest community updates.</p>
+                        <Link href="/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a post</Link>
                       </div>
                     )}
                 </div>
-              </div>
 
-              <div id="profile-editor" className="hidden rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div id="profile-editor" className="usr-card hidden p-4 sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
-                  <Wand2 className="h-4 w-4 text-sky-600" />
+                  <Wand2 className="h-4 w-4 text-teal-700" />
                   <h3 className="text-lg font-bold text-slate-900">Edit profile</h3>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-1.5">
                   <div>
                     <label className="mb-1 block text-sm font-medium text-slate-700">Full name</label>
                     <input
                       value={profileForm.full_name}
                       onChange={(event) => setProfileForm((previous) => ({ ...previous, full_name: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-teal-300 focus:bg-white"
                     />
                   </div>
 
@@ -770,7 +770,7 @@ export default function UserProfilePage() {
                           city: event.target.value,
                           location: [event.target.value, previous.country].filter(Boolean).join(', '),
                         }))}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-teal-300 focus:bg-white"
                       />
                     </div>
                     <div>
@@ -782,7 +782,7 @@ export default function UserProfilePage() {
                           country: event.target.value,
                           location: [previous.city, event.target.value].filter(Boolean).join(', '),
                         }))}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-teal-300 focus:bg-white"
                       />
                     </div>
                   </div>
@@ -792,7 +792,7 @@ export default function UserProfilePage() {
                     <input
                       value={profileForm.location}
                       onChange={(event) => setProfileForm((previous) => ({ ...previous, location: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-teal-300 focus:bg-white"
                     />
                   </div>
 
@@ -802,7 +802,7 @@ export default function UserProfilePage() {
                       rows={4}
                       value={profileForm.bio}
                       onChange={(event) => setProfileForm((previous) => ({ ...previous, bio: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-sky-300 focus:bg-white"
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800 outline-none transition focus:border-teal-300 focus:bg-white"
                     />
                   </div>
 
@@ -825,6 +825,7 @@ export default function UserProfilePage() {
                         bucket="profile-media"
                         folder={`covers/${userId || 'me'}`}
                         mediaType="image"
+                        trimLetterbox
                         existingMediaUrl={profileForm.cover_photo_url}
                         previewClassName="h-32 w-full max-w-lg aspect-[3/1]"
                         buttonText="Upload cover"
@@ -834,7 +835,7 @@ export default function UserProfilePage() {
                     </div>
                   </div>
 
-                  <div className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                     <p className="mb-2 text-sm font-medium text-slate-700">Privacy</p>
                     <div className="grid gap-2 sm:grid-cols-3">
                       {['public', 'followers', 'private'].map((level) => (
@@ -852,7 +853,7 @@ export default function UserProfilePage() {
                     </div>
                   </div>
 
-                  <div className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
                     <p className="mb-2 text-sm font-medium text-slate-700">Language</p>
                     <div className="grid gap-2 sm:grid-cols-3">
                       {[
@@ -888,11 +889,9 @@ export default function UserProfilePage() {
             </section>
           </div>
         </div>
-        </div>
-        </div>
 
         {loading ? (
-          <div className="mt-6 rounded-[24px] border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
+          <div className="usr-surface mt-6 p-5 text-sm text-slate-600">
             Loading your profile...
           </div>
         ) : null}

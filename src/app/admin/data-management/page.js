@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -189,33 +190,23 @@ export default function DataManagementPage() {
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="Data Manager" />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Data Management & Backup</h1>
-            <p className="text-sm text-slate-500">Protect, restore, and maintain data integrity across the tourism platform.</p>
-          </div>
-          <button onClick={createBackup} className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Create Backup</button>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Data"
+          title="Data management & backup"
+          description="Protect, restore, and maintain data integrity across the tourism platform."
+          icon="save"
+          actions={
+            <AdminButton variant="primary" icon="plus" onClick={createBackup}>Create backup</AdminButton>
+          }
+        />
 
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl bg-gradient-to-r from-sky-600 to-cyan-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-sky-100">Backups</div>
-            <div className="mt-2 text-3xl font-bold">{backupHistory.length}</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-emerald-100">Validation</div>
-            <div className="mt-2 text-3xl font-bold">{validationStatus.status}</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-violet-100">Retention</div>
-            <div className="mt-2 text-3xl font-bold">{settings.retention.events}d</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 p-4 text-white shadow-sm">
-            <div className="text-sm text-amber-100">Auto Purge</div>
-            <div className="mt-2 text-3xl font-bold">{settings.autoPurge ? 'On' : 'Off'}</div>
-          </div>
-        </div>
+        <AdminStatGrid>
+          <AdminStatCard label="Backups" value={backupHistory.length} icon="save" tone="brand" meta="Stored snapshots" />
+          <AdminStatCard label="Validation" value={validationStatus.status} icon="check" tone="success" meta="Latest integrity check" />
+          <AdminStatCard label="Retention" value={`${settings.retention.events}d`} icon="calendar" tone="violet" meta="Events kept" />
+          <AdminStatCard label="Auto purge" value={settings.autoPurge ? 'On' : 'Off'} icon="delete" tone="warning" meta="Scheduled cleanup" />
+        </AdminStatGrid>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">

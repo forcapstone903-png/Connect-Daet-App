@@ -6,6 +6,7 @@ import { Archive, Mail, MoreHorizontal, Plus, Search, Send, Trash2, Volume2, Vol
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
+import UserSectionHeader, { SectionLoading } from '@/app/components/user/UserSectionHeader'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
@@ -46,6 +47,7 @@ export default function UserMessagingPage() {
   const [revealedConversation, setRevealedConversation] = useState(null)
   const [revealedAction, setRevealedAction] = useState(null)
   const [conversationMenu, setConversationMenu] = useState(null)
+  const [actionError, setActionError] = useState('')
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null })
 
   const clearGesture = () => {
@@ -76,22 +78,29 @@ export default function UserMessagingPage() {
   }
 
   const updateConversation = async (conversationId, action) => {
+    setActionError('')
     const payload = action === 'archive'
       ? { isArchived: true }
       : action === 'delete'
         ? { deleteConversation: true }
         : { isMuted: action === 'mute' }
-    const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) })
-    const result = await response.json()
-    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update conversation.')
-    if (action === 'archive' || action === 'delete') {
-      setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
-    } else {
-      setConversations((previous) => previous.map((conversation) => conversation.other_user?.id === conversationId ? { ...conversation, is_muted: action === 'mute' } : conversation))
+    try {
+      const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update conversation.')
+      if (action === 'archive' || action === 'delete') {
+        setConversations((previous) => previous.filter((conversation) => conversation.other_user?.id !== conversationId))
+      } else {
+        setConversations((previous) => previous.map((conversation) => conversation.other_user?.id === conversationId ? { ...conversation, is_muted: action === 'mute' } : conversation))
+      }
+      setRevealedConversation(null)
+      setRevealedAction(null)
+      setConversationMenu(null)
+      window.dispatchEvent(new Event('daet-messages-updated'))
+    } catch (error) {
+      console.error('Conversation update failed:', error)
+      setActionError(error.message || 'Unable to update conversation.')
     }
-    setRevealedConversation(null)
-    setRevealedAction(null)
-    setConversationMenu(null)
   }
 
   useEffect(() => {
@@ -104,7 +113,6 @@ export default function UserMessagingPage() {
         const result = await response.json()
         if (active && response.ok && result.success) {
           setConversations(result.conversations || [])
-          window.dispatchEvent(new Event('daet-messages-updated'))
         }
         else if (active) throw new Error(result.message || 'Unable to load messages')
       } catch (error) {
@@ -224,17 +232,12 @@ export default function UserMessagingPage() {
   }
 
   return (
-    <main className="tourism-shell min-h-screen">
-      <div className="mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
-        <header className="mb-4 flex items-center justify-between border-b border-[#dfe7e1] bg-[#fffefa] px-4 py-4 shadow-[0_6px_20px_rgba(29,42,39,0.04)] sm:px-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#147d75]">Inbox</p>
-              <h1 className="text-xl font-black text-slate-950">Messages</h1>
-            </div>
-          </div>
-          <Link href="/user/messaging/archived" className="mr-2 text-xs font-bold text-[#147d75] hover:underline">Archived</Link>
-        </header>
+    <main className="tourism-shell usr-section-page usr-inbox min-h-screen">
+      <div className="usr-section-container mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
+        <UserSectionHeader eyebrow="Your community, closer" title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
+          <Link href="/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
+          <button type="button" onClick={openCompose} className="usr-section-primary"><Plus className="h-4 w-4" />New message</button>
+        </UserSectionHeader>
 
         {composeOpen && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-0 sm:items-center sm:p-4">
@@ -277,6 +280,10 @@ export default function UserMessagingPage() {
           {conversationQuery && <button type="button" onClick={() => setConversationQuery('')} aria-label="Clear conversation search" title="Clear search" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><X className="h-4 w-4" /></button>}
         </div>
 
+        {actionError && (
+          <p role="alert" className="mb-4 border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{actionError}</p>
+        )}
+
         <section className="tourism-panel shadow-none">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 sm:px-5">
             <div><h2 className="font-extrabold text-slate-950">Your conversations</h2><p className="mt-1 text-xs text-slate-500">Updates and messages from the Daet community</p></div>
@@ -284,7 +291,7 @@ export default function UserMessagingPage() {
           </div>
 
           {loading ? (
-            <div className="p-6 text-sm text-slate-500">Loading messages...</div>
+            <SectionLoading label="Loading messages" />
           ) : loadError ? (
             <div role="alert" className="p-8 text-center">
               <Mail className="mx-auto h-8 w-8 text-red-300" />
@@ -307,14 +314,15 @@ export default function UserMessagingPage() {
                   const hasUnread = unreadCount > 0
                   const previewText = String(conversation.body || 'New message')
                   return (
-                    <div key={conversationId} className="relative overflow-hidden" onTouchStart={(event) => handleTouchStart(event, conversationId)} onTouchMove={handleTouchMove} onTouchEnd={(event) => handleTouchEnd(event, conversationId)}>
+                    <div key={conversationId} className="relative">
+                      <div className="relative overflow-hidden" onTouchStart={(event) => handleTouchStart(event, conversationId)} onTouchMove={handleTouchMove} onTouchEnd={(event) => handleTouchEnd(event, conversationId)}>
                       <div className="absolute inset-y-0 flex items-center gap-1 px-2">
                         <button type="button" onClick={() => void updateConversation(conversationId, 'delete')} aria-label="Delete conversation" title="Delete" className={`${revealedAction === 'delete' ? 'flex' : 'hidden'} h-10 w-10 items-center justify-center rounded-full bg-red-100 text-red-700`}><Trash2 className="h-4 w-4" /></button>
                       </div>
                       <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
                         <button type="button" onClick={() => void updateConversation(conversationId, 'archive')} aria-label="Archive conversation" title="Archive" className={`${revealedAction === 'archive' ? 'flex' : 'hidden'} h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700`}><Archive className="h-4 w-4" /></button>
                       </div>
-                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed || actionMenuOpen) { event.preventDefault(); setRevealedConversation(null); setRevealedAction(null); setConversationMenu(null) } }} className={`relative flex gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? (revealedAction === 'archive' ? '-translate-x-24' : 'translate-x-24') : 'translate-x-0'}`}>
+                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed || actionMenuOpen) { event.preventDefault(); setRevealedConversation(null); setRevealedAction(null); setConversationMenu(null) } }} className={`relative flex min-w-0 flex-1 gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? (revealedAction === 'archive' ? '-translate-x-24' : 'translate-x-24') : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -333,6 +341,7 @@ export default function UserMessagingPage() {
                         </div>
                         <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setConversationMenu(actionMenuOpen ? null : conversationId); setRevealedConversation(null); setRevealedAction(null) }} aria-label="Conversation actions" title="Conversation actions" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"><MoreHorizontal className="h-4 w-4" /></button>
                       </UserProfileLink>
+                      </div>
                       {actionMenuOpen && <div className="absolute right-3 top-14 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
                         <button type="button" onClick={() => void updateConversation(conversationId, conversation.is_muted ? 'unmute' : 'mute')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">{conversation.is_muted ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}{conversation.is_muted ? 'Unmute' : 'Mute'}</button>
                         <button type="button" onClick={() => void updateConversation(conversationId, 'archive')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Archive className="h-4 w-4" />Archive</button>

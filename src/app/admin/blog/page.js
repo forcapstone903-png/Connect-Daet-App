@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminButton, AdminPageHeader } from '@/app/components/admin';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -391,16 +392,16 @@ export default function BlogManagement() {
     <div className="min-h-screen bg-gray-50">
       <AdminSidebar user={user} roleLabel="Admin Console" />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Blog Management</h1>
-            <p className="text-gray-500 mt-1">Create, edit, schedule, and moderate tourism content.</p>
-          </div>
-          <button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full flex items-center gap-2">
-            <span>+</span> Write New Post
-          </button>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Content"
+          title="Blog management"
+          description="Create, edit, schedule, and moderate tourism articles and stories."
+          icon="blog"
+          actions={
+            <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Write new post</AdminButton>
+          }
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-2xl shadow-sm border p-4">

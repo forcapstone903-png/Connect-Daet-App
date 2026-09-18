@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Archive, ArrowLeft, RotateCcw } from 'lucide-react'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 
 function getInitials(name = '') {
@@ -31,13 +32,12 @@ export default function ArchivedMessagesPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#eef4f5] text-slate-900">
-      <div className="mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
-        <header className="mb-4 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
-          <Link href="/user/messaging" aria-label="Back to messages" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></Link>
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#147d75]">Inbox</p><h1 className="text-xl font-black text-slate-950">Archived</h1></div>
-        </header>
-        <section className="border border-slate-200 bg-white shadow-sm">
+    <main className="usr-section-page usr-inbox min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
+        <UserSectionHeader eyebrow="A quieter inbox" title="Archived messages" description="Conversations you have put away. Restore one whenever you are ready to reconnect." emoji="📬">
+          <Link href="/user/messaging" className="usr-section-secondary"><ArrowLeft className="h-4 w-4" />Back to messages</Link>
+        </UserSectionHeader>
+        <section className="usr-card overflow-hidden">
           {loading ? <div className="p-6 text-sm text-slate-500">Loading archived conversations...</div> : conversations.length ? conversations.map((conversation) => {
             const userId = conversation.other_user?.id || conversation.id
             return <div key={userId} className="flex items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-0 sm:px-5"><UserProfileLink user={conversation.other_user} href={`/user/messaging/${userId}`} className="flex min-w-0 flex-1 items-center gap-3"><ProfileAvatar user={conversation.other_user} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</p><p className="truncate text-sm text-slate-600">{conversation.body}</p></div></UserProfileLink><button type="button" onClick={() => unarchive(userId)} aria-label="Unarchive conversation" title="Unarchive" className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><RotateCcw className="h-4 w-4" /></button></div>

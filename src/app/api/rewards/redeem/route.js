@@ -55,6 +55,19 @@ export async function POST(request) {
     if (pointsError) throw pointsError
     if (historyError) throw historyError
 
+    // Confirm the redemption in the user's own notification inbox.
+    const { error: notificationError } = await adminSupabase.from('info_notifications').insert({
+      user_id: userId,
+      title: 'Reward redeemed',
+      message: `${title} redeemed for ${pointsRequired} points. You now have ${nextPoints} points.`,
+      type: 'reward',
+      is_read: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      link: '/user/rewards',
+    })
+    if (notificationError) console.error('Reward redemption notification failed:', notificationError)
+
     return NextResponse.json({ success: true, points: nextPoints, message: `${title} redeemed successfully.` })
   } catch (error) {
     console.error('Reward redemption failed:', error)

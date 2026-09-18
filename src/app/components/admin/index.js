@@ -1,0 +1,11 @@
+// Barrel for the admin console UI kit. Import from '@/app/components/admin'.
+export { default as AdminShell, AdminLoadingScreen } from './AdminShell'
+export { default as AdminPageHeader } from './AdminPageHeader'
+export { default as AdminPanel } from './AdminPanel'
+export { default as AdminStatCard, AdminStatGrid } from './AdminStatCard'
+export { default as AdminButton } from './AdminButton'
+export { default as AdminBadge, toneForStatus } from './AdminBadge'
+export { default as AdminEmptyState } from './AdminEmptyState'
+export { default as AdminToolbar, AdminSearch } from './AdminToolbar'
+export { default as AdminTable, AdminTableFooter } from './AdminTable'
+export { default as AdminNavCard } from './AdminNavCard'

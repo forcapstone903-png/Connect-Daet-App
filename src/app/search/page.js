@@ -7,6 +7,7 @@ import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Compass, New
 import { supabase } from '@/lib/supabase'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import { Suspense } from 'react'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
@@ -248,7 +249,7 @@ function SearchContent() {
     if (!authorId || !authorProfiles[authorId]) return null
     const isFollowing = followingIds.has(authorId)
     return (
-      <button type="button" onClick={(event) => toggleFollow(event, authorId)} disabled={followBusyId === authorId} className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold transition ${isFollowing ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
+      <button type="button" onClick={(event) => toggleFollow(event, authorId)} disabled={followBusyId === authorId} className={`usr-press inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold transition ${isFollowing ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
         {isFollowing ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
         {isFollowing ? 'Following' : 'Follow'}
       </button>
@@ -256,11 +257,20 @@ function SearchContent() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] text-slate-900">
+    <main className="tourism-shell usr-section-page usr-search min-h-screen text-slate-900">
       <UserTopHeader />
-      <div className="mx-auto max-w-[1100px] px-3 pb-28 pt-2 sm:px-4 sm:pb-12 lg:px-6">
+      <div className="usr-section-container mx-auto max-w-5xl px-3 pb-28 pt-2 sm:px-4 sm:pb-12 lg:px-6">
+        <UserSectionHeader
+          eyebrow="Explore Daet"
+          title="Search"
+          description="Find destinations, stories, events, forum discussions, and community members in one place."
+          emoji="🔎"
+        >
+          <span className="usr-section-counter">{loading ? 'Searching…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</span>
+        </UserSectionHeader>
+
         {/* Header */}
-        <header className="sticky top-2 z-30 mb-4 border border-slate-200/80 bg-white/95 px-3 py-3 shadow-sm backdrop-blur md:px-5">
+        <header className="usr-card usr-glass sticky top-2 z-30 mb-4 px-3 py-3 md:px-5">
           <div className="flex items-center justify-between gap-3">
             <div className="relative hidden flex-1 items-center justify-center lg:flex">
             <div className="flex w-full max-w-xl items-center gap-2">
@@ -288,14 +298,14 @@ function SearchContent() {
                 </div>
               </div>
             </form>
-            <button type="button" onClick={() => setShowFilters((value) => !value)} aria-label="Open search filters" aria-expanded={showFilters} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${showFilters ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:text-sky-700'}`}>
+            <button type="button" onClick={() => setShowFilters((value) => !value)} aria-label="Open search filters" aria-expanded={showFilters} className={`usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${showFilters ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-500 hover:border-teal-200 hover:text-teal-700'}`}>
               <SlidersHorizontal className="h-4 w-4" />
             </button>
             </div>
             {searchFocused && (
               <div className="absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-xl">
                 <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}</p>
-                {(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).length ? <div className="space-y-1">{(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-sky-50"><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div> : <p className="px-3 py-2 text-sm text-slate-500">{query.trim() ? 'No suggestions yet.' : 'No popular searches yet.'}</p>}
+                {(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).length ? <div className="space-y-1">{(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50"><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div> : <p className="px-3 py-2 text-sm text-slate-500">{query.trim() ? 'No suggestions yet.' : 'No popular searches yet.'}</p>}
                 <button type="button" onClick={() => setSearchFocused(false)} className="mt-1 w-full border-t border-slate-100 px-3 pt-3 text-left text-xs font-bold text-sky-700">View search history</button>
               </div>
             )}
@@ -325,10 +335,10 @@ function SearchContent() {
                 </button>
               )}
             </form>
-            <button type="button" onClick={() => setShowFilters((value) => !value)} aria-label="Open search filters" aria-expanded={showFilters} className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${showFilters ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500 hover:border-sky-200 hover:text-sky-700'}`}>
+            <button type="button" onClick={() => setShowFilters((value) => !value)} aria-label="Open search filters" aria-expanded={showFilters} className={`usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${showFilters ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-500 hover:border-teal-200 hover:text-teal-700'}`}>
               <SlidersHorizontal className="h-4 w-4" />
             </button>
-            {searchFocused && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"><p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}</p>{(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).slice(0, 5).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-sky-50"><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>}
+            {searchFocused && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"><p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}</p>{(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).slice(0, 5).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50"><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>}
             </div>
           </div>
 
@@ -336,7 +346,7 @@ function SearchContent() {
             <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 lg:mx-auto lg:max-w-xl">
               <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Filter by</span>
               {tabs.map((tab) => (
-                <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFilters(false) }} className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition ${activeTab === tab.id ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:text-sky-700'}`}>
+                <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFilters(false) }} className="usr-section-tab usr-press" aria-pressed={activeTab === tab.id}>
                   {tab.label}
                 </button>
               ))}
@@ -345,23 +355,24 @@ function SearchContent() {
         </header>
 
         {/* Search Results Header */}
-        <div className="mb-4 border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <h1 className="text-2xl font-black text-slate-900">
+        <div className="usr-card usr-enter mb-6 p-4 sm:p-5">
+          <p className="usr-section-eyebrow">{query.trim() ? 'Search results' : 'Start exploring'}</p>
+          <h2 className="mt-1 text-2xl font-black text-slate-900">
             {query.trim() ? (
               <>
-                Results for <span className="text-sky-600">&quot;{query.trim()}&quot;</span>
+                Results for <span className="text-teal-700">&quot;{query.trim()}&quot;</span>
               </>
             ) : (
-              'Search'
+              'What are you looking for?'
             )}
-          </h1>
+          </h2>
           <p className="mt-1 text-sm text-slate-600">
             {loading ? 'Searching...' : `${totalCount} result${totalCount === 1 ? '' : 's'} found`}
           </p>
           {!query.trim() && (
             <div className="mt-4 flex flex-wrap gap-2">
               {popularSearches.map((suggestion) => (
-                <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="inline-flex items-center gap-1.5 rounded-full border border-sky-100 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700 transition hover:border-sky-200 hover:bg-sky-100">
+                <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:border-teal-200 hover:bg-teal-100">
                   <Sparkles className="h-3.5 w-3.5" />
                   {suggestion}
                 </button>
@@ -372,19 +383,17 @@ function SearchContent() {
 
         {/* Tabs */}
         {!loading && totalCount > 0 && (
-          <div className="mb-6 flex gap-2 overflow-x-auto pb-1">
+          <div className="usr-section-tabs">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-xs font-semibold transition ${
-                  activeTab === tab.id
-                    ? 'bg-sky-600 text-white shadow-sm'
-                    : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-700'
-                }`}
+                aria-pressed={activeTab === tab.id}
+                className="usr-section-tab usr-press"
               >
-                {tab.label} ({tab.count})
+                {tab.label}
+                <span className="usr-section-tab-count">{tab.count}</span>
               </button>
             ))}
           </div>
@@ -392,38 +401,38 @@ function SearchContent() {
 
         {/* Loading State */}
         {loading ? (
-          <div className="space-y-4">
+          <div className="usr-section-loading">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse border border-slate-200 bg-slate-100 p-4">
-                <div className="h-5 w-1/3 rounded bg-slate-200" />
-                <div className="mt-3 h-3 w-full rounded bg-slate-200" />
+              <div key={i} className="usr-card p-4">
+                <div className="usr-section-skeleton h-4 w-1/3 rounded-full" />
+                <div className="usr-section-skeleton mt-3 h-3 w-full rounded-full" />
               </div>
             ))}
           </div>
         ) : totalCount === 0 && error ? (
-          <div role="alert" className="border border-red-200 bg-red-50 p-8 text-center shadow-sm sm:p-10">
+          <div role="alert" className="usr-empty-state !border-red-200 !bg-red-50 sm:p-10">
             <SearchIcon className="mx-auto mb-3 h-10 w-10 text-red-400" />
             <p className="text-sm font-semibold text-red-700">{error}</p>
             <button
               type="button"
               onClick={() => setRefreshKey((value) => value + 1)}
-              className="mt-4 rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+              className="usr-section-primary mt-4"
             >
               Try again
             </button>
           </div>
         ) : totalCount === 0 ? (
-          <div className="border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm sm:p-10">
+          <div className="usr-empty-state sm:p-10">
             <SearchIcon className="mx-auto mb-3 h-10 w-10 text-slate-400" />
             <p className="text-sm text-slate-500">
               {query.trim() ? 'No results found. Try different keywords.' : 'Type something to search across Daet.'}
             </p>
-            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{visibleSuggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
+            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{visibleSuggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/search?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
             {query.trim() && (
               <button
                 type="button"
                 onClick={() => { setQuery(''); router.push('/search') }}
-                className="mt-3 text-xs font-semibold text-sky-600 hover:underline"
+                className="mt-3 text-xs font-bold text-teal-700 hover:underline"
               >
                 Clear search
               </button>
@@ -433,24 +442,24 @@ function SearchContent() {
           <div className="space-y-6">
             {(activeTab === 'all' || activeTab === 'people') && results.users.length > 0 && (
               <section>
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700">
                   <UserRound className="h-4 w-4" />
                   People ({results.users.length})
                 </h2>
-                <div className="grid gap-0 border border-slate-200 bg-white">
+                <div className="usr-card space-y-1.5 p-1.5">
                   {results.users.map((user) => (
-                    <div key={user.id} className="flex min-h-[88px] min-w-0 items-center gap-3 border-b border-slate-200 bg-white p-3 transition last:border-b-0 hover:bg-sky-50/40 sm:min-h-[96px]">
+                    <div key={user.id} className="usr-list-row">
                           <UserProfileLink user={user} className="flex min-w-0 flex-1 items-center gap-3">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sm font-black text-sky-700">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-sm font-black text-teal-700">
                         {user.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Community member'} className="h-full w-full object-cover" /> : <UserRound className="h-5 w-5" />}
                       </div>
                       <div className="min-w-0">
                         <h3 className="truncate text-sm font-bold text-slate-900">{user.full_name || user.email || 'Community member'}</h3>
                         <p className="mt-1 line-clamp-2 text-xs text-slate-500">{user.bio || [user.city, user.country].filter(Boolean).join(', ') || 'Daet community member'}</p>
-                        {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
+                        {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
                       </div>
                       </UserProfileLink>
-                      <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
+                      <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`usr-press inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
                         {followingIds.has(user.id) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
                         {followingIds.has(user.id) ? 'Following' : 'Follow'}
                       </button>
@@ -461,20 +470,20 @@ function SearchContent() {
             )}
 
             {(activeTab === 'all' || activeTab === 'community') && (results.userContent.length > 0 || results.userComments.length > 0 || results.mentions.length > 0) && (
-              <section className="border border-sky-100 bg-white p-4 shadow-sm sm:p-5">
+              <section className="usr-card p-4 sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
-                  <AtSign className="h-4 w-4 text-sky-600" />
+                  <AtSign className="h-4 w-4 text-teal-700" />
                   <div><h2 className="text-base font-black text-slate-900">Community activity</h2><p className="text-xs text-slate-500">Public posts, comments, and mentions connected to these people.</p></div>
                 </div>
                 <div className="space-y-3">
                   {results.userContent.map((item) => (
-                    <div key={`${item.contentKind}-${item.id}`} className="border border-slate-100 bg-slate-50 p-3 transition hover:border-sky-200 hover:bg-sky-50">
+                    <div key={`${item.contentKind}-${item.id}`} className="border border-slate-100 bg-slate-50 p-3 transition hover:border-sky-200 hover:bg-teal-50">
                       <div className="flex items-center justify-between gap-2">
                         <Link href={item.href} className="min-w-0 flex-1">
                           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">{item.contentKind === 'post' ? 'Public post' : item.contentKind}</span>
                           <p className="mt-1 text-sm font-bold text-slate-900">{item.title || item.content || item.description}</p>
                         </Link>
-                        <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[9px] font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-sky-600 text-white hover:bg-sky-700'}`}>
+                        <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`usr-press inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
                           {followingIds.has(item.authorId) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
                           {followingIds.has(item.authorId) ? 'Following' : 'Follow'}
                         </button>
@@ -505,16 +514,16 @@ function SearchContent() {
             {/* Spots */}
             {(activeTab === 'all' || activeTab === 'spots') && results.spots.length > 0 && (
               <section>
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700">
                   <Compass className="h-4 w-4" />
                   Destinations ({results.spots.length})
                 </h2>
-                <div className="space-y-0 border border-slate-200 bg-white">
+                <div className="usr-card space-y-1.5 p-1.5">
                   {results.spots.slice(0, activeTab === 'all' ? 4 : undefined).map((spot) => (
                     <Link
                       key={spot.id}
                       href={`/tourist-spots/${spot.id}`}
-                      className="group flex gap-3 border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
+                      className="usr-list-row group"
                     >
                       <img
                         src={getImage(spot)}
@@ -522,7 +531,7 @@ function SearchContent() {
                         className="h-20 w-24 flex-shrink-0 object-cover"
                       />
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{spot.name}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{spot.name}</h3>
                         {spot.location && (
                           <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
                             <MapPin className="h-3 w-3 flex-shrink-0" />
@@ -540,16 +549,16 @@ function SearchContent() {
             {/* Events */}
             {(activeTab === 'all' || activeTab === 'events') && results.events.length > 0 && (
               <section>
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700">
                   <CalendarDays className="h-4 w-4" />
                   Events ({results.events.length})
                 </h2>
-                <div className="space-y-0 border border-slate-200 bg-white">
+                <div className="usr-card space-y-1.5 p-1.5">
                   {results.events.slice(0, activeTab === 'all' ? 4 : undefined).map((event) => (
                     <Link
                       key={event.id}
                       href={`/events/${event.id}`}
-                      className="group flex gap-3 border-b border-slate-200 bg-white p-4 transition hover:bg-sky-50/40 last:border-b-0"
+                      className="usr-list-row group"
                     >
                       {event.featured_image ? (
                         <img
@@ -563,7 +572,7 @@ function SearchContent() {
                         </div>
                       )}
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{event.title}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{event.title}</h3>
                         {getAuthor(event.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(event.created_by).full_name || 'Community member'}</span>{renderFollowButton(event.created_by)}</div>}
                         <p className="mt-1 text-xs text-slate-500">{formatDate(event.start_date)}</p>
                         {event.location && (
@@ -582,16 +591,16 @@ function SearchContent() {
             {/* Blogs */}
             {(activeTab === 'all' || activeTab === 'blogs') && results.blogs.length > 0 && (
               <section>
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700">
                   <Newspaper className="h-4 w-4" />
                   Blogs ({results.blogs.length})
                 </h2>
-                <div className="space-y-0 border border-slate-200 bg-white">
+                <div className="usr-card space-y-1.5 p-1.5">
                   {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog) => (
                     <Link
                       key={blog.id}
                       href={`/blog/${blog.id}`}
-                      className="group flex gap-3 border-b border-slate-200 bg-white p-4 transition hover:bg-sky-50/40 last:border-b-0"
+                      className="usr-list-row group"
                     >
                       <img
                         src={getImage(blog)}
@@ -599,10 +608,10 @@ function SearchContent() {
                         className="h-20 w-24 flex-shrink-0 object-cover"
                       />
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-sky-700">{blog.title}</h3>
+                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{blog.title}</h3>
                         {getAuthor(blog.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(blog.created_by).full_name || 'Community member'}</span>{renderFollowButton(blog.created_by)}</div>}
                         <p className="mt-1 text-xs text-slate-600">{blog.excerpt}</p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-sky-600">
+                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
                           {blog.category || 'Blog'}
                         </p>
                       </div>
@@ -615,19 +624,19 @@ function SearchContent() {
             {/* Forum Threads */}
             {(activeTab === 'all' || activeTab === 'threads') && results.threads.length > 0 && (
               <section>
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-bold uppercase tracking-wide text-slate-500">
+                <h2 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700">
                   <MessageSquare className="h-4 w-4" />
                   Forum Discussions ({results.threads.length})
                 </h2>
-                <div className="space-y-0 border border-slate-200 bg-white">
+                <div className="usr-card space-y-1.5 p-1.5">
                   {results.threads.slice(0, activeTab === 'all' ? 4 : undefined).map((thread) => (
                     <div
                       key={thread.id}
-                      className="border-b border-slate-200 p-4 transition last:border-b-0 hover:bg-emerald-50/30"
+                      className="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-teal-300"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <Link href={`/forum/${thread.id}`} className="min-w-0 flex-1">
-                          <h3 className="text-sm font-bold text-slate-900 hover:text-sky-700">{thread.title}</h3>
+                          <h3 className="text-sm font-bold text-slate-900 hover:text-teal-700">{thread.title}</h3>
                           {getAuthor(thread.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(thread.created_by).full_name || 'Community member'}</span>{renderFollowButton(thread.created_by)}</div>}
                         </Link>
                       </div>

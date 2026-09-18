@@ -12,11 +12,9 @@ export default function NotificationsSection({ settings, t, userId, onNotificati
       title={t('settings.notifications.title')}
       description={t('settings.notifications.description')}
     >
-      <p role="note" className="text-sm text-slate-500">{t('settings.notifications.unavailable')}</p>
       {NOTIFICATION_OPTIONS.map((option) => (
         <ToggleRow
           key={option.key}
-          disabled
           id={`settings-notification-${option.key}`}
           label={t(option.labelKey)}
           checked={Boolean(settings.notifications[option.key])}

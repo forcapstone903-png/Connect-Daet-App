@@ -86,23 +86,8 @@ This index contains all files created for a complete, production-ready Supabase 
 
 ---
 
-### 4️⃣ **sample_data.sql**
-- **Location:** `supabase/migrations/sample_data.sql`
-- **Purpose:** Test data for development
-- **Contains:**
-  - 6 sample users (admin, moderator, business, tourists)
-  - 9 sample amenities
-  - 5 sample events
-  - 5 sample blogs
-  - 4 sample announcements
-  - 5 sample tourist spots
-  - 2 blog comments
-- **Execution Order:** RUN FOURTH (Optional)
-- **Time:** ~2-3 seconds
-
-**Sample Credentials:**
-- Email: `admin@daet-tourism.com`
-- Password: `Admin@123456`
+### Production data
+Create real office accounts through the supported account workflow and publish approved tourism content through the administration pages. No demonstration accounts or sample-data import is provided.
 
 ---
 
@@ -336,14 +321,8 @@ Click: Run
 Expected time: 3-5 seconds
 ```
 
-### ✅ Step 4: Test Data (File: sample_data.sql)
-Load sample data for testing (optional)
-```bash
-# In Supabase SQL Editor
-Copy & paste: supabase/migrations/sample_data.sql
-Click: Run
-Expected time: 2-3 seconds
-```
+### Step 4: Office-approved content
+Enter verified destinations, amenities, and events through authenticated administration pages.
 
 ### ✅ Step 5: Frontend (File: supabaseUtils.js)
 Import functions in your components
@@ -383,7 +362,6 @@ START HERE ↓
 ├── 1. supabase/migrations/001_init_schema.sql
 ├── 2. supabase/migrations/002_rls_policies.sql
 ├── 3. supabase/migrations/003_functions_and_helpers.sql
-├── 4. supabase/migrations/sample_data.sql (optional)
 │
 ├── Integrate ↓
 ├── src/lib/supabaseUtils.js
@@ -409,7 +387,7 @@ START HERE ↓
 1. **Read Documentation First** - Understand before executing SQL
 2. **Execute Migrations in Order** - They have dependencies
 3. **Create Storage Buckets** - Don't forget this step!
-4. **Test with Sample Data** - Helps verify everything works
+4. **Use Office-Approved Content** - Publish verified information only
 5. **Use Provided Functions** - Don't write raw SQL in frontend
 6. **Check RLS Policies** - Most issues are RLS-related
 7. **Enable Backups** - Critical for production
@@ -424,7 +402,7 @@ When you're done, you should have:
 - [ ] Created Supabase project (5 min)
 - [ ] Executed 3 migration files (10 min)
 - [ ] Created 6 storage buckets (5 min)
-- [ ] Loaded sample data (optional, 2 min)
+- [ ] Published office-approved content
 - [ ] Updated .env.local (2 min)
 - [ ] Tested database connection (5 min)
 - [ ] Imported utils in components (15 min)
@@ -445,7 +423,6 @@ You now have a complete, production-ready Supabase backend with:
 ✅ Frontend utilities (40+ functions)
 ✅ SQL query reference (45+ examples)
 ✅ Comprehensive documentation (100+ pages equivalent)
-✅ Sample data for testing
 ✅ Security best practices
 ✅ Troubleshooting guide
 

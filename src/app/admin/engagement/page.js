@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { MessageCircle, Repeat2, Search, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import AdminSidebar from '@/app/components/AdminSidebar'
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin'
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies'
 
@@ -163,15 +164,23 @@ export default function AdminEngagementPage() {
     <div className="flex min-h-screen bg-slate-50">
       <AdminSidebar user={adminUser} roleLabel="Administrator" userRole={adminUser.role} />
       <main className="min-w-0 flex-1 overflow-auto" style={{ marginLeft: 'var(--admin-sidebar-width)' }}>
-        <div className="mx-auto max-w-[1500px] p-4 sm:p-6 lg:p-8">
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div><p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">Community</p><h1 className="mt-1 text-3xl font-black text-slate-950">Engagement activity</h1><p className="mt-2 text-sm text-slate-600">Review every reaction, share, repost, and comment recorded by the platform.</p></div>
-            <button type="button" onClick={loadEngagement} className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50">Refresh records</button>
-          </div>
+        <div className="admin-page">
+          <AdminPageHeader
+            eyebrow="Community"
+            title="Engagement activity"
+            description="Review every reaction, share, repost, and comment recorded by the platform."
+            icon="analytics"
+            actions={
+              <AdminButton icon="refresh" onClick={loadEngagement} disabled={loading}>Refresh records</AdminButton>
+            }
+          />
 
-          <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {[['Total activity', counts.total, 'bg-slate-950'], ['Reactions', counts.reactions, 'bg-violet-600'], ['Shares & reposts', counts.shares, 'bg-emerald-600'], ['Comments', counts.comments, 'bg-amber-500']].map(([label, value, color]) => <div key={label} className="border border-slate-200 bg-white p-4 shadow-sm"><div className={`mb-3 h-1.5 w-12 ${color}`} /><p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">{label}</p><p className="mt-2 text-2xl font-black text-slate-950">{value}</p></div>)}
-          </div>
+          <AdminStatGrid>
+            <AdminStatCard label="Total activity" value={counts.total} icon="analytics" tone="neutral" meta="All recorded events" />
+            <AdminStatCard label="Reactions" value={counts.reactions} icon="star" tone="violet" meta="Likes and reactions" />
+            <AdminStatCard label="Shares & reposts" value={counts.shares} icon="send" tone="success" meta="Amplified content" />
+            <AdminStatCard label="Comments" value={counts.comments} icon="forum" tone="warning" meta="Discussion replies" />
+          </AdminStatGrid>
 
           <section className="border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">

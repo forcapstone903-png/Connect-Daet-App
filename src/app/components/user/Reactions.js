@@ -20,8 +20,21 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [burstEmoji, setBurstEmoji] = useState(null)
   const pickerRef = useRef(null)
   const mutationVersionRef = useRef(0)
+  const burstTimerRef = useRef(null)
+
+  // Decorative emoji feedback: a burst floats up from the reaction button so a
+  // tap feels acknowledged even before the request resolves. Purely visual.
+  const triggerEmojiBurst = useCallback((emoji) => {
+    if (!emoji) return
+    setBurstEmoji(emoji)
+    window.clearTimeout(burstTimerRef.current)
+    burstTimerRef.current = window.setTimeout(() => setBurstEmoji(null), 950)
+  }, [])
+
+  useEffect(() => () => window.clearTimeout(burstTimerRef.current), [])
 
   const loadReactions = useCallback(async () => {
     if (!contentId || !isValidUuid(String(contentId))) return
@@ -134,7 +147,9 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
     const previousCounts = reactionCounts
     mutationVersionRef.current += 1
 
+    setShowPicker(false)
     setUserReaction(nextReaction)
+    if (nextReaction) triggerEmojiBurst(REACTION_TYPES.find((reaction) => reaction.type === nextReaction)?.emoji)
     setReactionCounts((prev) => {
       const next = { ...prev }
       if (previousReaction) next[previousReaction] = Math.max(0, (next[previousReaction] || 0) - 1)
@@ -171,7 +186,6 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
           },
         })
       }
-      setShowPicker(false)
     } catch (err) {
       setUserReaction(previousReaction)
       setReactionCounts(previousCounts)
@@ -187,10 +201,15 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
 
   return (
     breakdown ? (
-      <div ref={pickerRef} className="relative flex w-full min-w-0 flex-col items-center gap-1">
-        <div className="flex h-5 items-center justify-center gap-0.5 text-xs leading-5">
+      <div ref={pickerRef} className="relative flex w-full min-w-0 flex-col items-center gap-0.5">
+        <div className="flex h-4 items-center justify-center gap-0.5 text-xs leading-4" aria-hidden="true">
           {visibleReactionTypes.slice(0, 4).map((reaction) => (
-            <span key={reaction.type} aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`} title={`${reaction.label}: ${reactionCounts[reaction.type]}`}>
+            <span
+              key={`${reaction.type}-${reactionCounts[reaction.type]}`}
+              className="usr-emoji-pop"
+              aria-label={`${reaction.label}: ${reactionCounts[reaction.type]}`}
+              title={`${reaction.label}: ${reactionCounts[reaction.type]}`}
+            >
               {reaction.emoji}
             </span>
           ))}
@@ -199,17 +218,30 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
           type="button"
           onClick={() => setShowPicker((value) => !value)}
           disabled={loading}
+          aria-expanded={showPicker}
           aria-label={userReaction ? `${activeReactionMeta?.label || 'Reaction'} reaction, ${totalCount} total` : `React to this post, ${totalCount} total`}
           title="React to this post"
-          className={`inline-flex h-9 min-w-[114px] items-center justify-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium transition ${activeReactionMeta ? activeReactionMeta.color : 'text-slate-600 hover:text-slate-900'}`}
+          className={`usr-press usr-lift inline-flex h-9 ${fullWidth ? 'min-w-0 w-full px-1' : 'min-w-[114px] px-4'} items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 py-1.5 text-sm font-medium transition ${activeReactionMeta ? activeReactionMeta.color : 'text-slate-600 hover:text-slate-900'}`}
         >
-          {activeReactionMeta ? <span className="text-base leading-none">{activeReactionMeta.emoji}</span> : <ThumbsUp aria-hidden="true" className="h-4 w-4" />}
-          <span>{totalCount}</span>
+          {activeReactionMeta ? <span key={activeReactionMeta.type} className="usr-emoji-pop text-base leading-none">{activeReactionMeta.emoji}</span> : <ThumbsUp aria-hidden="true" className="h-4 w-4" />}
+          <span key={totalCount} className="usr-count-pop">{totalCount}</span>
         </button>
+        {burstEmoji && <span aria-hidden="true" className="usr-emoji-burst">{burstEmoji}</span>}
         {showPicker && (
-          <div className="absolute bottom-full left-0 z-20 mb-2 flex translate-x-0 items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-xl">
-            {REACTION_TYPES.map(({ type, label: pickerLabel, emoji }) => (
-              <button key={type} type="button" onClick={() => handleReact(type)} className="flex h-9 w-9 items-center justify-center rounded-full text-xl hover:bg-slate-50" title={pickerLabel}>{emoji}</button>
+          <div className="usr-pop-in absolute bottom-full left-0 z-20 mb-2 flex translate-x-0 origin-bottom-left items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-xl">
+            {REACTION_TYPES.map(({ type, label: pickerLabel, emoji }, index) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => handleReact(type)}
+                style={{ animationDelay: `${index * 22}ms` }}
+                className={`usr-emoji-btn usr-pop-in flex h-9 w-9 items-center justify-center rounded-full text-xl hover:bg-slate-50 ${userReaction === type ? 'bg-slate-100' : ''}`}
+                title={pickerLabel}
+                aria-label={pickerLabel}
+                aria-pressed={userReaction === type}
+              >
+                {emoji}
+              </button>
             ))}
           </div>
         )}
@@ -249,16 +281,21 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
           )}
         </button>
 
+        {burstEmoji && <span aria-hidden="true" className="usr-emoji-burst">{burstEmoji}</span>}
+
         {/* Reaction picker popover */}
         {showPicker && (
-          <div className="absolute bottom-full left-0 z-20 mb-2 flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-xl">
-            {REACTION_TYPES.map(({ type, label, emoji, hover }) => (
+          <div className="usr-pop-in absolute bottom-full left-0 z-20 mb-2 flex origin-bottom-left items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1.5 shadow-xl">
+            {REACTION_TYPES.map(({ type, label, emoji }, index) => (
               <button
                 key={type}
                 type="button"
                 onClick={() => handleReact(type)}
-                className={`flex h-9 w-9 items-center justify-center rounded-full text-xl transition hover:bg-slate-50 hover:scale-110 ${userReaction === type ? 'bg-slate-100' : ''}`}
+                style={{ animationDelay: `${index * 22}ms` }}
+                className={`usr-emoji-btn usr-pop-in flex h-9 w-9 items-center justify-center rounded-full text-xl hover:bg-slate-50 ${userReaction === type ? 'bg-slate-100' : ''}`}
                 title={label}
+                aria-label={label}
+                aria-pressed={userReaction === type}
               >
                 {emoji}
               </button>

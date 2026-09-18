@@ -187,23 +187,8 @@ INSERT INTO public.info_users (
 3. Note the returned `id` value
 4. Store credentials securely
 
-### Step 4.2: Create Test Data (Optional)
-Run from `supabase/queries/sample_data.sql`:
-```sql
--- Add sample amenities
-INSERT INTO public.info_amenities (name, type, location, created_by, status) VALUES
-  ('Bagasbas Beach Resort', 'accommodation', 'Bagasbas', 'admin-id', 'active'),
-  ('The Singing Sands Bistro', 'restaurant', 'Daet', 'admin-id', 'active'),
-  ('Calaguas Ferry', 'transport', 'Port Area', 'admin-id', 'active');
-
--- Add sample event
-INSERT INTO public.info_events (
-  title, category, location, start_date, created_by, status
-) VALUES (
-  'Daet Tourism Festival', 'festival', 'Bagasbas Beach',
-  '2025-02-15', 'admin-id', 'published'
-);
-```
+### Step 4.2: Publish verified tourism content
+Use the authenticated administration pages to enter office-approved amenities, destinations, and events. Do not import demonstration accounts or fabricated activity into the production database.
 
 ---
 
@@ -427,7 +412,6 @@ project-root/
 │   │   └── 003_functions_and_helpers.sql ← Add functions
 │   └── queries/
 │       ├── common_operations.sql    ← Useful queries
-│       └── sample_data.sql          ← Test data
 ├── src/
 │   └── lib/
 │       ├── supabaseClient.js        ← Client config

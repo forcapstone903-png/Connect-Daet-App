@@ -5,12 +5,15 @@ import Link from 'next/link'
 import { Bell, Bookmark, LogOut, Menu, MessageCircle, Search, Settings, UserRound } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
+import { useUserSettings } from '@/components/UserSettingsProvider'
 
 export default function UserTopHeader() {
+  const { t } = useUserSettings()
   const [showMenu, setShowMenu] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
+  const [unreadMessages, setUnreadMessages] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -37,9 +40,19 @@ export default function UserTopHeader() {
       else void loadUnreadAlerts()
     }
     window.addEventListener('daet-notifications-updated', handleUpdate)
+    // MobileNav owns the polling loop for both counts on the user shell, so reuse
+    // its values here instead of hitting /api/notifications twice.
+    const handleSharedCounts = (event) => {
+      const alerts = Number(event?.detail?.unreadAlerts)
+      const messages = Number(event?.detail?.unreadMessages)
+      if (Number.isFinite(alerts)) setUnreadAlerts(alerts)
+      if (Number.isFinite(messages)) setUnreadMessages(messages)
+    }
+    window.addEventListener('daet-unread-counts', handleSharedCounts)
     return () => {
       active = false
       window.removeEventListener('daet-notifications-updated', handleUpdate)
+      window.removeEventListener('daet-unread-counts', handleSharedCounts)
     }
   }, [])
 
@@ -56,9 +69,9 @@ export default function UserTopHeader() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 bg-white/95 px-3 py-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
+      <header className="usr-glass usr-fade-in fixed inset-x-0 top-0 z-50 border-b border-slate-200/80 px-3 py-2.5 shadow-[0_8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl lg:hidden">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <Link href="/user/dashboard" className="flex min-w-0 shrink-0 items-center gap-2">
+          <Link href="/user/dashboard" className="usr-press flex min-w-0 shrink-0 items-center gap-2">
             <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain sm:h-11 sm:w-11" />
             <span className="min-w-0">
               <span className="block truncate text-sm font-black tracking-tight text-sky-700 sm:text-base">Daet Connect</span>
@@ -67,23 +80,23 @@ export default function UserTopHeader() {
           </Link>
 
           <div className="flex items-center gap-1.5">
-            <Link href="/search" aria-label="Search" title="Search" className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-sky-700">
+            <Link href="/search" aria-label={t('common.search')} title={t('common.search')} className="usr-press flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-sky-700">
               <Search className="h-4 w-4" />
             </Link>
-            <Link href="/user/notifications" aria-label="Notifications" title="Notifications" className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-sky-700">
-              <Bell className="h-4 w-4" />
-              {unreadAlerts > 0 && <span className="absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-white">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>}
+            <Link href="/user/notifications" aria-label={t('common.notifications')} title={t('common.notifications')} className="usr-press relative flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-50 hover:text-sky-700">
+              <Bell className={`h-4 w-4 ${unreadAlerts > 0 ? 'text-sky-700' : ''}`} />
+              {unreadAlerts > 0 && <span className="usr-badge absolute right-0 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-white">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>}
             </Link>
             <div className="relative">
-              <button type="button" onClick={() => setShowMenu((value) => !value)} aria-expanded={showMenu} aria-label="Open settings menu" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
+              <button type="button" onClick={() => setShowMenu((value) => !value)} aria-expanded={showMenu} aria-label="Open settings menu" className="usr-press flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-sky-50 hover:text-sky-700">
                 <Menu className="h-5 w-5" />
               </button>
-              {showMenu && <div className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                <Link href="/user/profile" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" />Profile</Link>
-                <Link href="/user/settings" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Settings</Link>
-                <Link href="/user/messaging" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />Messages</Link>
-                <Link href="/user/saved" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Bookmark className="h-4 w-4" />Saved</Link>
-                <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
+              {showMenu && <div className="usr-pop-in absolute right-0 top-12 z-30 w-48 origin-top-right overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                <Link href="/user/profile" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" />{t('common.profile')}</Link>
+                <Link href="/user/settings" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />{t('common.settings')}</Link>
+                <Link href="/user/messaging" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" />{t('common.messages')}</Link>
+                <Link href="/user/saved" onClick={() => setShowMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Bookmark className="h-4 w-4" />{t('common.saved')}</Link>
+                <button type="button" onClick={handleLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />{t('common.logOut')}</button>
               </div>}
             </div>
           </div>
@@ -92,10 +105,10 @@ export default function UserTopHeader() {
       <div aria-hidden="true" className="h-[66px] lg:hidden" />
       <ConfirmationModal
         isOpen={showLogoutConfirm}
-        title="Confirm Logout"
-        message="Are you sure you want to logout?"
-        confirmText={loggingOut ? 'Logging out...' : 'OK'}
-        cancelText="Cancel"
+        title={t('common.confirmLogout')}
+        message={t('common.confirmLogoutMessage')}
+        confirmText={loggingOut ? t('common.loggingOut') : t('common.ok')}
+        cancelText={t('common.cancel')}
         isDangerous
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutConfirm(false)}

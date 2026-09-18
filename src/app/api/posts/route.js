@@ -5,6 +5,8 @@ import { getServerSession } from '@/lib/serverAuth'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+import { notifyFollowers } from '@/lib/notificationAudience'
+
 export async function POST(request) {
   try {
     const session = getServerSession(request)
@@ -49,41 +51,15 @@ export async function POST(request) {
         return NextResponse.json({ success: false, message: error.message || 'Unable to create forum discussion.' }, { status: 500 })
       }
 
-      const { data: followers, error: followersError } = await adminSupabase
-        .from('user_follows')
-        .select('follower_id')
-        .eq('following_id', userId)
-        .neq('follower_id', userId)
-
-      if (followersError) {
-        console.error('Forum follower lookup failed:', followersError)
-      } else {
-        const followerIds = [...new Set((followers || []).map((follower) => follower.follower_id).filter(Boolean))]
-        if (followerIds.length) {
-          const { data: author } = await adminSupabase
-            .from('info_users')
-            .select('full_name')
-            .eq('id', userId)
-            .maybeSingle()
-          const notificationRows = followerIds.map((followerId) => ({
-            user_id: followerId,
-            title: 'New forum discussion',
-            message: `${author?.full_name || 'Someone you follow'} started a new discussion: ${title}`,
-            type: 'forum',
-            is_read: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-            link: `/user/forums/${data.id}`,
-            post_id: data.id,
-            post_owner_id: userId,
-            actor_id: userId,
-          }))
-          const { error: notificationError } = await adminSupabase
-            .from('info_notifications')
-            .insert(notificationRows)
-          if (notificationError) console.error('Forum follower notification failed:', notificationError)
-        }
-      }
+      await notifyFollowers(adminSupabase, {
+        authorId: userId,
+        type: 'forum',
+        link: `/user/forums/${data.id}`,
+        postId: data.id,
+        title: 'New forum discussion',
+        actionText: 'started a new discussion',
+        subject: title,
+      })
 
       return NextResponse.json({ success: true, id: data?.id, destination: '/user/dashboard' })
     }
@@ -117,6 +93,16 @@ export async function POST(request) {
       if (error) {
         return NextResponse.json({ success: false, message: error.message || 'Unable to create event.' }, { status: 500 })
       }
+
+      await notifyFollowers(adminSupabase, {
+        authorId: userId,
+        type: 'event',
+        link: `/user/events/${data.id}`,
+        postId: data.id,
+        title: 'New event',
+        actionText: 'created a new event',
+        subject: title,
+      })
 
       return NextResponse.json({ success: true, id: data?.id, destination: '/user/events' })
     }

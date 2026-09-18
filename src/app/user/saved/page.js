@@ -7,6 +7,7 @@ import { Bookmark, CalendarDays, FileText, Loader, MapPin, MessageSquare, MapPin
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserSectionHeader, { SectionTabs } from '@/app/components/user/UserSectionHeader'
 
 function parseSavedKey(key) {
   const separatorIndex = key.indexOf('-')
@@ -161,69 +162,74 @@ export default function UserSavedPage() {
   }
 
   const visibleItems = activeType === 'all' ? savedItems : savedItems.filter((item) => item.type === activeType)
+  const typeFilters = [
+    { value: 'all', label: 'All', count: savedItems.length },
+    { value: 'blog', label: 'Blogs', count: savedItems.filter((item) => item.type === 'blog').length },
+    { value: 'event', label: 'Events', count: savedItems.filter((item) => item.type === 'event').length },
+    { value: 'forum', label: 'Forums', count: savedItems.filter((item) => item.type === 'forum').length },
+    { value: 'tourist_spot', label: 'Destinations', count: savedItems.filter((item) => item.type === 'tourist_spot').length },
+  ]
 
   if (authChecking) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9]">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
-          <p className="text-slate-600">Loading...</p>
+      <main className="tourism-shell usr-section-page usr-library flex min-h-screen items-center justify-center p-6">
+        <div className="usr-card usr-pop-in p-6 text-center">
+          <Loader className="usr-spin mx-auto mb-4 text-teal-700" />
+          <p className="text-sm font-semibold text-slate-600">Loading your library...</p>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="tourism-shell usr-section-page usr-library min-h-screen text-slate-900">
       <UserTopHeader />
-      <div className="mx-auto max-w-[800px] px-3 pb-10 pt-2 sm:px-4 lg:px-6">
-        <div className="mb-6">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">Your Library</p>
-          <h1 className="mt-1 text-2xl font-black text-slate-900 md:text-3xl">Saved Items</h1>
-          <p className="mt-1 text-sm text-slate-600">Blogs, events, and forum posts you&apos;ve saved for later</p>
-        </div>
+      <div className="usr-section-container mx-auto max-w-4xl px-3 pb-10 pt-2 sm:px-4 lg:px-6">
+        <UserSectionHeader
+          eyebrow="Your library"
+          title="Saved items"
+          description="Blogs, events, forum threads, and destinations you bookmarked for later."
+          emoji="🔖"
+        >
+          <span className="usr-section-counter">{savedItems.length} saved</span>
+          <Link href="/user/blogs" className="usr-section-secondary">Browse stories</Link>
+        </UserSectionHeader>
 
-        <nav className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-slate-200" aria-label="Saved content filters">
-          {[['all', 'All'], ['blog', 'Blogs'], ['event', 'Events'], ['forum', 'Forums']].map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setActiveType(value)} className={`shrink-0 border-b-2 px-4 py-2.5 text-sm font-bold transition ${activeType === value ? 'border-sky-600 text-sky-700' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
-              {label}
-            </button>
-          ))}
-        </nav>
+        <SectionTabs label="Saved content filters" value={activeType} onChange={setActiveType} options={typeFilters} />
 
         {loading ? (
-          <div className="space-y-4">
+          <div className="usr-section-loading">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-5">
-                <div className="h-5 w-1/3 rounded bg-slate-200" />
-                <div className="mt-3 h-3 w-full rounded bg-slate-200" />
-                <div className="mt-2 h-3 w-2/3 rounded bg-slate-200" />
+              <div key={i} className="usr-card flex items-center gap-4 p-4">
+                <div className="usr-section-skeleton h-16 w-16 shrink-0 rounded-2xl" />
+                <div className="flex-1 space-y-3">
+                  <div className="usr-section-skeleton h-3 w-1/3 rounded-full" />
+                  <div className="usr-section-skeleton h-3 w-4/5 rounded-full" />
+                </div>
               </div>
             ))}
           </div>
         ) : visibleItems.length === 0 ? (
-          <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
+          <div className="usr-empty-state usr-pop-in">
             <Bookmark className="mx-auto mb-3 h-8 w-8 text-slate-400" />
-            <p className="text-sm text-slate-500">No saved {activeType === 'all' ? 'items' : `${activeType}s`} yet</p>
-            <p className="mt-1 text-xs text-slate-400">Save blogs, events, or forum posts to find them here.</p>
-            <Link href="/user/dashboard" className="mt-4 inline-block rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700">
-              Explore Content
-            </Link>
+            <p className="text-sm font-semibold text-slate-600">Nothing saved here yet</p>
+            <p className="mt-1 text-xs text-slate-500">Bookmark blogs, events, forum threads, or destinations and they will show up here.</p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Link href="/search" className="usr-section-primary">Explore content</Link>
+              <Link href="/user/blogs" className="usr-section-secondary">Browse stories</Link>
+            </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="usr-stagger space-y-3">
             {visibleItems.map((item) => {
               const TypeIcon = getTypeIcon(item.type)
               return (
-                <div
-                  key={`${item.type}-${item.id}`}
-                  className="group flex items-center gap-4 rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow-md"
-                >
+                <div key={`${item.type}-${item.id}`} className="usr-list-row group">
                   <Link href={item.href} className="flex min-w-0 flex-1 items-center gap-4">
                     {item.featured_image ? (
-                      <img src={item.featured_image} alt={item.title} className="h-16 w-16 flex-shrink-0 rounded-xl object-cover" />
+                      <img src={item.featured_image} alt={item.title} className="h-16 w-16 flex-shrink-0 rounded-2xl object-cover" />
                     ) : (
-                      <div className={`flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl ${getTypeColor(item.type)}`}>
+                      <div className={`flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl ${getTypeColor(item.type)}`}>
                         <TypeIcon className="h-6 w-6" />
                       </div>
                     )}
@@ -232,7 +238,7 @@ export default function UserSavedPage() {
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${getTypeColor(item.type)}`}>{item.typeLabel}</span>
                         {item.category && <span className="text-xs text-slate-400">{item.category}</span>}
                       </div>
-                      <h3 className="mt-1 truncate text-sm font-bold text-slate-900 group-hover:text-sky-700">{item.title}</h3>
+                      <h3 className="mt-1 truncate text-sm font-bold text-slate-900 group-hover:text-teal-700">{item.title}</h3>
                       {item.location && <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3" /><span className="truncate">{item.location}</span></p>}
                       {item.excerpt && <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{item.excerpt}</p>}
                     </div>
@@ -240,7 +246,7 @@ export default function UserSavedPage() {
                   <button
                     type="button"
                     onClick={(e) => removeSaved(e, `${item.type}-${item.id}`)}
-                    className="flex-shrink-0 rounded-full p-2 text-slate-300 transition hover:bg-red-50 hover:text-red-500"
+                    className="usr-press flex-shrink-0 rounded-full p-2.5 text-slate-300 transition hover:bg-red-50 hover:text-red-500"
                     title="Remove from saved"
                     aria-label={`Remove ${item.title} from saved`}
                   >

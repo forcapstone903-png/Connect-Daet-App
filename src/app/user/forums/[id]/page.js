@@ -1,11 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
   ArrowLeft,
-  Heart,
   MessageSquare,
   ThumbsDown,
   ThumbsUp,
@@ -24,8 +23,12 @@ import {
   Gift,
   Smile,
   Send,
+  Search,
+  LoaderCircle,
+  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import Reactions from '@/app/components/user/Reactions'
 import ShareRepost from '@/app/components/user/ShareRepost'
 import MentionsAutoSuggest from '@/app/components/user/MentionsAutoSuggest'
 import MediaUpload from '@/app/components/MediaUpload'
@@ -66,6 +69,15 @@ function getStatusColor(status) {
   }
 }
 
+const STICKERS = ['😀', '😂', '😍', '😎', '🤔', '😢', '😡', '🥳', '🤝', '❤️']
+
+function isMissingForumReplyColumnError(error) {
+  const code = String(error?.code || '')
+  const message = String(error?.message || '').toLowerCase()
+  return ['42703', 'PGRST204'].includes(code)
+    || message.includes('column') && message.includes('forum_replies')
+}
+
 export default function ThreadDetailPage() {
   const params = useParams()
   const threadId = params?.id
@@ -77,20 +89,65 @@ export default function ThreadDetailPage() {
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [replyContent, setReplyContent] = useState('')
   const [submittingReply, setSubmittingReply] = useState(false)
-  const [userLikes, setUserLikes] = useState(new Set())
   const [editingThread, setEditingThread] = useState(false)
   const [threadDraft, setThreadDraft] = useState({ title: '', content: '' })
   const [showPollForm, setShowPollForm] = useState(false)
-  const [pollDraft, setPollDraft] = useState({ question: '', options: ['', ''] })
+  const [pollDraft, setPollDraft] = useState({ question: '', options: ['', ''], endsAt: '' })
   const [replyMedia, setReplyMedia] = useState({ image_url: '', video_url: '' })
   const [replyGifUrl, setReplyGifUrl] = useState('')
   const [replySticker, setReplySticker] = useState('')
   const [showReplyTools, setShowReplyTools] = useState(false)
+  const [showGifPicker, setShowGifPicker] = useState(false)
+  const [showStickerPicker, setShowStickerPicker] = useState(false)
+  const [gifQuery, setGifQuery] = useState('')
+  const [gifResults, setGifResults] = useState([])
+  const [gifLoading, setGifLoading] = useState(false)
+  const [gifError, setGifError] = useState('')
   const isThreadOwner = Boolean(userId && thread?.created_by === userId)
   const [replyMentionRefs, setReplyMentionRefs] = useState([])
   const [editingReplyId, setEditingReplyId] = useState(null)
   const [editingReplyContent, setEditingReplyContent] = useState('')
   const [poll, setPoll] = useState(null)
+  const [pollVoteIndex, setPollVoteIndex] = useState(null)
+  const [pollVoteCounts, setPollVoteCounts] = useState({})
+  const [votingPoll, setVotingPoll] = useState(false)
+  const [pollNow, setPollNow] = useState(() => Date.now())
+  const [reportTarget, setReportTarget] = useState(null)
+  const [reportReason, setReportReason] = useState('Spam or misleading content')
+  const [reportDescription, setReportDescription] = useState('')
+  const [submittingReport, setSubmittingReport] = useState(false)
+  const pollExpired = Boolean(poll?.ends_at && new Date(poll.ends_at).getTime() <= pollNow)
+
+  useEffect(() => {
+    if (!poll?.ends_at && !showPollForm) return undefined
+    const timer = window.setInterval(() => setPollNow(Date.now()), 30000)
+    return () => window.clearInterval(timer)
+  }, [poll?.ends_at, showPollForm])
+
+  const loadGifs = useCallback(async (query = gifQuery) => {
+    setGifLoading(true)
+    setGifError('')
+    try {
+      const response = await fetch(`/api/gifs?q=${encodeURIComponent(query || 'happy')}`)
+      const payload = await response.json().catch(() => ({}))
+      if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load GIFs.')
+      const gifs = Array.isArray(payload.gifs) ? payload.gifs.filter((gif) => gif?.url) : []
+      setGifResults(gifs)
+      if (!gifs.length) setGifError('No GIFs matched your search.')
+    } catch (error) {
+      console.error('Failed to load forum reply GIFs:', error)
+      setGifError('Could not load GIFs.')
+      setGifResults([])
+    } finally {
+      setGifLoading(false)
+    }
+  }, [gifQuery])
+
+  useEffect(() => {
+    if (!showGifPicker) return undefined
+    const timer = window.setTimeout(() => void loadGifs(gifQuery), 175)
+    return () => window.clearTimeout(timer)
+  }, [showGifPicker, gifQuery, loadGifs])
 
   useEffect(() => {
     let ignore = false
@@ -127,6 +184,17 @@ export default function ThreadDetailPage() {
           setThreadDraft({ title: threadData.title || '', content: threadData.content || '' })
           const { data: pollData } = await supabase.from('content_polls').select('*').eq('content_type', 'forum_thread').eq('content_id', threadId).eq('is_active', true).maybeSingle()
           setPoll(pollData || null)
+          if (pollData?.id) {
+            const { data: voteRows } = await supabase.from('poll_votes').select('user_id, selected_option_index').eq('poll_id', pollData.id)
+            const counts = {}
+            ;(voteRows || []).forEach((vote) => {
+              const index = Number(vote.selected_option_index)
+              if (!Number.isInteger(index)) return
+              counts[index] = (counts[index] || 0) + 1
+              if (vote.user_id === session?.user?.id) setPollVoteIndex(index)
+            })
+            setPollVoteCounts(counts)
+          }
 
           // Increment view count
           await supabase
@@ -135,32 +203,47 @@ export default function ThreadDetailPage() {
             .eq('id', threadId)
 
           // Load replies
-          const { data: repliesData } = await supabase
+          let repliesResult = await supabase
             .from('forum_replies')
             .select(
               `
               *,
-              info_users(full_name, email)
+              info_users(full_name, email, profile_image_url)
             `
             )
             .eq('thread_id', threadId)
-            .order('is_best_answer', { ascending: false })
-            .order('likes', { ascending: false })
+            .eq('status', 'active')
             .order('created_at', { ascending: true })
 
-          setReplies(repliesData || [])
-
-          if (session?.user?.id && repliesData?.length) {
-            const { data: reactionRows, error: reactionError } = await supabase
-              .from('content_reactions')
-              .select('content_id')
-              .eq('user_id', session.user.id)
-              .eq('content_type', 'forum_reply')
-              .in('content_id', repliesData.map((reply) => reply.id))
-
-            if (reactionError) throw reactionError
-            setUserLikes(new Set((reactionRows || []).map((reaction) => reaction.content_id)))
+          if (repliesResult.error && isMissingForumReplyColumnError(repliesResult.error)) {
+            repliesResult = await supabase
+              .from('forum_replies')
+              .select('id, thread_id, user_id, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)')
+              .eq('thread_id', threadId)
+              .eq('status', 'active')
+              .order('created_at', { ascending: true })
           }
+          if (repliesResult.error) throw repliesResult.error
+          const repliesData = repliesResult.data || []
+          const replyUserIds = [...new Set(repliesData.map((reply) => reply.user_id).filter(Boolean))]
+          let replyProfiles = []
+          if (replyUserIds.length) {
+            const { data: profileRows, error: profileError } = await supabase
+              .from('profiles')
+              .select('user_id, profile_image_url')
+              .in('user_id', replyUserIds)
+            if (profileError) console.warn('Reply profile images could not be loaded:', profileError.message)
+            replyProfiles = profileRows || []
+          }
+          const profileImageByUserId = new Map(replyProfiles.map((profile) => [profile.user_id, profile.profile_image_url]))
+          const repliesWithProfiles = repliesData.map((reply) => ({
+            ...reply,
+            info_users: {
+              ...(reply.info_users || {}),
+              profile_image_url: reply.info_users?.profile_image_url || profileImageByUserId.get(reply.user_id) || null,
+            },
+          }))
+          setReplies(repliesWithProfiles)
 
           // Check if subscribed
           if (session?.user?.id) {
@@ -231,7 +314,7 @@ export default function ThreadDetailPage() {
         return
       }
 
-      const { data, error } = await supabase.from('forum_replies').insert({
+      const replyPayload = {
         thread_id: threadId,
         user_id: userId,
         content: replyContent.trim(),
@@ -241,7 +324,13 @@ export default function ThreadDetailPage() {
         sticker_url: replySticker || null,
         mention_data: replyMentionRefs.filter((mention) => mention?.id && !String(mention.id).startsWith('mention-')).map((mention) => ({ mentioned_user_id: mention.id, display_name: mention.displayName })),
         status: 'active',
-      })
+      }
+      let replyResult = await supabase.from('forum_replies').insert(replyPayload)
+      if (replyResult.error && isMissingForumReplyColumnError(replyResult.error)) {
+        const { image_url: _imageUrl, video_url: _videoUrl, gif_url: _gifUrl, sticker_url: _stickerUrl, mention_data: _mentionData, ...legacyReplyPayload } = replyPayload
+        replyResult = await supabase.from('forum_replies').insert(legacyReplyPayload)
+      }
+      const { error } = replyResult
 
       if (error) {
         console.error('Error posting reply:', error)
@@ -253,7 +342,7 @@ export default function ThreadDetailPage() {
         setReplyGifUrl('')
         setReplySticker('')
         // Reload replies
-        const { data: newReplies } = await supabase
+        const { data: newReplies, error: reloadError } = await supabase
           .from('forum_replies')
           .select(
             `
@@ -262,10 +351,10 @@ export default function ThreadDetailPage() {
           `
           )
           .eq('thread_id', threadId)
-          .order('is_best_answer', { ascending: false })
-          .order('likes', { ascending: false })
+          .eq('status', 'active')
           .order('created_at', { ascending: true })
 
+        if (reloadError) throw reloadError
         setReplies(newReplies || [])
       }
     } catch (error) {
@@ -274,31 +363,6 @@ export default function ThreadDetailPage() {
     } finally {
       setSubmittingReply(false)
     }
-  }
-
-  const toggleLike = async (replyId) => {
-    if (!userId) {
-      alert('Please log in to like replies.')
-      return
-    }
-
-    const wasLiked = userLikes.has(replyId)
-    const result = wasLiked
-      ? await supabase.from('content_reactions').delete().eq('user_id', userId).eq('content_type', 'forum_reply').eq('content_id', replyId)
-      : await supabase.from('content_reactions').upsert({ user_id: userId, content_type: 'forum_reply', content_id: replyId, reaction_type: 'like' }, { onConflict: 'user_id,content_type,content_id' })
-
-    if (result.error) {
-      console.error('Reply like update failed:', result.error)
-      alert(result.error.message || 'Unable to update like right now.')
-      return
-    }
-
-    setUserLikes((current) => {
-      const next = new Set(current)
-      if (wasLiked) next.delete(replyId)
-      else next.add(replyId)
-      return next
-    }).select('*').single()
   }
 
   const saveThread = async () => {
@@ -336,28 +400,95 @@ export default function ThreadDetailPage() {
     setEditingReplyContent('')
   }
 
+  const submitReplyReport = async () => {
+    if (!userId) {
+      alert('Please log in to report a reply.')
+      return
+    }
+    if (!reportTarget || !reportReason) return
+
+    setSubmittingReport(true)
+    try {
+      const { error } = await supabase.from('info_moderation').insert({
+        report_type: 'forum_reply',
+        reason: reportReason,
+        description: reportDescription.trim() || null,
+        reported_by: userId,
+        reported_user_id: reportTarget.user_id || null,
+        reported_item_id: reportTarget.id,
+        reported_item_table: 'forum_replies',
+        severity: 'medium',
+        status: 'pending',
+      })
+      if (error) throw error
+      setReportTarget(null)
+      setReportReason('Spam or misleading content')
+      setReportDescription('')
+      alert('Thank you. The reply has been reported for review.')
+    } catch (error) {
+      console.error('Reply report submission failed:', error)
+      alert(error?.message || 'Unable to submit this report right now.')
+    } finally {
+      setSubmittingReport(false)
+    }
+  }
+
   const createPoll = async () => {
     const options = pollDraft.options.map((option) => option.trim()).filter(Boolean)
     if (!pollDraft.question.trim() || options.length < 2) return alert('Add a question and at least two options.')
+    const endsAt = pollDraft.endsAt ? new Date(pollDraft.endsAt) : null
+    if (!endsAt || Number.isNaN(endsAt.getTime()) || endsAt.getTime() <= Date.now()) return alert('Choose a future poll deadline.')
     const { data, error } = await supabase.from('content_polls').insert({
       content_type: 'forum_thread',
       content_id: threadId,
       created_by: userId,
       question: pollDraft.question.trim(),
       options,
-    })
+      ends_at: endsAt ? endsAt.toISOString() : null,
+    }).select('*').single()
     if (error) return alert(error.message || 'Unable to add the poll.')
     setPoll(data)
-    setPollDraft({ question: '', options: ['', ''] })
+    setPollDraft({ question: '', options: ['', ''], endsAt: '' })
     setShowPollForm(false)
+  }
+
+  const voteInPoll = async (optionIndex) => {
+    if (!userId) {
+      alert('Please log in to vote.')
+      return
+    }
+    if (!poll?.id || pollVoteIndex !== null || votingPoll || pollExpired) return
+
+    setVotingPoll(true)
+    const { error } = await supabase.from('poll_votes').insert({
+      poll_id: poll.id,
+      user_id: userId,
+      selected_option_index: optionIndex,
+    })
+    if (error) {
+      console.error('Poll vote failed:', error)
+      alert(error.message || 'Unable to submit your vote.')
+    } else {
+      setPollVoteIndex(optionIndex)
+      setPollVoteCounts((current) => ({ ...current, [optionIndex]: (current[optionIndex] || 0) + 1 }))
+      setPoll((current) => ({ ...current, total_votes: (current?.total_votes || 0) + 1 }))
+    }
+    setVotingPoll(false)
   }
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-6 h-16 animate-pulse rounded-[20px] bg-slate-200" />
-          <div className="mb-6 h-64 animate-pulse rounded-[20px] bg-slate-200" />
+      <main className="tourism-shell usr-section-page usr-detail min-h-screen text-slate-900">
+        <div className="usr-section-container mx-auto w-full max-w-3xl px-3 pb-24 pt-3 sm:px-5 lg:px-6 lg:pb-10">
+          <div className="usr-section-loading">
+            {[0, 1].map((item) => (
+              <div key={item} className="usr-card p-5">
+                <div className="usr-section-skeleton h-4 w-1/3 rounded-full" />
+                <div className="usr-section-skeleton mt-3 h-3 w-full rounded-full" />
+                <div className="usr-section-skeleton mt-2 h-3 w-4/5 rounded-full" />
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     )
@@ -365,22 +496,24 @@ export default function ThreadDetailPage() {
 
   if (!thread) {
     return (
-      <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-          <p className="text-sm text-slate-500">Thread not found.</p>
-          <Link href="/user/forums" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
-            Back to forums
-          </Link>
+      <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6 text-slate-900">
+        <div className="usr-empty-state max-w-xl">
+          <MessageSquare className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
+          <p className="mt-3 text-sm font-semibold text-slate-700">Thread not found</p>
+          <p className="mt-1 text-xs text-slate-500">This discussion may have been archived, locked, or removed by its author.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Link href="/user/forums" className="usr-section-primary">Back to forums</Link>
+          </div>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="tourism-shell min-h-screen text-slate-900">
-      <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:px-6 lg:pb-10">
+    <main className="tourism-shell usr-section-page usr-detail min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-5 lg:px-6 lg:pb-10">
         {/* Header */}
-        <div className="mb-3 flex items-center justify-between border-b border-slate-200 bg-white px-3 py-3 sm:px-4">
+        <div className="usr-card mb-4 flex items-center justify-between px-3 py-3 sm:px-4">
           <Link
             href="/user/forums"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
@@ -438,8 +571,8 @@ export default function ThreadDetailPage() {
             <button type="button" onClick={() => setShowPollForm((value) => !value)} className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"><Plus className="h-3.5 w-3.5" /> Add poll</button>
           </div>}
 
-          {isThreadOwner && showPollForm && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3"><input value={pollDraft.question} onChange={(event) => setPollDraft((current) => ({ ...current, question: event.target.value }))} placeholder="Poll question" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" /><div className="mt-2 space-y-2">{pollDraft.options.map((option, index) => <input key={index} value={option} onChange={(event) => setPollDraft((current) => ({ ...current, options: current.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} placeholder={`Option ${index + 1}`} className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" />)}</div><button type="button" onClick={createPoll} className="mt-2 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Create poll</button></div>}
-          {poll && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="font-bold text-slate-900">{poll.question}</p><div className="mt-3 space-y-2">{(poll.options || []).map((option, index) => <button key={option} type="button" className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 hover:border-sky-300"><span>{option}</span><span className="text-xs text-slate-400">{poll.total_votes || 0} votes</span></button>)}</div></div>}
+          {isThreadOwner && showPollForm && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3"><input value={pollDraft.question} onChange={(event) => setPollDraft((current) => ({ ...current, question: event.target.value }))} placeholder="Poll question" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" /><label className="mt-2 block text-xs font-semibold text-slate-600">Poll deadline<input required type="datetime-local" value={pollDraft.endsAt} min={new Date(pollNow + 60000 - new Date(pollNow + 60000).getTimezoneOffset() * 60000).toISOString().slice(0, 16)} onChange={(event) => setPollDraft((current) => ({ ...current, endsAt: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" /></label><div className="mt-2 space-y-2">{pollDraft.options.map((option, index) => <div key={index} className="flex items-center gap-2"><input value={option} onChange={(event) => setPollDraft((current) => ({ ...current, options: current.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} placeholder={`Option ${index + 1}`} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" />{pollDraft.options.length > 2 && <button type="button" onClick={() => setPollDraft((current) => ({ ...current, options: current.options.filter((_, itemIndex) => itemIndex !== index) }))} className="rounded-lg px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50" aria-label={`Remove option ${index + 1}`}>Remove</button>}</div>)}</div><div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => setPollDraft((current) => ({ ...current, options: [...current.options, ''] }))} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-sky-700 ring-1 ring-slate-200 hover:bg-sky-50">Add choice</button><button type="button" onClick={createPoll} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Create poll</button></div></div>}
+          {poll && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="font-bold text-slate-900">{poll.question}</p>{poll.ends_at ? <p className={`mt-1 text-xs font-semibold ${pollExpired ? 'text-red-600' : 'text-slate-500'}`}>{pollExpired ? 'Voting closed' : `Voting ends ${new Date(poll.ends_at).toLocaleString()}`}</p> : null}<p className="mt-1 text-xs text-slate-500">{pollExpired ? 'This poll has ended.' : pollVoteIndex === null ? 'Choose one option to vote.' : 'Your vote has been recorded.'}</p><div className="mt-3 space-y-2">{(poll.options || []).map((option, index) => <button key={`${option}-${index}`} type="button" onClick={() => voteInPoll(index)} disabled={pollExpired || pollVoteIndex !== null || votingPoll} className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${pollVoteIndex === index ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300'} disabled:cursor-not-allowed disabled:opacity-60`}><span>{option}</span><span className="text-xs text-slate-400">{pollVoteCounts[index] || 0} votes</span></button>)}</div><p className="mt-3 text-right text-xs font-semibold text-slate-500">{Object.values(pollVoteCounts).reduce((total, count) => total + count, 0)} total votes</p></div>}
 
           {/* Thread Meta */}
           <div className="mt-5 border-t border-slate-200 pt-4">
@@ -469,14 +602,18 @@ export default function ThreadDetailPage() {
           <div className="mb-3 rounded-[18px] border border-slate-200 bg-white p-4">
             <h3 className="mb-4 text-sm font-bold text-slate-900">Share Your Reply</h3>
 
-            <div className="mt-3 flex items-center gap-1 rounded-[18px] border border-slate-200 bg-slate-50 p-1.5">
+              <div className="mt-3 flex items-center gap-1 rounded-[18px] border border-slate-200 bg-slate-50 p-1.5">
               <button type="button" onClick={() => setShowReplyTools((value) => !value)} aria-label="Add photo or video" title="Add photo or video" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700"><Plus className="h-5 w-5" /></button>
-              <button type="button" onClick={() => { const url = window.prompt('Paste a GIF URL'); if (url?.trim()) setReplyGifUrl(url.trim()) }} aria-label="Add GIF" title="Add GIF" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700 ${replyGifUrl ? 'bg-white text-sky-700' : ''}`}><Gift className="h-4 w-4" /></button>
-              <button type="button" onClick={() => { const sticker = window.prompt('Add a sticker or emoji'); if (sticker?.trim()) setReplySticker(sticker.trim()) }} aria-label="Add sticker" title="Add sticker" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700 ${replySticker ? 'bg-white text-sky-700' : ''}`}><Smile className="h-4 w-4" /></button>
+                <button type="button" onClick={() => { setShowGifPicker((value) => !value); setShowStickerPicker(false) }} aria-label="Add GIF" title="Add GIF" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700 ${replyGifUrl ? 'bg-white text-sky-700' : ''}`}><Gift className="h-4 w-4" /></button>
+                <button type="button" onClick={() => { setShowStickerPicker((value) => !value); setShowGifPicker(false) }} aria-label="Add sticker" title="Add sticker" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700 ${replySticker ? 'bg-white text-sky-700' : ''}`}><Smile className="h-4 w-4" /></button>
               <div className="min-w-0 flex-1"><MentionsAutoSuggest value={replyContent} onChange={setReplyContent} placeholder="Share your thoughts, links, or mention someone..." rows={1} userId={userId} onMentionAdded={(mention) => setReplyMentionRefs((current) => [...current.filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }])} /></div>
               <button type="button" onClick={handleReplySubmit} disabled={submittingReply || (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker)} aria-label="Post reply" title="Post reply" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"><Send className="h-4 w-4" /></button>
             </div>
-            {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload bucket="post-media" folder={`forum-replies/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} /><MediaUpload bucket="post-media" folder={`forum-replies/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} /></div>}
+            {(replyGifUrl || replySticker) && <div className="mt-2 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">{replyGifUrl ? <img src={replyGifUrl} alt="Selected GIF preview" className="h-20 max-w-36 rounded-lg object-cover" /> : null}{replySticker ? <span className="flex h-20 w-20 items-center justify-center rounded-lg bg-white text-4xl">{replySticker}</span> : null}<button type="button" onClick={() => { setReplyGifUrl(''); setReplySticker('') }} className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 hover:bg-slate-100 hover:text-red-600" aria-label="Remove selected GIF or sticker" title="Remove preview"><X className="h-4 w-4" /></button></div>}
+            {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} /><MediaUpload bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} /></div>}
+
+            {showGifPicker && <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={gifQuery} onChange={(event) => setGifQuery(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>{gifLoading ? <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading GIFs...</div> : gifError ? <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">{gifError}</div> : <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto p-2">{gifResults.map((gif) => <button key={gif.id || gif.url} type="button" onClick={() => { setReplyGifUrl(gif.url); setReplySticker(''); setShowGifPicker(false); setGifQuery('') }} className="overflow-hidden rounded-lg border border-slate-100 bg-slate-50 hover:ring-2 hover:ring-sky-500"><img src={gif.url} alt={gif.title || 'GIF'} className="h-20 w-full object-cover" /></button>)}</div>}</div>}
+            {showStickerPicker && <div className="mt-2 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-2">{STICKERS.map((sticker) => <button key={sticker} type="button" onClick={() => { setReplySticker(sticker); setReplyGifUrl(''); setShowStickerPicker(false) }} className="flex h-10 w-10 items-center justify-center rounded-lg text-xl hover:bg-slate-100">{sticker}</button>)}</div>}
 
             <div className="mt-4 flex gap-2">
             </div>
@@ -497,9 +634,27 @@ export default function ThreadDetailPage() {
                 )}
 
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">{reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}</div>
-                    <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <Link
+                      href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
+                      className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700 hover:ring-2 hover:ring-sky-300"
+                      aria-label={`View ${reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}'s profile`}
+                    >
+                      {reply.info_users?.profile_image_url ? (
+                        <img src={reply.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        (reply.info_users?.full_name || reply.info_users?.email || 'A').charAt(0).toUpperCase()
+                      )}
+                    </Link>
+                    <div className="min-w-0">
+                      <Link
+                        href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
+                        className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700"
+                      >
+                        {reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}
+                      </Link>
+                      <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
+                    </div>
                   </div>
                   {userId === reply.user_id && <div className="flex items-center gap-1"><button type="button" onClick={() => { setEditingReplyId(reply.id); setEditingReplyContent(reply.content || '') }} aria-label="Edit comment" className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-slate-100"><Pencil className="h-4 w-4" /></button><button type="button" onClick={() => deleteReply(reply.id)} aria-label="Delete comment" className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-50 text-slate-500 hover:bg-red-50 hover:text-red-600"><Trash2 className="h-4 w-4" /></button></div>}
                 </div>
@@ -512,20 +667,9 @@ export default function ThreadDetailPage() {
 
                 {/* Actions */}
                 <div className="mt-4 flex items-center gap-3 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => toggleLike(reply.id)}
-                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
-                      userLikes.has(reply.id)
-                        ? 'bg-red-50 text-red-600'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Heart className={`h-3.5 w-3.5 ${userLikes.has(reply.id) ? 'fill-current' : ''}`} />
-                    <span className="font-semibold">{(reply.likes || 0) + (userLikes.has(reply.id) ? 1 : 0)}</span>
-                  </button>
+                  <Reactions contentType="forum_reply" contentId={reply.id} userId={userId} compact label="" />
 
-                  <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
+                  <button type="button" onClick={() => setReportTarget(reply)} className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
                     <Flag className="h-3.5 w-3.5" />
                     Report
                   </button>
@@ -541,6 +685,37 @@ export default function ThreadDetailPage() {
         </div>
         </div>
       </div>
+
+      {reportTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4" role="dialog" aria-modal="true" aria-labelledby="report-reply-title">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 id="report-reply-title" className="text-base font-bold text-slate-900">Report reply</h2>
+                <p className="mt-1 text-xs text-slate-500">Tell us why this reply should be reviewed.</p>
+              </div>
+              <button type="button" onClick={() => setReportTarget(null)} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200" aria-label="Close report dialog"><X className="h-4 w-4" /></button>
+            </div>
+            <label className="mt-4 block text-xs font-semibold text-slate-700">Reason
+              <select value={reportReason} onChange={(event) => setReportReason(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal outline-none focus:border-sky-400">
+                <option>Spam or misleading content</option>
+                <option>Harassment or bullying</option>
+                <option>Hate speech or discrimination</option>
+                <option>Inappropriate or offensive content</option>
+                <option>Scam or fraud</option>
+                <option>Other</option>
+              </select>
+            </label>
+            <label className="mt-3 block text-xs font-semibold text-slate-700">Additional details <span className="font-normal text-slate-400">(optional)</span>
+              <textarea value={reportDescription} onChange={(event) => setReportDescription(event.target.value)} rows={3} maxLength={500} placeholder="Add context for the moderators..." className="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal outline-none focus:border-sky-400" />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setReportTarget(null)} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-200">Cancel</button>
+              <button type="button" onClick={submitReplyReport} disabled={submittingReport} className="rounded-lg bg-red-600 px-3 py-2 text-xs font-bold text-white hover:bg-red-700 disabled:opacity-50">{submittingReport ? 'Submitting...' : 'Submit report'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

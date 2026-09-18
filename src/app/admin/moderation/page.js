@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminBadge, AdminPageHeader } from '@/app/components/admin';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -658,42 +659,24 @@ export default function AdminModerationPage() {
       <AdminSidebar user={user} roleLabel="Content Moderator" />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-800">Content Moderation Center</h1>
-              <p className="text-gray-500 mt-1 text-sm">
-                Review user posts • Manage forum inquiries • Maintain content quality
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              {/* Stats Cards */}
-              <div className="flex gap-3">
-                <div className="bg-white rounded-2xl px-4 py-2 shadow-sm border border-gray-200">
-                  <p className="text-xs text-gray-500">Pending Posts</p>
-                  <p className="text-xl font-bold text-yellow-600">{stats.pendingCount}</p>
-                </div>
-                <div className="bg-white rounded-2xl px-4 py-2 shadow-sm border border-gray-200">
-                  <p className="text-xs text-gray-500">Flagged Posts</p>
-                  <p className="text-xl font-bold text-red-600">{stats.flaggedCount}</p>
-                </div>
-                <div className="bg-white rounded-2xl px-4 py-2 shadow-sm border border-gray-200">
-                  <p className="text-xs text-gray-500">Open Inquiries</p>
-                  <p className="text-xl font-bold text-orange-600">{stats.openInquiries}</p>
-                </div>
-                <div className="bg-white rounded-2xl px-4 py-2 shadow-sm border border-gray-200">
-                  <p className="text-xs text-gray-500">Avg Response</p>
-                  <p className="text-xl font-bold text-green-600">{stats.avgResponseTime || 'N/A'}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Trust & safety"
+          title="Content moderation center"
+          description="Review user posts, manage forum inquiries, and keep community content quality high."
+          icon="moderation"
+          meta={
+            <>
+              <AdminBadge tone="warning">Pending posts {stats.pendingCount}</AdminBadge>
+              <AdminBadge tone="danger">Flagged posts {stats.flaggedCount}</AdminBadge>
+              <AdminBadge tone="info">Open inquiries {stats.openInquiries}</AdminBadge>
+              <AdminBadge tone="success">Avg response {stats.avgResponseTime || 'N/A'}</AdminBadge>
+            </>
+          }
+        />
 
         {/* Tab Navigation */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 mb-6">
+        <div className="admin-panel mb-6">
           <div className="flex border-b border-gray-200">
             <button
               onClick={() => setActiveTab('posts')}

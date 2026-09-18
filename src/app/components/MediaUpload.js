@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { trimLetterboxBars } from '@/lib/imageTrim';
 
 export default function MediaUpload({ 
   bucket, 
@@ -15,12 +16,16 @@ export default function MediaUpload({
   buttonText = "Upload Media",
   maxSizeMB = 20,
   maxVideoDuration = 30,
+  // Cover photos are wide banners: strip solid pillarbox / letterbox bars that
+  // were baked into the file so they cannot show up beside the photo.
+  trimLetterbox = false,
   acceptTypes = "image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
 }) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [mediaPreview, setMediaPreview] = useState(existingMediaUrl || null);
   const [mediaTypeDetected, setMediaTypeDetected] = useState(null);
+  const [trimNotice, setTrimNotice] = useState('');
   const fileInputRef = useRef(null);
 
   const validateVideoDuration = (file) => {
@@ -73,6 +78,24 @@ export default function MediaUpload({
       }
     }
 
+    setTrimNotice('');
+
+    // Covers are re-encoded locally so baked-in pillarbox / letterbox bars are
+    // gone before the bytes reach storage. Oversize files were already rejected.
+    let uploadFile = file;
+    if (trimLetterbox && isImage) {
+      try {
+        const trimResult = await trimLetterboxBars(file);
+        if (trimResult.trimmed) {
+          uploadFile = trimResult.file;
+          setTrimNotice('Trimmed the empty bars around the photo.');
+        }
+      } catch (error) {
+        // A failed trim must never block the upload; the original is used.
+        console.warn('Cover trim skipped:', error);
+      }
+    }
+
     setUploading(true);
     setUploadProgress(0);
 
@@ -84,7 +107,7 @@ export default function MediaUpload({
 
       // Upload via API route
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', uploadFile);
       formData.append('bucket', bucket);
       formData.append('folder', folder);
 
@@ -232,6 +255,16 @@ export default function MediaUpload({
           ? 'Supports JPEG, PNG, WebP, GIF (max 5MB)'
           : 'Supports images (JPEG, PNG, WebP, GIF up to 5MB) and videos (MP4, MOV, WebM up to 20MB, max 30s)'}
       </p>
+
+      {trimNotice ? (
+        <p role="status" className="text-xs font-semibold text-teal-700">{trimNotice}</p>
+      ) : null}
+
+      {trimLetterbox && mediaType !== 'video' ? (
+        <p className="text-xs text-slate-400">
+          Displayed as a wide banner. Solid black bars around the photo are trimmed automatically.
+        </p>
+      ) : null}
     </div>
   );
 }

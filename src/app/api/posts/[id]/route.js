@@ -31,22 +31,26 @@ export async function PATCH(request, { params }) {
   const status = body.status === 'archived' ? 'archived' : body.status === 'published' ? 'published' : null
   const hasTitle = Object.prototype.hasOwnProperty.call(body, 'title')
   const hasContent = Object.prototype.hasOwnProperty.call(body, 'content')
+  const hasVisibility = Object.prototype.hasOwnProperty.call(body, 'visibility')
   const title = hasTitle ? String(body.title || '').trim() : null
   const content = hasContent ? String(body.content || '').trim() : null
-  if (!status && !hasTitle && !hasContent) return NextResponse.json({ success: false, message: 'Invalid post update.' }, { status: 400 })
+  const visibility = hasVisibility && ['public', 'followers', 'private'].includes(body.visibility) ? body.visibility : null
+  if (!status && !hasTitle && !hasContent && !visibility) return NextResponse.json({ success: false, message: 'Invalid post update.' }, { status: 400 })
   if ((hasTitle && !title) || (hasContent && !content)) return NextResponse.json({ success: false, message: 'Title and content cannot be empty.' }, { status: 400 })
+  if (hasVisibility && !visibility) return NextResponse.json({ success: false, message: 'Invalid post visibility.' }, { status: 400 })
 
   const updatePayload = { updated_at: new Date().toISOString() }
   if (status) updatePayload.status = status
   if (hasTitle) updatePayload.title = title
   if (hasContent) updatePayload.content = content
+  if (hasVisibility) updatePayload.visibility = visibility
 
   const { data, error } = await adminSupabase
     .from('info_user_posts')
     .update(updatePayload)
     .eq('id', postId)
     .eq('user_id', userId)
-    .select('id, user_id, title, content, status, created_at, updated_at')
+    .select('id, user_id, title, content, status, visibility, created_at, updated_at')
     .maybeSingle()
 
   if (error && isMissingPostStatusColumnError(error)) {

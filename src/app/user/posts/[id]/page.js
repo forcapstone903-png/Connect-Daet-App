@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Loader, UserRound } from 'lucide-react'
+import { Loader, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Comments from '@/app/components/user/Comments'
 
@@ -41,18 +41,39 @@ export default function UserPostDetailPage() {
     void loadPost()
   }, [])
 
-  if (loading) return <main className="flex min-h-screen items-center justify-center bg-slate-50"><Loader className="h-5 w-5 animate-spin text-sky-600" /></main>
-  if (error) return <main className="min-h-screen bg-slate-50 p-6"><div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-6 text-center"><p className="text-sm text-slate-600">{error}</p><Link href="/user/dashboard" className="mt-4 inline-flex rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white">Back to dashboard</Link></div></main>
+  if (loading) return (
+    <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6">
+      <div className="usr-card usr-pop-in p-6 text-center">
+        <Loader className="usr-spin mx-auto mb-3 h-6 w-6 text-teal-700" />
+        <p className="text-sm font-semibold text-slate-600">Loading this post...</p>
+      </div>
+    </main>
+  )
+  if (error) return (
+    <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6">
+      <div className="usr-empty-state max-w-xl">
+        <p className="text-sm font-semibold text-slate-600">{error}</p>
+        <Link href="/user/dashboard" className="usr-section-primary mt-5 inline-flex">Back to dashboard</Link>
+      </div>
+    </main>
+  )
 
   return (
-    <main className="min-h-screen bg-slate-50 px-3 py-6 text-slate-900 sm:px-5">
-      <div className="mx-auto max-w-6xl lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
+    <main className="tourism-shell usr-section-page usr-detail min-h-screen px-3 py-6 text-slate-900 sm:px-5">
+      <div className="usr-section-container mx-auto max-w-6xl pb-8 pt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
       <article className="max-w-3xl">
-        <Link href={post?.user_id ? `/user/profile/${post.user_id}` : '/user/dashboard'} className="mb-5 inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700"><ArrowLeft className="h-4 w-4" />Back to profile</Link>
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
-          <div className="flex items-center gap-3 text-sm text-slate-500"><Link href={post.user_id ? `/user/profile/${post.user_id}` : '/user/profile'} aria-label="View author's profile" className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-sky-700">{post.info_users?.profile_image_url ? <img src={post.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-4 w-4" />}</Link><Link href={post.user_id ? `/user/profile/${post.user_id}` : '/user/profile'} className="hover:text-sky-700">{post.info_users?.full_name || post.info_users?.email || 'Community member'}</Link><span>·</span><time>{new Date(post.created_at).toLocaleDateString()}</time></div>
+        <div className="usr-card usr-enter p-5 sm:p-8">
+          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
+            <Link href={post.user_id ? `/user/profile/${post.user_id}` : '/user/profile'} aria-label="View author's profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-teal-700">
+              {post.info_users?.profile_image_url ? <img src={post.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-4 w-4" />}
+            </Link>
+            <Link href={post.user_id ? `/user/profile/${post.user_id}` : '/user/profile'} className="font-bold text-slate-800 hover:text-teal-700">{post.info_users?.full_name || post.info_users?.email || 'Community member'}</Link>
+            <span aria-hidden="true">·</span>
+            <time dateTime={post.created_at || undefined}>{new Date(post.created_at).toLocaleDateString()}</time>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Community post</span>
+          </div>
           <h1 className="mt-5 text-2xl font-black text-slate-900 sm:text-3xl">{post.title}</h1>
-          <p className="mt-5 whitespace-pre-wrap text-sm leading-7 text-slate-700">{post.content}</p>
+          <p className="usr-reading-body mt-5 whitespace-pre-wrap text-slate-700">{post.content}</p>
         </div>
       </article>
       <aside className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">

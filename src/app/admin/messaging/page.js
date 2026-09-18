@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminPageHeader } from '@/app/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -257,13 +258,13 @@ export default function AdminMessagingPage() {
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="Messaging Manager" />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Messaging Module</h1>
-            <p className="text-sm text-slate-500">Send direct updates, bulk alerts, and message campaigns to users.</p>
-          </div>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Community"
+          title="Messaging module"
+          description="Send direct updates, bulk alerts, and message campaigns to users."
+          icon="send"
+        />
 
         <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 p-4 text-white shadow-sm">

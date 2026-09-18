@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminPageHeader } from '@/app/components/admin';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
@@ -56,8 +57,11 @@ export default function SettingsShell({ title, subtitle, children }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gray-50">
+        <div className="admin-loading">
+          <span className="admin-loading-ring" aria-hidden="true" />
+          <p className="text-sm">Loading settings…</p>
+        </div>
       </div>
     );
   }
@@ -67,19 +71,24 @@ export default function SettingsShell({ title, subtitle, children }) {
       <AdminSidebar user={user} roleLabel="Admin Console" />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-800"><Icon name="settings" className="inline-block w-6 h-6 mr-2" />{title}</h1>
-          {subtitle ? <p className="text-gray-500 mt-1">{subtitle}</p> : null}
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Configuration"
+          title={title}
+          description={subtitle}
+          icon="settings"
+        />
 
         {typeof children === 'function' ? children(showToast) : children}
       </div>
 
       {/* Toast */}
       {toastMessage && (
-        <div className={`fixed bottom-5 right-5 px-4 py-2 rounded-full text-white text-sm z-40 ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
-          <span className="inline-block mr-2">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span>
+        <div
+          className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}
+          role="status"
+        >
+          <Icon name={toastMessage.isError ? 'warning' : 'check'} className="h-4 w-4" />
           {toastMessage.message}
         </div>
       )}

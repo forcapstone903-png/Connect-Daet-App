@@ -91,34 +91,62 @@ export async function POST(request) {
     }
 
     if (commentRow?.user_id && commentRow.user_id !== session.user_id) {
-      const ownerLink = commentRow.content_type && commentRow.content_id
+      const parentLink = commentRow.content_type && commentRow.content_id
         ? routeForEntity(commentRow.content_type, commentRow.content_id)
         : '/user/notifications'
+      const ownerLink = parentLink && commentRow.content_id
+        ? `${parentLink}#comment-${commentId}`
+        : parentLink
       const parentOwnerId = commentRow.content_type && commentRow.content_id
         ? await resolveOwnerId(adminSupabase, commentRow.content_type, commentRow.content_id)
         : null
 
-      const { data: existing } = await adminSupabase
+      const { data: actor } = await adminSupabase
+        .from('info_users')
+        .select('full_name')
+        .eq('id', session.user_id)
+        .maybeSingle()
+      const actorName = actor?.full_name || 'Someone'
+
+      // Dedupe per comment and actor so likes on different comments are all reported
+      // while repeat reactions from the same person do not stack up.
+      const { data: existing, error: existingError } = await adminSupabase
         .from('info_notifications')
         .select('id')
         .eq('user_id', commentRow.user_id)
-        .eq('link', ownerLink)
+        .eq('comment_id', commentId)
+        .eq('type', 'reaction')
+        .eq('actor_id', session.user_id)
         .limit(1)
 
+      if (existingError) console.error('Comment reaction notification lookup failed:', existingError)
+
       if (!existing || existing.length === 0) {
-        await adminSupabase.from('info_notifications').insert({
+        const notification = {
           user_id: commentRow.user_id,
-          title: 'New reaction',
-          message: 'Someone reacted to your comment',
+          title: 'New reaction to your comment',
+          message: `${actorName} reacted to your comment (like).`,
           type: 'reaction',
           is_read: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           link: ownerLink,
           post_id: commentRow.content_id,
+          comment_id: commentId,
           post_owner_id: parentOwnerId,
           actor_id: session.user_id,
-        })
+        }
+
+        let { error: notificationError } = await adminSupabase.from('info_notifications').insert(notification)
+        if (notificationError && /column .* does not exist|could not find the .* column/i.test(notificationError.message || '')) {
+          const fallbackNotification = { ...notification }
+          delete fallbackNotification.post_owner_id
+          delete fallbackNotification.comment_id
+          ;({ error: notificationError } = await adminSupabase.from('info_notifications').insert(fallbackNotification))
+        }
+        if (notificationError && notificationError.code !== '23505') {
+          console.error('Comment reaction notification failed:', notificationError)
+        }
       }
     }
 

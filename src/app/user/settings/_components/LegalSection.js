@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Accessibility, Cookie, FileText, Info, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { Accessibility, Code2, Cookie, FileText, Info, MessageSquareText, ShieldCheck } from 'lucide-react'
 import { ActionRow, SettingsCard } from './SettingsControls'
 
 const LEGAL_LINKS = [
@@ -23,15 +23,19 @@ export default function LegalSection({ t, appVersion = '0.1.0' }) {
         </ActionRow>
       ))}
 
-      <ActionRow icon={Cookie} label="Cookie policy" hint="How consent cookies and local storage are used.">
-        <Link href="/legal/cookie-policy" className="text-xs font-bold text-sky-700">Cookie policy</Link>
+      <ActionRow icon={Cookie} label={t('settings.legal.cookiePolicy')} hint={t('settings.legal.cookiePolicyHint')}>
+        <Link href="/legal/cookie-policy" className="text-xs font-bold text-sky-700">{t('settings.legal.cookiePolicy')}</Link>
       </ActionRow>
 
-      <ActionRow icon={Accessibility} label="Accessibility" hint="How the app supports low-vision and reduced-motion users.">
-        <Link href="/legal/accessibility" className="text-xs font-bold text-sky-700">Accessibility</Link>
+      <ActionRow icon={Accessibility} label={t('settings.legal.accessibility')} hint={t('settings.legal.accessibilityHint')}>
+        <Link href="/legal/accessibility" className="text-xs font-bold text-sky-700">{t('settings.legal.accessibility')}</Link>
       </ActionRow>
 
-      <ActionRow icon={MessageSquareText} label={t('settings.legal.support')} hint="Report a problem or suggest an improvement.">
+      <ActionRow icon={Code2} label={t('settings.legal.developers')} hint={t('settings.legal.developersHint')}>
+        <Link href="/legal/developers" className="text-xs font-bold text-sky-700">{t('settings.legal.developers')}</Link>
+      </ActionRow>
+
+      <ActionRow icon={MessageSquareText} label={t('settings.legal.support')} hint={t('settings.legal.supportHint')}>
         <Link href="/user/feedback" className="text-xs font-bold text-sky-700">{t('settings.legal.support')}</Link>
       </ActionRow>
 

@@ -9,7 +9,6 @@
 //   localStorage envelope via UserSettingsProvider) and mirrored to
 //   `profiles.ui_preferences` / `profiles.language_preference` on save.
 // - Account preferences: loaded from and saved to the profiles row only.
-//   Unsupported privacy and notification-category controls remain disabled.
 //   Only display preferences enter the device-local envelope.
 //
 // Cache decision (docs/caching.md, docs/user-settings.md)
@@ -20,11 +19,12 @@
 // - Manual clear lives in Settings > Data & storage (clearLocalAppData) and the
 //   reset action (resetUserSettings).
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Bell, Check, HardDrive, Info, Languages, Lock, Save, ShieldCheck, Sun } from 'lucide-react'
+import { Bell, Check, HardDrive, Info, Languages, Lock, Save, ShieldCheck, Sun } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
 import { useUserSettings } from '@/components/UserSettingsProvider'
@@ -40,6 +40,8 @@ import {
   settingsFromProfileRow,
 } from '@/lib/userSettings'
 import { StatusBanner } from './_components/SettingsControls'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 import AppearanceSection from './_components/AppearanceSection'
 import LanguageSection from './_components/LanguageSection'
 import NotificationsSection from './_components/NotificationsSection'
@@ -97,39 +99,58 @@ export default function UserSettingsPage() {
   const [clearingCache, setClearingCache] = useState(false)
   const [resetPending, setResetPending] = useState(false)
   const [signOutPending, setSignOutPending] = useState(false)
+  const [accountLifecycle, setAccountLifecycle] = useState(null)
+  const [accountActionPending, setAccountActionPending] = useState(false)
   const [resetStatus, setResetStatus] = useState('')
   const [confirmAction, setConfirmAction] = useState(null)
+  const noticeTimerRef = useRef(null)
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
+  }, [])
 
   const isDirty = useMemo(() => !settingsEqual(draft, savedSnapshot), [draft, savedSnapshot])
 
   const loadSession = useCallback(async () => {
     try {
+      // Authorization is the signed, HTTP-only `daet_secure_session` cookie that
+      // the proxy already validated for this request. The Supabase JS session can
+      // legitimately be empty (different browser / cleared storage) while the user
+      // is still signed in, so fall back to the display cookie before bouncing.
+      const storedSession = getStoredSessionObject()
       const { data: { session }, error } = await supabase.auth.getSession()
-      if (error) throw error
-      const id = session?.user?.id
+      if (error) console.warn('Settings session lookup warning:', error)
+      const id = session?.user?.id || storedSession?.user_id || storedSession?.id || null
       if (!id) {
         router.replace('/login')
         return
       }
-      setEmail(session.user.email || '')
+      setEmail(session?.user?.email || storedSession?.user_email || '')
       let result = await supabase.from('profiles').select(PROFILE_SETTINGS_COLUMNS).eq('user_id', id).maybeSingle()
       if (result.error && ['42703', 'PGRST204'].includes(result.error.code)) {
         result = await supabase.from('profiles').select(PROFILE_LEGACY_COLUMNS).eq('user_id', id).maybeSingle()
       }
-      if (result.error) throw result.error
+      // A signed-in user without a Supabase JS session cannot read the row
+      // (RLS filters it out). Fall back to device-local settings instead of
+      // failing the whole page.
+      const permissionDenied = result.error && ['42501', 'PGRST301'].includes(result.error.code)
+      if (result.error && !permissionDenied) throw result.error
       const next = mergeSettings(readStoredSettings(), settingsFromProfileRow(result.data))
       setDraft(next)
       setSavedSnapshot(next)
       setUserId(id)
       updateSettings({ theme: next.theme, language: next.language, reduceMotion: next.reduceMotion })
+      const lifecycleResponse = await fetch('/api/account/lifecycle', { cache: 'no-store' })
+      const lifecycleResult = await lifecycleResponse.json().catch(() => ({}))
+      if (lifecycleResponse.ok && lifecycleResult.lifecycle) setAccountLifecycle(lifecycleResult.lifecycle)
     } catch (error) {
       console.error('Settings load failed:', error)
-      setNotice({ tone: 'error', text: 'Account settings could not be loaded. Reload before saving account changes.' })
+      setNotice({ tone: 'error', text: t('settings.status.loadFailed') })
     } finally {
       setStorageUsage(getLocalStorageUsage())
       setLoading(false)
     }
-  }, [router, updateSettings])
+  }, [router, t, updateSettings])
 
   useEffect(() => {
     // Deferred so the effect itself does not trigger synchronous state updates
@@ -181,7 +202,14 @@ export default function UserSettingsPage() {
       window.dispatchEvent(new Event('daet-settings-updated'))
 
       if (result.partial) setNotice({ tone: 'warning', text: t('settings.status.saveFailed') })
-      else setNotice({ tone: 'success', text: t('common.saved') })
+      else {
+        const savedMessage = t('common.saved')
+        setNotice({ tone: 'success', text: savedMessage })
+        if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
+        noticeTimerRef.current = window.setTimeout(() => {
+          setNotice((current) => current?.text === savedMessage ? null : current)
+        }, 3000)
+      }
     } catch (error) {
       console.error('Settings save failed:', error)
       setNotice({ tone: 'error', text: t('settings.status.saveFailed') })
@@ -259,6 +287,37 @@ export default function UserSettingsPage() {
     window.location.assign('/login')
   }, [t])
 
+  const handleAccountAction = useCallback(async (action) => {
+    setAccountActionPending(true)
+    setNotice(null)
+
+    try {
+      const response = await fetch('/api/account/lifecycle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(result.message || t('settings.status.saveFailed'))
+
+      setAccountLifecycle(result.lifecycle)
+      setConfirmAction(null)
+
+      if (action === 'deactivate' || action === 'schedule_deletion') {
+        await performLogout()
+        window.location.assign('/login')
+        return
+      }
+
+      setNotice({ tone: 'success', text: action === 'reactivate' ? t('settings.security.reactivated') : t('settings.security.deletionCancelled') })
+    } catch (error) {
+      console.error('Account lifecycle action failed:', error)
+      setNotice({ tone: 'error', text: error.message || t('settings.status.saveFailed') })
+    } finally {
+      setAccountActionPending(false)
+    }
+  }, [t])
+
   const handleNotificationChange = useCallback((key, value) => {
     patchDraft({ notifications: { [key]: value } })
   }, [patchDraft])
@@ -267,28 +326,39 @@ export default function UserSettingsPage() {
     patchDraft({ privacy: { [key]: value } })
   }, [patchDraft])
 
-  const confirmTitle = confirmAction === 'reset' ? t('common.reset') : t('settings.security.signOutAll')
+  const confirmTitle = confirmAction === 'reset'
+    ? t('common.reset')
+    : confirmAction === 'deactivate'
+      ? t('settings.security.deactivate')
+      : confirmAction === 'delete'
+        ? t('settings.security.deleteAccount')
+        : t('settings.security.signOutAll')
   const confirmMessage = confirmAction === 'reset'
     ? t('settings.data.resetHint')
-    : t('settings.security.signOutAllHint')
+    : confirmAction === 'deactivate'
+      ? t('settings.security.deactivateConfirm')
+      : confirmAction === 'delete'
+        ? t('settings.security.deleteAccountConfirm')
+        : t('settings.security.signOutAllHint')
+  const confirmHandler = confirmAction === 'reset'
+    ? handleResetSettings
+    : confirmAction === 'deactivate'
+      ? () => handleAccountAction('deactivate')
+      : confirmAction === 'delete'
+        ? () => handleAccountAction('schedule_deletion')
+        : handleSignOutAll
   return (
-    <main className="min-h-screen w-full overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] text-slate-900">
-      <div className="mx-auto w-full max-w-[1040px] px-3 pb-28 pt-0 sm:px-5 sm:pt-3 lg:px-8 lg:pb-16">
-        <header className="sticky top-0 z-30 mb-4 rounded-[22px] border border-slate-200/80 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.1)] backdrop-blur-xl sm:top-2 sm:p-4">
-          <div className="flex items-center gap-3">
-            <Link href="/user/profile" aria-label={t('settings.title')} className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-sky-50 hover:text-sky-700">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-sky-700">{t('settings.nav.security')}</p>
-              <h1 className="text-lg font-black text-slate-900">{t('settings.title')}</h1>
-              <p className="truncate text-xs text-slate-500">{t('settings.subtitle')}</p>
-            </div>
-            <span className="ml-auto hidden shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-bold text-slate-500 sm:block">
-              {isDirty ? t('common.unsaved') : t('common.saved')}
-            </span>
-          </div>
-        </header>
+    <main className="tourism-shell usr-section-page usr-settings min-h-screen w-full overflow-x-clip text-slate-900">
+      <UserTopHeader />
+      <div className="usr-section-container mx-auto w-full max-w-6xl px-3 pb-28 pt-2 sm:px-4 lg:px-6 lg:pb-16">
+        <UserSectionHeader
+          eyebrow={t('settings.nav.security')}
+          title={t('settings.title')}
+          description={t('settings.subtitle')}
+          emoji="⚙️"
+        >
+          <span className="usr-section-counter">{isDirty ? t('common.unsaved') : t('common.saved')}</span>
+        </UserSectionHeader>
 
         {notice ? (
           <div className="mb-4">
@@ -298,7 +368,7 @@ export default function UserSettingsPage() {
 
         <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">
           <nav aria-label={t('settings.title')} className="lg:sticky lg:top-24 lg:self-start">
-            <div role="tablist" aria-orientation="vertical" className="-mx-3 mb-4 flex gap-1.5 overflow-x-auto px-3 pb-1 lg:mx-0 lg:mb-0 lg:flex-col lg:overflow-visible lg:px-0 lg:pb-0">
+            <div role="tablist" aria-orientation="vertical" className="usr-card mb-4 flex gap-1.5 overflow-x-auto rounded-3xl p-2 lg:mb-0 lg:flex-col">
               {TABS.map(({ id, labelKey, icon: Icon }) => {
                 const isActive = activeTab === id
                 return (
@@ -310,7 +380,7 @@ export default function UserSettingsPage() {
                     aria-selected={isActive}
                     aria-controls={`settings-panel-${id}`}
                     onClick={() => setActiveTab(id)}
-                    className={`inline-flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition lg:w-full lg:justify-start lg:rounded-xl ${isActive ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+                    className="usr-section-tab usr-press lg:w-full lg:justify-start"
                   >
                     <Icon className="h-4 w-4" />
                     {t(labelKey)}
@@ -357,7 +427,13 @@ export default function UserSettingsPage() {
                 email={email}
                 resetStatus={resetStatus}
                 signingOut={signOutPending}
+                accountLifecycle={accountLifecycle}
+                accountActionPending={accountActionPending}
                 onResetPassword={handlePasswordReset}
+                onDeactivate={() => setConfirmAction('deactivate')}
+                onReactivate={() => handleAccountAction('reactivate')}
+                onScheduleDeletion={() => setConfirmAction('delete')}
+                onCancelDeletion={() => handleAccountAction('cancel_deletion')}
                 onSignOutAll={() => {
                   setSignOutPending(true)
                   setConfirmAction('signout')
@@ -385,7 +461,7 @@ export default function UserSettingsPage() {
               <LegalSection t={t} />
             </div>
 
-            <div className="sticky bottom-4 z-20 rounded-[18px] border border-slate-200 bg-white/95 p-3 shadow-[0_12px_35px_rgba(15,23,42,0.12)] backdrop-blur-xl">
+            <div className="usr-card sticky bottom-4 z-20 p-3 backdrop-blur-xl">
               <div className="flex flex-wrap items-center gap-3">
                 <p className="min-w-0 flex-1 text-xs font-semibold text-slate-500">
                   {isDirty ? t('common.unsaved') : t('common.saved')}
@@ -394,7 +470,7 @@ export default function UserSettingsPage() {
                   type="button"
                   onClick={saveSettings}
                   disabled={saving || loading || !userId}
-                  className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="usr-section-primary"
                 >
                   <Check className="h-4 w-4" />
                   {saving ? t('common.saving') : t('common.save')}
@@ -409,10 +485,16 @@ export default function UserSettingsPage() {
         isOpen={confirmAction !== null}
         title={confirmTitle}
         message={confirmMessage}
-        confirmText={confirmAction === 'reset' ? t('common.reset') : t('settings.security.signOutAll')}
+        confirmText={confirmAction === 'reset'
+          ? t('common.reset')
+          : confirmAction === 'deactivate'
+            ? t('settings.security.deactivate')
+            : confirmAction === 'delete'
+              ? t('settings.security.deleteAccount')
+              : t('settings.security.signOutAll')}
         cancelText={t('common.cancel')}
         isDangerous
-        onConfirm={confirmAction === 'reset' ? handleResetSettings : handleSignOutAll}
+        onConfirm={confirmHandler}
         onCancel={() => {
           setConfirmAction(null)
           setResetPending(false)

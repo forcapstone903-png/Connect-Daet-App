@@ -1,0 +1,170 @@
+/* Scoped to related user pages; unlayered rules intentionally override legacy panels. */
+.usr-section-page { background: radial-gradient(ellipse at top left, #e8f5ef, transparent 45%), #f5f7fa; }
+.usr-section-container { width: 100%; padding-top: 24px; }
+.usr-card { border: 1px solid #e2e8f0; border-radius: 24px; background: white; box-shadow: 0 8px 32px -22px #164e63; }
+.usr-section-heading { position: relative; padding: 24px; margin-bottom: 24px; background: linear-gradient(120deg, white 60%, #f0fdfa); border-top: 3px solid #147d75; }
+.usr-section-back { display: inline-flex; align-items: center; min-height: 44px; margin-bottom: 12px; font-size: 12px; font-weight: 700; color: #0f766e; }
+.usr-section-back:hover { text-decoration: underline; }
+.usr-section-heading-row { display: flex; align-items: center; gap: 24px; justify-content: space-between; }
+.usr-section-eyebrow { color: #0f766e; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .16em; }
+.usr-section-title { margin-top: 8px; font-size: clamp(24px, 3vw, 36px); line-height: 1.2; letter-spacing: -.035em; font-weight: 900; color: #0f172a; overflow-wrap: anywhere; }
+.usr-section-description { margin-top: 10px; max-width: 58ch; color: #526477; font-size: 14px; line-height: 1.7; }
+.usr-section-heading-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-shrink: 0; }
+.usr-section-primary, .usr-section-secondary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 18px; border-radius: 14px; font-size: 12px; font-weight: 800; transition: transform .2s, background .2s; }
+.usr-section-primary { background: #147d75; color: white; box-shadow: 0 6px 16px #147d7526; }
+.usr-section-primary:hover { background: #0f685f; transform: translateY(-2px); }
+.usr-section-secondary { border: 1px solid #dce6e3; color: #0f766e; background: white; }
+.usr-section-secondary:hover { background: #f0fdfa; }
+.usr-section-counter { padding: 10px 16px; border-radius: 99px; background: #e6f5ef; color: #0f766e; font-size: 12px; font-weight: 800; }
+.usr-section-toolbar { padding: 16px; border: 1px solid #e2e8f0; border-radius: 20px; background: white; }
+.usr-section-page :is(button, a, input, textarea, select, [role="button"]):focus-visible { outline: 3px solid #0d9488; outline-offset: 3px; }
+.usr-section-page :is(button, select) { cursor: pointer; }
+.usr-section-page button:disabled { cursor: not-allowed; }
+.usr-section-page select { min-height: 44px; }
+.usr-section-loading { display: grid; gap: 12px; padding: 16px; }
+.usr-section-skeleton { background: linear-gradient(90deg, #e2e8f0, #f8fafc, #e2e8f0); background-size: 200% 100%; animation: usr-section-shimmer 1.6s linear infinite; }
+.usr-enter { animation: usr-section-rise .45s ease-out both; }
+.usr-section-title .usr-wave { display: inline-block; animation: usr-section-wave 1.4s ease-in-out 2; transform-origin: bottom center; }
+.usr-inbox .tourism-panel, .usr-notifications .tourism-panel { border: 1px solid #e2e8f0; border-radius: 22px; background: white; }
+.usr-inbox .tourism-panel > .divide-y { padding: 8px; }
+.usr-inbox .tourism-panel > .divide-y > div { margin-bottom: 6px; }
+.usr-inbox .tourism-panel > .divide-y > div > div { border-radius: 16px; }
+.usr-notifications .usr-section-container { max-width: 960px; }
+.usr-notifications [role="button"] { cursor: pointer; }
+.usr-notifications [role="button"]:hover { border-color: #8bbdb4; box-shadow: 0 5px 18px -12px #164e63; }
+.usr-notifications [role="button"] p { overflow-wrap: anywhere; }
+.usr-stories .usr-section-heading { border-top-color: #a78bfa; }
+.usr-events .usr-section-heading { border-top-color: #fbbf24; }
+.usr-announcements .usr-section-heading { border-top-color: #38bdf8; }
+@keyframes usr-section-shimmer { to { background-position: -200% 0; } }
+@keyframes usr-section-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes usr-section-wave { 0%,100% { transform: rotate(0); } 30% { transform: rotate(12deg); } 60% { transform: rotate(-8deg); } }
+
+.usr-content-grid { display: grid; gap: 20px; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.usr-content-card { overflow-wrap: anywhere; transition: box-shadow .2s; }
+.usr-content-card:hover { box-shadow: 0 12px 28px -18px #334155; }
+.usr-announcement-list { display: grid; gap: 16px; }
+.usr-section-page :is(article, section) { min-width: 0; }
+@media (min-width: 1024px) { .usr-forums aside { position: sticky; top: 80px; } }
+@media (max-width: 767px) {
+  .usr-section-container { padding-top: 12px; }
+  .usr-section-heading { padding: 18px; border-radius: 20px; }
+  .usr-section-heading-row { flex-direction: column; align-items: stretch; gap: 16px; }
+  .usr-section-heading-actions { width: 100%; }
+  .usr-content-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .usr-section-page *, .usr-section-page *::before, .usr-section-page *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+/* Reading views and editors share the same comfortable text measure. */
+.usr-detail h1 { overflow-wrap: anywhere; }
+.usr-reading-body { font-size: 1rem; line-height: 1.85; overflow-wrap: anywhere; }
+.usr-detail .tourism-panel { border: 1px solid #e2e8f0; border-radius: 24px; background: white; }
+.usr-story-card { border-top: 3px solid #c4b5fd; }
+.usr-editor :is(input:not([type='file']), textarea, select) { border-radius: 12px; }
+.usr-editor textarea { line-height: 1.75; }
+
+/* Keep the existing visualViewport sizing and independently scrolling messages. */
+.conversation-page.usr-section-page .conversation-shell { background: #fff; }
+.conversation-page.usr-section-page .conversation-header { border-bottom-color: #dce8e3; background: linear-gradient(110deg, white, #f0fdfa); }
+.conversation-page.usr-section-page .messages-container { background: #f4f8f6; }
+.conversation-page.usr-section-page .messages-scroll { padding-top: 24px; padding-bottom: 28px; }
+.usr-message-bubble { padding: 12px 16px; line-height: 1.65; overflow-wrap: anywhere; box-shadow: 0 3px 12px -8px #334155; }
+.usr-message-own { background: linear-gradient(135deg, #147d75, #11635e); border-bottom-right-radius: 6px; }
+.conversation-page .message-composer-row { padding-bottom: max(12px, env(safe-area-inset-bottom)); background: white; }
+.conversation-page .message-input, .conversation-page .send-button { border-radius: 16px; }
+.conversation-page .message-action-menu button { min-width: 36px; min-height: 36px; }
+.usr-message-reaction { animation: usr-reaction-pop .3s ease-out; }
+.conversation-page .message-action-menu button:hover { background: #e6f5ef; }
+@keyframes usr-reaction-pop { 0% { transform: scale(.4); } 65% { transform: scale(1.3); } 100% { transform: scale(1); } }
+@media (min-width: 1024px) {
+  .conversation-page.usr-section-page { padding: 24px; }
+  .conversation-page.usr-section-page .conversation-shell { max-width: 1080px; margin-inline: auto; border: 1px solid #dce8e3; border-radius: 28px; box-shadow: 0 18px 60px -30px #164e6355; }
+}
+@media (max-width: 639px) {
+  .usr-section-page input:not([type='file']), .usr-section-page textarea, .usr-section-page select { font-size: 16px; }
+  .usr-notifications .usr-section-toolbar > div { flex-wrap: wrap; }
+  .conversation-page .send-button { padding-inline: 12px; }
+  .usr-detail .usr-reading-body { font-size: 15px; }
+}
+@media (prefers-reduced-motion: reduce) { .usr-message-reaction { animation: none; } }
+
+/* ── Shared section primitives (profile, library, rewards, settings, search) ── */
+
+/* Segmented tabs: the dashboard's pill language, available outside the
+   dashboard-only shell so every user surface reads the same. */
+.usr-section-tabs { display: flex; align-items: center; gap: 6px; margin-bottom: 20px; padding: 6px; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 999px; background: #fff; box-shadow: 0 8px 32px -26px #164e63; scrollbar-width: none; }
+.usr-section-tabs::-webkit-scrollbar { display: none; }
+.usr-section-tab { display: inline-flex; flex-shrink: 0; align-items: center; gap: 6px; min-height: 40px; padding: 8px 16px; border: 0; border-radius: 999px; background: transparent; color: #526477; font-size: 12px; font-weight: 800; letter-spacing: .01em; transition: background .2s, color .2s, box-shadow .2s; }
+.usr-section-tab:hover { background: #f1f5f9; color: #0f172a; }
+.usr-section-tab[aria-pressed="true"], .usr-section-tab[aria-selected="true"] { background: #147d75; color: #fff; box-shadow: 0 8px 18px -10px #147d75; }
+.usr-section-tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; padding: 1px 6px; border-radius: 999px; background: #e6f5ef; color: #0f766e; font-size: 10px; font-weight: 900; }
+.usr-section-tab[aria-pressed="true"] .usr-section-tab-count, .usr-section-tab[aria-selected="true"] .usr-section-tab-count { background: rgba(255, 255, 255, .22); color: #fff; }
+
+/* Stat tiles ---------------------------------------------------------------- */
+.usr-stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.usr-stat-tile { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; }
+.usr-stat-label { color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+.usr-stat-value { margin-top: 6px; color: #0f172a; font-size: 22px; font-weight: 900; letter-spacing: -.02em; }
+.usr-stat-icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 42px; height: 42px; border-radius: 14px; background: #e6f5ef; color: #0f766e; }
+.usr-stat-tile.usr-tone-violet .usr-stat-icon { background: #ede9fe; color: #6d28d9; }
+.usr-stat-tile.usr-tone-amber .usr-stat-icon { background: #fef3c7; color: #b45309; }
+.usr-stat-tile.usr-tone-sky .usr-stat-icon { background: #e0f2fe; color: #0369a1; }
+.usr-stat-tile.usr-tone-emerald .usr-stat-icon { background: #d1fae5; color: #047857; }
+.usr-stat-tile.usr-tone-rose .usr-stat-icon { background: #ffe4e6; color: #be123c; }
+
+/* Hero band reused by profile / rewards / onboarding ------------------------ */
+.usr-section-hero { position: relative; overflow: hidden; margin-bottom: 20px; padding: 20px; border: 1px solid #dce8e3; border-radius: 24px; background: linear-gradient(120deg, #ffffff 55%, #f0fdfa), radial-gradient(120% 130% at 100% 0%, rgba(20, 125, 117, .18), transparent 60%); }
+.usr-section-hero-dark { border-color: #0f172a; background: linear-gradient(125deg, #0f172a, #134e4a); color: #fff; }
+
+/* List rows ---------------------------------------------------------------- */
+.usr-list-row { display: flex; align-items: center; gap: 14px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 18px; background: #fff; transition: border-color .2s, box-shadow .2s, transform .2s; }
+.usr-list-row:hover { border-color: #8bbdb4; box-shadow: 0 12px 28px -20px #164e63; }
+@media (min-width: 1024px) { .usr-list-row:hover { transform: translateY(-2px); } }
+
+/* Staggered entrance inside any section page (dashboard-shell equivalent). */
+.usr-section-page .usr-stagger > * { animation: usr-section-rise .45s ease-out both; }
+.usr-section-page .usr-stagger > :nth-child(1) { animation-delay: 20ms; }
+.usr-section-page .usr-stagger > :nth-child(2) { animation-delay: 70ms; }
+.usr-section-page .usr-stagger > :nth-child(3) { animation-delay: 120ms; }
+.usr-section-page .usr-stagger > :nth-child(4) { animation-delay: 170ms; }
+.usr-section-page .usr-stagger > :nth-child(5) { animation-delay: 220ms; }
+.usr-section-page .usr-stagger > :nth-child(6) { animation-delay: 270ms; }
+
+/* Empty states / inline notices ------------------------------------------- */
+.usr-empty-state { padding: 40px 20px; border: 1px dashed #cbd5e1; border-radius: 24px; background: #fff; text-align: center; }
+.usr-inline-note { padding: 10px 14px; border-radius: 14px; font-size: 13px; font-weight: 600; }
+.usr-inline-note-info { background: #e6f5ef; color: #0f766e; }
+.usr-inline-note-error { background: #fee2e2; color: #b91c1c; }
+.usr-inline-note-success { background: #d1fae5; color: #047857; }
+
+/* Profile surfaces -------------------------------------------------------- */
+/* The avatar deliberately overlaps the bottom edge of the cover photo, so it
+   has to win the paint order against the cover image and its overlay: both are
+   positioned, while a plain in-flow block would paint underneath them. */
+.usr-profile-avatar { position: relative; z-index: 1; width: 88px; height: 88px; border: 4px solid #fff; border-radius: 999px; background: #e6f5ef; color: #0f766e; font-size: 24px; font-weight: 900; box-shadow: 0 10px 24px -14px #164e63; }
+@media (min-width: 640px) { .usr-profile-avatar { width: 104px; height: 104px; } }
+
+/* Large non-interactive surfaces (profile hero, settings shell). Unlike
+   .usr-card these must not lift on hover, otherwise a whole page shifts. */
+.usr-surface { position: relative; border: 1px solid #e2e8f0; border-radius: 24px; background: #fff; box-shadow: 0 12px 38px -28px #164e63; }
+
+/* Section accents keep each area recognisable at a glance. */
+.usr-library .usr-section-heading { border-top-color: #38bdf8; }
+.usr-rewards .usr-section-heading { border-top-color: #a78bfa; }
+.usr-profile .usr-section-heading { border-top-color: #147d75; }
+.usr-settings .usr-section-heading { border-top-color: #0ea5e9; }
+.usr-search .usr-section-heading { border-top-color: #f59e0b; }
+.usr-support .usr-section-heading { border-top-color: #8b5cf6; }
+.usr-drafts .usr-section-heading { border-top-color: #fbbf24; }
+.usr-onboarding .usr-section-heading { border-top-color: #34d399; }
+
+@media (min-width: 768px) {
+  .usr-stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+@media (min-width: 1024px) {
+  .usr-section-hero { padding: 24px; }
+}
+
+

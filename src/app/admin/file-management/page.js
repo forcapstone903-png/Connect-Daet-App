@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -148,7 +149,7 @@ export default function FileManagementPage() {
   if (!isHydrated || !user) {
     return (
       <div className="min-h-screen bg-slate-50" aria-busy="true">
-        <div className="ml-64 p-6">
+        <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
           <div className="animate-pulse space-y-4">
             <div className="h-8 w-72 rounded bg-slate-200" />
             <div className="grid gap-4 md:grid-cols-4">
@@ -166,32 +167,38 @@ export default function FileManagementPage() {
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="File Manager" />
 
-      <div className="ml-64 p-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">File Management</h1>
-            <p className="text-sm text-slate-500">Media library, uploads, previews, and storage optimization.</p>
-          </div>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Content"
+          title="Media library"
+          description="Upload, preview, and organise the images, videos, and documents used across the tourism site."
+          icon="image"
+        />
 
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl bg-gradient-to-r from-sky-600 to-cyan-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-sky-100">Files</div>
-            <div className="mt-2 text-3xl font-bold">{files.length}</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-violet-600 to-purple-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-violet-100">Images</div>
-            <div className="mt-2 text-3xl font-bold">{files.filter((file) => file.type.startsWith('image/')).length}</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-emerald-100">Storage</div>
-            <div className="mt-2 text-3xl font-bold">{(totalSize / (1024 * 1024)).toFixed(1)} MB</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 p-4 text-white shadow-sm">
-            <div className="text-sm text-amber-100">Used</div>
-            <div className="mt-2 text-3xl font-bold">{storagePercent.toFixed(0)}%</div>
-          </div>
-        </div>
+        <AdminStatGrid>
+          <AdminStatCard label="Files" value={files.length} icon="data" tone="info" meta="All uploaded assets" />
+          <AdminStatCard
+            label="Images"
+            value={files.filter((file) => file.type.startsWith('image/')).length}
+            icon="image"
+            tone="violet"
+            meta="Photos and graphics"
+          />
+          <AdminStatCard
+            label="Storage used"
+            value={`${(totalSize / (1024 * 1024)).toFixed(1)} MB`}
+            icon="save"
+            tone="success"
+            meta="Total size on record"
+          />
+          <AdminStatCard
+            label="Capacity used"
+            value={`${storagePercent.toFixed(0)}%`}
+            icon="analytics"
+            tone="warning"
+            meta="Of available storage"
+          />
+        </AdminStatGrid>
 
         <div className="mb-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

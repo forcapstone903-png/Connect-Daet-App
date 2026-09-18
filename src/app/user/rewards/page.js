@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 import { getDailyStreak, getLevelFromPoints, getLevelProgress, getRewardBadges } from '@/lib/gamification'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -183,43 +184,52 @@ export default function UserRewardsPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] p-6 text-sm text-slate-600">
-        Loading your rewards...
+      <main className="tourism-shell usr-section-page usr-rewards flex min-h-screen items-center justify-center p-6">
+        <div className="usr-card usr-pop-in p-6 text-center">
+          <span className="usr-spin mx-auto mb-3 flex h-6 w-6 rounded-full border-2 border-teal-700 border-t-transparent" />
+          <p className="text-sm font-semibold text-slate-600">Loading your rewards...</p>
+        </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="tourism-shell usr-section-page usr-rewards min-h-screen text-slate-900">
       <UserTopHeader />
-      <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-2 sm:px-4 lg:px-6">
-        <div className="mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your progress</p>
-          <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Rewards</h1>
-        </div>
+      <div className="usr-section-container mx-auto max-w-5xl px-3 pb-10 pt-2 sm:px-4 lg:px-6">
+        <UserSectionHeader
+          eyebrow="Your progress"
+          title="Rewards"
+          description="Track your points, unlock badges, and redeem community perks as you explore Daet."
+          emoji="🏆"
+        >
+          <span className="usr-section-counter">Level {currentLevel}</span>
+        </UserSectionHeader>
 
-        <div className="mb-4 overflow-hidden border border-slate-200 bg-slate-900 p-5 text-white shadow-sm sm:p-6">
+        <div className="usr-section-hero usr-section-hero-dark usr-enter">
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-violet-100">Member rewards</p>
-              <h2 className="mt-2 text-2xl font-bold sm:text-3xl">{profile.full_name}</h2>
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-white/70">Member rewards</p>
+              <h2 className="mt-2 break-words text-2xl font-black sm:text-3xl">{profile.full_name}</h2>
+              <p className="mt-1 max-w-prose text-sm text-white/70">Earn points by sharing stories, joining forum discussions, and attending community events.</p>
             </div>
-            <div className="border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-semibold backdrop-blur-sm">
+            <div className="inline-flex shrink-0 items-center gap-2 self-start rounded-full border border-white/25 bg-white/10 px-4 py-2 text-sm font-bold backdrop-blur-sm md:self-auto">
+              <Crown className="h-4 w-4" aria-hidden="true" />
               Level {currentLevel}
             </div>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             {rewardSummary.map(({ label, value, icon: Icon }) => (
-              <div key={label} className="border border-white/10 bg-white/10 p-3 backdrop-blur-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-violet-100">{label}</p>
-                    <p className="mt-2 text-xl font-bold text-white">{value}</p>
+              <div key={label} className="usr-lift rounded-2xl border border-white/10 bg-white/10 p-4 backdrop-blur-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-white/60">{label}</p>
+                    <p className="mt-2 text-xl font-black">{value}</p>
                   </div>
-                  <div className="flex h-10 w-10 items-center justify-center bg-white/10 text-white">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10" aria-hidden="true">
                     <Icon className="h-5 w-5" />
-                  </div>
+                  </span>
                 </div>
               </div>
             ))}
@@ -227,8 +237,8 @@ export default function UserRewardsPage() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <section className="space-y-6">
-            <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <section className="usr-stagger space-y-6">
+            <div className="usr-card usr-enter p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Progress</p>
@@ -237,7 +247,7 @@ export default function UserRewardsPage() {
                 <Sparkles className="h-4 w-4 text-violet-600" />
               </div>
 
-              <div className="border border-slate-100 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <div className="mb-3 flex items-center justify-between text-sm font-semibold text-slate-700">
                   <span>Lv {currentLevel}</span>
                   <span>{profile.points} pts</span>
@@ -248,7 +258,7 @@ export default function UserRewardsPage() {
               </div>
             </div>
 
-            <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="usr-card usr-enter p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Milestones</p>
@@ -259,7 +269,7 @@ export default function UserRewardsPage() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 {badges.length ? badges.map((badge, index) => (
-                  <div key={`${badge.name}-${index}`} className="border border-slate-200 bg-slate-50 p-3">
+                  <div key={`${badge.name}-${index}`} className="usr-lift rounded-2xl border border-slate-200 bg-slate-50 p-3">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-600">
                         <Star className="h-4 w-4 fill-current" />
@@ -278,7 +288,7 @@ export default function UserRewardsPage() {
               </div>
             </div>
 
-            <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="usr-card usr-enter p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Activity</p>
@@ -297,7 +307,7 @@ export default function UserRewardsPage() {
                     <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">+{entry.points}</span>
                   </div>
                 )) : (
-                  <div className="border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
                     Your recent earning history will appear here.
                   </div>
                 )}
@@ -305,8 +315,8 @@ export default function UserRewardsPage() {
             </div>
           </section>
 
-          <aside className="space-y-6">
-            <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <aside className="usr-stagger space-y-6">
+            <div className="usr-card usr-enter p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Leaderboards</p>
@@ -330,14 +340,14 @@ export default function UserRewardsPage() {
                     <span className="text-sm font-bold text-violet-700">{person.points} pts</span>
                   </div>
                 )) : (
-                  <div className="border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
                     Leaderboard data will appear as more users participate.
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="usr-card usr-enter p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Streak</p>
@@ -346,13 +356,13 @@ export default function UserRewardsPage() {
                 <Zap className="h-4 w-4 text-cyan-500" />
               </div>
 
-              <div className="border border-slate-100 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                 <p className="text-3xl font-bold text-slate-900">{streakInfo.current} days</p>
                 <p className="mt-2 text-sm text-slate-600">Longest streak: {streakInfo.longest} days</p>
               </div>
             </div>
 
-            <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="usr-card usr-enter p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-2">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Rewards</p>
@@ -363,7 +373,7 @@ export default function UserRewardsPage() {
 
               <div className="space-y-3">
                 {rewards.map((reward) => (
-                  <button key={reward.title} type="button" onClick={() => redeemReward(reward)} disabled={Boolean(redeeming) || redeemedRewards.includes(reward.title)} className="flex w-full items-center justify-between border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60">
+                  <button key={reward.title} type="button" onClick={() => redeemReward(reward)} disabled={Boolean(redeeming) || redeemedRewards.includes(reward.title)} className="usr-lift flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-violet-300 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-60">
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{reward.title}</p>
                       <p className="text-xs text-slate-500">{reward.points} points</p>

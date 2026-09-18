@@ -21,7 +21,7 @@ export async function POST(request) {
     const requestedBucket = String(formData.get('bucket') || '').trim()
     const requestedFolder = String(formData.get('folder') || '').trim()
     const resolvedBucket = bucketAliases[requestedBucket] || requestedBucket
-    const allowedBuckets = new Set(['profile-media', 'blogs', 'announcements', 'events', 'tourist-spots'])
+    const allowedBuckets = new Set(['profile-media', 'post-media', 'blogs', 'announcements', 'events', 'tourist-spots'])
 
     if (!allowedBuckets.has(resolvedBucket)) {
       return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
@@ -106,7 +106,7 @@ export async function DELETE(request) {
 
     const { bucket, url } = await request.json()
     const resolvedBucket = bucketAliases[bucket] || bucket
-    const allowedBuckets = new Set(['profile-media', 'blogs', 'announcements', 'events', 'tourist-spots'])
+    const allowedBuckets = new Set(['profile-media', 'post-media', 'blogs', 'announcements', 'events', 'tourist-spots'])
     if (!allowedBuckets.has(resolvedBucket)) {
       return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })
     }
@@ -127,6 +127,7 @@ export async function DELETE(request) {
       || objectPath.startsWith(`featured/${userId}/`)
       || objectPath.startsWith(`gallery/${userId}/`)
       || objectPath.startsWith(`messages/${userId}/`)
+      || objectPath.startsWith(`forum-replies/${userId}/`)
 
     if (!allowedBuckets.has(normalizedBucket) || !ownedPath || !objectPath) {
       return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })

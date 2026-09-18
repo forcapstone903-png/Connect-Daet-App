@@ -1,0 +1,144 @@
+/* Shared, scoped styling for the admin dashboard and events calendars. */
+.admin-events-calendar { overflow: visible; }
+.admin-events-calendar-scroll {
+  /* FullCalendar owns its pixel height; do not rely on percentage-height ancestry. */
+  overflow-x: auto;
+}
+.admin-events-calendar .fc-timeGridWeek-view { min-width: 560px; }
+.admin-events-calendar .fc .fc-timegrid-slot { height: 28px; }
+.admin-events-calendar .fc .fc-timegrid-axis,
+.admin-events-calendar .fc .fc-timegrid-slot-label { color: var(--muted-ink); font-size: 0.75rem; }
+.admin-events-calendar .fc .fc-timegrid-event { border-radius: 4px; }
+.admin-events-calendar .fc .fc-timegrid-event .fc-event-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.admin-events-calendar .fc .fc-timegrid-event .fc-event-time { font-size: 0.7rem; }
+.admin-upcoming-panel .flex-1 { min-width: 0; overflow-wrap: anywhere; }
+.admin-events-calendar .fc {
+  --fc-page-bg-color: var(--paper);
+  --fc-neutral-bg-color: var(--admin-primary-soft);
+  --fc-list-event-hover-bg-color: var(--admin-primary-soft);
+  --fc-today-bg-color: var(--admin-primary-soft);
+  --fc-border-color: var(--line);
+  color: var(--ink) !important;
+  min-width: 280px;
+}
+.admin-events-calendar .fc .fc-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  flex-direction: row;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.admin-events-calendar .fc .fc-toolbar-chunk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  width: auto;
+  gap: 6px;
+}
+.admin-events-calendar .fc .fc-toolbar-title {
+  font-size: 1.125rem !important;
+  font-weight: 700;
+  color: var(--ink) !important;
+}
+.admin-events-calendar .fc .fc-button-primary {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 6px !important;
+  padding: 7px 10px;
+  font-size: 0.8rem;
+  box-shadow: none;
+}
+.admin-events-calendar .fc .fc-button-primary:hover,
+.admin-events-calendar .fc .fc-button-active {
+  background: var(--admin-primary) !important;
+  border-color: var(--admin-primary) !important;
+  color: white !important;
+}
+.admin-events-calendar .fc .fc-button:disabled { opacity: 0.45 !important; }
+.admin-events-calendar .fc .fc-button:focus-visible,
+.admin-events-calendar .fc a:focus-visible {
+  outline: 2px solid var(--admin-primary);
+  outline-offset: 2px;
+}
+.admin-events-calendar .fc .fc-dayGridMonth-view .fc-daygrid-day-frame {
+  min-height: 0;
+  background: transparent;
+}
+.admin-events-calendar .fc .fc-daygrid-day-frame:hover {
+  background: var(--admin-primary-soft);
+  cursor: pointer;
+}
+.admin-events-calendar .fc .fc-day-today {
+  background: var(--admin-primary-soft) !important;
+}
+.admin-events-calendar .fc .fc-daygrid-day-number {
+  margin: 5px;
+  padding: 4px 7px;
+  font-size: 0.8rem;
+  color: var(--ink) !important;
+}
+.admin-events-calendar .fc .fc-day-other .fc-daygrid-day-number {
+  color: var(--muted-ink) !important;
+}
+.admin-events-calendar .fc .fc-day-today .fc-daygrid-day-number {
+  border-radius: 50%;
+  background: var(--admin-primary);
+  color: white !important;
+}
+.admin-events-calendar .fc .fc-col-header-cell-cushion {
+  padding: 12px 4px;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--muted-ink) !important;
+}
+.admin-events-calendar .fc .fc-daygrid-day-events { margin: 0 3px 6px; }
+.admin-events-calendar .fc .fc-daygrid-event {
+  border: 0;
+  border-radius: 4px !important;
+  padding: 3px 5px;
+  font-size: 0.75rem;
+  cursor: grab;
+}
+.admin-events-calendar .fc .fc-daygrid-event:active { cursor: grabbing; }
+.admin-events-calendar .fc .fc-event-title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.admin-events-calendar .fc-theme-standard td,
+.admin-events-calendar .fc-theme-standard th {
+  border-color: var(--line) !important;
+}
+.admin-events-calendar .fc .fc-more-link {
+  color: var(--admin-primary-ink);
+  font-size: 0.75rem;
+  padding: 3px;
+}
+/* Let FullCalendar manage its internal scrollers, particularly the weekly timeline. */
+.admin-events-calendar .fc .fc-popover {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--line);
+  box-shadow: var(--admin-shadow-lg);
+  max-width: calc(100vw - 40px);
+}
+.admin-events-calendar .fc .fc-list-day-cushion {
+  background: var(--admin-primary-soft);
+  color: var(--ink);
+}
+.admin-events-calendar .fc .fc-list-event-title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 639px) {
+  .admin-events-calendar .fc .fc-daygrid-day-number { margin: 2px; }
+  .admin-events-calendar .fc .fc-daygrid-event { padding: 2px; font-size: 0.65rem; }
+  .admin-events-calendar .fc .fc-toolbar-chunk { gap: 4px; }
+  .admin-events-calendar .fc .fc-button-primary { padding: 7px; }
+}

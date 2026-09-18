@@ -7,6 +7,7 @@ import {
   Bookmark,
   ArrowLeft,
   ChevronDown,
+  FileText,
   MessageSquare,
   MoreHorizontal,
   Flag,
@@ -804,10 +805,17 @@ export default function BlogDetailPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mx-auto max-w-3xl">
-          <div className="mb-6 h-16 animate-pulse rounded-[20px] bg-slate-200" />
-          <div className="mb-6 h-96 animate-pulse rounded-[20px] bg-slate-200" />
+      <main className="tourism-shell usr-section-page usr-detail min-h-screen text-slate-900">
+        <div className="usr-section-container mx-auto max-w-3xl px-3 pb-24 pt-3 sm:px-4 lg:px-6">
+          <div className="usr-section-loading">
+            {[0, 1].map((item) => (
+              <div key={item} className="usr-card p-5">
+                <div className="usr-section-skeleton h-4 w-1/3 rounded-full" />
+                <div className="usr-section-skeleton mt-3 h-3 w-full rounded-full" />
+                <div className="usr-section-skeleton mt-2 h-3 w-4/5 rounded-full" />
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     )
@@ -815,29 +823,33 @@ export default function BlogDetailPage() {
 
   if (!blog) {
     return (
-      <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
-        <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
-          <p className="text-sm text-slate-500">Article not found.</p>
-          <Link href="/user/blogs" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
-            Back to blogs
-          </Link>
+      <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6 text-slate-900">
+        <div className="usr-empty-state max-w-xl">
+          <FileText className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
+          <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
+          <p className="mt-1 text-xs text-slate-500">This story may have been unpublished, archived, or removed by its author.</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Link href="/user/blogs" className="usr-section-primary">Back to stories</Link>
+          </div>
         </div>
       </main>
     )
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-6xl px-2 py-3 sm:px-4 sm:py-5 lg:px-6">
-        <button
-          type="button"
-          onClick={() => router.back()}
-          aria-label="Go back"
-          title="Go back"
-          className="mb-3 hidden h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 sm:inline-flex"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
+    <main className="tourism-shell usr-section-page usr-detail usr-stories min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto max-w-6xl px-3 py-3 sm:px-4 sm:py-5 lg:px-6">
+        <div className="mb-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            aria-label="Go back"
+            title="Go back"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+        </div>
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
         <article className="mb-5 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:mb-0">
           {blog.featured_image && (

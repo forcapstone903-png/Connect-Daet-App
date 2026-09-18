@@ -49,7 +49,7 @@ function isMissingRepostStatusColumnError(error) {
 async function selectRepostsForContent(adminSupabase, userId, contentType, contentId) {
   const baseQuery = adminSupabase
     .from('reposts')
-    .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+    .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
     .eq('user_id', userId)
     .eq('original_content_type', contentType)
     .eq('original_content_id', contentId)
@@ -73,7 +73,7 @@ async function insertRepost(adminSupabase, payload) {
   const { data, error } = await adminSupabase
     .from('reposts')
     .insert(insertPayload)
-    .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+    .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
     .single()
 
   if (!error || !isMissingRepostStatusColumnError(error)) return { data, error }
@@ -155,7 +155,7 @@ export async function POST(request) {
         .update({ status: 'active' })
         .eq('id', existingRepost.id)
         .eq('user_id', userId)
-        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
         .single()
 
       if (restoreResult.error && isMissingRepostStatusColumnError(restoreResult.error)) {
@@ -179,7 +179,7 @@ export async function POST(request) {
     if (error.code === '23505') {
       const { data: duplicate } = await adminSupabase
         .from('reposts')
-        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
         .eq('user_id', userId)
         .eq('original_content_type', contentType)
         .eq('original_content_id', contentId)

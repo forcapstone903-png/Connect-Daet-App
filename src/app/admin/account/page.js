@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import AdminSidebar from '@/app/components/AdminSidebar'
+import { AdminPageHeader } from '@/app/components/admin'
 import { Icon } from '@/app/components/Icon'
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession, clearAuthCookie } from '@/lib/authCookies'
@@ -95,7 +96,16 @@ const DEFAULT_PROFILE = {
 export default function AdminAccountPage() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState('overview')
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window === 'undefined') return 'overview'
+    try {
+      const tab = new URLSearchParams(window.location.search).get('tab')
+      return TABS.some((entry) => entry.id === tab) ? tab : 'overview'
+    } catch (err) {
+      console.error('Failed to read tab param:', err)
+      return 'overview'
+    }
+  })
   const [toast, setToast] = useState(null)
 
   // Profile
@@ -121,16 +131,6 @@ export default function AdminAccountPage() {
     window.setTimeout(() => setToast(null), 3200)
   }, [])
 
-  // Read the ?tab= query param (no SSR involvement, avoids Suspense requirement)
-  useEffect(() => {
-    try {
-      const tab = new URLSearchParams(window.location.search).get('tab')
-      if (tab && TABS.some((t) => t.id === tab)) setActiveTab(tab)
-    } catch (err) {
-      console.error('Failed to read tab param:', err)
-    }
-  }, [])
-
   useEffect(() => {
     const session = getStoredSession()
     if (!session) {
@@ -139,6 +139,20 @@ export default function AdminAccountPage() {
     }
 
     let isActive = true
+    // Session/profile fetches live inside the effect; only their async results
+    // call setState, and the cleanup flag stops late writes after unmount.
+    const loadSessions = async (userId) => {
+      try {
+        const response = await fetch('/api/activity/track?scope=sessions', { credentials: 'same-origin', cache: 'no-store' })
+        const result = await response.json()
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load sessions')
+        return result.activities || []
+      } catch (err) {
+        console.error('Session load exception:', err)
+        return []
+      }
+    }
+
     try {
       const userData = JSON.parse(session)
       if (!userData.id && userData.user_id) userData.id = userData.user_id
@@ -146,26 +160,30 @@ export default function AdminAccountPage() {
         window.location.href = '/admin/dashboard'
         return
       }
-      if (!isActive) return
-      setUser(userData)
-      setProfile((prev) => ({
-        ...DEFAULT_PROFILE,
-        ...prev,
-        full_name: userData.full_name || userData.user_name || '',
-        email: userData.email || userData.user_email || '',
-      }))
-      setLoading(false)
 
       const fetchProfileAndSessions = async () => {
+        // Session data paints the page immediately; the network result refines it.
+        if (isActive) {
+          setTwoFactor(loadTwoFactor(userData.id))
+          setUser(userData)
+          setProfile((prev) => ({
+            ...DEFAULT_PROFILE,
+            ...prev,
+            full_name: userData.full_name || userData.user_name || '',
+            email: userData.email || userData.user_email || '',
+          }))
+          setLoading(false)
+        }
         try {
           const [{ data: dbProfile, error: profileError }, sessionRows] = await Promise.all([
             supabase.from('info_users').select('*').eq('id', userData.id).maybeSingle(),
             loadSessions(userData.id),
           ])
+          if (!isActive) return
           if (!profileError && dbProfile) {
-            if (isActive) setProfile((prev) => ({ ...DEFAULT_PROFILE, ...prev, ...dbProfile }))
+            setProfile((prev) => ({ ...DEFAULT_PROFILE, ...prev, ...dbProfile }))
           }
-          if (isActive) setSessions(sessionRows)
+          setSessions(sessionRows)
         } catch (err) {
           console.error('Error loading account data:', err)
         }
@@ -179,19 +197,7 @@ export default function AdminAccountPage() {
     return () => { isActive = false }
   }, [])
 
-  const loadSessions = async (userId) => {
-    try {
-      const response = await fetch('/api/activity/track?scope=sessions', { credentials: 'same-origin', cache: 'no-store' })
-      const result = await response.json()
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load sessions')
-      return result.activities || []
-    } catch (err) {
-      console.error('Session load exception:', err)
-      return []
-    }
-  }
-
-const handleSaveProfile = async () => {
+  const handleSaveProfile = async () => {
     if (!user) return
     setSavingProfile(true)
     try {
@@ -316,11 +322,6 @@ const handleSaveProfile = async () => {
     showToast('Session reset. Please sign in again on other devices.', false)
   }
 
-  useEffect(() => {
-    if (user) {
-      setTwoFactor(loadTwoFactor(user.id))
-    }
-  }, [user])
 
   if (loading) {
     return (
@@ -360,12 +361,13 @@ return (
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="Administrator" userRole={user?.role} />
 
-      <main style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
-        <div className="mb-6">
-          <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-sky-700">My Account</p>
-          <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">Account Settings</h1>
-          <p className="mt-2 text-sm text-slate-600">Manage your profile, security, and active sessions</p>
-        </div>
+      <main style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="My account"
+          title="Account settings"
+          description="Manage your profile, security, and active sessions."
+          icon="profile"
+        />
 
         {tabBar}
 
@@ -505,7 +507,7 @@ return (
               {!twoFactor.enabled && pendingSecret && (
                 <div className="mt-6 space-y-4 rounded-2xl border border-sky-100 bg-sky-50/60 p-5">
                   <p className="text-sm font-semibold text-slate-700">Step 1 — Add this secret to your authenticator app</p>
-                  <p className="text-xs text-slate-500">Open your authenticator app, choose "Manual entry", and paste the secret below (or type it in).</p>
+                  <p className="text-xs text-slate-500">Open your authenticator app, choose &quot;Manual entry&quot;, and paste the secret below (or type it in).</p>
                   <div className="rounded-xl border border-slate-200 bg-white p-3 font-mono text-xs break-all text-slate-800">{pendingSecret}</div>
                   <p className="text-xs text-slate-500">Scan-compatible URI:</p>
                   <div className="rounded-xl border border-slate-200 bg-white p-3 font-mono text-[11px] break-all text-slate-500">{otpauthUri}</div>

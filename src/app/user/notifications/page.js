@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Angry, Bell, BellRing, CheckCheck, Frown, Heart, Laugh, MessageCircle, Repeat2, Search, ShieldAlert, Sparkles, ThumbsUp, Trash2, UserRoundPlus, Volume2, X } from 'lucide-react'
+import { Bell, BellRing, CheckCheck, MessageCircle, Search, ShieldAlert, Sparkles, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
+import UserSectionHeader, { SectionLoading } from '@/app/components/user/UserSectionHeader'
 import Comments from '@/app/components/user/Comments'
 
 const NOTIFICATIONS_CACHE_TTL_MS = 30 * 1000
@@ -23,35 +24,16 @@ function readStoredSession() {
   }
 }
 
-const PRIORITY_STYLES = {
-  urgent: 'bg-red-100 text-red-700 border-red-200',
-  high: 'bg-orange-100 text-orange-700 border-orange-200',
-  normal: 'bg-sky-100 text-sky-700 border-sky-200',
-  low: 'bg-slate-100 text-slate-700 border-slate-200',
-}
+const NOTIFICATION_SOUND_STORAGE_KEY = 'daet:notification-sound'
 
-const TYPE_STYLES = {
-  announcement: 'bg-violet-100 text-violet-700',
-  event: 'bg-emerald-100 text-emerald-700',
-  system: 'bg-slate-100 text-slate-700',
-  warning: 'bg-amber-100 text-amber-700',
-  info: 'bg-sky-100 text-sky-700',
-  success: 'bg-emerald-100 text-emerald-700',
-  error: 'bg-red-100 text-red-700',
-}
+function matchesNotificationQuery(notification, query) {
+  const normalizedQuery = String(query || '').trim().toLowerCase()
+  if (!normalizedQuery) return true
 
-function formatDate(dateValue) {
-  if (!dateValue) return 'Just now'
-
-  const date = new Date(dateValue)
-  if (Number.isNaN(date.getTime())) return 'Just now'
-
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  const actor = notification?.actor || {}
+  return [actor.full_name, notification?.title, notification?.message, notification?.type]
+    .filter(Boolean)
+    .some((value) => String(value).toLowerCase().includes(normalizedQuery))
 }
 
 function formatRelativeTime(dateValue) {
@@ -71,6 +53,19 @@ function formatRelativeTime(dateValue) {
 
 function getInitials(name = '') {
   return String(name).split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
+}
+
+function getNotificationActorName(notification) {
+  const actor = notification?.actor || null
+  if (actor?.full_name || actor?.name) return actor.full_name || actor.name
+
+  // Some notifications have no actor (self-service messages such as rewards,
+  // feedback, or daily prompts). Only fall back to the message prefix when it
+  // actually looks like "<name> <action>", otherwise the whole message would be
+  // rendered twice: once as the name and once as the body.
+  const message = String(notification?.message || '')
+  const match = message.match(/^(.*?)\s+(?:started following you|followed you back|is now following you|commented on your|replied to your|reacted to|liked your|sent you|mentioned you|published a new post|created a new event|started a new discussion)/i)
+  return match?.[1]?.trim() || ''
 }
 
 function getNotificationMessageText(notification, actorName) {
@@ -121,7 +116,9 @@ export default function UserNotificationsPage() {
   const router = useRouter()
   const [session, setSession] = useState(null)
   const [notifications, setNotifications] = useState([])
-  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [soundEnabled, setSoundEnabled] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [retryKey, setRetryKey] = useState(0)
@@ -131,6 +128,9 @@ export default function UserNotificationsPage() {
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [commentsSheetVisible, setCommentsSheetVisible] = useState(false)
   const sheetTouchStartY = useRef(null)
+  const searchInputRef = useRef(null)
+  const soundEnabledRef = useRef(false)
+  const audioContextRef = useRef(null)
 
   const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
   const notificationsCacheKey = getCacheKey('notifications', 'user', userId)
@@ -148,6 +148,11 @@ export default function UserNotificationsPage() {
       setActiveCommentsSheet(null)
       window.dispatchEvent(new CustomEvent('daet-comments-sheet-state', { detail: { open: false } }))
     }, 280)
+  }
+
+  const toggleSearch = () => {
+    if (searchOpen) setSearchQuery('')
+    setSearchOpen(!searchOpen)
   }
 
   useEffect(() => {
@@ -201,10 +206,49 @@ export default function UserNotificationsPage() {
     })
   }, [])
 
-  const syncUnreadBadge = (nextNotifications = notifications) => {
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled
+  }, [soundEnabled])
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      try {
+        const storedPreference = window.localStorage.getItem(NOTIFICATION_SOUND_STORAGE_KEY)
+        if (storedPreference === 'off') setSoundEnabled(false)
+        else if (storedPreference === 'on') setSoundEnabled(true)
+      } catch {
+        // Storage can be unavailable in private mode; keep the in-memory preference.
+      }
+    })
+
+    return () => {
+      try {
+        void audioContextRef.current?.close()
+      } catch {
+        // Ignore audio teardown failures during navigation.
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!searchOpen) return undefined
+    searchInputRef.current?.focus()
+    return undefined
+  }, [searchOpen])
+
+  useEffect(() => {
+    if (!actionNotice) return undefined
+    const timer = window.setTimeout(() => setActionNotice(''), 6000)
+    return () => window.clearTimeout(timer)
+  }, [actionNotice])
+
+  const syncUnreadBadge = (nextNotifications = notifications, explicitUnreadCount = null) => {
     if (typeof window === 'undefined') return
 
-    const unreadCount = (nextNotifications || []).filter((item) => !item.is_read).length
+    const normalizedCount = Number(explicitUnreadCount)
+    const unreadCount = Number.isFinite(normalizedCount)
+      ? normalizedCount
+      : (nextNotifications || []).filter((item) => !item.is_read).length
     queueMicrotask(() => {
       window.dispatchEvent(
         new CustomEvent('daet-notifications-updated', {
@@ -212,6 +256,34 @@ export default function UserNotificationsPage() {
         }),
       )
     })
+  }
+
+  const notifyUrgent = () => {
+    if (typeof window === 'undefined' || !soundEnabledRef.current) return
+
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext
+      if (!AudioContextClass) return
+
+      // Reuse one context per page visit: creating a new AudioContext for every
+      // notification leaks hardware audio channels until the tab is closed.
+      if (!audioContextRef.current) audioContextRef.current = new AudioContextClass()
+      const audioContext = audioContextRef.current
+      if (audioContext.state === 'suspended') void audioContext.resume()
+
+      const oscillator = audioContext.createOscillator()
+      const gainNode = audioContext.createGain()
+
+      oscillator.type = 'triangle'
+      oscillator.frequency.value = 880
+      gainNode.gain.value = 0.08
+      oscillator.connect(gainNode)
+      gainNode.connect(audioContext.destination)
+      oscillator.start()
+      oscillator.stop(audioContext.currentTime + 0.15)
+    } catch {
+      // ignore browser audio restrictions
+    }
   }
 
   useEffect(() => {
@@ -229,7 +301,7 @@ export default function UserNotificationsPage() {
         const cached = getCache(notificationsCacheKey)?.data
         if (cached) {
           setNotifications(cached.notifications || [])
-          syncUnreadBadge(cached.notifications || [])
+          syncUnreadBadge(cached.notifications || [], cached.unreadCount)
           setLoading(false)
         }
       }
@@ -251,25 +323,15 @@ export default function UserNotificationsPage() {
             throw new Error(result.message || `Unable to load notifications (${response.status})`)
           }
 
-          let nextNotifications = result.notifications || []
-          if (!silent && Number(result.unread_count) > 0) {
-            const markReadResponse = await fetch('/api/notifications', {
-              method: 'PATCH',
-              credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ markAllRead: true }),
-            })
-            const markReadResult = await markReadResponse.json().catch(() => ({}))
-            if (markReadResponse.ok && markReadResult.success) {
-              nextNotifications = nextNotifications.map((notification) => ({ ...notification, is_read: true }))
-              result.unread_count = 0
-            }
-          }
+          const nextNotifications = result.notifications || []
+          const serverUnreadCount = Number.isFinite(Number(result.unread_count))
+            ? Number(result.unread_count)
+            : nextNotifications.filter((notification) => !notification.is_read).length
 
           if (session) {
             setNotifications(nextNotifications)
-            syncUnreadBadge(nextNotifications)
-            setCache(notificationsCacheKey, { notifications: nextNotifications, unreadCount: result.unread_count || 0 }, NOTIFICATIONS_CACHE_TTL_MS)
+            syncUnreadBadge(nextNotifications, serverUnreadCount)
+            setCache(notificationsCacheKey, { notifications: nextNotifications, unreadCount: serverUnreadCount }, NOTIFICATIONS_CACHE_TTL_MS)
           }
           if (!silent) setLoading(false)
           window.clearTimeout(timeout)
@@ -320,6 +382,8 @@ export default function UserNotificationsPage() {
             return next
           })
 
+          if (!incoming.is_read) notifyUrgent()
+
           if (actorId && supabase) {
             void supabase
               .from('info_users')
@@ -330,7 +394,6 @@ export default function UserNotificationsPage() {
           } else {
             addNotification(null)
           }
-          syncUnreadBadge()
         },
       )
       realtimeChannel.on('postgres_changes', {
@@ -392,16 +455,21 @@ export default function UserNotificationsPage() {
 
   const unreadCount = notifications.filter((item) => !item.is_read).length
 
+  const visibleNotifications = useMemo(
+    () => notifications.filter((notification) => matchesNotificationQuery(notification, searchQuery)),
+    [notifications, searchQuery],
+  )
+
   const groupedNotifications = useMemo(() => {
     const groups = { New: [], Earlier: [] }
 
-    notifications.forEach((notification) => {
+    visibleNotifications.forEach((notification) => {
       if (notification.is_read) groups.Earlier.push(notification)
       else groups.New.push(notification)
     })
 
     return Object.entries(groups).filter(([, items]) => items.length)
-  }, [notifications])
+  }, [visibleNotifications])
 
   const getNotificationIcon = (notification) => {
     if (notification.type === 'event') return BellRing
@@ -530,12 +598,15 @@ export default function UserNotificationsPage() {
 
   const NotificationAvatar = ({ notification, actor, actorName, actorProfileHref }) => {
     const { emoji, className } = getNotificationActionIcon(notification)
+    const NotificationTypeIcon = getNotificationIcon(notification)
     const normalizedType = String(notification?.type || '').toLowerCase()
     const isCommentType = normalizedType === 'comment' || normalizedType === 'reply'
     const avatarContent = actor?.profile_image_url ? (
-      <img src={actor.profile_image_url} alt={actorName} className="h-full w-full object-cover" />
-    ) : (
+      <img src={actor.profile_image_url} alt={actorName || 'Notification'} className="h-full w-full object-cover" />
+    ) : actorName ? (
       <span className="text-xs font-black text-slate-600">{getInitials(actorName)}</span>
+    ) : (
+      <NotificationTypeIcon className="h-5 w-5 text-slate-500" aria-hidden="true" />
     )
 
     const avatarElement = actorProfileHref ? (
@@ -624,6 +695,7 @@ export default function UserNotificationsPage() {
       } : item))
 
       setActionNotice(actionType === 'wave' ? 'Wave sent.' : 'Hi sent.')
+      invalidateCache(notificationsCacheKey)
       syncUnreadBadge()
     } catch (error) {
       console.error('Send follow action failed:', error)
@@ -760,36 +832,59 @@ export default function UserNotificationsPage() {
     }
   }
 
-  const notifyUrgent = () => {
-    if (typeof window === 'undefined' || !soundEnabled) return
+  const toggleSound = () => {
+    const nextValue = !soundEnabled
+    setSoundEnabled(nextValue)
+    soundEnabledRef.current = nextValue
 
     try {
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)()
-      const oscillator = audioContext.createOscillator()
-      const gainNode = audioContext.createGain()
-
-      oscillator.type = 'triangle'
-      oscillator.frequency.value = 880
-      gainNode.gain.value = 0.08
-      oscillator.connect(gainNode)
-      gainNode.connect(audioContext.destination)
-      oscillator.start()
-      oscillator.stop(audioContext.currentTime + 0.15)
+      window.localStorage.setItem(NOTIFICATION_SOUND_STORAGE_KEY, nextValue ? 'on' : 'off')
     } catch {
-      // ignore browser audio restrictions
+      // Storage can be unavailable in private mode; the preference still applies for this visit.
     }
+
+    // Immediate feedback so the user knows what the toggle does.
+    if (nextValue) notifyUrgent()
   }
 
   return (
-    <main className="tourism-shell min-h-screen">
-      <div className="mx-auto max-w-300 px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
-        <header className="mb-4 border-b border-[#dfe7e1] bg-[#fffefa] pb-3">
-          <div className="flex items-center justify-between gap-3 px-1 py-2">
-            <h1 className="text-[28px] font-black tracking-[-0.06em] text-slate-900">Notifications</h1>
-            <button type="button" aria-label="Search notifications" title="Search notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700">
-              <Search className="h-4 w-4" />
-            </button>
+    <main className="tourism-shell usr-section-page usr-notifications min-h-screen">
+      <div className="usr-section-container mx-auto max-w-300 px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
+        <UserSectionHeader eyebrow="Your activity hub" title="Notifications" description="Reactions, conversations, and community updates—all in one place." emoji="🔔">
+          <span className="usr-section-counter" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
+        </UserSectionHeader>
+        <header className="usr-section-toolbar mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1 py-2">
+            <h2 className="text-sm font-bold text-slate-900">Activity controls</h2>
+            <div className="flex items-center gap-2">
+              <button type="button" onClick={toggleSound} aria-pressed={soundEnabled} aria-label={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} title={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
+                {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
+              <button type="button" onClick={toggleSearch} aria-expanded={searchOpen} aria-label="Search notifications" title="Search notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
+                <Search className="h-4 w-4" />
+              </button>
+            </div>
           </div>
+
+          {searchOpen && (
+            <div className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <Search className="h-4 w-4 shrink-0 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => { if (event.key === 'Escape') toggleSearch() }}
+                placeholder="Search notifications"
+                aria-label="Search notifications"
+                className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              />
+              {searchQuery && (
+                <button type="button" onClick={() => setSearchQuery('')} aria-label="Clear notification search" title="Clear search" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="mt-2 flex items-center justify-between gap-3 px-1">
             <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
@@ -797,7 +892,8 @@ export default function UserNotificationsPage() {
               Alerts
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="text-xs font-semibold text-sky-700 disabled:opacity-40">
+              <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 disabled:opacity-40">
+                <CheckCheck className="h-3.5 w-3.5" />
                 Mark all read
               </button>
               <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="text-xs font-semibold text-red-600 disabled:opacity-40">
@@ -824,7 +920,7 @@ export default function UserNotificationsPage() {
 
         <div className="space-y-6">
           {loading ? (
-            <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Loading notifications...</div>
+            <SectionLoading label="Loading notifications" />
           ) : loadError ? (
             <div role="alert" className="rounded-[18px] border border-red-200 bg-red-50 p-6 text-center">
               <p className="text-sm font-semibold text-red-700">{loadError}</p>
@@ -839,17 +935,17 @@ export default function UserNotificationsPage() {
             </div>
           ) : notifications.length ? (
             <div className="space-y-6">
-              {groupedNotifications.map(([groupLabel, groupItems]) => (
+              {groupedNotifications.length ? groupedNotifications.map(([groupLabel, groupItems]) => (
                 <section key={groupLabel} className="tourism-panel rounded-3xl p-3 sm:p-4">
                   <div className="mb-3 flex items-center justify-between px-1">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">{groupLabel}</h2>
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{groupItems.length}</span>
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                   {groupItems.map((notification) => {
                     const NotificationIcon = getNotificationIcon(notification)
                     const actor = notification.actor || null
-                    const actorName = actor?.full_name || actor?.name || (String(notification.message || '').split(/\s+(?:started following you|followed you back|commented|reacted|liked|sent you)/i)[0] || '').trim() || 'Community member'
+                    const actorName = getNotificationActorName(notification)
                     const actorProfileHref = getActorProfileHref(notification)
                     const isFollowType = String(notification.type || '').toLowerCase() === 'follow'
                     const messageText = getNotificationMessageText(notification, actorName)
@@ -868,12 +964,18 @@ export default function UserNotificationsPage() {
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0 flex-1">
                                 <p className="text-sm leading-5 text-slate-700">
-                                  {actorProfileHref ? (
-                                    <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="font-black text-slate-900 hover:text-sky-700">{actorName}</Link>
+                                  {actorName ? (
+                                    <>
+                                      {actorProfileHref ? (
+                                        <Link href={actorProfileHref} onClick={(event) => event.stopPropagation()} className="font-black text-slate-900 hover:text-sky-700">{actorName}</Link>
+                                      ) : (
+                                        <span className="font-black text-slate-900">{actorName}</span>
+                                      )}
+                                      <span className="ml-1 text-slate-600">{messageText}</span>
+                                    </>
                                   ) : (
-                                    <span className="font-black text-slate-900">{actorName}</span>
+                                    <span className="text-slate-700">{messageText}</span>
                                   )}
-                                  <span className="ml-1 text-slate-600">{messageText}</span>
                                 </p>
                               </div>
 
@@ -916,7 +1018,11 @@ export default function UserNotificationsPage() {
                   })}
                   </div>
                 </section>
-              ))}
+              )) : (
+                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+                  No notifications match your search.
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">

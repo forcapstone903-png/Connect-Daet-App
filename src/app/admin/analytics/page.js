@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -180,32 +181,26 @@ export default function AnalyticsAndReportsPage() {
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={adminUser} roleLabel="Administrator" onLogout={handleLogout} />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Analytics & Reporting</h1>
-            <p className="mt-1 text-sm text-slate-500">Monitor engagement, response pressure, and system health.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => window.print()} className="rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-100">Print</button>
-            <button onClick={exportSummary} className="rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-emerald-700">Export Summary</button>
-          </div>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Insights"
+          title="Analytics & reporting"
+          description="Monitor engagement, response pressure, and system health across the tourism platform."
+          icon="analytics"
+          actions={
+            <>
+              <AdminButton onClick={() => window.print()}>Print</AdminButton>
+              <AdminButton variant="primary" icon="downloads" onClick={exportSummary}>Export summary</AdminButton>
+            </>
+          }
+        />
 
-        <div className="mb-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            { label: 'Users', value: stats.totalUsers, icon: 'users', tone: 'blue' },
-            { label: 'Active Users', value: stats.activeUsers, icon: 'check', tone: 'green' },
-            { label: 'Events', value: stats.totalEvents, icon: 'events', tone: 'violet' },
-            { label: 'Average Rating', value: `${stats.avgRating}/5`, icon: 'analytics', tone: 'amber' },
-          ].map((item) => (
-            <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-lg"><Icon name={item.icon} className="w-5 h-5" /></div>
-              <div className="text-2xl font-bold text-slate-800">{item.value}</div>
-              <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{item.label}</div>
-            </div>
-          ))}
-        </div>
+        <AdminStatGrid>
+          <AdminStatCard label="Users" value={stats.totalUsers} icon="users" tone="brand" meta="Registered accounts" />
+          <AdminStatCard label="Active users" value={stats.activeUsers} icon="check" tone="success" meta="Status: active" />
+          <AdminStatCard label="Events" value={stats.totalEvents} icon="events" tone="violet" meta="Calendar entries" />
+          <AdminStatCard label="Average rating" value={`${stats.avgRating}/5`} icon="star" tone="warning" meta="Visitor feedback" />
+        </AdminStatGrid>
 
         <div className="mb-6 grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

@@ -13,11 +13,11 @@ import {
   Mic,
   MapPin,
   ShieldCheck,
-  Sparkles,
   Star,
   UserPlus,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import MediaUpload from '@/app/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
@@ -255,7 +255,22 @@ export default function OnboardingPage() {
     setStep((current) => current + 1)
   }
 
-  if (loading) return <main className="flex min-h-screen items-center justify-center bg-slate-50 text-sm text-slate-500">Preparing your welcome setup...</main>
+  if (loading) {
+    return (
+      <main className="tourism-shell usr-section-page usr-onboarding min-h-screen text-slate-900">
+        <div className="usr-section-container mx-auto max-w-5xl px-3 pb-28 pt-2 sm:px-4 lg:px-6 lg:pb-16">
+          <div className="usr-section-loading">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="usr-card p-5">
+                <div className="usr-section-skeleton h-4 w-1/3 rounded-full" />
+                <div className="usr-section-skeleton mt-3 h-3 w-4/5 rounded-full" />
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   const accentStyles = {
     sky: 'border-sky-200 bg-sky-50 text-sky-700',
@@ -267,21 +282,30 @@ export default function OnboardingPage() {
   const stepAccent = accentStyles[stepMeta.accent] || accentStyles.sky
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] px-3 py-6 text-slate-900 sm:px-6 sm:py-10">
-      <div className="mx-auto max-w-5xl">
-        <header className="mb-5 flex items-center justify-between gap-3">
-          <Link href="/user/dashboard" onClick={skipOnboarding} className="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-sky-700">
+    <main className="tourism-shell usr-section-page usr-onboarding min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto max-w-5xl px-3 pb-28 pt-2 sm:px-4 lg:px-6 lg:pb-16">
+        <UserSectionHeader
+          eyebrow="Welcome aboard"
+          title="Set up your experience"
+          description="A few quick choices so your Daet community feed, places, and people match your interests."
+          emoji="🧭"
+          backHref="/user/dashboard"
+          backLabel="Skip setup"
+        >
+          <span className="usr-section-counter">{progressLabel}</span>
+          <button
+            type="button"
+            onClick={skipOnboarding}
+            disabled={saving}
+            className="usr-section-secondary disabled:opacity-60"
+          >
             <ArrowLeft className="h-4 w-4" />
             Skip setup
-          </Link>
-          <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-600 shadow-sm backdrop-blur">
-            <Sparkles className="h-3.5 w-3.5 text-sky-600" />
-            {progressLabel}
-          </div>
-        </header>
+          </button>
+        </UserSectionHeader>
 
-        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_25px_70px_rgba(15,23,42,0.08)]">
-          <div className="border-b border-slate-100 bg-slate-50 px-5 py-4 sm:px-8">
+        <section className="usr-surface usr-enter overflow-hidden">
+          <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-8">
             <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${stepAccent}`}>
               <Compass className="h-3.5 w-3.5" />
               {stepMeta.kicker}
@@ -464,7 +488,7 @@ export default function OnboardingPage() {
                       <ImagePlus className="h-4 w-4 text-violet-600" />
                       Cover photo
                     </div>
-                    <MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" existingMediaUrl={coverUrl} previewClassName="h-32 w-full aspect-[3/1]" onUploadComplete={setCoverUrl} onUploadError={setError} buttonText="Add cover" maxSizeMB={8} />
+                    <MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" trimLetterbox existingMediaUrl={coverUrl} previewClassName="h-32 w-full aspect-[3/1]" onUploadComplete={setCoverUrl} onUploadError={setError} buttonText="Add cover" maxSizeMB={8} />
                   </div>
                 </div>
 
@@ -473,25 +497,26 @@ export default function OnboardingPage() {
                   Your profile is private by default until you choose to share more.
                 </div>
 
-                <button type="button" onClick={completeOnboarding} className="mt-4 text-sm font-bold text-slate-500 hover:text-sky-700">Skip photos and finish</button>
+                <button type="button" onClick={completeOnboarding} disabled={saving} className="usr-section-secondary mt-4 disabled:opacity-60">Skip photos and finish</button>
               </>
             )}
 
-            {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            {error && <p className="usr-inline-note usr-inline-note-error mt-4">{error}</p>}
 
             <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || saving} className="rounded-full px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 disabled:opacity-40">
+              <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || saving} className="usr-section-secondary disabled:opacity-40">
+                <ArrowLeft className="h-4 w-4" />
                 Back
               </button>
 
               <div className="flex items-center gap-2">
                 {step < 4 ? (
-                  <button type="button" onClick={nextStep} disabled={!canContinue} className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-700 disabled:opacity-40">
+                  <button type="button" onClick={nextStep} disabled={!canContinue} className="usr-section-primary disabled:opacity-40">
                     {stepMeta.nextLabel}
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 ) : (
-                  <button type="button" onClick={completeOnboarding} disabled={saving} className="inline-flex items-center gap-2 rounded-full bg-sky-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-sky-500/20 transition hover:bg-sky-700 disabled:opacity-50">
+                  <button type="button" onClick={completeOnboarding} disabled={saving} className="usr-section-primary disabled:opacity-50">
                     {saving ? 'Saving...' : stepMeta.nextLabel}
                     <Check className="h-4 w-4" />
                   </button>

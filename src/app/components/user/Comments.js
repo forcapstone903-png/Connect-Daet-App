@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, CornerDownRight, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc } from 'lucide-react'
+import { ChevronDown, ChevronUp, CornerDownRight, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { buildCommentThreads } from '@/lib/commentThreads'
@@ -691,6 +691,22 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                 : [...previous, { id: user.id, displayName: user.full_name || 'User' }])}
             />
 
+            {(selectedGif || selectedSticker) && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">
+                {selectedGif ? <img src={selectedGif} alt="Selected GIF preview" className="h-20 max-w-36 rounded-lg object-cover" /> : null}
+                {selectedSticker ? <span className="flex h-20 w-20 items-center justify-center rounded-lg bg-white text-4xl">{selectedSticker}</span> : null}
+                <button
+                  type="button"
+                  onClick={() => { setSelectedGif(null); setSelectedSticker(null) }}
+                  className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 hover:bg-slate-100 hover:text-red-600"
+                  aria-label="Remove selected GIF or sticker"
+                  title="Remove preview"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-1">
                 <button
@@ -749,7 +765,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                         <button
                           key={gif.id || gif.url}
                           type="button"
-                          onClick={() => { setSelectedGif(gif.url); setShowGifPicker(false); setGifQuery('') }}
+                          onClick={() => { setSelectedGif(gif.url); setSelectedSticker(null); setShowGifPicker(false); setGifQuery('') }}
                           className="overflow-hidden rounded-lg border border-slate-100 bg-slate-50 transition hover:ring-2 hover:ring-sky-500"
                         >
                           <img src={gif.url} alt={gif.title || 'Giphy GIF'} className="h-20 w-full object-cover" />
@@ -767,7 +783,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                   <button
                     key={sticker}
                     type="button"
-                    onClick={() => { setSelectedSticker(sticker); setShowStickerPicker(false) }}
+                    onClick={() => { setSelectedSticker(sticker); setSelectedGif(null); setShowStickerPicker(false) }}
                     className="flex h-10 w-10 items-center justify-center rounded-lg text-xl transition hover:bg-slate-100"
                   >
                     {sticker}

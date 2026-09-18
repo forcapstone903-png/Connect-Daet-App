@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminButton, AdminPageHeader } from '@/app/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
@@ -224,17 +225,16 @@ export default function AdminForumPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <AdminSidebar user={user} roleLabel="Admin Console" />
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Forum Moderation</h1>
-            <p className="text-gray-500 mt-1">Review threads, approve replies, manage categories, and respond to reports.</p>
-          </div>
-          <button onClick={openCreateModal} className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-white transition hover:bg-blue-700">
-            <span>+</span>
-            <span>Create thread</span>
-          </button>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Community"
+          title="Forum moderation"
+          description="Review threads, approve replies, manage categories, and respond to reports."
+          icon="forum"
+          actions={
+            <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Create thread</AdminButton>
+          }
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">

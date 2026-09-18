@@ -12,9 +12,10 @@ export const SETTINGS_STORAGE_KEY = 'daet:user-settings:v1'
 export const SETTINGS_VERSION = 1
 
 /**
- * Blocking script injected with `next/script` strategy="beforeInteractive" from
- * the root layout. It runs before first paint so dark mode never flashes light.
- * Keep it dependency-free and defensive: any failure must fall back to light.
+ * Blocking inline script rendered from the root layout by `InlineScript`. It
+ * runs synchronously while the HTML parses (before first paint) so dark mode
+ * never flashes light. Keep it dependency-free and defensive: any failure must
+ * fall back to light.
  */
 export const THEME_BOOTSTRAP_SCRIPT = `(function () {
   try {

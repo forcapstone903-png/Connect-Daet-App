@@ -136,6 +136,11 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
   const isItemActive = (item) => (item.exact ? normalizeHref(pathname) === normalizeHref(item.href) : isActive(item.href))
 
   const toggleItem = (id) => {
+    if (isCollapsed) {
+      setIsCollapsed(false)
+      setExpandedItems((prev) => ({ ...prev, [id]: true }))
+      return
+    }
     setExpandedItems((prev) => ({
       ...prev,
       [id]: !prev[id],
@@ -219,8 +224,10 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
       {/* Mobile hamburger toggle (hidden on desktop) */}
       <button
         type="button"
-        onClick={() => setMobileOpen(true)}
-        className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-md lg:hidden"
+        onClick={() => { setIsCollapsed(false); setMobileOpen(true) }}
+        className={`fixed left-4 top-4 z-40 h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-md lg:hidden ${mobileOpen ? 'hidden' : 'flex'}`}
+        aria-expanded={mobileOpen}
+        aria-controls="admin-navigation-drawer"
         aria-label="Open navigation menu"
       >
         <Menu className="h-5 w-5" />
@@ -235,119 +242,103 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
         />
       )}
 
-      <div className={`fixed left-0 top-0 z-30 flex h-full ${sidebarWidth} max-lg:w-72 flex-col border-r border-slate-200/60 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-      {/* Header with Logo */}
-      <div className="border-b border-slate-200/60 px-4 py-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-sky-600 to-emerald-500 overflow-hidden shadow-lg shadow-sky-500/20">
-              <Image
-                src="/logo.png"
-                alt="DAET Logo"
-                width={40}
-                height={40}
-                className="w-full h-full object-contain p-1"
-              />
-            </div>
-            {!isCollapsed && (
-              <div className="min-w-0 flex-1">
-                <h1 className="text-sm font-black tracking-[0.15em] text-slate-800">DAET</h1>
-                <p className="text-[9px] font-semibold tracking-[0.2em] text-slate-400">ADMIN</p>
+      <div id="admin-navigation-drawer" className={`fixed left-0 top-0 z-30 flex h-dvh ${sidebarWidth} max-lg:w-72 max-lg:max-w-[calc(100vw-2rem)] flex-col border-r border-slate-200/60 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* Brand */}
+        <div className="border-b border-slate-200/60 px-4 py-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-teal-700 to-emerald-500 shadow-lg shadow-teal-900/20">
+                <Image
+                  src="/logo.png"
+                  alt="DAET Tourism logo"
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain p-1"
+                />
               </div>
-            )}
+              {!isCollapsed && (
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold tracking-[0.08em] text-slate-900">DAET TOURISM</p>
+                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Admin Console
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 lg:hidden"
+                aria-label="Close navigation menu"
+              >
+                <X className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+                className="hidden flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 lg:block"
+                title={isCollapsed ? 'Expand' : 'Collapse'}
+                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              >
+                <Icon name={isCollapsed ? 'expand' : 'collapse'} className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setMobileOpen(false)}
-              className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 lg:hidden"
-              aria-label="Close navigation menu"
-            >
-              <X className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setIsCollapsed(!isCollapsed)}
-              className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600"
-              title={isCollapsed ? 'Expand' : 'Collapse'}
-              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            >
-              <Icon name={isCollapsed ? 'expand' : 'collapse'} className="w-4 h-4" />
-            </button>
-          </div>
+
+          {/* Signed-in operator */}
+          {!isCollapsed && (
+            <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-700 to-emerald-500 text-xs font-bold uppercase text-white shadow-sm">
+                {user?.full_name?.charAt(0) || user?.user_name?.charAt(0) || 'A'}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-slate-700">{user?.full_name || user?.user_name || 'Admin'}</p>
+                <p className="truncate text-[10px] font-medium uppercase tracking-[0.1em] text-slate-400">{roleLabel}</p>
+              </div>
+              <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-emerald-500 shadow-sm" title="Signed in" aria-hidden="true" />
+            </div>
+          )}
         </div>
 
-        {/* User Info - Compact */}
-        {!isCollapsed && (
-          <div className="mt-4 flex items-center gap-2.5 rounded-lg bg-slate-50/80 px-3 py-2.5 border border-slate-100">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-emerald-500 text-xs font-bold text-white shadow-md shadow-sky-500/25">
-              {user?.full_name?.charAt(0) || user?.user_name?.charAt(0) || 'A'}
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-slate-700 truncate">{user?.full_name || user?.user_name || 'Admin'}</p>
-              <p className="text-[10px] font-medium text-slate-400 truncate">{roleLabel}</p>
-            </div>
-            <span className="flex-shrink-0 h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-md shadow-emerald-400/30"></span>
-          </div>
-        )}
-      </div>
-
       {/* Main Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3">
+      <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Admin navigation">
         {/* Dashboard - Direct Link with active state */}
         <Link
           href="/admin/dashboard"
           onClick={() => setMobileOpen(false)}
-          className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 transition-all duration-200 ${
-            isActive('/admin/dashboard')
-              ? 'bg-gradient-to-r from-sky-600 to-emerald-500 text-white shadow-lg shadow-sky-500/25'
-              : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-          }`}
-          title={isCollapsed ? 'Dashboard' : ''}
+          className="admin-nav-item"
+          data-active={isActive('/admin/dashboard')}
+          title={isCollapsed ? 'Dashboard' : undefined}
         >
-          <Icon name="dashboard" className={`w-5 h-5 flex-shrink-0 ${isActive('/admin/dashboard') ? 'text-white' : ''}`} />
-          {!isCollapsed && (
-            <span className={`font-medium text-sm ${isActive('/admin/dashboard') ? 'text-white' : 'text-slate-700'}`}>Dashboard</span>
-          )}
+          <Icon name="dashboard" className="h-5 w-5 flex-shrink-0" />
+          {!isCollapsed && <span className="flex-1 truncate">Dashboard</span>}
         </Link>
 
-        {/* Content Management Section */}
-        {!isCollapsed && (
-          <div className="mt-6">
-            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-              Main Navigation
-            </p>
-          </div>
-        )}
+        {!isCollapsed && <p className="admin-nav-section mt-5">Workspaces</p>}
 
         {/* Other Hubs with Dropdowns */}
-        {filteredNavigation.slice(1).map((hub) => (
+        {filteredNavigation.filter((hub) => hub.items).map((hub) => (
           <div key={hub.id} className="mt-1">
             <button
+              type="button"
               onClick={() => toggleItem(hub.id)}
-              className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 transition-all duration-200 ${
-                expandedItems[hub.id]
-                  ? 'bg-sky-50/80 text-sky-700'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-              }`}
-              title={isCollapsed ? hub.label : ''}
+              aria-expanded={!isCollapsed && Boolean(expandedItems[hub.id])}
+              aria-controls={`admin-navigation-${hub.id}`}
+              className="admin-nav-group"
+              title={isCollapsed ? hub.label : undefined}
             >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <Icon name={hub.iconName} className="w-5 h-5 flex-shrink-0" />
-                {!isCollapsed && (
-                  <>
-                    <span className="font-medium text-sm truncate">{hub.label}</span>
-                    {hub.badge !== null && hub.badge > 0 && (
-                      <span className="ml-auto flex-shrink-0 rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white shadow-md shadow-red-500/25">
-                        {hub.badge}
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
+              <span className="flex min-w-0 flex-1 items-center gap-3">
+                <Icon name={hub.iconName} className="h-5 w-5 flex-shrink-0" />
+                {!isCollapsed && <span className="truncate">{hub.label}</span>}
+              </span>
+              {!isCollapsed && hub.badge !== null && hub.badge > 0 && (
+                <span className="admin-nav-badge">{hub.badge}</span>
+              )}
               {!isCollapsed && (
                 <Icon
                   name="arrow"
-                  className={`w-3.5 h-3.5 flex-shrink-0 transition-transform duration-200 ${
+                  className={`h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200 ${
                     expandedItems[hub.id] ? 'rotate-180' : ''
                   }`}
                 />
@@ -355,32 +346,27 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
             </button>
 
             {!isCollapsed && expandedItems[hub.id] && hub.items && (
-              <div className="ml-9 mt-1 space-y-0.5 border-l-2 border-slate-200/60 pl-3 py-1">
+              <div id={`admin-navigation-${hub.id}`} className="admin-nav-sub">
                 {hub.items.map((item) => {
                   const active = isItemActive(item)
                   return (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        onClick={() => {
-                          setExpandedItems((prev) => ({ ...prev, [hub.id]: true }))
-                          setMobileOpen(false)
-                        }}
-                        className={`flex items-center gap-2.5 rounded-lg px-3 py-2 transition-all duration-200 text-sm ${
-                          active
-                            ? 'bg-gradient-to-r from-sky-600 to-emerald-500 text-white shadow-md shadow-sky-500/20'
-                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-                        }`}
-                      >
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => {
+                        setExpandedItems((prev) => ({ ...prev, [hub.id]: true }))
+                        setMobileOpen(false)
+                      }}
+                      className="admin-nav-item"
+                      data-active={active}
+                    >
                       <Icon
                         name={item.iconName}
-                        className={`w-4 h-4 flex-shrink-0 ${active ? '' : 'opacity-60'}`}
+                        className={`h-4 w-4 flex-shrink-0 ${active ? '' : 'opacity-60'}`}
                       />
                       <span className="flex-1 truncate">{item.label}</span>
                       {item.badge !== null && item.badge > 0 && (
-                        <span className="ml-auto flex-shrink-0 rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
-                          {item.badge}
-                        </span>
+                        <span className="admin-nav-badge">{item.badge}</span>
                       )}
                     </Link>
                   )
@@ -391,37 +377,30 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
         ))}
 
         {/* Account Section */}
-        {!isCollapsed && (
-          <div className="mt-6 border-t border-slate-200/60 pt-4">
-            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-              Account
-            </p>
-          </div>
-        )}
+        {!isCollapsed && <p className="admin-nav-section mt-5">Account</p>}
 
-        {!isCollapsed && (
-          <>
-            <Link
-              href="/admin/account"
-              onClick={() => setMobileOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-slate-600 transition-all hover:bg-slate-50 hover:text-slate-800"
-            >
-              <Icon name="settings" className="w-5 h-5 flex-shrink-0" />
-              <span className="font-medium text-sm">Settings</span>
-            </Link>
-          </>
-        )}
+        <Link
+          href="/admin/account"
+          onClick={() => setMobileOpen(false)}
+          className="admin-nav-item"
+          data-active={isActive('/admin/account')}
+          title={isCollapsed ? 'Account & settings' : undefined}
+        >
+          <Icon name="settings" className="h-5 w-5 flex-shrink-0" />
+          {!isCollapsed && <span className="flex-1 truncate">Account &amp; Settings</span>}
+        </Link>
       </nav>
 
       {/* Footer - Logout */}
       <div className="border-t border-slate-200/60 p-3">
         <button
+          type="button"
           onClick={handleLogoutClick}
-          className="flex w-full items-center justify-center gap-2.5 rounded-lg px-3 py-2.5 text-red-600 transition-all hover:bg-red-50 hover:text-red-700 font-medium text-sm"
-          title={isCollapsed ? 'Logout' : ''}
+          className="admin-btn admin-btn-ghost admin-nav-logout w-full"
+          title={isCollapsed ? 'Logout' : undefined}
           aria-label="Logout"
         >
-          <Icon name="logout" className="w-5 h-5 flex-shrink-0" />
+          <Icon name="logout" className="h-4 w-4 flex-shrink-0" />
           {!isCollapsed && <span>Logout</span>}
         </button>
       </div>

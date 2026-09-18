@@ -27,7 +27,7 @@ export async function GET(request, { params }) {
     const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }, { data: reverseFollowRow, error: reverseFollowError }] = await Promise.all([
       adminSupabase
         .from('info_users')
-        .select('id, full_name, profile_image_url, bio, city, country, points, level, user_type, status')
+        .select('id, full_name, profile_image_url, bio, city, country, points, level, user_type, status, created_at')
         .eq('id', profileId)
         .maybeSingle(),
       adminSupabase
@@ -71,7 +71,7 @@ export async function GET(request, { params }) {
       (async () => {
         const query = adminSupabase
           .from('info_user_posts')
-          .select('id, user_id, title, content, created_at, updated_at')
+          .select('id, user_id, title, content, created_at, updated_at, visibility')
           .eq('user_id', profileId)
           .order('created_at', { ascending: false })
           .limit(20)
@@ -82,7 +82,7 @@ export async function GET(request, { params }) {
           if (String(error.message || '').toLowerCase().includes('info_user_posts') && String(error.message || '').toLowerCase().includes('status')) {
             const { data: legacyData, error: legacyError } = await adminSupabase
               .from('info_user_posts')
-              .select('id, user_id, title, content, created_at, updated_at')
+              .select('id, user_id, title, content, created_at, updated_at, visibility')
               .eq('user_id', profileId)
               .order('created_at', { ascending: false })
               .limit(20)
@@ -96,7 +96,7 @@ export async function GET(request, { params }) {
         if (String(error.message || '').toLowerCase().includes('info_user_posts') && String(error.message || '').toLowerCase().includes('status')) {
           const { data: legacyData, error: legacyError } = await adminSupabase
             .from('info_user_posts')
-            .select('id, user_id, title, content, created_at, updated_at')
+            .select('id, user_id, title, content, created_at, updated_at, visibility')
             .eq('user_id', profileId)
             .order('created_at', { ascending: false })
             .limit(20)
@@ -127,7 +127,7 @@ export async function GET(request, { params }) {
         .limit(20),
       adminSupabase
         .from('reposts')
-        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+        .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
         .eq('user_id', profileId)
         .eq('status', archivedOnly && viewerId === profileId ? 'archived' : 'active')
         .order('created_at', { ascending: false })
@@ -155,7 +155,7 @@ export async function GET(request, { params }) {
 
     const repostIdsByType = (type) => [...new Set((reposts || []).filter((repost) => repost.original_content_type === type).map((repost) => repost.original_content_id).filter(Boolean))]
     const repostOriginalQueries = [
-      ['user_post', 'info_user_posts', 'id, user_id, title, content, created_at, updated_at', 'created_at'],
+      ['user_post', 'info_user_posts', 'id, user_id, title, content, created_at, updated_at, visibility', 'created_at'],
       ['blog', 'info_blogs', 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, category', 'published_at'],
       ['forum_thread', 'forum_threads', 'id, created_by, title, content, created_at, category_id', 'created_at'],
       ['event', 'info_events', 'id, created_by, title, description, featured_image, images, start_date, created_at, category, status', 'start_date'],

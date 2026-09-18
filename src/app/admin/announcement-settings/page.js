@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminPageHeader } from '@/app/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -135,13 +136,13 @@ export default function AnnouncementSettingsPage() {
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="Announcement Settings" />
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-800">Announcement & Alert Settings</h1>
-            <p className="text-sm text-slate-500">Configure categories, priorities, notifications, and emergency protocols.</p>
-          </div>
-        </div>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <AdminPageHeader
+          eyebrow="Notifications"
+          title="Announcement & alert settings"
+          description="Configure categories, priorities, notification channels, and emergency protocols."
+          icon="settings"
+        />
 
         <div className="mb-6 grid gap-4 md:grid-cols-4">
           <div className="rounded-2xl bg-gradient-to-r from-sky-600 to-cyan-600 p-4 text-white shadow-sm">

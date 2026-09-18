@@ -31,9 +31,15 @@ export async function PATCH(request, { params }) {
   const body = await request.json().catch(() => ({}))
   const status = body.status === 'archived' ? 'archived' : body.status === 'active' ? 'active' : null
   const hasQuoteText = Object.prototype.hasOwnProperty.call(body, 'quoteText')
+  const hasVisibility = Object.prototype.hasOwnProperty.call(body, 'visibility')
+  const visibility = hasVisibility && ['public', 'followers', 'private'].includes(body.visibility) ? body.visibility : null
   const updatePayload = {}
   if (status) updatePayload.status = status
   if (hasQuoteText) updatePayload.quote_text = body.quoteText ? String(body.quoteText).trim() : null
+  if (hasVisibility) {
+    if (!visibility) return NextResponse.json({ success: false, message: 'Invalid repost visibility.' }, { status: 400 })
+    updatePayload.visibility = visibility
+  }
   if (!Object.keys(updatePayload).length) return NextResponse.json({ success: false, message: 'Invalid repost update.' }, { status: 400 })
 
   const { data, error } = await adminSupabase
@@ -41,7 +47,7 @@ export async function PATCH(request, { params }) {
     .update(updatePayload)
     .eq('id', repostId)
     .eq('user_id', userId)
-    .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status')
+    .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
     .maybeSingle()
 
   if (error && isMissingRepostStatusColumnError(error)) {

@@ -97,8 +97,8 @@ export default function AnnouncementDetailPage() {
   const TypeIcon = styles.icon
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-[700px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+    <main className="usr-section-page usr-detail min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto max-w-[880px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <Link href="/user/announcements" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
           Back to Announcements
@@ -138,7 +138,7 @@ export default function AnnouncementDetailPage() {
               </div>
             )}
 
-            <p className="mt-5 whitespace-pre-line text-sm leading-relaxed text-slate-700 md:text-base">{announcement.content}</p>
+            <p className="usr-reading-body mt-6 whitespace-pre-line text-slate-700">{announcement.content}</p>
           </div>
         </div>
       </div>

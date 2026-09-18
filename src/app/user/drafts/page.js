@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, FilePenLine, Plus, Clock3 } from 'lucide-react'
+import { FilePenLine, Plus, Clock3 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 
 export default function UserDraftsPage() {
   const [drafts, setDrafts] = useState([])
@@ -35,36 +37,65 @@ export default function UserDraftsPage() {
   }, [])
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_35%,_#f1f5f9_100%)] pb-24 text-slate-900">
-      <div className="mx-auto w-full max-w-[900px] px-3 pb-10 pt-3 sm:px-5 lg:px-8">
-        <header className="mb-5 flex items-center justify-between rounded-[22px] border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur sm:p-5">
-          <div className="flex items-center gap-3">
-            <Link href="/user/blogs/new" aria-label="Back to create post" className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Writing</p><h1 className="text-xl font-black text-slate-900">Drafts</h1></div>
-          </div>
-          <Link href="/user/blogs/new" className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-2 text-xs font-bold text-white hover:bg-sky-700"><Plus className="h-4 w-4" />New post</Link>
-        </header>
+    <main className="tourism-shell usr-section-page usr-drafts min-h-screen text-slate-900">
+      <UserTopHeader />
+      <div className="usr-section-container mx-auto max-w-3xl px-3 pb-24 pt-2 sm:px-5 lg:px-6">
+        <UserSectionHeader
+          eyebrow="Writing studio"
+          title="Drafts"
+          description="Unfinished stories are saved here. Pick one up whenever inspiration strikes."
+          emoji="✒️"
+          backHref="/user/blogs"
+          backLabel="Community stories"
+        >
+          <span className="usr-section-counter">{drafts.length} draft{drafts.length === 1 ? '' : 's'}</span>
+          <Link href="/user/blogs/new" className="usr-section-primary"><Plus className="h-4 w-4" />New post</Link>
+        </UserSectionHeader>
 
         {loading ? (
-          <div className="rounded-[22px] border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">Loading drafts...</div>
+          <div className="usr-section-loading">
+            {[0, 1].map((item) => (
+              <div key={item} className="usr-card flex items-center gap-4 p-4">
+                <div className="usr-section-skeleton h-12 w-12 shrink-0 rounded-2xl" />
+                <div className="flex-1 space-y-3">
+                  <div className="usr-section-skeleton h-3 w-1/3 rounded-full" />
+                  <div className="usr-section-skeleton h-3 w-3/5 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : drafts.length ? (
-          <div className="space-y-3">
+          <div className="usr-stagger space-y-3">
             {drafts.map((draft) => (
-              <Link key={draft.id} href={`/user/blogs/${draft.id}/edit`} className="block rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 sm:p-5">
-                <article>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">Draft</p><h2 className="mt-1 text-base font-black text-slate-900">{draft.title || 'Untitled draft'}</h2><p className="mt-1 line-clamp-2 text-sm text-slate-600">{draft.excerpt || 'No excerpt yet.'}</p></div>
-                    <FilePenLine className="h-5 w-5 shrink-0 text-amber-500" />
+              <Link
+                key={draft.id}
+                href={`/user/blogs/${draft.id}/edit`}
+                className="usr-list-row group block focus-visible:outline-none"
+              >
+                <article className="flex w-full min-w-0 items-start gap-3">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-50 text-amber-600" aria-hidden="true">
+                    <FilePenLine className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-700">Draft</p>
+                    <h2 className="mt-1 text-base font-black text-slate-900 group-hover:text-teal-700">{draft.title || 'Untitled draft'}</h2>
+                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{draft.excerpt || 'No excerpt yet.'}</p>
+                    <p className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+                      <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+                      Updated {draft.updated_at ? new Date(draft.updated_at).toLocaleDateString() : 'recently'}
+                    </p>
                   </div>
-                  <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-500"><Clock3 className="h-3.5 w-3.5" />Updated {draft.updated_at ? new Date(draft.updated_at).toLocaleDateString() : 'recently'}</div>
                 </article>
               </Link>
             ))}
           </div>
         ) : (
-          <div className="rounded-[22px] border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm"><FilePenLine className="mx-auto h-9 w-9 text-slate-300" /><h2 className="mt-3 text-base font-bold text-slate-800">No drafts yet</h2><p className="mt-1 text-sm text-slate-500">Save a blog post as a draft and it will appear here.</p><Link href="/user/blogs/new" className="mt-4 inline-flex rounded-full bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-700">Create a draft</Link></div>
+          <div className="usr-empty-state usr-pop-in">
+            <FilePenLine className="mx-auto h-9 w-9 text-slate-300" />
+            <h2 className="mt-3 text-base font-bold text-slate-800">No drafts yet</h2>
+            <p className="mt-1 text-sm text-slate-500">Save a blog post as a draft and it will appear here.</p>
+            <Link href="/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a draft</Link>
+          </div>
         )}
       </div>
     </main>

@@ -335,6 +335,7 @@ export default function AdminAnnouncementPage() {
           title: formData.title.trim(),
           message: formData.content.trim(),
           link: `/user/announcements/${insertedAnnouncement.id}`,
+          audience: announcementData.audience,
         })
       }
 
@@ -349,7 +350,7 @@ export default function AdminAnnouncementPage() {
     }
   };
 
-  const createPushNotification = async ({ id, title, message, link }) => {
+  const createPushNotification = async ({ id, title, message, link, audience }) => {
     try {
       const response = await fetch('/api/admin/content-notifications', {
         method: 'POST',
@@ -362,6 +363,7 @@ export default function AdminAnnouncementPage() {
           title,
           message,
           link,
+          audience,
         }),
       })
       const result = await response.json().catch(() => ({}))
@@ -514,14 +516,14 @@ export default function AdminAnnouncementPage() {
       <AdminSidebar user={user} roleLabel="Announcements Manager" />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6 lg:p-8">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         {/* Header */}
-        <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-5 shadow-[0_25px_60px_rgba(15,23,42,0.04)] backdrop-blur-sm">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-sky-700">Announcements & Alerts</p>
-              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] text-slate-900">Announcements Manager</h1>
-              <p className="mt-2 text-sm text-slate-600">Create and manage official communications, safety advisories, and traffic updates</p>
+        <div className="admin-page-header">
+          <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <p className="admin-eyebrow">Announcements &amp; alerts</p>
+              <h1>Announcements manager</h1>
+              <p className="admin-subtitle">Create and manage official communications, safety advisories, and traffic updates.</p>
             </div>
             <button
               onClick={openCreateModal}

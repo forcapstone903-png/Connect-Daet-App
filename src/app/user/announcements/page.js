@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Bell, Loader, MessageCircle, Zap } from 'lucide-react'
@@ -96,18 +97,9 @@ export default function UserAnnouncementsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-[800px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-        <Link href="/user/dashboard" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Dashboard
-        </Link>
-
-        <div className="mb-6">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600">Updates</p>
-          <h1 className="mt-1 text-2xl font-black text-slate-900 md:text-3xl">Announcements</h1>
-          <p className="mt-1 text-sm text-slate-600">Important updates and advisories from the Daet tourism office</p>
-        </div>
+    <main className="tourism-shell usr-section-page usr-announcements min-h-screen text-slate-900">
+      <div className="usr-section-container mx-auto max-w-[1000px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+        <UserSectionHeader eyebrow="Stay informed" title="Announcements" description="Official updates, helpful advisories, and the latest news from the Daet tourism office." emoji="📣" />
 
         {sentimentQuestion && sentiment && (
           <section className="mb-6 rounded-[20px] border border-emerald-100 bg-white p-4 shadow-sm sm:p-5">
@@ -142,7 +134,7 @@ export default function UserAnnouncementsPage() {
         )}
 
         {loading ? (
-          <div className="space-y-4">
+          <div className="space-y-1.5">
             {[1, 2, 3].map((i) => (
               <div key={i} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-5">
                 <div className="h-5 w-1/3 rounded bg-slate-200" />
@@ -158,12 +150,12 @@ export default function UserAnnouncementsPage() {
             <p className="mt-1 text-xs text-slate-400">Check back later for updates</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
             {announcements.map((announcement) => {
               const styles = getTypeStyles(announcement.announcement_type)
               const TypeIcon = styles.icon
               return (
-                <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className={`block rounded-[18px] border p-4 transition hover:shadow-sm sm:rounded-[20px] sm:p-5 ${styles.bg}`}>
+                <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className={`usr-announcement-card block min-w-0 rounded-[24px] border p-5 transition hover:shadow-md sm:p-6 ${styles.bg}`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white ${styles.iconColor}`}>

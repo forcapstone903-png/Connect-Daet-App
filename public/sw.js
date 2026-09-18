@@ -1,4 +1,7 @@
-const CACHE_NAME = 'connect-daet-v3'
+// Bump this when a release changes behaviour in a way that stale cached chunks
+// could contradict. `activate` deletes every cache that is not the current
+// version, which is what evicts old /_next/ chunks from installed clients.
+const CACHE_NAME = 'connect-daet-v4'
 const STATIC_ASSET_ROOTS = ['/manifest.webmanifest', '/icon', '/logo']
 
 self.addEventListener('install', (event) => {

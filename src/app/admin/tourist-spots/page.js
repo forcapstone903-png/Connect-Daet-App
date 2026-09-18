@@ -523,13 +523,14 @@ export default function TouristSpotsManagement() {
       <AdminSidebar user={user} roleLabel="Admin Console" />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Tourist Spots Management</h1>
-            <p className="text-gray-500 mt-1">Manage Daet&apos;s tourist attractions and destinations</p>
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+        <div className="admin-page-header flex-wrap">
+          <div className="min-w-0">
+            <p className="admin-eyebrow">Content</p>
+            <h1>Tourist spot management</h1>
+            <p className="admin-subtitle">Manage Daet&apos;s tourist attractions, destinations, and featured places.</p>
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex flex-wrap items-center gap-2">
             {selectedSpotIds.size > 0 && (
               <select
                 value={bulkAction}

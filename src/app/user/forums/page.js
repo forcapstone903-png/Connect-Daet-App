@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import Link from 'next/link'
 import {
   ChevronRight,
@@ -195,10 +196,13 @@ export default function ForumsPage() {
   }, [threads, categories, selectedCategory, sortBy])
 
   return (
-    <main className="tourism-shell min-h-screen text-slate-900">
+    <main className="tourism-shell usr-section-page usr-forums min-h-screen text-slate-900">
       <UserTopHeader />
-      <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:px-6 lg:pb-10">
-        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="usr-section-container mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-5 lg:px-6 lg:pb-10">
+        <UserSectionHeader eyebrow="Better together" title="Community forums" description="Ask a question, share a recommendation, or join a conversation with your community." emoji="💡">
+          <button type="button" onClick={() => setShowCreateForm((value) => !value)} aria-expanded={showCreateForm} className="usr-section-primary">{showCreateForm ? 'Close editor' : 'Start a discussion'}</button>
+        </UserSectionHeader>
+        <div className="grid items-start gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
           {/* Sidebar */}
           <aside className="hidden rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm lg:block">
             <div className="mb-4">
@@ -257,17 +261,18 @@ export default function ForumsPage() {
 
           {/* Main Content */}
           <section>
-            <div className="tourism-panel mb-3 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
-              <div className="flex items-center gap-3">
-                <div className="min-w-0 flex-1">
-                  <h1 className="truncate text-xl font-black text-slate-950">Community Forums</h1>
-                  <p className="truncate text-xs text-slate-500">{categories.find((category) => category.id === selectedCategory)?.name || 'All discussions'}</p>
-                </div>
-              </div>
-              <div className="mt-3 flex items-center gap-2">
+            <div className="usr-section-toolbar mb-4 rounded-2xl px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="truncate text-sm font-bold text-slate-900">{categories.find((category) => category.id === selectedCategory)?.name || 'All discussions'}</p>
                 <span className="text-xs font-semibold text-slate-500">{filteredThreads.length} discussions</span>
-                <span className="text-slate-300">•</span>
-                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="bg-transparent text-xs font-bold text-sky-700 outline-none"><option value="recent">Recent</option><option value="views">Most viewed</option><option value="replies">Most replied</option></select>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold text-slate-500">
+                <select aria-label="Filter discussions by category" value={selectedCategory} onChange={(event) => setSelectedCategory(event.target.value)} className="min-w-0 max-w-full rounded-xl border border-slate-200 px-3 text-slate-700">
+                  <option value="">All categories</option>
+                  {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                </select>
+                <label htmlFor="forum-sort">Sort</label>
+                <select id="forum-sort" value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-sky-700 outline-none"><option value="recent">Recent</option><option value="views">Most viewed</option><option value="replies">Most replied</option></select>
               </div>
             </div>
 
@@ -285,7 +290,7 @@ export default function ForumsPage() {
                   </button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-1.5">
                   <div>
                     <label className="block text-xs font-semibold text-slate-700">Category</label>
                     <select
@@ -365,7 +370,7 @@ export default function ForumsPage() {
                 ))}
               </div>
             ) : filteredThreads.length > 0 ? (
-              <div className="space-y-0">
+              <div className="space-y-1.5">
                 {filteredThreads.map((thread) => (
                   <Link
                     key={thread.id}

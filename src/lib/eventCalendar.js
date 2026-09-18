@@ -65,7 +65,43 @@ function convertExclusiveCalendarEndToInclusive(dateString) {
   return `${y}-${m}-${d}`
 }
 
+// Date-only events use an exclusive calendar end; timed events use actual endpoints.
+function toCalendarSchedule(event) {
+  const startDate = normalizeCalendarDate(event.start || event.start_date)
+  let endDate = normalizeCalendarDate(event.end || event.end_date) || startDate
+  if (!event.start_time) {
+    return { start: startDate, end: addCalendarDays(endDate, 1), allDay: true }
+  }
+
+  const start = `${startDate}T${event.start_time}`
+  let end
+  if (event.end_time) {
+    // A same-date end earlier than the start denotes an overnight event.
+    if (endDate === startDate && event.end_time < event.start_time) {
+      endDate = addCalendarDays(endDate, 1)
+    }
+    end = `${endDate}T${event.end_time}`
+    if (end <= start) end = undefined
+  }
+  return { start, end, allDay: false }
+}
+
+function fromCalendarSchedule(startStr, endStr, allDay = true) {
+  const start_date = normalizeCalendarDate(startStr) || ''
+  const endDate = allDay
+    ? convertExclusiveCalendarEndToInclusive(endStr)
+    : normalizeCalendarDate(endStr)
+  return {
+    start_date,
+    end_date: endDate && endDate >= start_date ? endDate : start_date,
+    start_time: allDay ? '' : (startStr?.split('T')[1]?.slice(0, 8) || ''),
+    end_time: allDay ? '' : (endStr?.split('T')[1]?.slice(0, 8) || ''),
+  }
+}
+
 module.exports = {
+  toCalendarSchedule,
+  fromCalendarSchedule,
   normalizeCalendarDate,
   addCalendarDays,
   calendarDaysBetween,

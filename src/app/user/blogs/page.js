@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
 import Link from 'next/link'
 import {
   ChevronRight,
@@ -231,7 +232,7 @@ export default function BlogsPage() {
   }
 
   const filteredBlogs = useMemo(() => {
-    let result = blogs
+    let result = [...blogs]
 
     // Category filter
     if (selectedCategory) {
@@ -255,18 +256,13 @@ export default function BlogsPage() {
   }, [blogs, selectedCategory, sortBy])
 
   return (
-    <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+    <main className="tourism-shell usr-section-page usr-stories min-h-screen text-slate-900">
       <UserTopHeader />
-      <div className="mx-auto max-w-3xl px-3 pb-8 pt-2 sm:px-4 lg:px-6">
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">Community stories</h1>
-          </div>
-          <Link href="/user/blogs/new" className="hidden rounded-lg bg-[#16766f] px-3 py-2 text-xs font-bold text-white transition hover:bg-[#0e514d] sm:inline-flex">
-            Write article
-          </Link>
-        </div>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+      <div className="usr-section-container mx-auto max-w-6xl px-3 pb-8 pt-2 sm:px-4 lg:px-6">
+        <UserSectionHeader eyebrow="Through a local lens" title="Community stories" description="Discover hidden gems, local favorites, and stories worth sharing from around Daet." emoji="✍️">
+          <Link href="/user/blogs/new" className="usr-section-primary">Write a story</Link>
+        </UserSectionHeader>
+        <div className="usr-section-toolbar mb-5 flex flex-wrap items-center gap-3">
             <select
               value={selectedCategory}
               onChange={(event) => setSelectedCategory(event.target.value)}
@@ -347,7 +343,7 @@ export default function BlogsPage() {
               </div>
 
               {recentReads.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-1.5">
                   {recentReads.map((read) => (
                     <Link key={read.id} href={`/user/blogs/${read.id}`} className="block rounded-xl border border-slate-200 bg-slate-50 p-2.5 hover:border-sky-200">
                       <p className="text-sm font-semibold text-slate-800 line-clamp-1">{read.title}</p>
@@ -462,11 +458,11 @@ export default function BlogsPage() {
                 ))}
               </div>
             ) : filteredBlogs.length > 0 ? (
-              <div className="space-y-3">
+              <div className="usr-story-grid grid items-start gap-5 md:grid-cols-2">
                 {filteredBlogs.map((blog) => (
                   <article
                     key={blog.id}
-                    className="group overflow-hidden rounded-[20px] border border-slate-200 border-l-4 border-l-violet-300 bg-white shadow-sm transition hover:border-sky-200 hover:shadow-md"
+                    className="usr-story-card group min-w-0 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
                   >
                     <div className="p-4 sm:p-5">
                       <div className="flex items-start gap-3">

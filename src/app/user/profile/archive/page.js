@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Archive, ArrowLeft } from 'lucide-react'
+import { Archive } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
 import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
+import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/components/user/UserTopHeader'
 
 export default function ProfileArchivePage() {
   const [session] = useState(() => {
@@ -83,20 +85,65 @@ export default function ProfileArchivePage() {
     setPosts((previous) => previous.filter((item) => item.id !== post.id))
   }
 
-  if (!session?.user_id) return <main className="p-6 text-sm text-slate-600">Please sign in to view your archive.</main>
+  if (!session?.user_id) return <main className="tourism-shell usr-section-page usr-profile flex min-h-screen items-center justify-center p-6 text-sm font-semibold text-slate-600">Please sign in to view your archive.</main>
 
   return (
-    <main className="min-h-screen bg-slate-50 px-3 py-5 text-slate-900 sm:px-5">
-      <div className="mx-auto max-w-2xl">
-        <header className="mb-4 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm">
-          <Link href="/user/profile" aria-label="Back to profile" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></Link>
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Profile</p><h1 className="text-xl font-black">Archive</h1></div>
-        </header>
-        {notice && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{notice}</p>}
-        {loading ? <div className="rounded-xl bg-white p-6 text-sm text-slate-500">Loading archive...</div> : (reposts.length || posts.length) ? <div className="space-y-4">
-          {posts.map((post) => <article key={`post-${post.id}`} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="flex items-center justify-between gap-3"><div><h2 className="font-bold text-slate-900">{post.title}</h2><p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{post.content}</p></div><div className="flex shrink-0 gap-1"><button type="button" onClick={() => void restorePost(post)} className="rounded-lg px-2 py-1 text-xs font-bold text-emerald-700 hover:bg-emerald-50">Restore</button><button type="button" onClick={() => void removePost(post)} className="rounded-lg px-2 py-1 text-xs font-bold text-red-700 hover:bg-red-50">Delete</button></div></div></article>)}
-          {reposts.map((repost) => <article key={repost.repost_id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><QuoteRepostCard item={repost} reposter={resultProfile(repost, session)} reposterName={session.full_name || session.user_name || 'You'} userId={session.user_id} onRestore={() => void restore(repost)} onDelete={() => void remove(repost)} /></article>)}
-        </div> : <div className="rounded-xl border border-dashed border-slate-300 bg-white p-10 text-center"><Archive className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-600">Archive is empty</p></div>}
+    <main className="tourism-shell usr-section-page usr-profile min-h-screen text-slate-900">
+      <UserTopHeader />
+      <div className="usr-section-container mx-auto max-w-3xl px-3 pb-24 pt-2 sm:px-5 lg:px-6">
+        <UserSectionHeader
+          eyebrow="Content vault"
+          title="Archive"
+          description="Posts and reposts you hid from your profile stay here. Restore them anytime."
+          emoji="🗂️"
+          backHref="/user/profile"
+          backLabel="Your profile"
+        >
+          <span className="usr-section-counter">{reposts.length + posts.length} archived</span>
+        </UserSectionHeader>
+
+        {notice && <p role="status" className="usr-inline-note usr-inline-note-error mb-4">{notice}</p>}
+
+        {loading ? (
+          <div className="usr-section-loading">
+            {[0, 1].map((item) => (
+              <div key={item} className="usr-card space-y-3 p-5">
+                <div className="usr-section-skeleton h-3 w-1/3 rounded-full" />
+                <div className="usr-section-skeleton h-3 w-4/5 rounded-full" />
+              </div>
+            ))}
+          </div>
+        ) : (reposts.length || posts.length) ? (
+          <div className="usr-stagger space-y-4">
+            {posts.map((post) => (
+              <article key={`post-${post.id}`} className="usr-card p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Post</p>
+                    <h2 className="mt-1 font-bold text-slate-900">{post.title}</h2>
+                    <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{post.content}</p>
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <button type="button" onClick={() => void restorePost(post)} className="usr-section-secondary !min-h-[36px] !px-3 !py-1.5 !text-[11px]">Restore</button>
+                    <button type="button" onClick={() => void removePost(post)} className="usr-press inline-flex min-h-[36px] items-center rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-[11px] font-bold text-red-700 transition hover:bg-red-100">Delete</button>
+                  </div>
+                </div>
+              </article>
+            ))}
+            {reposts.map((repost) => (
+              <article key={repost.repost_id} className="usr-card p-4 sm:p-5">
+                <QuoteRepostCard item={repost} reposter={resultProfile(repost, session)} reposterName={session.full_name || session.user_name || 'You'} userId={session.user_id} onRestore={() => void restore(repost)} onDelete={() => void remove(repost)} />
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="usr-empty-state usr-pop-in">
+            <Archive className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-3 text-sm font-semibold text-slate-600">Your archive is empty</p>
+            <p className="mt-1 text-xs text-slate-500">Archived posts and reposts will be listed here so you can restore them.</p>
+            <Link href="/user/profile" className="usr-section-secondary mt-5 inline-flex">Back to profile</Link>
+          </div>
+        )}
       </div>
     </main>
   )

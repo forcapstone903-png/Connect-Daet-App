@@ -4,7 +4,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import AdminAvatar from '@/app/components/admin/AdminAvatar';
 import AdminSidebar from '@/app/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
 import { Icon } from '@/app/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -585,52 +587,35 @@ export default function ManageUsersPage() {
       <AdminSidebar user={adminUser} roleLabel="Administrator" onLogout={handleLogout} />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="p-6">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
 
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-800">Manage Users</h1>
-            <p className="text-gray-500 text-sm mt-1">View, create, and manage all registered users and their content</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={exportUsersToCSV}
-              className="bg-slate-700 hover:bg-slate-800 text-white px-4 py-2.5 rounded-full flex items-center gap-2 shadow-sm transition-all duration-200"
-            >
-              <span className="text-sm font-medium">Export CSV</span>
-            </button>
-            <button
-              onClick={openCreateModal}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full flex items-center gap-2 shadow-sm transition-all duration-200"
-            >
-              <span className="text-sm font-medium">Add New User</span>
-            </button>
-          </div>
-        </div>
+        <AdminPageHeader
+          eyebrow="Community"
+          title="Manage users"
+          description="View, create, and manage all registered users, their roles, and the content they publish."
+          icon="users"
+          actions={
+            <>
+              <AdminButton icon="downloads" onClick={exportUsersToCSV}>Export CSV</AdminButton>
+              <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Add new user</AdminButton>
+            </>
+          }
+        />
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
-          {[
-            { label: 'Total Users', value: stats.total, color: 'text-blue-600', bg: 'bg-blue-50', icon: 'users' },
-            { label: 'Tourists', value: stats.tourists, color: 'text-blue-500', bg: 'bg-blue-50', icon: 'profile' },
-            { label: 'Artisans', value: stats.artisans, color: 'text-yellow-600', bg: 'bg-yellow-50', icon: 'edit' },
-            { label: 'Operators', value: stats.operators, color: 'text-purple-600', bg: 'bg-purple-50', icon: 'users' },
-            { label: 'Active', value: stats.active, color: 'text-green-600', bg: 'bg-green-50', icon: 'check' },
-            { label: 'Suspended', value: stats.suspended, color: 'text-red-600', bg: 'bg-red-50', icon: 'delete' },
-            { label: 'Pending', value: stats.pending, color: 'text-yellow-600', bg: 'bg-yellow-50', icon: 'arrow' },
-          ].map((s, i) => (
-            <div key={i} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-3">
-              <div className={`${s.bg} w-8 h-8 rounded-xl flex items-center justify-center text-sm mb-2`}>{s.icon}</div>
-              <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{s.label}</p>
-            </div>
-          ))}
-        </div>
+        <AdminStatGrid>
+          <AdminStatCard label="Total users" value={stats.total} icon="users" tone="brand" meta="All accounts" />
+          <AdminStatCard label="Tourists" value={stats.tourists} icon="profile" tone="info" />
+          <AdminStatCard label="Artisans" value={stats.artisans} icon="edit" tone="warning" />
+          <AdminStatCard label="Operators" value={stats.operators} icon="users" tone="violet" />
+          <AdminStatCard label="Active" value={stats.active} icon="check" tone="success" />
+          <AdminStatCard label="Suspended" value={stats.suspended} icon="warning" tone="danger" />
+          <AdminStatCard label="Pending" value={stats.pending} icon="arrow" tone="neutral" />
+        </AdminStatGrid>
 
         {/* Filters */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-4">
-          <div className="flex flex-wrap gap-3 items-center">
+        <div className="admin-panel mb-4">
+          <div className="flex flex-wrap items-center gap-3 p-4">
             <div className="relative flex-1 min-w-[200px]">
               <input
                 type="text"
@@ -690,9 +675,9 @@ export default function ManageUsersPage() {
         </div>
 
         {/* Users Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-4">
+        <div className="admin-panel mb-4">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="admin-table">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">User</th>
@@ -717,9 +702,7 @@ export default function ManageUsersPage() {
                     <tr key={u.id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                            {(u.full_name || u.email || '?').charAt(0).toUpperCase()}
-                          </div>
+                          <AdminAvatar user={u} />
                           <div>
                             <p className="font-medium text-gray-800 text-sm">{u.full_name || '—'}</p>
                             <p className="text-xs text-gray-400">{u.email}</p>
@@ -739,8 +722,8 @@ export default function ManageUsersPage() {
                             onChange={e => updateStatus(u.id, e.target.value)}
                             className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${getStatusBadge(u.status)}`}
                           >
-                            {USER_STATUSES.map(s => (
-                              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                            {userStatuses.map(s => (
+                              <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>
                             ))}
                           </select>
                         </div>

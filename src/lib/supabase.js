@@ -3,6 +3,13 @@ import { createClient } from '@supabase/supabase-js'
 
 let supabaseInstance = null
 
+// The client is created once per bundle, so these lines would otherwise repeat
+// on every single page load. Keep them in development; only genuine failures
+// (missing env vars, client creation errors) log in production.
+const debugLog = (...args) => {
+  if (process.env.NODE_ENV !== 'production') console.log(...args)
+}
+
 /**
  * Get Supabase client instance
  */
@@ -16,11 +23,11 @@ export function getSupabase() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
   // Log environment status for debugging
-  console.log('🔍 Initializing Supabase Client:')
-  console.log('  - Environment:', process.env.NODE_ENV)
-  console.log('  - VERCEL:', process.env.VERCEL || 'false')
-  console.log('  - URL exists:', !!supabaseUrl)
-  console.log('  - KEY exists:', !!supabaseAnonKey)
+  debugLog('🔍 Initializing Supabase Client:')
+  debugLog('  - Environment:', process.env.NODE_ENV)
+  debugLog('  - VERCEL:', process.env.VERCEL || 'false')
+  debugLog('  - URL exists:', !!supabaseUrl)
+  debugLog('  - KEY exists:', !!supabaseAnonKey)
 
   // If variables are missing, throw an error
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -30,7 +37,7 @@ export function getSupabase() {
 
   // Create real Supabase client
   try {
-    console.log('✅ Creating real Supabase client...')
+    debugLog('✅ Creating real Supabase client...')
     supabaseInstance = createClient(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: true,
@@ -38,7 +45,7 @@ export function getSupabase() {
         detectSessionInUrl: true
       }
     })
-    console.log('✅ Supabase client created successfully')
+    debugLog('✅ Supabase client created successfully')
     return supabaseInstance
   } catch (error) {
     console.error('❌ Failed to initialize Supabase client:', error)
