@@ -5,6 +5,7 @@ import Link from 'next/link'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
 import PostActionMenu from '@/app/components/user/PostActionMenu'
+import { getRepostTarget } from '@/lib/repostIdentity'
 
 function getInitials(name = '') {
   return String(name).split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -28,10 +29,13 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
   const reposterId = reposter?.id || item.reposted_by || item.created_by
   const reposterDisplayName = reposterName || reposter?.full_name || 'Community member'
   const originalHref = item.href || '#'
-  const contentType = item.original_content_type || (item.type === 'blog' ? 'blog' : 'user_post')
-  const originalId = item.original_content_id || original.id
-  const repostActionId = item.repost_id || item.id || originalId
-  const repostActionType = item.original_content_type || (item.type === 'blog' ? 'blog' : 'user_post')
+  const originalId = item.original_content_id || item.original_post_id || original.id
+  const originalType = item.original_content_type || (item.type === 'blog' ? 'blog' : 'user_post')
+  // All engagement (reactions, comments, share counts) keys on the ORIGINAL
+  // content: info_comments rows are foreign-keyed to the original content
+  // tables, so a repost row id can never be a comment target, and per-repost
+  // counts would fragment from the original post's counts.
+  const repostTarget = getRepostTarget(item)
   const images = Array.isArray(original.images) ? original.images : []
   const videos = Array.isArray(original.videos) ? original.videos : []
   const imageItems = images.length ? images : (original.featured_image ? [original.featured_image] : [])
@@ -145,7 +149,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
             </div>
           )}
 
-          {repostActionId && <div className="mt-3 px-3 pb-3"><SocialActionBar contentType={repostActionType} contentId={repostActionId} userId={userId} originalPost={{ ...original, id: originalId, author: originalAuthor }} commentCount={commentCount} onToggleComments={onToggleComments} isSaved={isSaved} onToggleSave={onToggleSave} /></div>}
+          {originalId && <div className="mt-3 px-3 pb-3"><SocialActionBar contentType={originalType} contentId={originalId} repostContentType={repostTarget.contentType} repostContentId={repostTarget.contentId} userId={userId} originalPost={{ ...original, id: originalId, author: originalAuthor }} commentCount={commentCount} onToggleComments={onToggleComments} isSaved={isSaved} onToggleSave={onToggleSave} /></div>}
         </div>
       </div>
     </>

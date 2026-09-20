@@ -28,6 +28,7 @@ import {
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import Reactions from '@/app/components/user/Reactions'
 import ShareRepost from '@/app/components/user/ShareRepost'
 import MentionsAutoSuggest from '@/app/components/user/MentionsAutoSuggest'
@@ -77,6 +78,40 @@ function isMissingForumReplyColumnError(error) {
   const message = String(error?.message || '').toLowerCase()
   return ['42703', 'PGRST204'].includes(code)
     || message.includes('column') && message.includes('forum_replies')
+}
+
+/**
+ * The signed `daet_secure_session` cookie is the app's source of truth for who is
+ * signed in (see src/proxy.js and src/lib/serverAuth.js). The Supabase browser
+ * session lives in localStorage and expires/clears on its own, so a signed-in
+ * member must not be treated as a guest here just because that copy is gone.
+ */
+async function resolveActiveUser() {
+  const cookieSession = getAuthCookieFromDocument()
+  const cookieUserId = cookieSession?.user_id || cookieSession?.id || cookieSession?.sub || cookieSession?.userId || null
+  const cookieFallback = cookieUserId
+    ? {
+        id: cookieUserId,
+        email: cookieSession?.user_email || cookieSession?.email || '',
+        full_name: cookieSession?.user_name || cookieSession?.full_name || cookieSession?.name || '',
+      }
+    : null
+
+  try {
+    const { data } = await supabase.auth.getSession()
+    const sessionUser = data?.session?.user
+    if (sessionUser?.id) {
+      return {
+        id: sessionUser.id,
+        email: sessionUser.email || cookieFallback?.email || '',
+        full_name: sessionUser.user_metadata?.full_name || sessionUser.email || cookieFallback?.full_name || '',
+      }
+    }
+  } catch (error) {
+    console.warn('Supabase session lookup failed, falling back to the app session cookie:', error)
+  }
+
+  return cookieFallback
 }
 
 function buildReplyTree(replies = []) {
@@ -183,12 +218,11 @@ export default function ThreadDetailPage() {
 
     const loadData = async () => {
       try {
-        const sessionResult = await supabase.auth.getSession()
-        const session = sessionResult?.data?.session
-        if (session) {
-          const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
+        const activeUser = await resolveActiveUser()
+        if (activeUser?.id) {
+          const fullName = activeUser.full_name || activeUser.email || 'Guest'
           setUserName(fullName.split(' ')[0] || fullName)
-          setUserId(session.user.id)
+          setUserId(activeUser.id)
         }
 
         if (!threadId) return
@@ -220,7 +254,7 @@ export default function ThreadDetailPage() {
               const index = Number(vote.selected_option_index)
               if (!Number.isInteger(index)) return
               counts[index] = (counts[index] || 0) + 1
-              if (vote.user_id === session?.user?.id) setPollVoteIndex(index)
+              if (vote.user_id === activeUser?.id) setPollVoteIndex(index)
             })
             setPollVoteCounts(counts)
           }
@@ -276,12 +310,12 @@ export default function ThreadDetailPage() {
           setReplies(repliesWithProfiles)
 
           // Check if subscribed
-          if (session?.user?.id) {
+          if (activeUser?.id) {
             const { data: subData } = await supabase
               .from('forum_subscriptions')
               .select('id')
               .eq('thread_id', threadId)
-              .eq('user_id', session.user.id)
+              .eq('user_id', activeUser.id)
               .single()
 
             setIsSubscribed(!!subData)
@@ -347,6 +381,24 @@ export default function ThreadDetailPage() {
     setReplyComposerResetKey((value) => value + 1)
   }
 
+  const reloadReplies = useCallback(async () => {
+    const { data: newReplies, error: reloadError } = await supabase
+      .from('forum_replies')
+      .select(
+        `
+        *,
+        info_users(full_name, email, profile_image_url)
+      `
+      )
+      .eq('thread_id', threadId)
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+
+    if (reloadError) throw reloadError
+    setReplies(newReplies || [])
+    return newReplies || []
+  }, [threadId])
+
   const handleReplySubmit = async () => {
     if (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker) return
 
@@ -357,48 +409,35 @@ export default function ThreadDetailPage() {
         return
       }
 
-      const replyPayload = {
-        thread_id: threadId,
-        user_id: userId,
-        parent_reply_id: replyTarget?.id || null,
-        content: replyContent.trim(),
-        image_url: replyMedia.image_url || null,
-        video_url: replyMedia.video_url || null,
-        gif_url: replyGifUrl || null,
-        sticker_url: replySticker || null,
-        mention_data: replyMentionRefs.filter((mention) => mention?.id && !String(mention.id).startsWith('mention-')).map((mention) => ({ mentioned_user_id: mention.id, display_name: mention.displayName })),
-        status: 'active',
-      }
-      let replyResult = await supabase.from('forum_replies').insert(replyPayload)
-      if (replyResult.error && isMissingForumReplyColumnError(replyResult.error)) {
-        const { parent_reply_id: _parentReplyId, image_url: _imageUrl, video_url: _videoUrl, gif_url: _gifUrl, sticker_url: _stickerUrl, mention_data: _mentionData, ...legacyReplyPayload } = replyPayload
-        replyResult = await supabase.from('forum_replies').insert(legacyReplyPayload)
-      }
-      const { error } = replyResult
+      // Posted through /api/forum-replies so the write is authorised by the signed
+      // session cookie instead of a Supabase browser session (RLS `auth.uid()`).
+      const response = await fetch('/api/forum-replies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          threadId,
+          content: replyContent.trim(),
+          parentReplyId: replyTarget?.id || null,
+          imageUrl: replyMedia.image_url || null,
+          videoUrl: replyMedia.video_url || null,
+          gifUrl: replyGifUrl || null,
+          stickerUrl: replySticker || null,
+          mentionData: replyMentionRefs
+            .filter((mention) => mention?.id && !String(mention.id).startsWith('mention-'))
+            .map((mention) => ({ mentioned_user_id: mention.id, display_name: mention.displayName })),
+        }),
+      })
 
-      if (error) {
-        console.error('Error posting reply:', error)
-        alert('Failed to post reply')
-      } else {
-        resetReplyComposer()
-        const { data: newReplies, error: reloadError } = await supabase
-          .from('forum_replies')
-          .select(
-            `
-            *,
-            info_users(full_name, email, profile_image_url)
-          `
-          )
-          .eq('thread_id', threadId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false })
-
-        if (reloadError) throw reloadError
-        setReplies(newReplies || [])
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to post the reply.' }))
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to post the reply.')
       }
+
+      resetReplyComposer()
+      await reloadReplies()
     } catch (error) {
       console.error('Error submitting reply:', error)
-      alert('An error occurred. Please try again.')
+      alert(error?.message || 'An error occurred. Please try again.')
     } finally {
       setSubmittingReply(false)
     }
@@ -424,19 +463,37 @@ export default function ThreadDetailPage() {
 
   const deleteReply = async (replyId) => {
     if (!window.confirm('Delete this comment?')) return
-    const { error } = await supabase.from('forum_replies').delete().eq('id', replyId).eq('user_id', userId)
-    if (error) return alert(error.message || 'Unable to delete the comment.')
-    setReplies((current) => current.filter((reply) => reply.id !== replyId))
+    try {
+      const response = await fetch(`/api/forum-replies?replyId=${encodeURIComponent(replyId)}`, { method: 'DELETE' })
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to delete the comment.' }))
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to delete the comment.')
+      }
+      setReplies((current) => current.filter((reply) => reply.id !== replyId))
+    } catch (error) {
+      alert(error?.message || 'Unable to delete the comment.')
+    }
   }
 
   const saveReplyEdit = async (replyId) => {
     const content = editingReplyContent.trim()
     if (!content) return
-    const { error } = await supabase.from('forum_replies').update({ content, updated_at: new Date().toISOString() }).eq('id', replyId).eq('user_id', userId)
-    if (error) return alert(error.message || 'Unable to edit the comment.')
-    setReplies((current) => current.map((reply) => reply.id === replyId ? { ...reply, content } : reply))
-    setEditingReplyId(null)
-    setEditingReplyContent('')
+    try {
+      const response = await fetch('/api/forum-replies', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replyId, content }),
+      })
+      const payload = await response.json().catch(() => ({ success: false, message: 'Unable to edit the comment.' }))
+      if (!response.ok || !payload.success) {
+        throw new Error(payload.message || 'Unable to edit the comment.')
+      }
+      setReplies((current) => current.map((reply) => reply.id === replyId ? { ...reply, content } : reply))
+      setEditingReplyId(null)
+      setEditingReplyContent('')
+    } catch (error) {
+      alert(error?.message || 'Unable to edit the comment.')
+    }
   }
 
   const submitReplyReport = async () => {
@@ -728,7 +785,7 @@ export default function ThreadDetailPage() {
               <button type="button" onClick={handleReplySubmit} disabled={submittingReply || (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker)} aria-label="Post reply" title="Post reply" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"><Send className="h-4 w-4" /></button>
             </div>
             {(replyGifUrl || replySticker) && <div className="mt-2 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">{replyGifUrl ? <img src={replyGifUrl} alt="Selected GIF preview" className="h-20 max-w-36 rounded-lg object-cover" /> : null}{replySticker ? <span className="flex h-20 w-20 items-center justify-center rounded-lg bg-white text-4xl">{replySticker}</span> : null}<button type="button" onClick={() => { setReplyGifUrl(''); setReplySticker('') }} className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 hover:bg-slate-100 hover:text-red-600" aria-label="Remove selected GIF or sticker" title="Remove preview"><X className="h-4 w-4" /></button></div>}
-            {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload key={replyComposerResetKey} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} /><MediaUpload key={`${replyComposerResetKey}-video`} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} /></div>}
+            {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload key={replyComposerResetKey} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} onUploadError={(message) => alert(message)} /><MediaUpload key={`${replyComposerResetKey}-video`} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} onUploadError={(message) => alert(message)} /></div>}
 
             {showGifPicker && <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={gifQuery} onChange={(event) => setGifQuery(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>{gifLoading ? <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading GIFs...</div> : gifError ? <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">{gifError}</div> : <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto p-2">{gifResults.map((gif) => <button key={gif.id || gif.url} type="button" onClick={() => { setReplyGifUrl(gif.url); setReplySticker(''); setShowGifPicker(false); setGifQuery('') }} className="overflow-hidden rounded-lg border border-slate-100 bg-slate-50 hover:ring-2 hover:ring-sky-500"><img src={gif.url} alt={gif.title || 'GIF'} className="h-20 w-full object-cover" /></button>)}</div>}</div>}
             {showStickerPicker && <div className="mt-2 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-2">{STICKERS.map((sticker) => <button key={sticker} type="button" onClick={() => { setReplySticker(sticker); setReplyGifUrl(''); setShowStickerPicker(false) }} className="flex h-10 w-10 items-center justify-center rounded-lg text-xl hover:bg-slate-100">{sticker}</button>)}</div>}

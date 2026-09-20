@@ -5,11 +5,13 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  Briefcase,
   CalendarDays,
   Check,
   Copy,
   FileText,
   MessageCircle,
+  MessageSquareText,
   MapPin,
   MoreHorizontal,
   Share2,
@@ -20,11 +22,10 @@ import {
   Users,
 } from "lucide-react";
 import ProfileFeedActions from "@/app/components/user/ProfileFeedActions";
+import PostMediaGallery from "@/app/components/user/PostMediaGallery";
+import { getPostImages } from "@/lib/postMedia";
 import UserTopHeader from "@/app/components/user/UserTopHeader";
-import {
-  SectionLoading,
-  SectionStats,
-} from "@/app/components/user/UserSectionHeader";
+import { SectionLoading } from "@/app/components/user/UserSectionHeader";
 import {
   getAuthCookieFromDocument,
   getStoredSessionObject,
@@ -564,8 +565,8 @@ export default function PublicProfilePage() {
             <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
           </div>
 
-          <div className="border-b border-slate-200 bg-white px-3 pb-5 sm:px-5">
-            <div className="flex flex-col gap-4 pt-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
+            <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-end sm:justify-between">
               <div className="flex min-w-0 items-end gap-3">
                 <div className="usr-profile-avatar -mt-14 flex shrink-0 items-center justify-center overflow-hidden sm:-mt-16">
                   {profile.profile_image_url ? (
@@ -598,7 +599,7 @@ export default function PublicProfilePage() {
                 </div>
               </div>
 
-              <div className="relative flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+              <div className="relative flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                 {isOwnProfile ? (
                   <>
                     <Link href="/user/profile" className="usr-section-secondary">
@@ -699,35 +700,29 @@ export default function PublicProfilePage() {
               </p>
             ) : null}
           </div>
-        </section>
 
-        <SectionStats
-          className="mb-5"
-          items={[
-            { label: "Shared content", value: posts.length, icon: FileText, tone: "usr-tone-sky" },
-            {
-              label: "Followers",
-              value: followerCount,
-              icon: Users,
-              tone: "usr-tone-violet",
-              href: `/user/profile/connections?user=${profile.id}&tab=followers`,
-            },
-            {
-              label: "Following",
-              value: followingCount,
-              icon: UserPlus,
-              tone: "usr-tone-emerald",
-              href: `/user/profile/connections?user=${profile.id}&tab=following`,
-            },
-            {
-              label: "Points",
-              value: profile.points || 0,
-              icon: Star,
-              tone: "usr-tone-amber",
-              hint: `Level ${profile.level || 1}`,
-            },
-          ]}
-        />
+          <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-center">
+            <div className="border-r border-slate-200 px-2 py-3">
+              <p className="text-lg font-black text-slate-900">{posts.length}</p>
+              <p className="usr-stat-label mt-0.5">Posts</p>
+            </div>
+            <Link
+              href={`/user/profile/connections?user=${profile.id}&tab=followers`}
+              className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"
+            >
+              <p className="text-lg font-black text-slate-900">{followerCount}</p>
+              <p className="usr-stat-label mt-0.5">Followers</p>
+            </Link>
+            <Link
+              href={`/user/profile/connections?user=${profile.id}&tab=following`}
+              className="px-2 py-3 transition hover:bg-teal-50"
+            >
+              <p className="text-lg font-black text-slate-900">{followingCount}</p>
+              <p className="usr-stat-label mt-0.5">Following</p>
+            </Link>
+          </div>
+
+          <div className="px-3 py-4 sm:px-5 sm:py-5">
 
         {isBlocked ? (
           <div className="usr-card usr-enter mb-5 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -756,79 +751,72 @@ export default function PublicProfilePage() {
           </div>
         ) : null}
 
-        <section className="usr-card usr-enter mb-5 p-4 sm:p-5">
-          <p className="usr-section-eyebrow">About</p>
-          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-700">
-            {profile.bio ||
-              `Sharing local experiences and community discoveries from ${location}.`}
-          </p>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600">
-              <MapPin className="h-3.5 w-3.5 text-teal-700" />
-              {location}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600">
-              <Sparkles className="h-3.5 w-3.5 text-amber-500" />
-              Level {profile.level || 1}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-bold text-slate-600">
-              <Users className="h-3.5 w-3.5 text-violet-500" />
-              {followerCount} followers
-            </span>
-          </div>
-        </section>
-
-        <section className="usr-card usr-enter overflow-hidden">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
-            <div className="min-w-0">
-              <p className="usr-section-eyebrow">Wall</p>
-              <h2 className="mt-1 text-lg font-black text-slate-900">
-                Shared content{" "}
-                <span className="ml-1 text-xs font-bold text-slate-400">
-                  {posts.length}
+            <section className="usr-card mb-5 p-4 sm:p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">About</p>
+                <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-bold text-teal-700">
+                  Level {profile.level || 1}
                 </span>
-              </h2>
-            </div>
-            {isOwnProfile ? (
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href="/user/blogs/new" className="usr-section-secondary">
-                  <FileText className="h-4 w-4" />
-                  Write a story
-                </Link>
-                <Link href="/user/forums" className="usr-section-primary">
-                  <MessageCircle className="h-4 w-4" />
-                  Start a discussion
-                </Link>
               </div>
-            ) : (
-              <Link
-                href={`/user/messaging/${encodeURIComponent(profile.id)}`}
-                className="usr-section-secondary"
-              >
-                <MessageCircle className="h-4 w-4" />
-                Send a message
-              </Link>
-            )}
-          </div>
+              <p className="max-w-3xl text-sm leading-6 text-slate-700">
+                {profile.bio ||
+                  `Sharing local experiences and community discoveries from ${location}.`}
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-[13px] text-slate-600">
+                <div className="flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-slate-400" />
+                  <span>{location}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-slate-400" />
+                  <span>{followerCount} followers</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Briefcase className="h-4 w-4 text-slate-400" />
+                  <span>{profile.points || 0} points</span>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p>
+                  <h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2>
+                </div>
+                {isOwnProfile ? (
+                  <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                    <Link href="/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                      <FileText className="h-4 w-4" /> Write blog
+                    </Link>
+                    <Link href="/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                      <MessageSquareText className="h-4 w-4" /> Start forum
+                    </Link>
+                  </div>
+                ) : (
+                  <Link
+                    href={`/user/messaging/${encodeURIComponent(profile.id)}`}
+                    className="usr-section-secondary min-w-0 flex-1 sm:flex-none"
+                  >
+                    <MessageCircle className="h-4 w-4" /> Send a message
+                  </Link>
+                )}
+              </div>
 
           {posts.length > 0 && !isBlocked ? (
-            <div className="usr-stagger space-y-3 p-3 sm:p-4">
+            <div className="space-y-1.5">
               {posts.map((post) => {
                 const typeMeta = getTypeMeta(post.type);
-                const TypeIcon = typeMeta.icon;
-                const mediaList = post.images?.length
-                  ? post.images
-                  : post.media
-                    ? [post.media]
-                    : [];
+                const mediaList = getPostImages(post);
 
                 return (
                   <article
                     key={`${post.type}-${post.id}`}
-                    className="usr-card usr-content-card p-4 sm:p-5"
+                    className={`usr-card usr-content-card overflow-hidden p-4 sm:p-5 ${post.type === "Blog" ? "border-l-4 border-l-violet-300 bg-violet-50/30" : post.type === "Forum" ? "border-l-4 border-l-emerald-300 bg-emerald-50/40" : post.type === "Event" ? "border-l-4 border-l-amber-200 bg-amber-50/30" : "border-l-4 border-l-slate-200"}`}
                   >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black text-teal-700">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black uppercase text-teal-700 lg:h-12 lg:w-12">
                         {profile.profile_image_url ? (
                           <img
                             src={profile.profile_image_url}
@@ -839,23 +827,18 @@ export default function PublicProfilePage() {
                           getInitials(displayName)
                         )}
                       </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-slate-900">
-                          {post.isRepost ? `${displayName} reposted` : displayName}
-                        </p>
-                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] ${typeMeta.chip}`}
-                          >
-                            <TypeIcon className="h-3 w-3" />
-                            {post.isRepost ? "Repost" : typeMeta.label}
-                          </span>
-                          <time
-                            className="text-xs text-slate-500"
-                            dateTime={post.date || undefined}
-                          >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
+                          <p className="truncate font-bold text-slate-900 lg:text-sm">
+                            {post.isRepost ? `${displayName} 🔄 reposted` : displayName}
+                          </p>
+                          <span className="text-slate-400">·</span>
+                          <time className="text-slate-500" dateTime={post.date || undefined}>
                             {formatPostDate(post.date)}
                           </time>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-teal-700">
+                          <span>{post.isRepost ? "Repost" : typeMeta.label}</span>
                         </div>
                       </div>
                     </div>
@@ -890,16 +873,9 @@ export default function PublicProfilePage() {
                     ) : null}
 
                     {mediaList.length ? (
-                      <Link
-                        href={post.href}
-                        className="mt-3 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100"
-                      >
-                        <img
-                          src={mediaList[0]}
-                          alt={post.title || "Shared media"}
-                          className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95"
-                        />
-                      </Link>
+                      <div className="mt-3 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
+                        <PostMediaGallery images={mediaList} detailHref={post.href} />
+                      </div>
                     ) : null}
 
                     {post.videos?.length ? (
@@ -933,6 +909,8 @@ export default function PublicProfilePage() {
               </p>
             </div>
           )}
+            </section>
+          </div>
         </section>
       </div>
     </main>

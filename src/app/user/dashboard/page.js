@@ -43,6 +43,7 @@ import { performLogout } from '@/lib/clientLogout'
 import { clearUserCache, getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
+import { buildRepostFeedItem } from '@/lib/repostIdentity'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
@@ -54,6 +55,8 @@ import UserTopHeader from '@/app/components/user/UserTopHeader'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
 import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
 import { trackUserActivity } from '@/lib/trackActivity'
+import PostMediaGallery from '@/app/components/user/PostMediaGallery'
+import { getPostImages } from '@/lib/postMedia'
 
 // Database table constants
 const TABLES = {
@@ -255,6 +258,14 @@ export default function UserDashboardPage() {
   useEffect(() => {
     if (!userId) return undefined
 
+    // The acting user is the reposter. The API response carries their profile,
+    // and this local fallback covers the window before it is available.
+    const reposterAuthor = {
+      id: userId,
+      full_name: userName || 'You',
+      profile_image_url: userAvatarUrl || null,
+    }
+
     const handleRepostChange = (event) => {
       const detail = event.detail || {}
       if (detail.userId !== userId) return
@@ -265,6 +276,8 @@ export default function UserDashboardPage() {
         return
       }
 
+      const activeAuthor = detail.reposter || reposterAuthor
+
       if (detail.action === 'restored' && detail.repost?.repost_id) {
         const restored = detail.repost
         const original = restored.original_post || {}
@@ -272,15 +285,20 @@ export default function UserDashboardPage() {
           ...original,
           id: restored.repost_id,
           original_post_id: restored.original_content_id,
+          original_content_id: restored.original_content_id,
+          original_content_type: restored.original_content_type || 'user_post',
           repost_id: restored.repost_id,
           reposted_by: restored.reposted_by || restored.user_id,
           repost_quote: restored.repost_quote || restored.quote_text,
           created_by: restored.reposted_by || restored.user_id,
+          created_at: restored.created_at,
+          reposted_at: restored.created_at,
           published_at: restored.created_at,
           category: 'Repost',
           type: restored.original_content_type === 'blog' ? 'blog' : 'post',
           href: restored.original_content_type === 'blog' ? `/user/blogs/${restored.original_content_id}` : `/user/posts/${restored.original_content_id}`,
           is_repost: true,
+          author: activeAuthor,
           original_author: restored.original_author || original.author || null,
           original_post: { ...original, author: restored.original_author || original.author || null },
         }
@@ -290,26 +308,12 @@ export default function UserDashboardPage() {
         return
       }
 
-      const original = detail.original
-      if (!original || !detail.repost?.id) return
-      const repostItem = {
-        ...original,
-        id: detail.repost.id,
-        original_post_id: detail.repost.original_content_id,
-        repost_id: detail.repost.id,
-        reposted_by: detail.repost.user_id,
-        repost_quote: detail.repost.quote_text,
-        created_by: detail.repost.user_id,
-        published_at: detail.repost.created_at,
-        category: 'Repost',
-        type: detail.repost.original_content_type === 'blog' ? 'blog' : 'post',
-        href: detail.repost.original_content_type === 'blog'
-          ? `/user/blogs/${detail.repost.original_content_id}`
-          : `/user/posts/${detail.repost.original_content_id}`,
-        is_repost: true,
-        original_author: original.author || null,
-        original_post: { ...original, author: original.author || null },
-      }
+      const repostItem = buildRepostFeedItem({
+        repost: detail.repost,
+        original: detail.original,
+        reposter: detail.reposter || reposterAuthor,
+      })
+      if (!repostItem) return
       setFeed((previous) => [repostItem, ...previous.filter((item) => item.repost_id !== repostItem.repost_id)])
       setNewRepostIds((previous) => new Set(previous).add(repostItem.id))
       setFeedVisibleCount((previous) => Math.max(previous, 10))
@@ -319,7 +323,7 @@ export default function UserDashboardPage() {
 
     window.addEventListener('daet-repost-created', handleRepostChange)
     return () => window.removeEventListener('daet-repost-created', handleRepostChange)
-  }, [userId])
+  }, [userId, userName, userAvatarUrl])
 
   useEffect(() => {
     if (!pendingRepostId) return undefined
@@ -1041,12 +1045,17 @@ export default function UserDashboardPage() {
                     : item.type === 'tourist_spot'
                       ? 'tourist_spot'
                       : 'event'
+            // Reposts count comments against the original content, using the
+            // same ids the cards pass to the comments sheet and share counts.
+            const contentId = item.is_repost
+              ? (item.original_post_id || item.original_post?.id || item.id)
+              : item.id
             const { count } = await supabase
               .from('content_comments')
               .select('id', { count: 'exact', head: true })
               .eq('content_type', contentType)
-              .eq('content_id', item.id)
-            counts[`${item.type}-${item.id}`] = count || 0
+              .eq('content_id', contentId)
+            counts[`${item.type}-${contentId}`] = count || 0
           })
         )
         if (isMounted) setCommentCounts(counts)
@@ -1187,6 +1196,8 @@ export default function UserDashboardPage() {
               ...originalPost,
               id: repost.id,
               original_post_id: originalPost.id,
+              original_content_id: originalPost.id,
+              original_content_type: repost.original_content_type,
               repost_id: repost.id,
               reposted_by: repost.user_id,
               reposted_at: repost.created_at,
@@ -1779,7 +1790,13 @@ export default function UserDashboardPage() {
                 {visibleFeed.map((item) => {
                   const itemKey = `${item.type}-${item.id}`
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
-                  const actionContentId = item.is_repost ? (item.repost_id || item.id) : (item.original_post_id || item.id)
+                  // Comments, reactions and share counts all key on the
+                  // original content: info_comments rows are foreign-keyed to
+                  // the original content tables, so a repost row id can never
+                  // be an engagement target.
+                  const actionContentId = item.is_repost
+                    ? (item.original_post_id || item.original_post?.id || item.id)
+                    : (item.original_post_id || item.id)
                   const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
@@ -1789,7 +1806,7 @@ export default function UserDashboardPage() {
                   const itemDate = item.reposted_at || item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const eventMediaUrl = (item.type === 'event' || item.type === 'tourist_spot') ? getImageUrl(item.featured_image || item.images || item.gallery_images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
-                  const postGallery = ['blog', 'post'].includes(item.type) ? [...(item.images || []), ...(item.videos || []).map((url) => ({ url, type: 'video' }))] : []
+                  const postGallery = ['blog', 'post'].includes(item.type) ? getPostImages(item) : []
                   const postImageUrl = ['blog', 'post'].includes(item.type)
                     ? item.featured_image || (item.images || [])[0]
                     : item.type === 'announcement'
@@ -1940,12 +1957,12 @@ export default function UserDashboardPage() {
                         )}
 
                         {isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
-                          <div className={`feed-media mt-4 w-full overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
-                            {postGallery.length > 0 ? postGallery.map((media, mediaIndex) => (
-                              <div key={`${media.url || media}-${mediaIndex}`} className={`w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : 'min-w-full'}`}>
-                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
-                              </div>
-                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
+                          <div className="feed-media mt-4 w-full overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px]">
+                            {postGallery.length > 0 && <PostMediaGallery images={postGallery} resolveUrl={(url) => getImageUrl(url, '') || url} detailHref={item.href} />}
+                            {postGallery.length > 0 && Array.isArray(item.videos) && item.videos.filter(Boolean).map((videoUrl, videoIndex) => (
+                              <video key={`post-video-${videoIndex}`} src={typeof videoUrl === 'string' ? videoUrl : videoUrl?.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />
+                            ))}
+                            {postGallery.length === 0 && (postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>)}
                           </div>
                         )}
 
@@ -2003,12 +2020,12 @@ export default function UserDashboardPage() {
                         )}
 
                         {!isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
-                          <div className={`feed-media mt-4 w-full overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px] ${item.media_layout === 'grid' ? 'grid grid-cols-2 gap-1' : 'flex snap-x snap-mandatory gap-2 overflow-x-auto'}`}>
-                            {postGallery.length > 0 ? postGallery.map((media, mediaIndex) => (
-                              <div key={`${media.url || media}-${mediaIndex}`} className={`w-full snap-start ${item.media_layout === 'grid' ? 'min-w-0' : 'min-w-full'}`}>
-                                {media.type === 'video' ? <video src={media.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={media.url || media} alt={`${item.title} ${mediaIndex + 1}`} className="aspect-[16/9] w-full cursor-pointer object-cover transition hover:brightness-95" /></Link>}
-                              </div>
-                            )) : postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>}
+                          <div className="feed-media mt-4 w-full overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px]">
+                            {postGallery.length > 0 && <PostMediaGallery images={postGallery} resolveUrl={(url) => getImageUrl(url, '') || url} detailHref={item.href} />}
+                            {postGallery.length > 0 && Array.isArray(item.videos) && item.videos.filter(Boolean).map((videoUrl, videoIndex) => (
+                              <video key={`post-video-${videoIndex}`} src={typeof videoUrl === 'string' ? videoUrl : videoUrl?.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />
+                            ))}
+                            {postGallery.length === 0 && (postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>)}
                           </div>
                         )}
 

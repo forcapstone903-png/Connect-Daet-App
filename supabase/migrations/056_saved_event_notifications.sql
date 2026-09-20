@@ -1,5 +1,10 @@
 BEGIN;
 
+-- Notifies users who saved an event when it is cancelled or rescheduled.
+-- NOTE: this file is numbered 056 instead of 046 because version 046 is already
+-- recorded in the remote migration history by 046_forum_reply_parents.sql.
+-- Renaming it keeps the remote history table free of duplicate versions.
+
 CREATE OR REPLACE FUNCTION public.notify_saved_event_users()
 RETURNS trigger
 LANGUAGE plpgsql

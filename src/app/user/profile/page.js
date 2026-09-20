@@ -24,6 +24,8 @@ import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import { filterValidUuidValues } from '@/lib/uuid'
+import PostMediaGallery from '@/app/components/user/PostMediaGallery'
+import { getPostImages } from '@/lib/postMedia'
 
 const STORAGE_KEYS = {
   profilePreferences: 'daet_user_profile_preferences',
@@ -443,11 +445,16 @@ export default function UserProfilePage() {
       const mapped = typeMap[repost.original_content_type] || typeMap.user_post
       const nextPost = {
         id: `repost-${repost.id}`,
+        repost_id: repost.id,
+        reposted_by: repost.user_id || userId,
+        user_id: repost.user_id || userId,
         original_content_id: repost.original_content_id,
+        original_content_type: repost.original_content_type,
         type: mapped.type,
         title: original.title || 'Shared content',
         content: mapped.content,
         created_at: repost.created_at,
+        reposted_at: repost.created_at,
         category: mapped.category,
         href: mapped.href,
         media: original.featured_image || (original.images || [])[0] || '',
@@ -718,8 +725,8 @@ export default function UserProfilePage() {
                         {post.isRepost && <div className="mb-3 flex items-center gap-2 text-xs text-slate-500"><span className="font-semibold text-slate-700">Originally shared by</span><span>{post.originalAuthor?.full_name || 'Community member'}</span></div>}
                         <Link href={post.href} className="mt-2 block w-full pl-0 text-left"><h3 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-teal-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
                         <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
-                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 grid gap-1 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-2xl sm:grid-cols-2">
-                          {(post.images?.length ? post.images : (post.media ? [post.media] : [])).map((url, index) => <Link key={`${url}-${index}`} href={post.href} className="block"><img src={url} alt={`${post.title || 'Post'} ${index + 1}`} className="aspect-[16/8.5] w-full object-cover transition hover:brightness-95" /></Link>)}
+                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 lg:mt-5">
+                          {getPostImages(post).length > 0 && <PostMediaGallery images={getPostImages(post)} detailHref={post.href} />}
                           {(post.videos?.length ? post.videos : (post.video_url ? [post.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
                         </div>}
 

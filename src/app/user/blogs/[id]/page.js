@@ -18,7 +18,6 @@ import {
   Pencil,
   Star,
   Trash2,
-  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -27,6 +26,8 @@ import Reactions from '@/app/components/user/Reactions'
 import MentionText from '@/app/components/user/MentionText'
 import MentionsAutoSuggest from '@/app/components/user/MentionsAutoSuggest'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
+import PostMediaCarousel from '@/app/components/user/PostMediaCarousel'
+import { getPostImages } from '@/lib/postMedia'
 
 const STORAGE_KEYS = {
   readHistory: 'daet_blog_read_history',
@@ -135,19 +136,11 @@ export default function BlogDetailPage() {
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENTS)
   const [visibleReplies, setVisibleReplies] = useState({})
   const [expandedReplies, setExpandedReplies] = useState({})
-  const [lightboxImage, setLightboxImage] = useState(null)
   const commentsSectionRef = useRef(null)
 
-  useEffect(() => {
-    if (!lightboxImage) return undefined
-
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') setLightboxImage(null)
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [lightboxImage])
+  // All photos attached to this article (images[] + featured_image), normalized
+  // and filtered; the shared gallery/lightbox render the complete list.
+  const detailGallery = useMemo(() => getPostImages(blog), [blog])
 
   useEffect(() => {
     let ignore = false
@@ -852,11 +845,9 @@ export default function BlogDetailPage() {
         </div>
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
         <article className="mb-5 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:mb-0">
-          {blog.featured_image && (
+          {detailGallery.length > 0 && (
             <div className="-mx-4 -mt-4 mb-5 overflow-hidden rounded-t-[14px] sm:-mx-6 sm:-mt-6">
-              <button type="button" onClick={() => setLightboxImage({ src: blog.featured_image, alt: blog.title })} className="block w-full cursor-zoom-in" aria-label="Enlarge article photo">
-                <img alt={blog.title} src={blog.featured_image} className="max-h-[32rem] w-full object-cover transition hover:brightness-95" />
-              </button>
+              <PostMediaCarousel images={detailGallery} />
             </div>
           )}
 
@@ -1001,14 +992,6 @@ export default function BlogDetailPage() {
 
       </div>
 
-      {lightboxImage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4" role="dialog" aria-modal="true" aria-label="Expanded article photo" onClick={() => setLightboxImage(null)}>
-          <button type="button" onClick={() => setLightboxImage(null)} className="absolute right-4 top-4 inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25" aria-label="Close expanded photo">
-            <X className="h-6 w-6" />
-          </button>
-          <img src={lightboxImage.src} alt={lightboxImage.alt} className="max-h-[90vh] max-w-full object-contain" onClick={(event) => event.stopPropagation()} />
-        </div>
-      )}
     </main>
   )
 }

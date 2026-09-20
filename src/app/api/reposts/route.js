@@ -114,6 +114,18 @@ async function getOriginalContent(adminSupabase, contentType, contentId) {
   return { data: data ? { ...data, author: author || null } : data, error: error || authorError, authorId }
 }
 
+// The reposter is the acting user, never the original author. Clients use this
+// to attribute the new repost card to the person who reposted it.
+async function getReposterAuthor(adminSupabase, userId) {
+  const { data } = await adminSupabase
+    .from('info_users')
+    .select('id, full_name, profile_image_url, user_type')
+    .eq('id', userId)
+    .maybeSingle()
+
+  return data || { id: userId, full_name: null, profile_image_url: null, user_type: null }
+}
+
 export async function POST(request) {
   const userId = getServerSession(request)?.user_id || null
   if (!userId) return NextResponse.json({ success: false, message: 'Please log in to repost.' }, { status: 401 })
@@ -134,6 +146,7 @@ export async function POST(request) {
   }
 
   const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+  const reposterAuthor = await getReposterAuthor(adminSupabase, userId)
   const originalResult = await getOriginalContent(adminSupabase, contentType, contentId)
   if (originalResult.error) {
     return NextResponse.json({ success: false, message: originalResult.error.message || 'Unable to load the original content.' }, { status: 400 })
@@ -159,12 +172,12 @@ export async function POST(request) {
         .single()
 
       if (restoreResult.error && isMissingRepostStatusColumnError(restoreResult.error)) {
-        return NextResponse.json({ success: true, repost: existingRepost, original: originalResult.data, restored: true })
+        return NextResponse.json({ success: true, repost: existingRepost, reposter: reposterAuthor, original: originalResult.data, restored: true })
       }
       if (restoreResult.error) return NextResponse.json({ success: false, message: restoreResult.error.message || 'Unable to restore this repost.' }, { status: 400 })
-      return NextResponse.json({ success: true, repost: restoreResult.data, original: originalResult.data, restored: true })
+      return NextResponse.json({ success: true, repost: restoreResult.data, reposter: reposterAuthor, original: originalResult.data, restored: true })
     }
-    return NextResponse.json({ success: true, repost: existingRepost, original: originalResult.data, alreadyReposted: true })
+    return NextResponse.json({ success: true, repost: existingRepost, reposter: reposterAuthor, original: originalResult.data, alreadyReposted: true })
   }
 
   const { data, error } = await insertRepost(adminSupabase, {
@@ -191,15 +204,10 @@ export async function POST(request) {
   }
 
   if (originalResult.authorId !== userId) {
-    const { data: reposter } = await adminSupabase
-      .from('info_users')
-      .select('full_name')
-      .eq('id', userId)
-      .maybeSingle()
     const notification = {
       user_id: originalResult.authorId,
       title: 'New repost',
-      message: `${reposter?.full_name || 'Someone'} reposted your post.`,
+      message: `${reposterAuthor?.full_name || 'Someone'} reposted your post.`,
       type: 'repost',
       is_read: false,
       created_at: new Date().toISOString(),
@@ -227,7 +235,7 @@ export async function POST(request) {
     }
   }
 
-  return NextResponse.json({ success: true, repost: data, original: originalResult.data })
+  return NextResponse.json({ success: true, repost: data, reposter: reposterAuthor, original: originalResult.data })
 }
 
 export async function DELETE(request) {

@@ -219,6 +219,7 @@ export async function GET(request, { params }) {
         reposted_by: repost.user_id,
         repost_quote: repost.quote_text,
         created_at: repost.created_at,
+        reposted_at: repost.created_at,
         original_content_id: original.id,
         original_content_type: repost.original_content_type,
         original_author: repostAuthorsById.get(originalAuthorId) || { id: originalAuthorId, full_name: 'Community member' },

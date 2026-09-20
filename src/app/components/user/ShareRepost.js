@@ -185,7 +185,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
       setQuoteText('')
       setShowMenu(false)
       if (!result.alreadyReposted) {
-        publishRepostChange({ action: 'created', repost: result.repost, original: result.original || originalPost, contentType, contentId, userId })
+        publishRepostChange({ action: 'created', repost: result.repost, reposter: result.reposter || null, original: result.original || originalPost, contentType, contentId, userId })
       }
       if (onShared) onShared('repost')
     } catch (err) {

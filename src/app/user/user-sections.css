@@ -192,6 +192,19 @@ html.dark .usr-settings .usr-card {
   box-shadow: 0 18px 48px -28px rgba(14, 116, 144, 0.4);
 }
 
+/* The light sage hover borders (#8bbdb4) are jarring on dark: swap them for
+   a translucent sage line with a soft teal glow so list rows and
+   notification cards still respond to hover. */
+html.dark .usr-list-row:hover {
+  border-color: rgba(139, 189, 180, 0.5);
+  box-shadow: 0 14px 32px -20px rgba(45, 212, 191, 0.35);
+}
+
+html.dark .usr-notifications [role="button"]:hover {
+  border-color: rgba(139, 189, 180, 0.5);
+  box-shadow: 0 5px 18px -12px rgba(45, 212, 191, 0.3);
+}
+
 html.dark .usr-section-heading {
   background: linear-gradient(120deg, rgba(15, 23, 42, 0.96) 60%, rgba(20, 125, 117, 0.15));
   border-top-color: rgba(45, 212, 191, 0.9);

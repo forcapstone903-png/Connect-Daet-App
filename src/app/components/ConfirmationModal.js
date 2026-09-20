@@ -55,7 +55,7 @@ export default function ConfirmationModal({ isOpen, title, message, onConfirm, o
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="confirmation-modal fixed inset-0 z-50 flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirmation-modal-title"

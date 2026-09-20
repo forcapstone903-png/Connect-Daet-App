@@ -4,7 +4,7 @@ import { Bookmark, MessageCircle } from 'lucide-react'
 import Reactions from './Reactions'
 import ShareRepost from './ShareRepost'
 
-export default function SocialActionBar({ contentType, contentId, userId, commentCount = 0, onToggleComments, isSaved = false, onToggleSave, onRepost, originalPost = null }) {
+export default function SocialActionBar({ contentType, contentId, userId, commentCount = 0, onToggleComments, isSaved = false, onToggleSave, onRepost, originalPost = null, repostContentType, repostContentId }) {
   return (
     <div className="tourism-action-row mt-3 grid min-w-0 grid-cols-4 items-end gap-1.5 pt-3 sm:gap-2">
       <div className="flex min-w-0 items-center justify-center">
@@ -23,7 +23,9 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
       </button>
 
       <div className="flex h-9 min-w-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50">
-        <ShareRepost contentType={contentType} contentId={contentId} userId={userId} onRepost={onRepost} originalPost={originalPost} fullWidth />
+        {/* Reactions/comments may key on the repost instance, so the repost
+            action takes its own explicit target when one is supplied. */}
+        <ShareRepost contentType={repostContentType ?? contentType} contentId={repostContentId ?? contentId} userId={userId} onRepost={onRepost} originalPost={originalPost} fullWidth />
       </div>
 
       <button
