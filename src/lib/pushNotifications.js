@@ -47,6 +47,25 @@ export function urlBase64ToUint8Array(value) {
   return Uint8Array.from([...rawData].map((character) => character.charCodeAt(0)))
 }
 
+const isStorageError = (error) => /storage error|quota|database/i.test(error?.message || '')
+
+async function registerPushServiceWorker() {
+  try {
+    return await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+  } catch (error) {
+    if (!isStorageError(error)) throw error
+
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(
+      registrations
+        .filter((candidate) => candidate.scriptURL.endsWith('/sw.js'))
+        .map((candidate) => candidate.unregister())
+    )
+
+    return navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+  }
+}
+
 export async function subscribeUserToPush({ userId } = {}) {
   debugLog('[push] Starting subscription flow')
   const availability = getPushAvailability()
@@ -84,19 +103,41 @@ export async function subscribeUserToPush({ userId } = {}) {
   let subscription
   try {
     debugLog('[push] Registering /sw.js')
-    registration = await navigator.serviceWorker.register('/sw.js')
+    registration = await registerPushServiceWorker()
     debugLog('[push] Waiting for navigator.serviceWorker.ready')
-    const readyRegistration = await navigator.serviceWorker.ready
+    let readyRegistration = await navigator.serviceWorker.ready
     debugLog('[push] Service worker ready:', readyRegistration.scope)
     subscription = await readyRegistration.pushManager.getSubscription()
-      || await readyRegistration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      })
+    if (!subscription) {
+      try {
+        subscription = await readyRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        })
+      } catch (error) {
+        if (!isStorageError(error)) throw error
+
+        await registration.unregister()
+        registration = await registerPushServiceWorker()
+        readyRegistration = await navigator.serviceWorker.ready
+        subscription = await readyRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(publicKey),
+        })
+      }
+    }
     debugLog('[push] Push subscription created:', subscription.endpoint)
   } catch (error) {
     console.error('Push service worker subscription failed:', error)
-    throw new Error(error?.message || 'The browser could not create a push subscription.')
+    return {
+      success: false,
+      reason: isStorageError(error) ? 'service-worker-storage' : 'subscription-error',
+      message: isStorageError(error)
+        ? 'The browser could not access its notification storage. Clear this site\'s stored data, reload, and try again.'
+        : error?.message || 'The browser could not create a push subscription.',
+      registration,
+      ...availability,
+    }
   }
 
   const subscriptionJson = subscription.toJSON()

@@ -228,6 +228,30 @@ export default function ConversationPage() {
     setActionMessageId(null)
   }
 
+  const deleteMessage = async () => {
+    if (!messageToDelete?.id || !otherUserId) return
+
+    try {
+      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}?messageId=${encodeURIComponent(messageToDelete.id)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete this message.')
+
+      setMessages((previous) => previous.filter((message) => message.id !== messageToDelete.id))
+      setMessageReactions((current) => {
+        const next = { ...current }
+        delete next[messageToDelete.id]
+        return next
+      })
+      setMessageToDelete(null)
+      window.dispatchEvent(new Event('daet-messages-updated'))
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete this message.')
+    }
+  }
+
   const openForward = (message) => {
     setForwardMessage(message)
     setForwardQuery('')
