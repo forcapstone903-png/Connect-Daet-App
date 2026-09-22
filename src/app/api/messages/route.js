@@ -17,14 +17,14 @@ export async function GET(request) {
   const archived = new URL(request.url).searchParams.get('archived') === 'true'
   let { data, error } = await adminSupabase
     .from('direct_messages')
-    .select('id, sender_id, recipient_id, body, media_url, media_type, message_type, reply_to_message_id, created_at, read_at')
+    .select('id, sender_id, recipient_id, body, media_url, media_type, message_type, reply_to_message_id, created_at, read_at, deleted_for')
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
     .order('created_at', { ascending: false })
     .limit(1000)
   if (error?.message?.toLowerCase().includes('column') && error.message.toLowerCase().includes('message_type')) {
     ({ data, error } = await adminSupabase
       .from('direct_messages')
-      .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at')
+      .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at, deleted_for')
       .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
       .order('created_at', { ascending: false })
       .limit(1000))
@@ -38,7 +38,7 @@ export async function GET(request) {
   if (settingsError) return NextResponse.json({ success: false, message: settingsError.message }, { status: 500 })
   const settingsByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting]))
 
-  const rows = data || []
+  const rows = (data || []).filter((message) => !message.deleted_for?.includes(userId))
   const participantIds = [...new Set(rows.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
   const allUserIds = [...new Set([userId, ...participantIds])]
   const { data: users } = allUserIds.length

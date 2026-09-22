@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, ArrowLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { Archive, ArrowLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Pin, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
@@ -93,8 +93,10 @@ export default function ConversationPage() {
   const [gifError, setGifError] = useState('')
   const [replyTo, setReplyTo] = useState(null)
   const [actionMessageId, setActionMessageId] = useState(null)
+  const [showMoreActions, setShowMoreActions] = useState(false)
   const [highlightedMessageId, setHighlightedMessageId] = useState(null)
   const [messageToDelete, setMessageToDelete] = useState(null)
+  const [editingMessageId, setEditingMessageId] = useState(null)
   const [messageReactions, setMessageReactions] = useState({})
   const [forwardMessage, setForwardMessage] = useState(null)
   const [forwardQuery, setForwardQuery] = useState('')
@@ -108,7 +110,10 @@ export default function ConversationPage() {
   const attachmentMenuRef = useRef(null)
   const pickerRef = useRef(null)
   const messagesScrollRef = useRef(null)
+  const messagesRef = useRef([])
   const selectedMessageRef = useRef(null)
+  const composerRef = useRef(null)
+  const moreActionsRef = useRef(null)
   const isNearBottomRef = useRef(true)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
   const realtimeChannelRef = useRef(null)
@@ -119,8 +124,13 @@ export default function ConversationPage() {
   const reconnectAttemptRef = useRef(0)
   const currentUserRef = useRef(null)
   const otherUserRef = useRef(null)
+  const editingMessageIdRef = useRef(null)
   const scrollIntentRef = useRef(null)
   const initialMessagesLoadedRef = useRef(false)
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   useEffect(() => {
     const syncViewport = () => {
@@ -165,7 +175,10 @@ export default function ConversationPage() {
       startY: event.clientY,
       direction: null,
       pointerId: event.pointerId,
-      timer: window.setTimeout(() => setActionMessageId(messageId), 650),
+      timer: window.setTimeout(() => {
+        setActionMessageId(messageId)
+        setShowMoreActions(false)
+      }, 650),
     }
   }
 
@@ -210,6 +223,7 @@ export default function ConversationPage() {
   const selectReply = (message) => {
     setReplyTo(message)
     setActionMessageId(null)
+    setShowMoreActions(false)
   }
 
   const reactToMessage = async (message, reaction) => {
@@ -226,13 +240,16 @@ export default function ConversationPage() {
     }
     setMessageReactions((current) => ({ ...current, [message.id]: [result.reaction] }))
     setActionMessageId(null)
+    setShowMoreActions(false)
   }
 
-  const deleteMessage = async () => {
+  const deleteMessage = async (deleteFor) => {
     if (!messageToDelete?.id || !otherUserId) return
 
     try {
-      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}?messageId=${encodeURIComponent(messageToDelete.id)}`, {
+      const isOwnMessage = messageToDelete.sender_id === currentUser?.id
+      if (deleteFor === 'all' && !isOwnMessage) return
+      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}?messageId=${encodeURIComponent(messageToDelete.id)}&deleteFor=${deleteFor}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })
@@ -257,6 +274,65 @@ export default function ConversationPage() {
     setForwardQuery('')
     setForwardUsers([])
     setActionMessageId(null)
+    setShowMoreActions(false)
+  }
+
+  const updateMessageAction = async (message, action, nextBody = null) => {
+    if (!message?.id || !otherUserId) return
+    if (action === 'edit' && !canEditMessage(message, messages)) {
+      setError('This message can no longer be edited because the recipient has already replied.')
+      setEditingMessageId(null)
+      editingMessageIdRef.current = null
+      setBody('')
+      return
+    }
+    try {
+      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageId: message.id, action, body: nextBody }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update this message.')
+      setMessages((previous) => previous.map((item) => item.id === message.id
+        ? { ...item, ...(result.body !== undefined ? { body: result.body } : {}), metadata: result.metadata || item.metadata }
+        : item))
+      setActionMessageId(null)
+      setShowMoreActions(false)
+      setEditingMessageId(null)
+      editingMessageIdRef.current = null
+      window.dispatchEvent(new Event('daet-messages-updated'))
+    } catch (actionError) {
+      setError(actionError.message || 'Unable to update this message.')
+    }
+  }
+
+  const hasRecipientReplyAfter = (message, messageList = messages) => {
+    if (!message?.created_at || message.sender_id !== currentUser?.id) return false
+    const messageTime = new Date(message.created_at).getTime()
+    return messageList.some((candidate) => (
+      candidate.sender_id === otherUserId
+      && candidate.recipient_id === currentUser?.id
+      && new Date(candidate.created_at || 0).getTime() > messageTime
+    ))
+  }
+
+  const canEditMessage = (message, messageList = messages) => (
+    message?.sender_id === currentUser?.id
+    && !hasRecipientReplyAfter(message, messageList)
+    && !message.media_url
+    && !message.media_type
+    && (!message.message_type || message.message_type === 'text')
+  )
+
+  const beginEditMessage = (message) => {
+    if (!canEditMessage(message)) return
+    setEditingMessageId(message.id)
+    editingMessageIdRef.current = message.id
+    setBody(message.body || '')
+    setActionMessageId(null)
+    setShowMoreActions(false)
   }
 
   const updateConversation = async (action) => {
@@ -331,8 +407,12 @@ export default function ConversationPage() {
 
   useEffect(() => {
     const handleOutsidePointerDown = (event) => {
-      if (selectedMessageRef.current && !selectedMessageRef.current.contains(event.target)) {
+      const isInsideSelectedMessage = selectedMessageRef.current?.contains(event.target)
+      const isInsideComposer = composerRef.current?.contains(event.target)
+      const isInsideMoreActions = moreActionsRef.current?.contains(event.target)
+      if (!isInsideSelectedMessage && !isInsideComposer && !isInsideMoreActions) {
         setActionMessageId(null)
+        setShowMoreActions(false)
       }
       if (attachmentMenuRef.current && !attachmentMenuRef.current.contains(event.target)) {
         setAttachmentMenuOpen(false)
@@ -381,6 +461,16 @@ export default function ConversationPage() {
     setHighlightedMessageId(messageId)
     window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1200)
   }
+
+  useEffect(() => {
+    if (loading || !messages.length || typeof window === 'undefined') return
+    const hash = window.location.hash
+    if (!hash.startsWith('#message-')) return
+    const messageId = decodeURIComponent(hash.slice('#message-'.length))
+    if (!messages.some((message) => message.id === messageId)) return
+    const frame = window.requestAnimationFrame(() => scrollToMessage(messageId))
+    return () => window.cancelAnimationFrame(frame)
+  }, [loading, messages])
 
   const loadConversation = async (silent = false) => {
     if (!otherUserId) return
@@ -532,6 +622,19 @@ export default function ConversationPage() {
           if (!message || ![message.sender_id, message.recipient_id].includes(otherUserId) || ![message.sender_id, message.recipient_id].includes(currentUserId)) return
 
           if (payload.eventType === 'INSERT') {
+            const editedMessage = editingMessageIdRef.current
+              ? messagesRef.current.find((item) => item.id === editingMessageIdRef.current)
+              : null
+            const editedMessageTime = new Date(editedMessage?.created_at || 0).getTime()
+            const locksActiveEdit = message.sender_id === otherUserId
+              && editedMessage?.sender_id === currentUserId
+              && message.recipient_id === currentUserId
+              && new Date(message.created_at || 0).getTime() > editedMessageTime
+            if (locksActiveEdit) {
+              setEditingMessageId(null)
+              editingMessageIdRef.current = null
+              setBody('')
+            }
             const shouldFollow = isNearBottomRef.current
             setMessages((previous) => previous.some((item) => item.id === message.id)
               ? previous
@@ -654,6 +757,13 @@ export default function ConversationPage() {
   const sendMessage = async (event) => {
     event.preventDefault()
     const trimmedBody = body.trim()
+    if (editingMessageId) {
+      const message = messages.find((item) => item.id === editingMessageId)
+      if (!message || !trimmedBody) return
+      await updateMessageAction(message, 'edit', trimmedBody)
+      setBody('')
+      return
+    }
     const hasInlineMedia = !!selectedMedia
     if ((!trimmedBody && !mediaFile && !hasInlineMedia) || videoTooLarge || !otherUserId) return
 
@@ -788,7 +898,7 @@ export default function ConversationPage() {
     <main className="conversation-page usr-section-page flex w-full flex-col overflow-hidden text-slate-900" style={{ height: viewportHeight, minHeight: viewportHeight, maxHeight: viewportHeight }}>
       <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
         <header className="conversation-header relative flex flex-[0_0_auto] items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
-          <button type="button" onClick={() => { if (window.history.length > 1) router.back(); else router.push('/user/messaging') }} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
+          <button type="button" onClick={() => router.replace('/user/messaging')} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
           {otherUser && (
@@ -801,6 +911,7 @@ export default function ConversationPage() {
             </UserProfileLink>
           )}
           <div className="relative ml-auto shrink-0">
+            <button type="button" onClick={() => router.push(`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`)} aria-label="View pinned messages" title="Pinned messages" className="mr-1 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><Pin className="h-4 w-4" /></button>
             <button type="button" onClick={() => setConversationMenuOpen((open) => !open)} aria-label="Conversation actions" title="Conversation actions" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><MoreHorizontal className="h-5 w-5" /></button>
             {conversationMenuOpen && <div className="absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
               <button type="button" onClick={() => void updateConversation(conversationMuted ? 'unmute' : 'mute')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">{conversationMuted ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}{conversationMuted ? 'Unmute' : 'Mute'}</button>
@@ -809,19 +920,6 @@ export default function ConversationPage() {
             </div>}
           </div>
         </header>
-
-        {messageToDelete && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
-            <div role="alertdialog" aria-modal="true" aria-labelledby="delete-message-title" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
-              <h2 id="delete-message-title" className="text-base font-black text-slate-950">Delete this message?</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">This message will be removed.</p>
-              <div className="mt-5 flex justify-end gap-2">
-                <button type="button" onClick={() => setMessageToDelete(null)} className="rounded-full border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
-                <button type="button" onClick={deleteMessage} className="rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700">Delete</button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {videoTooLarge && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/35 p-4">
@@ -876,7 +974,7 @@ export default function ConversationPage() {
                     <div
                       ref={isActionOpen ? selectedMessageRef : null}
                       data-message-id={message.id}
-                      onContextMenu={(event) => { event.preventDefault(); setActionMessageId(message.id) }}
+                      onContextMenu={(event) => { event.preventDefault(); setActionMessageId(message.id); setShowMoreActions(false) }}
                       onPointerDown={(event) => handleMessagePointerDown(event, message.id)}
                       onPointerMove={handleMessagePointerMove}
                       onPointerUp={(event) => handleMessagePointerUp(event, message.id)}
@@ -885,14 +983,14 @@ export default function ConversationPage() {
                       className="message-wrapper relative max-w-[80%] transition-transform duration-150"
                     >
                       {swipeState.id === message.id && Math.abs(swipeState.offset) > 10 && <div className={`absolute inset-y-0 flex items-center text-[#147d75] ${swipeState.offset >= 0 ? '-left-9' : '-right-9'}`}><CornerUpLeft className="h-5 w-5" /></div>}
-                      <div className={`usr-message-bubble rounded-2xl px-3 py-2 text-sm leading-5 ${isOwnMessage ? 'usr-message-own bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'}`}>
+                      <div className={`usr-message-bubble rounded-2xl px-3 py-2 text-sm leading-5 transition-shadow ${isOwnMessage ? 'usr-message-own bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'} ${actionMessageId === message.id ? 'relative z-20 shadow-xl ring-2 ring-white/80' : ''}`}>
                         {message.reply_to_message_id && <button type="button" onClick={() => scrollToMessage(message.reply_to_message_id)} className={`mb-2 block w-full border-l-2 pl-2 text-left text-xs ${isOwnMessage ? 'border-white/60 text-white/80' : 'border-[#147d75] text-slate-500'}`}><span className="block font-bold">↪ {originalMessage ? (originalMessage.sender_id === currentUser?.id ? currentUser?.full_name : otherUser?.full_name) || 'Community member' : 'Original message was deleted'}</span><span className="block truncate">{getReplyPreview(originalMessage)}</span></button>}
                         {message.media_url && (message.message_type === 'video' || message.media_type === 'video' ? <video src={message.media_url} controls className="mb-2 max-h-72 max-w-full rounded-lg" /> : <img src={message.media_url} alt="Shared attachment" className="mb-2 max-h-72 max-w-full rounded-lg object-contain" />)}
                         {message.body && <p>{message.body}</p>}
-                        <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}{isOwnMessage && message.read_at ? ' · Seen' : ''}</time>
+                        <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}{message.metadata?.edited ? ' · Edited' : ''}{isOwnMessage && message.read_at ? ' · Seen' : ''}</time>
                       </div>
+                      {message.metadata?.pinned && <span className="absolute -top-2 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm" title="Pinned message">📌</span>}
                       {messageReactions[message.id]?.length ? <span key={messageReactions[message.id][0].reaction} className="usr-message-reaction absolute -bottom-3 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm">{messageReactions[message.id][0].reaction}</span> : null}
-                      {isActionOpen && <div onPointerDown={(event) => event.stopPropagation()} className={`message-action-menu absolute z-10 flex max-w-[calc(100vw-2rem)] flex-wrap items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-lg ${isOwnMessage ? 'right-0' : 'left-0'} -top-11`}><div className="flex items-center gap-0.5 border-r border-slate-200 pr-1">{['👍', '❤️', '😂', '😮', '😢', '😡'].map((reaction) => <button key={reaction} type="button" onClick={() => void reactToMessage(message, reaction)} className="flex h-7 w-7 items-center justify-center rounded-full text-base hover:bg-slate-100" aria-label={`React ${reaction}`}>{reaction}</button>)}</div><button type="button" onClick={() => selectReply(message)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"><CornerUpLeft className="h-3.5 w-3.5" /> Reply</button><button type="button" onClick={() => openForward(message)} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-100"><Forward className="h-3.5 w-3.5" /> Forward</button><button type="button" onClick={() => { setMessageToDelete(message); setActionMessageId(null) }} className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Delete</button></div>}
                     </div>
                     {isOwnMessage && <ProfileAvatar user={currentUser} size="h-8 w-8" />}
                   </div>
@@ -909,7 +1007,39 @@ export default function ConversationPage() {
                 </button>
               )}
             </div>
-            <div className="message-composer relative flex flex-[0_0_auto] w-full flex-col bg-white">
+            <div ref={composerRef} className="message-composer relative flex flex-[0_0_auto] w-full flex-col bg-white">
+              {actionMessageId ? (
+                <div className="border-t border-slate-200 bg-white p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] sm:p-4">
+                  <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
+                    {['❤️', '😂', '😮', '😢', '😡', '👍'].map((reaction) => <button key={reaction} type="button" onClick={() => void reactToMessage(messages.find((message) => message.id === actionMessageId), reaction)} className="flex h-9 w-9 items-center justify-center rounded-full text-lg transition hover:bg-slate-100" aria-label={`React ${reaction}`}>{reaction}</button>)}
+                  </div>
+                  {messageToDelete ? (
+                    <div className="mx-auto mt-3 flex max-w-3xl flex-wrap items-center gap-2 rounded-2xl bg-slate-50 p-2">
+                      <span className="mr-auto px-2 text-sm font-bold text-slate-700">Delete this message?</span>
+                      <button type="button" onClick={() => setMessageToDelete(null)} className="rounded-full border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">Cancel</button>
+                      <button type="button" onClick={() => void deleteMessage('you')} className="rounded-full border border-red-200 px-3 py-2 text-sm font-bold text-red-600">Delete for you</button>
+                      {messageToDelete.sender_id === currentUser?.id && <button type="button" onClick={() => void deleteMessage('all')} className="rounded-full bg-red-600 px-3 py-2 text-sm font-bold text-white">Delete for all</button>}
+                    </div>
+                  ) : (
+                    <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-2">
+                      <button type="button" onClick={() => selectReply(messages.find((message) => message.id === actionMessageId))} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><CornerUpLeft className="h-4 w-4" />Reply</button>
+                      <button type="button" onClick={() => openForward(messages.find((message) => message.id === actionMessageId))} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><Forward className="h-4 w-4" />Forward</button>
+                      <button type="button" onClick={() => setShowMoreActions((open) => !open)} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"><MoreHorizontal className="h-4 w-4" />More</button>
+                      <button type="button" onClick={() => setMessageToDelete(messages.find((message) => message.id === actionMessageId))} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" />Delete</button>
+                    </div>
+                  )}
+                  {false && showMoreActions && !messageToDelete && <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-2 border-t border-slate-100 pt-2">
+                    <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">📌 {messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</button>
+                    {(() => {
+                      const selectedMessage = messages.find((item) => item.id === actionMessageId)
+                      const canEdit = canEditMessage(selectedMessage)
+                      return canEdit ? <button type="button" onClick={() => beginEditMessage(selectedMessage)} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">✏️ Edit Message</button> : null
+                    })()}
+                    <button type="button" onClick={() => openForward(messages.find((message) => message.id === actionMessageId))} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">↗ Forward</button>
+                  </div>}
+                </div>
+              ) : (
+                <>
               {otherUserTyping && <p className="border-t border-slate-100 px-4 pt-2 text-left text-xs font-semibold text-slate-500">{otherUser?.full_name || 'Community member'} is typing...</p>}
               {replyTo && <div className="flex items-start gap-3 border-t border-slate-200 bg-slate-50 px-3 py-2.5 sm:px-4"><CornerUpLeft className="mt-0.5 h-4 w-4 shrink-0 text-[#147d75]" /><div className="min-w-0 flex-1"><p className="text-xs font-bold text-slate-700">Replying to {replyTo.sender_id === currentUser?.id ? currentUser?.full_name || 'You' : otherUser?.full_name || 'Community member'}</p><p className="truncate text-xs text-slate-500">{getReplyPreview(replyTo)}</p></div><button type="button" onClick={() => setReplyTo(null)} aria-label="Cancel reply" title="Cancel reply" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"><X className="h-4 w-4" /></button></div>}
               {selectedMedia && <div className="shrink-0 border-t border-slate-200 px-3 pt-3 sm:px-4"><div className="relative w-fit max-w-full rounded-lg bg-slate-100 p-2"><img src={selectedMedia.url} alt={selectedMedia.type === 'sticker' ? 'Sticker preview' : selectedMedia.type === 'gif' ? 'GIF preview' : 'Attachment preview'} className="max-h-32 max-w-full rounded object-contain" /><button type="button" onClick={() => setSelectedMedia(null)} aria-label="Remove selected media" className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-600 text-white"><X className="h-3.5 w-3.5" /></button></div></div>}
@@ -928,7 +1058,7 @@ export default function ConversationPage() {
                   <textarea value={body} onChange={handleBodyChange} placeholder="Write a message..." rows={1} className="message-input h-12 w-full resize-none border border-slate-200 bg-slate-50 px-3 py-2.5 pr-11 text-sm outline-none focus:border-[#147d75]" />
                   <button type="button" onClick={() => setPickerOpen((open) => !open)} aria-label="Open emoji picker" title="Emoji picker" className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200"><Smile className="h-4 w-4" /></button>
                 </div>
-                <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !mediaFile && !selectedMedia)} className="send-button inline-flex h-12 shrink-0 items-center justify-center gap-2 bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{sending ? 'Sending' : 'Send'}</button>
+                <button type="submit" disabled={sending || videoTooLarge || (!body.trim() && !editingMessageId && !mediaFile && !selectedMedia)} className="send-button inline-flex h-12 shrink-0 items-center justify-center gap-2 bg-[#147d75] px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"><Send className="h-4 w-4" />{editingMessageId ? 'Save' : sending ? 'Sending' : 'Send'}</button>
               </form>
               {pickerOpen && <div ref={pickerRef} className="absolute bottom-[calc(100%+1rem)] left-0 right-0 z-30 mx-2 flex max-h-[min(24rem,65dvh)] flex-col overflow-hidden border border-slate-200 bg-white shadow-xl sm:left-auto sm:w-[min(26rem,calc(100%-1rem))]">
                 {pickerCategory === 'GIFs' ? (
@@ -953,7 +1083,28 @@ export default function ConversationPage() {
                   </>
                 )}
               </div>}
+                </>
+              )}
             </div>
+            {showMoreActions && actionMessageId && !messageToDelete && (
+              <div className="fixed inset-0 z-70 flex items-center justify-center bg-slate-950/35 p-4" role="presentation">
+                <div ref={moreActionsRef} role="dialog" aria-modal="true" aria-labelledby="more-message-actions-title" className="w-full max-w-sm rounded-2xl border border-slate-700 bg-[#111827] p-4 text-white shadow-2xl">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 id="more-message-actions-title" className="text-base font-extrabold">More actions</h2>
+                    <button type="button" onClick={() => setShowMoreActions(false)} aria-label="Close more actions" className="rounded-full px-2 py-1 text-xl leading-none text-slate-400 hover:bg-slate-800 hover:text-white">&times;</button>
+                  </div>
+                  <div className="grid gap-2">
+                    <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800">📌 <span>{messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</span></button>
+                    {(() => {
+                      const selectedMessage = messages.find((item) => item.id === actionMessageId)
+                      const canEdit = canEditMessage(selectedMessage)
+                      return canEdit ? <button type="button" onClick={() => beginEditMessage(selectedMessage)} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800">✏️ <span>Edit Message</span></button> : null
+                    })()}
+                    <button type="button" onClick={() => openForward(messages.find((item) => item.id === actionMessageId))} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800">↗ <span>Forward</span></button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
