@@ -27,13 +27,13 @@ export async function GET(request, { params }) {
 
   const { data: pins, error: pinsError } = await adminSupabase
     .from('pinned_messages')
-    .select('id, message_id, pinned_by, pinned_at')
+    .select('id, message_id, pinned_by, actor_user_id, pinned_at')
     .eq('conversation_id', context.conversationId)
     .order('pinned_at', { ascending: false })
   if (pinsError) return NextResponse.json({ success: false, message: pinsError.message }, { status: 500 })
 
   const messageIds = (pins || []).map((pin) => pin.message_id)
-  if (!messageIds.length) return NextResponse.json({ success: true, pinned_messages: [] })
+  if (!messageIds.length) return NextResponse.json({ success: true, current_user_id: context.userId, pinned_messages: [] })
 
   const { data: messages, error: messagesError } = await adminSupabase
     .from('direct_messages')
@@ -41,17 +41,19 @@ export async function GET(request, { params }) {
     .in('id', messageIds)
   if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
 
-  const userIds = [...new Set((messages || []).flatMap((message) => [message.sender_id, message.recipient_id]))]
+  const userIds = [...new Set((messages || []).flatMap((message) => [message.sender_id, message.recipient_id]).concat((pins || []).map((pin) => pin.actor_user_id || pin.pinned_by)))]
   const { data: users } = await adminSupabase.from('info_users').select('id, full_name, profile_image_url').in('id', userIds)
   const usersById = new Map((users || []).map((user) => [user.id, user]))
   const messagesById = new Map((messages || []).map((message) => [message.id, message]))
 
   return NextResponse.json({
     success: true,
+    current_user_id: context.userId,
     pinned_messages: (pins || []).map((pin) => ({
       ...pin,
       message: messagesById.get(pin.message_id) || null,
       sender: usersById.get(messagesById.get(pin.message_id)?.sender_id) || null,
+      actor: usersById.get(pin.actor_user_id || pin.pinned_by) || null,
       unavailable: !messagesById.has(pin.message_id) || messagesById.get(pin.message_id)?.deleted_for?.includes(context.userId),
     })),
   })
@@ -74,10 +76,17 @@ export async function POST(request, { params }) {
 
   const { data, error } = await adminSupabase
     .from('pinned_messages')
-    .upsert({ conversation_id: context.conversationId, message_id: message.id, pinned_by: context.userId }, { onConflict: 'conversation_id,message_id' })
-    .select('id, message_id, pinned_by, pinned_at')
+    .upsert({ conversation_id: context.conversationId, message_id: message.id, pinned_by: context.userId, actor_user_id: context.userId }, { onConflict: 'conversation_id,message_id' })
+    .select('id, message_id, pinned_by, actor_user_id, pinned_at')
     .single()
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  const { error: activityError } = await adminSupabase.from('pinned_message_activity').insert({
+    conversation_id: context.conversationId,
+    message_id: message.id,
+    actor_user_id: context.userId,
+    action_type: 'pinned',
+  })
+  if (activityError) return NextResponse.json({ success: false, message: activityError.message }, { status: 500 })
   return NextResponse.json({ success: true, pinned_message: data })
 }
 
@@ -93,5 +102,12 @@ export async function DELETE(request, { params }) {
     .eq('conversation_id', context.conversationId)
     .eq('message_id', messageId)
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  const { error: activityError } = await adminSupabase.from('pinned_message_activity').insert({
+    conversation_id: context.conversationId,
+    message_id: messageId,
+    actor_user_id: context.userId,
+    action_type: 'unpinned',
+  })
+  if (activityError) return NextResponse.json({ success: false, message: activityError.message }, { status: 500 })
   return NextResponse.json({ success: true, message_id: messageId })
 }

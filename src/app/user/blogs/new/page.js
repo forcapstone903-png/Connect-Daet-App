@@ -258,7 +258,7 @@ export default function CreateBlogPage() {
 
         <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
           <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">New article</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">New post</p>
             <h1 className="mt-2 text-3xl font-bold text-slate-900">Share something with the community</h1>
           </div>
 

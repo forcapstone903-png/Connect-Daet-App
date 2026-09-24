@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Archive, ArrowLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Pin, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
@@ -71,6 +71,7 @@ export default function ConversationPage() {
   const [currentUser, setCurrentUser] = useState(null)
   const [otherUser, setOtherUser] = useState(null)
   const [messages, setMessages] = useState([])
+  const [pinActivities, setPinActivities] = useState([])
   const [body, setBody] = useState('')
   const [otherUserTyping, setOtherUserTyping] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -114,6 +115,8 @@ export default function ConversationPage() {
   const selectedMessageRef = useRef(null)
   const composerRef = useRef(null)
   const moreActionsRef = useRef(null)
+  const highlightStartTimerRef = useRef(null)
+  const highlightTimerRef = useRef(null)
   const isNearBottomRef = useRef(true)
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null, direction: null, pointerId: null })
   const realtimeChannelRef = useRef(null)
@@ -298,6 +301,11 @@ export default function ConversationPage() {
       setMessages((previous) => previous.map((item) => item.id === message.id
         ? { ...item, ...(result.body !== undefined ? { body: result.body } : {}), metadata: result.metadata || item.metadata }
         : item))
+      if (result.pin_activity) {
+        setPinActivities((previous) => previous.some((activity) => activity.id === result.pin_activity.id)
+          ? previous
+          : [...previous, { ...result.pin_activity, actor: currentUserRef.current }])
+      }
       setActionMessageId(null)
       setShowMoreActions(false)
       setEditingMessageId(null)
@@ -457,9 +465,28 @@ export default function ConversationPage() {
   const scrollToMessage = (messageId) => {
     if (!messageId) return
     const target = document.getElementById(`message-${messageId}`)
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    setHighlightedMessageId(messageId)
-    window.setTimeout(() => setHighlightedMessageId((current) => current === messageId ? null : current), 1200)
+    const messagesScroller = messagesScrollRef.current
+    if (!target || !messagesScroller) return
+
+    if (highlightStartTimerRef.current) window.clearTimeout(highlightStartTimerRef.current)
+    if (highlightTimerRef.current) window.clearTimeout(highlightTimerRef.current)
+    setHighlightedMessageId(null)
+    target.classList.remove('usr-message-focus')
+    void target.offsetWidth
+    target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' })
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        highlightStartTimerRef.current = window.setTimeout(() => {
+          setHighlightedMessageId(messageId)
+          highlightTimerRef.current = window.setTimeout(() => {
+            setHighlightedMessageId((current) => current === messageId ? null : current)
+            highlightTimerRef.current = null
+          }, 1100)
+          highlightStartTimerRef.current = null
+        }, 300)
+      })
+    })
   }
 
   useEffect(() => {
@@ -468,7 +495,18 @@ export default function ConversationPage() {
     if (!hash.startsWith('#message-')) return
     const messageId = decodeURIComponent(hash.slice('#message-'.length))
     if (!messages.some((message) => message.id === messageId)) return
-    const frame = window.requestAnimationFrame(() => scrollToMessage(messageId))
+    let attempts = 0
+    let frame
+    const findAndScroll = () => {
+      const target = document.getElementById(`message-${messageId}`)
+      if (target || attempts >= 5) {
+        scrollToMessage(messageId)
+        return
+      }
+      attempts += 1
+      frame = window.requestAnimationFrame(findAndScroll)
+    }
+    frame = window.requestAnimationFrame(findAndScroll)
     return () => window.cancelAnimationFrame(frame)
   }, [loading, messages])
 
@@ -500,6 +538,7 @@ export default function ConversationPage() {
 
       setCurrentUser(result.current_user)
       setOtherUser(result.other_user)
+      setPinActivities(Array.isArray(result.pin_activities) ? result.pin_activities : [])
       currentUserRef.current = result.current_user
       otherUserRef.current = result.other_user
 
@@ -529,7 +568,7 @@ export default function ConversationPage() {
 
       if (!initialMessagesLoadedRef.current && incomingMessages.length > 0) {
         initialMessagesLoadedRef.current = true
-        scrollIntentRef.current = 'initial'
+        if (!window.location.hash.startsWith('#message-')) scrollIntentRef.current = 'initial'
       }
     } catch (loadError) {
       const errorMessage = loadError?.message === 'Failed to fetch'
@@ -651,6 +690,24 @@ export default function ConversationPage() {
           } else if (payload.eventType === 'DELETE') {
             setMessages((previous) => previous.filter((item) => item.id !== message.id))
           }
+        })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pinned_message_activity' }, (payload) => {
+          const activity = payload?.new
+          const conversationId = [currentUserId, otherUserId].sort().join(':')
+          if (!active || !activity || activity.conversation_id !== conversationId) return
+          const actor = activity.actor_user_id === currentUserId ? currentUserRef.current : otherUserRef.current
+          setPinActivities((previous) => previous.some((item) => item.id === activity.id)
+            ? previous
+            : [...previous, { ...activity, actor }].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)))
+        })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pinned_messages' }, (payload) => {
+          const pin = payload?.new || payload?.old
+          const conversationId = [currentUserId, otherUserId].sort().join(':')
+          if (!active || !pin || pin.conversation_id !== conversationId) return
+          const pinned = payload.eventType !== 'DELETE'
+          setMessages((previous) => previous.map((item) => item.id === pin.message_id
+            ? { ...item, metadata: { ...(item.metadata || {}), pinned } }
+            : item))
         })
         .on('presence', { event: 'sync' }, () => {
           const states = nextChannel.presenceState()
@@ -894,6 +951,15 @@ export default function ConversationPage() {
     return 'Original message was deleted'
   }
 
+  const pinnedActivityByMessageId = useMemo(() => {
+    const activities = new Map()
+    for (const activity of pinActivities) {
+      if (activity.action_type === 'pinned') activities.set(activity.message_id, activity)
+      if (activity.action_type === 'unpinned') activities.delete(activity.message_id)
+    }
+    return activities
+  }, [pinActivities])
+
   return (
     <main className="conversation-page usr-section-page flex w-full flex-col overflow-hidden text-slate-900" style={{ height: viewportHeight, minHeight: viewportHeight, maxHeight: viewportHeight }}>
       <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
@@ -911,9 +977,9 @@ export default function ConversationPage() {
             </UserProfileLink>
           )}
           <div className="relative ml-auto shrink-0">
-            <button type="button" onClick={() => router.push(`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`)} aria-label="View pinned messages" title="Pinned messages" className="mr-1 inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><Pin className="h-4 w-4" /></button>
             <button type="button" onClick={() => setConversationMenuOpen((open) => !open)} aria-label="Conversation actions" title="Conversation actions" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><MoreHorizontal className="h-5 w-5" /></button>
             {conversationMenuOpen && <div className="absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
+              <button type="button" onClick={() => router.push(`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Pin className="h-4 w-4" />Pinned messages</button>
               <button type="button" onClick={() => void updateConversation(conversationMuted ? 'unmute' : 'mute')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">{conversationMuted ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}{conversationMuted ? 'Unmute' : 'Mute'}</button>
               <button type="button" onClick={() => void updateConversation('archive')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Archive className="h-4 w-4" />Archive</button>
               <button type="button" onClick={() => void updateConversation('delete')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" />Delete</button>
@@ -968,6 +1034,10 @@ export default function ConversationPage() {
                 const originalMessage = messages.find((candidate) => candidate.id === message.reply_to_message_id)
                 const isActionOpen = actionMessageId === message.id
                 const isHighlighted = highlightedMessageId === message.id
+                const pinActivity = message.metadata?.pinned ? pinnedActivityByMessageId.get(message.id) : null
+                const pinActorName = pinActivity?.actor_user_id === currentUser?.id
+                  ? currentUser?.full_name || 'You'
+                  : pinActivity?.actor?.full_name || otherUser?.full_name || 'Community member'
                 return (
                   <div id={`message-${message.id}`} key={message.id} className={`flex items-end gap-2 px-4 transition-colors duration-500 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'bg-amber-50' : ''}`}>
                     {!isOwnMessage && <UserProfileLink user={sender} ariaLabel={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></UserProfileLink>}
@@ -980,7 +1050,7 @@ export default function ConversationPage() {
                       onPointerUp={(event) => handleMessagePointerUp(event, message.id)}
                       onPointerCancel={handleMessagePointerCancel}
                       style={{ touchAction: 'pan-y', transform: swipeState.id === message.id ? `translateX(${swipeState.offset}px)` : undefined }}
-                      className="message-wrapper relative max-w-[80%] transition-transform duration-150"
+                      className={`message-wrapper relative max-w-[80%] transition-transform duration-150 ${isHighlighted ? 'usr-message-focus' : ''}`}
                     >
                       {swipeState.id === message.id && Math.abs(swipeState.offset) > 10 && <div className={`absolute inset-y-0 flex items-center text-[#147d75] ${swipeState.offset >= 0 ? '-left-9' : '-right-9'}`}><CornerUpLeft className="h-5 w-5" /></div>}
                       <div className={`usr-message-bubble rounded-2xl px-3 py-2 text-sm leading-5 transition-shadow ${isOwnMessage ? 'usr-message-own bg-[#147d75] text-white' : 'bg-slate-100 text-slate-800'} ${actionMessageId === message.id ? 'relative z-20 shadow-xl ring-2 ring-white/80' : ''}`}>
@@ -989,6 +1059,7 @@ export default function ConversationPage() {
                         {message.body && <p>{message.body}</p>}
                         <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}{message.metadata?.edited ? ' · Edited' : ''}{isOwnMessage && message.read_at ? ' · Seen' : ''}</time>
                       </div>
+                      {pinActivity && <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-slate-500"><Pin className="h-3 w-3" />{pinActorName} pinned a message</p>}
                       {message.metadata?.pinned && <span className="absolute -top-2 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm" title="Pinned message">📌</span>}
                       {messageReactions[message.id]?.length ? <span key={messageReactions[message.id][0].reaction} className="usr-message-reaction absolute -bottom-3 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm">{messageReactions[message.id][0].reaction}</span> : null}
                     </div>
@@ -1007,6 +1078,14 @@ export default function ConversationPage() {
                 </button>
               )}
             </div>
+            {pinActivities.length > 0 && <div className="max-h-28 shrink-0 overflow-y-auto border-t border-slate-200 bg-white px-4 py-2">
+              <div className="space-y-1">
+                {pinActivities.map((activity) => {
+                  const actorName = activity.actor_user_id === currentUser?.id ? 'You' : activity.actor?.full_name || otherUser?.full_name || 'Community member'
+                  return <div key={activity.id} className="flex items-center justify-center gap-2 text-center text-xs text-slate-500"><span>{actorName} {activity.action_type === 'pinned' ? 'pinned' : 'unpinned'} a message.</span><Link href={`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`} className="shrink-0 font-bold text-[#147d75] hover:underline">View all</Link></div>
+                })}
+              </div>
+            </div>}
             <div ref={composerRef} className="message-composer relative flex flex-[0_0_auto] w-full flex-col bg-white">
               {actionMessageId ? (
                 <div className="border-t border-slate-200 bg-white p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] sm:p-4">
@@ -1028,7 +1107,7 @@ export default function ConversationPage() {
                       <button type="button" onClick={() => setMessageToDelete(messages.find((message) => message.id === actionMessageId))} className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" />Delete</button>
                     </div>
                   )}
-                  {false && showMoreActions && !messageToDelete && <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-2 border-t border-slate-100 pt-2">
+                  {showMoreActions && !messageToDelete && <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-2 border-t border-slate-100 pt-2">
                     <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">📌 {messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</button>
                     {(() => {
                       const selectedMessage = messages.find((item) => item.id === actionMessageId)

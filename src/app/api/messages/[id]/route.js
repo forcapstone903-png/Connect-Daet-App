@@ -19,7 +19,7 @@ export async function GET(request, { params }) {
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
   if (!otherUserId || otherUserId === currentUserId) return NextResponse.json({ success: false, message: 'A valid conversation participant is required.' }, { status: 400 })
 
-  const [{ data: messages, error: messagesError }, { data: users, error: usersError }] = await Promise.all([
+  const [{ data: messages, error: messagesError }, { data: users, error: usersError }, { data: pins, error: pinsError }, { data: pinActivities, error: pinActivitiesError }] = await Promise.all([
     adminSupabase
       .from('direct_messages')
       .select('id, sender_id, recipient_id, body, media_url, media_type, reply_to_message_id, created_at, read_at, deleted_for, metadata')
@@ -29,10 +29,22 @@ export async function GET(request, { params }) {
       .from('info_users')
       .select('id, full_name, profile_image_url, status')
       .in('id', [currentUserId, otherUserId]),
+    adminSupabase
+      .from('pinned_messages')
+      .select('message_id')
+      .eq('conversation_id', getConversationId(currentUserId, otherUserId)),
+    adminSupabase
+      .from('pinned_message_activity')
+      .select('id, message_id, actor_user_id, action_type, created_at')
+      .eq('conversation_id', getConversationId(currentUserId, otherUserId))
+      .order('created_at', { ascending: true }),
   ])
 
   if (usersError) return NextResponse.json({ success: false, message: usersError.message }, { status: 500 })
   const usersById = new Map((users || []).map((user) => [user.id, user]))
+  if (pinsError || pinActivitiesError) return NextResponse.json({ success: false, message: pinsError?.message || pinActivitiesError?.message }, { status: 500 })
+  const pinnedMessageIds = new Set((pins || []).map((pin) => pin.message_id))
+  const pinActivitiesWithActors = (pinActivities || []).map((activity) => ({ ...activity, actor: usersById.get(activity.actor_user_id) || null }))
   const otherUser = usersById.get(otherUserId)
   if (!otherUser || otherUser.status !== 'active') return NextResponse.json({ success: false, message: 'User not found.' }, { status: 404 })
 
@@ -48,8 +60,10 @@ export async function GET(request, { params }) {
       success: true,
       current_user: usersById.get(currentUserId) || { id: currentUserId, full_name: 'You', profile_image_url: null },
       other_user: otherUser,
+      pin_activities: pinActivitiesWithActors,
       messages: (messagesFallback || []).filter((message) => !message.deleted_for?.includes(currentUserId)).map((message) => ({
         ...message,
+        metadata: { ...(message.metadata || {}), pinned: pinnedMessageIds.has(message.id) },
         sender_user: usersById.get(message.sender_id) || null,
         recipient_user: usersById.get(message.recipient_id) || null,
       })),
@@ -62,8 +76,10 @@ export async function GET(request, { params }) {
     success: true,
     current_user: usersById.get(currentUserId) || { id: currentUserId, full_name: 'You', profile_image_url: null },
     other_user: otherUser,
+    pin_activities: pinActivitiesWithActors,
     messages: (messages || []).filter((message) => !message.deleted_for?.includes(currentUserId)).map((message) => ({
       ...message,
+      metadata: { ...(message.metadata || {}), pinned: pinnedMessageIds.has(message.id) },
       sender_user: usersById.get(message.sender_id) || null,
       recipient_user: usersById.get(message.recipient_id) || null,
     })),
@@ -115,7 +131,7 @@ export async function PATCH(request, { params }) {
       nextMetadata.pinned = true
       const pinResult = await adminSupabase
         .from('pinned_messages')
-        .upsert({ conversation_id: conversationId, message_id: message.id, pinned_by: userId }, { onConflict: 'conversation_id,message_id' })
+        .upsert({ conversation_id: conversationId, message_id: message.id, pinned_by: userId, actor_user_id: userId }, { onConflict: 'conversation_id,message_id' })
       if (pinResult.error) return NextResponse.json({ success: false, message: pinResult.error.message }, { status: 500 })
     } else {
       delete nextMetadata.pinned
@@ -126,9 +142,16 @@ export async function PATCH(request, { params }) {
         .eq('message_id', message.id)
       if (unpinResult.error) return NextResponse.json({ success: false, message: unpinResult.error.message }, { status: 500 })
     }
+    const activityResult = await adminSupabase.from('pinned_message_activity').insert({
+      conversation_id: conversationId,
+      message_id: message.id,
+      actor_user_id: userId,
+      action_type: body.action === 'pin' ? 'pinned' : 'unpinned',
+    }).select('id, message_id, actor_user_id, action_type, created_at').single()
+    if (activityResult.error) return NextResponse.json({ success: false, message: activityResult.error.message }, { status: 500 })
     const result = await adminSupabase.from('direct_messages').update({ metadata: nextMetadata }).eq('id', message.id)
     if (result.error) return NextResponse.json({ success: false, message: result.error.message }, { status: 500 })
-    return NextResponse.json({ success: true, message_id: message.id, metadata: nextMetadata })
+    return NextResponse.json({ success: true, message_id: message.id, metadata: nextMetadata, pin_activity: activityResult.data })
   }
 
   if (body.markRead === true) {

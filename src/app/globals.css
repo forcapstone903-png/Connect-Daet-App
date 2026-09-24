@@ -208,6 +208,35 @@ img {
   touch-action: pan-y;
 }
 
+@keyframes usr-message-focus {
+  0% {
+    transform: scale(1);
+    background-color: transparent;
+    box-shadow: 0 0 0 0 rgba(20, 125, 117, 0);
+  }
+  28% {
+    transform: scale(1.06);
+    background-color: rgba(20, 125, 117, 0.1);
+    box-shadow: 0 0 0 8px rgba(20, 125, 117, 0.12);
+  }
+  56% {
+    transform: scale(0.98);
+    background-color: rgba(20, 125, 117, 0.07);
+    box-shadow: 0 0 0 5px rgba(20, 125, 117, 0.08);
+  }
+  100% {
+    transform: scale(1);
+    background-color: transparent;
+    box-shadow: 0 0 0 0 rgba(20, 125, 117, 0);
+  }
+}
+
+.message-wrapper.usr-message-focus {
+  z-index: 20;
+  border-radius: 1.25rem;
+  animation: usr-message-focus 950ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 * {
   box-sizing: border-box;
 }
