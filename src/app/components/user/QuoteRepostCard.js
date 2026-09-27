@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { Play } from 'lucide-react'
 import SocialActionBar from '@/app/components/user/SocialActionBar'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
 import PostActionMenu from '@/app/components/user/PostActionMenu'
@@ -22,7 +23,7 @@ function formatRelativeTime(value) {
   return `${Math.floor(seconds / 86400)}d`
 }
 
-export default function QuoteRepostCard({ item, reposter, reposterName, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore }) {
+export default function QuoteRepostCard({ item, reposter, reposterName, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink }) {
   const original = item.original_post || {}
   const originalAuthor = original.author || item.original_author || {}
   const originalAuthorName = originalAuthor.full_name || 'Community member'
@@ -39,7 +40,25 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
   const images = Array.isArray(original.images) ? original.images : []
   const videos = Array.isArray(original.videos) ? original.videos : []
   const imageItems = images.length ? images : (original.featured_image ? [original.featured_image] : [])
+  const mediaItems = [
+    ...imageItems.map((url) => ({ type: 'image', url, label: `${original.title || 'Original post'} image` })),
+    ...((videos.length ? videos : (original.video_url ? [original.video_url] : [])).map((url) => ({ type: 'video', url, label: `${original.title || 'Original post'} video` }))),
+  ]
+  const previewMedia = mediaItems.slice(0, 4)
+  const hiddenMediaCount = Math.max(0, mediaItems.length - previewMedia.length)
+  const previewGrid = previewMedia.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
+  const previewTileAspect = previewMedia.length === 1 ? 'aspect-[16/10]' : previewMedia.length === 2 ? 'aspect-[4/3]' : previewMedia.length === 3 ? 'aspect-[16/9]' : 'aspect-square'
   const originalText = String(original.excerpt || original.description || original.content || '').trim()
+  const isOwnRepost = reposterId === userId
+  const defaultCopyLink = () => {
+    if (typeof window !== 'undefined' && originalHref && originalHref !== '#') {
+      void navigator.clipboard?.writeText(`${window.location.origin}${originalHref}`)
+    }
+  }
+  const safeOnCopyLink = onCopyLink || defaultCopyLink
+  const safeOnHide = onHide || (() => {})
+  const safeOnNotInterested = onNotInterested || (() => {})
+  const canShowMenu = Boolean(isOwnRepost || onHide || onNotInterested || onCopyLink || onEdit || onPrivacyChange || onDelete || onArchive || onRestore)
   const [confirmAction, setConfirmAction] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
   const [editText, setEditText] = useState(item.repost_quote || '')
@@ -68,16 +87,18 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
         <span>reposted</span>
         <span className="text-slate-400">·</span>
         <time dateTime={item.reposted_at || item.created_at || undefined}>{formatRelativeTime(item.reposted_at || item.created_at)}</time>
-        {reposterId === userId && (onEdit || onPrivacyChange || onDelete || onArchive || onRestore) && <div className="relative z-30 ml-auto">
+        {canShowMenu && <div className="relative z-30 ml-auto">
           <PostActionMenu
             isRepost
             visibility={item.visibility}
-            onEdit={onEdit ? () => { setEditText(item.repost_quote || ''); setEditOpen(true) } : undefined}
-            onPrivacyChange={onPrivacyChange}
-            onRestore={onRestore}
-            onArchive={onArchive ? () => setConfirmAction('archive') : undefined}
-            onDelete={onDelete ? () => setConfirmAction('delete') : undefined}
-            onCopyLink={() => { void navigator.clipboard?.writeText(`${window.location.origin}${originalHref}`) }}
+            onEdit={isOwnRepost && onEdit ? () => { setEditText(item.repost_quote || ''); setEditOpen(true) } : undefined}
+            onPrivacyChange={isOwnRepost ? onPrivacyChange : undefined}
+            onRestore={isOwnRepost ? onRestore : undefined}
+            onArchive={isOwnRepost && onArchive ? () => setConfirmAction('archive') : undefined}
+            onDelete={isOwnRepost && onDelete ? () => setConfirmAction('delete') : undefined}
+            onHide={isOwnRepost ? undefined : safeOnHide}
+            onNotInterested={isOwnRepost ? undefined : safeOnNotInterested}
+            onCopyLink={safeOnCopyLink}
           />
         </div>}
       </div>
@@ -140,11 +161,43 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
             </div>
           )}
 
-          {(imageItems.length > 0 || videos.length > 0 || original.video_url) && (
+          {(mediaItems.length > 0) && (
             <div className="mt-4 w-full overflow-hidden border-t border-slate-200 bg-slate-100">
-              <div className="grid gap-1 sm:grid-cols-2">
-                {imageItems.map((url, index) => <Link key={`${url}-${index}`} href={originalHref} className="block w-full"><img src={url} alt={`${original.title || 'Original post'} ${index + 1}`} className="aspect-[16/9] w-full object-cover" /></Link>)}
-                {(videos.length ? videos : (original.video_url ? [original.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />)}
+              <div className={`grid gap-1 ${previewGrid}`}>
+                {previewMedia.map((media, index) => {
+                  const isWideCover = previewMedia.length === 3 && index === 0
+                  const showMoreOverlay = hiddenMediaCount > 0 && index === previewMedia.length - 1
+                  return (
+                    <Link
+                      key={`${media.type}-${media.url}-${index}`}
+                      href={originalHref}
+                      aria-label={showMoreOverlay ? `See all ${mediaItems.length} media items in the original post` : `Open original post media ${index + 1}`}
+                      className={`group relative block w-full overflow-hidden bg-slate-200 ${isWideCover ? 'col-span-2' : ''} ${previewTileAspect}`}
+                    >
+                      {media.type === 'video' ? (
+                        <>
+                          <video src={media.url} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+                          <span className="absolute inset-0 bg-black/10" />
+                          <span className="absolute inset-x-0 bottom-2 flex items-center justify-between px-2">
+                            <span className="rounded-full bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-white">Video</span>
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-sky-700 shadow-sm">
+                              <Play className="ml-0.5 h-3.5 w-3.5 fill-current" aria-hidden="true" />
+                            </span>
+                          </span>
+                        </>
+                      ) : (
+                        <img src={media.url} alt={media.label} className="h-full w-full object-cover transition duration-300 group-hover:brightness-90" loading="lazy" draggable={false} />
+                      )}
+
+                      {showMoreOverlay && (
+                        <span className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/55 text-white transition group-hover:bg-black/70">
+                          <span className="text-2xl font-extrabold leading-none tabular-nums">+{hiddenMediaCount}</span>
+                          <span className="text-[11px] font-semibold uppercase tracking-wide opacity-90">See more</span>
+                        </span>
+                      )}
+                    </Link>
+                  )
+                })}
               </div>
             </div>
           )}

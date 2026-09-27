@@ -25,6 +25,7 @@ import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import { filterValidUuidValues } from '@/lib/uuid'
 import PostMediaGallery from '@/app/components/user/PostMediaGallery'
+import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
 import { getPostImages } from '@/lib/postMedia'
 
 const STORAGE_KEYS = {
@@ -517,6 +518,27 @@ export default function UserProfilePage() {
     invalidateCachePrefix(`profile:user:${userId}`)
   }
 
+  const updateProfilePostPrivacy = async (post, visibility) => {
+    if (!post || post.isRepost || post.type !== 'Post' || post.user_id !== userId) return
+
+    const response = await fetch(`/api/posts/${post.id}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    })
+
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) {
+      setSaveNotice(result.message || 'Unable to update post privacy.')
+      return
+    }
+
+    setUserPosts((previous) => previous.map((item) => item.id === post.id ? { ...item, visibility } : item))
+    setOpenPostMenu(null)
+    invalidateCachePrefix(`profile:user:${userId}`)
+  }
+
   const editProfilePost = async (post) => {
     if (post?.type !== 'Post' || post?.isRepost || post.user_id !== userId) return
     const title = window.prompt('Edit post title:', post.title || '')
@@ -697,22 +719,35 @@ export default function UserProfilePage() {
                 </div>
 
                 <div className="space-y-1.5">
-                    {visiblePosts.length ? visiblePosts.map((post) => (
+                    {visiblePosts.length ? visiblePosts.map((post) => post.isRepost ? (
+                      <div key={`${post.type}-${post.id}`} className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:p-4">
+                        <QuoteRepostCard
+                          item={post}
+                          reposter={{
+                            id: userId || post.reposted_by,
+                            full_name: profile.full_name,
+                            profile_image_url: profile.avatar_url,
+                          }}
+                          reposterName={profile.full_name}
+                          userId={userId}
+                          onArchive={() => void updateProfilePost(post, 'archive')}
+                          onDelete={() => void updateProfilePost(post, 'delete')}
+                        />
+                      </div>
+                    ) : (
                       <article key={`${post.type}-${post.id}`} className={`usr-card usr-content-card feed-card overflow-hidden ${post.type === 'Blog' ? 'border-l-4 border-l-violet-300 bg-violet-50/30' : post.type === 'Forum' ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40' : post.type === 'Event' ? 'border-l-4 border-l-amber-200 bg-amber-50/30' : 'border-l-4 border-l-slate-200'}`}>
                         <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
                           <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black uppercase text-teal-700 lg:h-12 lg:w-12">
                             {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                           </span>
-                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{post.isRepost ? `${profile.full_name} 🔄 reposted` : profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-teal-700"><span>{post.isRepost ? 'Repost' : post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
+                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-teal-700"><span>{post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
                           <div className="relative shrink-0">
                             <button type="button" aria-label="Post options" aria-expanded={openPostMenu === `${post.type}-${post.id}`} onClick={() => setOpenPostMenu(openPostMenu === `${post.type}-${post.id}` ? null : `${post.type}-${post.id}`)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
                             {openPostMenu === `${post.type}-${post.id}` && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              {post.isRepost ? <>
-                                <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive repost</button>
-                                <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete repost</button>
-                              </> : isOwnOriginalPost(post, userId) && post.type === 'Post' ? <>
+                              {isOwnOriginalPost(post, userId) && post.type === 'Post' ? <>
                                 <button type="button" onClick={() => void editProfilePost(post)} className="block w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-teal-700 hover:bg-sky-50">Edit post</button>
+                                <button type="button" onClick={() => void updateProfilePostPrivacy(post, 'public')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">Edit Privacy</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
                                 <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
                               </> : null}
@@ -721,8 +756,6 @@ export default function UserProfilePage() {
                           </div>
                         </div>
 
-                        {post.isRepost && post.repostQuote && <p className="mb-3 text-[13px] leading-6 text-slate-700">{post.repostQuote}</p>}
-                        {post.isRepost && <div className="mb-3 flex items-center gap-2 text-xs text-slate-500"><span className="font-semibold text-slate-700">Originally shared by</span><span>{post.originalAuthor?.full_name || 'Community member'}</span></div>}
                         <Link href={post.href} className="mt-2 block w-full pl-0 text-left"><h3 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-teal-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
                         <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
                         {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 lg:mt-5">

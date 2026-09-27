@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation'
 import UserProfileLink from '@/app/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
+import { getPinActivityText } from '@/lib/messagePinActivity'
 
 const TYPING_START_DELAY_MS = 180
 const TYPING_STOP_DELAY_MS = 1800
@@ -951,14 +952,16 @@ export default function ConversationPage() {
     return 'Original message was deleted'
   }
 
-  const pinnedActivityByMessageId = useMemo(() => {
-    const activities = new Map()
-    for (const activity of pinActivities) {
-      if (activity.action_type === 'pinned') activities.set(activity.message_id, activity)
-      if (activity.action_type === 'unpinned') activities.delete(activity.message_id)
+  const timelineEntries = useMemo(() => {
+    const entries = []
+    for (const message of messages) {
+      entries.push({ ...message, __type: 'message' })
     }
-    return activities
-  }, [pinActivities])
+    for (const activity of pinActivities) {
+      entries.push({ ...activity, __type: 'pin_activity' })
+    }
+    return entries.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+  }, [messages, pinActivities])
 
   return (
     <main className="conversation-page usr-section-page flex w-full flex-col overflow-hidden text-slate-900" style={{ height: viewportHeight, minHeight: viewportHeight, maxHeight: viewportHeight }}>
@@ -1028,16 +1031,29 @@ export default function ConversationPage() {
           <>
             <div className="messages-container relative min-h-0 flex-1 w-full overflow-hidden bg-white">
               <div ref={messagesScrollRef} onScroll={handleMessagesScroll} className="messages-scroll h-full min-h-0 w-full space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain">
-              {messages.length ? messages.map((message) => {
+              {timelineEntries.length ? timelineEntries.map((entry) => {
+                if (entry.__type === 'pin_activity') {
+                  const activityText = getPinActivityText(entry, currentUser?.id, currentUser, otherUser)
+                  return (
+                    <div key={entry.id} className="flex justify-center px-4 sm:px-6">
+                      <div className="max-w-[80%] text-center text-xs font-medium text-slate-600">
+                        <span>{activityText}</span>
+                        <span className="mx-1 text-slate-400">·</span>
+                        <Link href={`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`} className="font-semibold text-[#147d75] underline-offset-2 hover:underline">
+                          View all
+                        </Link>
+                      </div>
+                    </div>
+                  )
+                }
+
+                const message = entry
                 const isOwnMessage = message.sender_id === currentUser?.id
                 const sender = isOwnMessage ? currentUser : otherUser
                 const originalMessage = messages.find((candidate) => candidate.id === message.reply_to_message_id)
                 const isActionOpen = actionMessageId === message.id
                 const isHighlighted = highlightedMessageId === message.id
-                const pinActivity = message.metadata?.pinned ? pinnedActivityByMessageId.get(message.id) : null
-                const pinActorName = pinActivity?.actor_user_id === currentUser?.id
-                  ? currentUser?.full_name || 'You'
-                  : pinActivity?.actor?.full_name || otherUser?.full_name || 'Community member'
+
                 return (
                   <div id={`message-${message.id}`} key={message.id} className={`flex items-end gap-2 px-4 transition-colors duration-500 sm:px-6 ${isOwnMessage ? 'justify-end' : 'justify-start'} ${isHighlighted ? 'bg-amber-50' : ''}`}>
                     {!isOwnMessage && <UserProfileLink user={sender} ariaLabel={`Open ${sender?.full_name || 'user'} profile`}><ProfileAvatar user={sender} size="h-8 w-8" /></UserProfileLink>}
@@ -1059,7 +1075,6 @@ export default function ConversationPage() {
                         {message.body && <p>{message.body}</p>}
                         <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}{message.metadata?.edited ? ' · Edited' : ''}{isOwnMessage && message.read_at ? ' · Seen' : ''}</time>
                       </div>
-                      {pinActivity && <p className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-slate-500"><Pin className="h-3 w-3" />{pinActorName} pinned a message</p>}
                       {message.metadata?.pinned && <span className="absolute -top-2 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm" title="Pinned message">📌</span>}
                       {messageReactions[message.id]?.length ? <span key={messageReactions[message.id][0].reaction} className="usr-message-reaction absolute -bottom-3 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm">{messageReactions[message.id][0].reaction}</span> : null}
                     </div>
@@ -1078,14 +1093,6 @@ export default function ConversationPage() {
                 </button>
               )}
             </div>
-            {pinActivities.length > 0 && <div className="max-h-28 shrink-0 overflow-y-auto border-t border-slate-200 bg-white px-4 py-2">
-              <div className="space-y-1">
-                {pinActivities.map((activity) => {
-                  const actorName = activity.actor_user_id === currentUser?.id ? 'You' : activity.actor?.full_name || otherUser?.full_name || 'Community member'
-                  return <div key={activity.id} className="flex items-center justify-center gap-2 text-center text-xs text-slate-500"><span>{actorName} {activity.action_type === 'pinned' ? 'pinned' : 'unpinned'} a message.</span><Link href={`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`} className="shrink-0 font-bold text-[#147d75] hover:underline">View all</Link></div>
-                })}
-              </div>
-            </div>}
             <div ref={composerRef} className="message-composer relative flex flex-[0_0_auto] w-full flex-col bg-white">
               {actionMessageId ? (
                 <div className="border-t border-slate-200 bg-white p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.12)] sm:p-4">

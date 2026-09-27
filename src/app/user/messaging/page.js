@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, Mail, MoreHorizontal, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { Archive, Mail, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
@@ -236,7 +236,6 @@ export default function UserMessagingPage() {
       <div className="usr-section-container mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
         <UserSectionHeader eyebrow="Your community, closer" title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
           <Link href="/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
-          <button type="button" onClick={openCompose} className="usr-section-primary"><Plus className="h-4 w-4" />New message</button>
         </UserSectionHeader>
 
         {composeOpen && (
@@ -339,14 +338,8 @@ export default function UserMessagingPage() {
                           </div>
                           <p className={`mt-1 line-clamp-2 text-sm leading-6 ${hasUnread ? 'font-extrabold text-slate-900' : 'text-slate-600'}`}>{previewText}</p>
                         </div>
-                        <button type="button" onClick={(event) => { event.preventDefault(); event.stopPropagation(); setConversationMenu(actionMenuOpen ? null : conversationId); setRevealedConversation(null); setRevealedAction(null) }} aria-label="Conversation actions" title="Conversation actions" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"><MoreHorizontal className="h-4 w-4" /></button>
                       </UserProfileLink>
                       </div>
-                      {actionMenuOpen && <div className="absolute right-3 top-14 z-20 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                        <button type="button" onClick={() => void updateConversation(conversationId, conversation.is_muted ? 'unmute' : 'mute')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">{conversation.is_muted ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}{conversation.is_muted ? 'Unmute' : 'Mute'}</button>
-                        <button type="button" onClick={() => void updateConversation(conversationId, 'archive')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Archive className="h-4 w-4" />Archive</button>
-                        <button type="button" onClick={() => void updateConversation(conversationId, 'delete')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" />Delete</button>
-                      </div>}
                     </div>
                   )
                 })}

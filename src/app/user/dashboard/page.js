@@ -54,6 +54,7 @@ import UserProfileLink from '@/app/components/user/UserProfileLink'
 import UserTopHeader from '@/app/components/user/UserTopHeader'
 import ConfirmationModal from '@/app/components/ConfirmationModal'
 import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
+import { prioritizePinnedFeedItems } from '@/lib/feedOrdering'
 import { trackUserActivity } from '@/lib/trackActivity'
 import PostMediaGallery from '@/app/components/user/PostMediaGallery'
 import { getPostImages } from '@/lib/postMedia'
@@ -830,6 +831,22 @@ export default function UserDashboardPage() {
     setTimeout(() => setToastMessage(''), 2500)
   }
 
+  const updateOwnBlogPrivacy = async (item, visibility) => {
+    if (item?.type !== 'blog' || item?.is_repost || item.created_by !== userId) return
+    const response = await fetch(`/api/blogs/${item.id}`, {
+      method: 'PATCH',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ visibility }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update blog privacy.')
+    setFeed((previous) => previous.map((feedItem) => feedItem.id === item.id ? { ...feedItem, visibility } : feedItem))
+    invalidateCache(getDashboardCacheKey(userId))
+    setToastMessage('Blog privacy updated.')
+    setTimeout(() => setToastMessage(''), 2500)
+  }
+
   const copyPostLink = async (item) => {
     const url = `${window.location.origin}${item.href}`
     try {
@@ -1404,9 +1421,11 @@ export default function UserDashboardPage() {
       return true
     })
 
+    result = prioritizePinnedFeedItems(result, savedItems, newRepostIds)
+
     if (feedScope === 'latest') {
-      result = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
-      return result
+      const latestResult = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
+      return prioritizePinnedFeedItems(latestResult, savedItems, newRepostIds)
     }
 
     const categoryWeights = new Map()
@@ -1480,7 +1499,7 @@ export default function UserDashboardPage() {
 
     const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
     return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-  }, [feed, feedScope, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds])
+  }, [feed, feedScope, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds, savedItems])
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -1928,7 +1947,9 @@ export default function UserDashboardPage() {
                               />
                             ) : canManageOwnBlog ? (
                               <PostActionMenu
+                                visibility={item.visibility}
                                 onEdit={() => editOwnBlog(item)}
+                                onPrivacyChange={(visibility) => updateOwnBlogPrivacy(item, visibility)}
                                 onArchive={() => requestBlogAction(item, 'archive')}
                                 onDelete={() => requestBlogAction(item, 'delete')}
                                 onCopyLink={() => void copyPostLink(item)}
