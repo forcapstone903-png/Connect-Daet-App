@@ -85,7 +85,7 @@ test('repost feed item carries the repost identity used by actions', () => {
   assert.equal(item.original_post_id, 'post-456')
   assert.equal(item.original_author_id, ORIGINAL_AUTHOR.id)
   assert.equal(item.is_repost, true)
-  assert.equal(item.href, '/user/posts/post-456')
+  assert.equal(item.href, '/info/user/posts/post-456')
 })
 
 test('a new repost keeps its own timestamp instead of the original post date', () => {
@@ -102,7 +102,7 @@ test('blog reposts link to the blog route', () => {
   const item = buildRepostItem({}, { original_content_type: 'blog' })
 
   assert.equal(item.type, 'blog')
-  assert.equal(item.href, '/user/blogs/post-456')
+  assert.equal(item.href, '/info/user/blogs/post-456')
 })
 
 test('reposter falls back to the acting user when the API omits their profile', () => {

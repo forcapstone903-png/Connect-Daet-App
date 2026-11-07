@@ -28,15 +28,15 @@ function routeForEntity(entityType, entityId) {
   if (!entityType || !entityId) return null
   const normalized = String(entityType).toLowerCase()
   const map = {
-    blog: `/user/blogs/${entityId}`,
-    article: `/user/blogs/${entityId}`,
-    event: `/user/events/${entityId}`,
-    forum: `/user/forums/${entityId}`,
-    forum_thread: `/user/forums/${entityId}`,
-    post: `/user/posts/${entityId}`,
-    user_post: `/user/posts/${entityId}`,
-    announcement: `/user/announcements/${entityId}`,
-    comment: `/user/comments/${entityId}`,
+    blog: `/info/user/blogs/${entityId}`,
+    article: `/info/user/blogs/${entityId}`,
+    event: `/info/user/events/${entityId}`,
+    forum: `/info/user/forums/${entityId}`,
+    forum_thread: `/info/user/forums/${entityId}`,
+    post: `/info/user/posts/${entityId}`,
+    user_post: `/info/user/posts/${entityId}`,
+    announcement: `/info/user/announcements/${entityId}`,
+    comment: `/info/user/comments/${entityId}`,
   }
   return map[normalized] || null
 }
@@ -93,7 +93,7 @@ export async function POST(request) {
     if (commentRow?.user_id && commentRow.user_id !== session.user_id) {
       const parentLink = commentRow.content_type && commentRow.content_id
         ? routeForEntity(commentRow.content_type, commentRow.content_id)
-        : '/user/notifications'
+        : '/info/user/notifications'
       const ownerLink = parentLink && commentRow.content_id
         ? `${parentLink}#comment-${commentId}`
         : parentLink

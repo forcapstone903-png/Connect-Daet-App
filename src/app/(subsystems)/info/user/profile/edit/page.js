@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
-import MediaUpload from '@/app/components/MediaUpload'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 
 export default function EditProfilePage() {
   const router = useRouter()
@@ -23,7 +23,7 @@ export default function EditProfilePage() {
       const id = stored?.user_id || stored?.id || ''
       setUserId(id)
       if (!id) {
-        router.replace('/login')
+        router.replace('/info/login')
         setLoading(false)
         return
       }
@@ -59,7 +59,7 @@ export default function EditProfilePage() {
     const country = locationParts.slice(1).join(', ')
 
     try {
-      const response = await fetch('/api/profile', {
+      const response = await fetch('/info/api/profile', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -83,7 +83,7 @@ export default function EditProfilePage() {
       })
       setNotice('Profile updated successfully.')
       window.setTimeout(() => {
-        window.location.assign('/user/profile')
+        window.location.assign('/info/user/profile')
       }, 300)
     } catch (error) {
       setNotice(error?.message || 'Unable to update your profile.')
@@ -109,7 +109,7 @@ export default function EditProfilePage() {
           title="Edit profile"
           description="Update how the Daet community sees you across stories, forums, and events."
           emoji="✏️"
-          backHref="/user/profile"
+          backHref="/info/user/profile"
           backLabel="Your profile"
         >
           <span className="usr-section-counter">{form.full_name ? form.full_name.split(' ')[0] : 'Traveler'}</span>
@@ -135,7 +135,7 @@ export default function EditProfilePage() {
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Bio</span><textarea rows={6} value={form.bio} onChange={(event) => setForm((previous) => ({ ...previous, bio: event.target.value }))} placeholder="Share what kind of places, stories, or experiences you love." className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /><span className="mt-1 block text-right text-[11px] text-slate-400">{form.bio.length} characters</span></label>
             </div>
 
-            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><Link href="/user/profile" className="text-center text-sm font-semibold text-slate-500 hover:text-teal-700">Cancel</Link><div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">{notice && <p className={`usr-inline-note inline-flex items-center justify-center gap-1.5 ${notice.includes('successfully') ? 'usr-inline-note-success' : 'usr-inline-note-error'}`}><CheckCircle2 className="h-4 w-4" />{notice}</p>}<button type="button" onClick={saveProfile} disabled={saving} className="usr-section-primary"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save changes'}</button></div></div>
+            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><Link href="/info/user/profile" className="text-center text-sm font-semibold text-slate-500 hover:text-teal-700">Cancel</Link><div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">{notice && <p className={`usr-inline-note inline-flex items-center justify-center gap-1.5 ${notice.includes('successfully') ? 'usr-inline-note-success' : 'usr-inline-note-error'}`}><CheckCircle2 className="h-4 w-4" />{notice}</p>}<button type="button" onClick={saveProfile} disabled={saving} className="usr-section-primary"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save changes'}</button></div></div>
           </section>
         </div>
       </div>

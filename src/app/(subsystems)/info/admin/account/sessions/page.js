@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function sessionsPage() {
-  redirect('/admin/account?tab=sessions')
+export default function SessionsPage() {
+  redirect('/info/admin/account?tab=sessions')
 }

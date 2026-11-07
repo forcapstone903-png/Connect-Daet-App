@@ -7,7 +7,7 @@ import { Bell, Bookmark, CalendarDays, FileText, Home, LogOut, Menu, MessageCirc
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
-import ConfirmationModal from '@/app/components/ConfirmationModal'
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { useUserSettings } from '@/components/UserSettingsProvider'
 
 const UNREAD_REFRESH_INTERVAL_MS = 10_000
@@ -40,20 +40,20 @@ function getNavInitials(name = '') {
 }
 
 const navItems = [
-  { href: '/user/dashboard', labelKey: 'common.feed', icon: Home },
-  { href: '/user/forums', labelKey: 'common.forums', icon: MessageCircle },
-  { href: '/user/blogs/new', labelKey: 'common.create', icon: PlusCircle, highlight: true },
-  { href: '/user/blogs', labelKey: 'common.blogs', icon: FileText },
-  { href: '/user/events', labelKey: 'common.events', icon: CalendarDays },
+  { href: '/info/user/dashboard', labelKey: 'common.feed', icon: Home },
+  { href: '/info/user/forums', labelKey: 'common.forums', icon: MessageCircle },
+  { href: '/info/user/blogs/new', labelKey: 'common.create', icon: PlusCircle, highlight: true },
+  { href: '/info/user/blogs', labelKey: 'common.blogs', icon: FileText },
+  { href: '/info/user/events', labelKey: 'common.events', icon: CalendarDays },
 ]
 
 const desktopNavItems = [
-  { href: '/user/dashboard', labelKey: 'common.feed', icon: Home },
-  { href: '/user/forums', labelKey: 'common.forums', icon: MessageCircle },
-  { href: '/user/blogs', labelKey: 'common.blogs', icon: FileText },
-  { href: '/user/events', labelKey: 'common.events', icon: CalendarDays },
-  { href: '/user/saved', labelKey: 'common.saved', icon: Bookmark },
-  { href: '/user/settings', labelKey: 'common.settings', icon: Settings },
+  { href: '/info/user/dashboard', labelKey: 'common.feed', icon: Home },
+  { href: '/info/user/forums', labelKey: 'common.forums', icon: MessageCircle },
+  { href: '/info/user/blogs', labelKey: 'common.blogs', icon: FileText },
+  { href: '/info/user/events', labelKey: 'common.events', icon: CalendarDays },
+  { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
+  { href: '/info/user/settings', labelKey: 'common.settings', icon: Settings },
 ]
 
 export default function MobileNav() {
@@ -117,8 +117,8 @@ export default function MobileNav() {
     const loadUnreadAlerts = async () => {
       try {
         const [notificationsResponse, messagesResponse] = await Promise.all([
-          fetch('/api/notifications', { credentials: 'same-origin', cache: 'no-store' }),
-          fetch('/api/messages', { credentials: 'same-origin', cache: 'no-store' }),
+          fetch('/info/api/notifications', { credentials: 'same-origin', cache: 'no-store' }),
+          fetch('/info/api/messages', { credentials: 'same-origin', cache: 'no-store' }),
         ])
         const notificationsResult = notificationsResponse.ok ? await notificationsResponse.json() : null
         const messagesResult = messagesResponse.ok ? await messagesResponse.json() : null
@@ -204,47 +204,47 @@ export default function MobileNav() {
     } catch (error) {
       console.error('Logout failed:', error)
     } finally {
-      window.location.assign('/login')
+      window.location.assign('/info/login')
     }
   }
 
   return (
     <>
-      <nav className="sticky top-0 z-40 hidden border-b border-[#dfe7e1] bg-[#fffefa]/95 shadow-[0_6px_20px_rgba(29,42,39,0.04)] backdrop-blur-sm lg:block">
+      <nav className="sticky top-0 z-40 hidden border-b border-slate-700 bg-[#111d2e] text-white shadow-[0_6px_20px_rgba(15,23,42,0.18)] lg:block">
         <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-6">
           <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Link href="/user/dashboard" className="flex shrink-0 items-center gap-2 whitespace-nowrap">
+            <Link href="/info/user/dashboard" className="flex shrink-0 items-center gap-2 whitespace-nowrap">
               <img src="/logo.png" alt="Daet tourism logo" className="h-9 w-9 object-contain" />
               <span className="flex flex-col leading-none">
-                <span className="text-sm font-black tracking-tight text-slate-900">CONNECT-Daet</span>
-                <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-500">Camarines Norte</span>
+                <span className="text-sm font-black tracking-tight text-slate-100">Connect-Daet.ai</span>
+                <span className="mt-1 text-[9px] font-medium leading-tight text-slate-300">Subsystem 1: Daet Information, Engagement, &amp; Management System</span>
               </span>
             </Link>
           </div>
           <div className="flex items-center justify-center gap-1 whitespace-nowrap">
             {desktopNavItems.map(({ href, labelKey, icon: Icon }) => {
-              const isActive = pathname === href || (href !== '/user/dashboard' && pathname.startsWith(href))
-              return <Link key={href} href={href} aria-current={isActive ? 'page' : undefined} className={`usr-press relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition ${isActive ? 'bg-sky-50 text-sky-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}><Icon className="h-4 w-4" />{t(labelKey)}{isActive && <span aria-hidden="true" className="usr-pop-in absolute inset-x-2 -bottom-[1px] h-0.5 rounded-full bg-sky-600" />}</Link>
+              const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
+              return <Link key={href} href={href} aria-current={isActive ? 'page' : undefined} className={`usr-press relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition ${isActive ? 'bg-white/10 text-sky-300' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}><Icon className="h-4 w-4" />{t(labelKey)}{isActive && <span aria-hidden="true" className="usr-pop-in absolute inset-x-2 -bottom-[1px] h-0.5 rounded-full bg-sky-400" />}</Link>
             })}
           </div>
           <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
-            <Link href="/search" aria-label={t('common.search')} title={t('common.search')} className="usr-press rounded-lg p-2 text-slate-600 hover:bg-slate-50">
+            <Link href="/info/visitor/search" aria-label={t('common.search')} title={t('common.search')} className="usr-press rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
               <Search className="h-5 w-5" />
             </Link>
-            <Link href="/user/notifications" aria-label={t('common.notifications')} title={t('common.notifications')} className="usr-press relative rounded-lg p-2 text-slate-600 hover:bg-slate-50">
+            <Link href="/info/user/notifications" aria-label={t('common.notifications')} title={t('common.notifications')} className="usr-press relative rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
               <Bell className="h-5 w-5" />
               {unreadAlerts > 0 && (
-                <span className="usr-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#fffefa]">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>
+                <span className="usr-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#111d2e]">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>
               )}
             </Link>
-            <Link href="/user/messaging" aria-label={t('common.messages')} title={t('common.messages')} className="usr-press relative rounded-lg p-2 text-slate-600 hover:bg-slate-50">
+            <Link href="/info/user/messaging" aria-label={t('common.messages')} title={t('common.messages')} className="usr-press relative rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
               <MessageCircle className="h-5 w-5" />
               {unreadMessages > 0 && (
-                <span className="usr-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#fffefa]">{unreadMessages > 9 ? '9+' : unreadMessages}</span>
+                <span className="usr-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#111d2e]">{unreadMessages > 9 ? '9+' : unreadMessages}</span>
               )}
             </Link>
             <div className="relative" ref={profileMenuRef}>
-              <button type="button" onClick={() => setShowProfileMenu((open) => !open)} aria-haspopup="menu" aria-expanded={showProfileMenu} aria-label="Account menu" title="Account" className="usr-press flex h-9 items-center gap-1.5 rounded-full border border-slate-200 bg-white pl-0.5 pr-2 text-slate-600 transition hover:border-sky-300 hover:text-sky-700">
+              <button type="button" onClick={() => setShowProfileMenu((open) => !open)} aria-haspopup="menu" aria-expanded={showProfileMenu} aria-label="Account menu" title="Account" className="usr-press flex h-9 items-center gap-1.5 rounded-full border border-slate-600 bg-white/5 pl-0.5 pr-2 text-slate-200 transition hover:border-sky-400 hover:text-white">
                 <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700">
                   {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : (userName ? getInitials(userName) : <UserRound className="h-4 w-4" aria-hidden="true" />)}
                 </span>
@@ -252,9 +252,9 @@ export default function MobileNav() {
               </button>
               {showProfileMenu && (
                 <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.5rem)] z-50 w-56 origin-top-right overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                  <Link role="menuitem" href="/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" aria-hidden="true" />{t('common.profile')}</Link>
-                  <Link role="menuitem" href="/user/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" aria-hidden="true" />{t('common.settings')}</Link>
-                  <Link role="menuitem" href="/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" aria-hidden="true" />{t('common.messages')}</Link>
+                  <Link role="menuitem" href="/info/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" aria-hidden="true" />{t('common.profile')}</Link>
+                  <Link role="menuitem" href="/info/user/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" aria-hidden="true" />{t('common.settings')}</Link>
+                  <Link role="menuitem" href="/info/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" aria-hidden="true" />{t('common.messages')}</Link>
                   <div className="my-1 border-t border-slate-100" role="separator" />
                   <button role="menuitem" type="button" onClick={openLogoutConfirm} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" aria-hidden="true" />{t('common.logOut')}</button>
                 </div>
@@ -273,10 +273,10 @@ export default function MobileNav() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutConfirm(false)}
       />
-      {!commentsSheetOpen && <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-[#dfe7e1] bg-[#fffefa]/96 shadow-[0_-8px_24px_rgba(29,42,39,0.08)] pb-[calc(env(safe-area-inset-bottom)+0.5rem)] backdrop-blur-sm lg:hidden">
+      {!commentsSheetOpen && <nav className="fixed inset-x-0 top-16 z-40 border-b border-[#dfe7e1] bg-[#fffefa]/96 shadow-[0_8px_24px_rgba(29,42,39,0.08)] backdrop-blur-sm lg:hidden">
         <div className="mx-auto grid max-w-[520px] grid-cols-5 items-center gap-1 px-2 py-1.5">
           {navItems.map(({ href, labelKey, icon: Icon, highlight }) => {
-            const isActive = pathname === href || (href !== '/user/dashboard' && pathname.startsWith(href))
+            const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
             return (
               <Link
                 key={href}

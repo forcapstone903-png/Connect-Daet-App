@@ -155,7 +155,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
     setRepostLoading(true)
     try {
       if (reposted) {
-        const response = await fetch(`/api/reposts?contentType=${encodeURIComponent(contentType)}&contentId=${encodeURIComponent(contentId)}`, {
+        const response = await fetch(`/info/api/reposts?contentType=${encodeURIComponent(contentType)}&contentId=${encodeURIComponent(contentId)}`, {
           method: 'DELETE',
           credentials: 'same-origin',
         })
@@ -168,7 +168,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
         return
       }
 
-      const response = await fetch('/api/reposts', {
+      const response = await fetch('/info/api/reposts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',

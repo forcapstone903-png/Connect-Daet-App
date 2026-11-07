@@ -16,7 +16,7 @@ export default function ForgotPasswordPage() {
     setSuccess(false)
 
     try {
-      const response = await fetch('/api/forgot-password', {
+      const response = await fetch('/info/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.trim() }),
@@ -63,7 +63,7 @@ export default function ForgotPasswordPage() {
         )}
 
         <div className="mt-6 text-center">
-          <Link href="/login" className="text-yellow-600 font-semibold hover:underline">Back to Login</Link>
+          <Link href="/info/login" className="text-yellow-600 font-semibold hover:underline">Back to Login</Link>
         </div>
       </div>
     </div>

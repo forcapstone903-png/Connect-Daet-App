@@ -26,7 +26,7 @@ import { Bell, Check, HardDrive, Info, Languages, Lock, Save, ShieldCheck, Sun }
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
-import ConfirmationModal from '@/app/components/ConfirmationModal'
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { useUserSettings } from '@/components/UserSettingsProvider'
 import {
   clearLocalAppData,
@@ -40,8 +40,8 @@ import {
   settingsFromProfileRow,
 } from '@/lib/userSettings'
 import { StatusBanner } from './_components/SettingsControls'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import AppearanceSection from './_components/AppearanceSection'
 import LanguageSection from './_components/LanguageSection'
 import NotificationsSection from './_components/NotificationsSection'
@@ -127,7 +127,7 @@ export default function UserSettingsPage() {
       if (error) console.warn('Settings session lookup warning:', error)
       const id = session?.user?.id || storedSession?.user_id || storedSession?.id || null
       if (!id) {
-        router.replace('/login')
+        router.replace('/info/login')
         return
       }
       setEmail(session?.user?.email || storedSession?.user_email || '')
@@ -145,7 +145,7 @@ export default function UserSettingsPage() {
       setSavedSnapshot(next)
       setUserId(id)
       updateSettings({ theme: next.theme, language: next.language, reduceMotion: next.reduceMotion })
-      const lifecycleResponse = await fetch('/api/account/lifecycle', { cache: 'no-store' })
+      const lifecycleResponse = await fetch('/info/api/account/lifecycle', { cache: 'no-store' })
       const lifecycleResult = await lifecycleResponse.json().catch(() => ({}))
       if (lifecycleResponse.ok && lifecycleResult.lifecycle) setAccountLifecycle(lifecycleResult.lifecycle)
     } catch (error) {
@@ -262,7 +262,7 @@ export default function UserSettingsPage() {
 
     setResetStatus(t('common.saving'))
     try {
-      const response = await fetch('/api/forgot-password', {
+      const response = await fetch('/info/api/forgot-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
@@ -291,7 +291,7 @@ export default function UserSettingsPage() {
     }
 
     await performLogout()
-    window.location.assign('/login')
+    window.location.assign('/info/login')
   }, [t])
 
   const handleAccountAction = useCallback(async (action) => {
@@ -299,7 +299,7 @@ export default function UserSettingsPage() {
     setNotice(null)
 
     try {
-      const response = await fetch('/api/account/lifecycle', {
+      const response = await fetch('/info/api/account/lifecycle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
@@ -312,7 +312,7 @@ export default function UserSettingsPage() {
 
       if (action === 'deactivate' || action === 'schedule_deletion') {
         await performLogout()
-        window.location.assign('/login')
+        window.location.assign('/info/login')
         return
       }
 

@@ -22,11 +22,11 @@ import {
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import Reactions from '@/app/components/user/Reactions'
-import MentionText from '@/app/components/user/MentionText'
-import MentionsAutoSuggest from '@/app/components/user/MentionsAutoSuggest'
-import SocialActionBar from '@/app/components/user/SocialActionBar'
-import PostMediaCarousel from '@/app/components/user/PostMediaCarousel'
+import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
+import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
+import MentionsAutoSuggest from '@/app/(subsystems)/info/components/user/MentionsAutoSuggest'
+import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
+import PostMediaCarousel from '@/app/(subsystems)/info/components/user/PostMediaCarousel'
 import { getPostImages } from '@/lib/postMedia'
 
 const STORAGE_KEYS = {
@@ -193,7 +193,7 @@ export default function BlogDetailPage() {
             await supabase.from('info_blogs').update({ views: (blogData.views || 0) + 1 }).eq('id', blogId)
           }
 
-          const commentsResponse = await fetch(`/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, { credentials: 'same-origin', cache: 'no-store' })
+          const commentsResponse = await fetch(`/info/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, { credentials: 'same-origin', cache: 'no-store' })
           const commentsPayload = await commentsResponse.json().catch(() => ({}))
           const commentsData = commentsResponse.ok && commentsPayload.success ? commentsPayload.comments || [] : null
           const commentsError = commentsData === null ? new Error(commentsPayload.message || 'Unable to load comments.') : null
@@ -314,7 +314,7 @@ export default function BlogDetailPage() {
       }
 
       if (parentId) {
-        const response = await fetch('/api/blog-comments', {
+        const response = await fetch('/info/api/blog-comments', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -359,7 +359,7 @@ export default function BlogDetailPage() {
         setExpandedReplies((prev) => ({ ...prev, [parentId]: true }))
         setModerationPending((prev) => prev + 1)
       } else {
-        const response = await fetch('/api/blog-comments', {
+        const response = await fetch('/info/api/blog-comments', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -822,7 +822,7 @@ export default function BlogDetailPage() {
           <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
           <p className="mt-1 text-xs text-slate-500">This story may have been unpublished, archived, or removed by its author.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Link href="/user/blogs" className="usr-section-primary">Back to stories</Link>
+            <Link href="/info/user/blogs" className="usr-section-primary">Back to stories</Link>
           </div>
         </div>
       </main>
@@ -855,11 +855,11 @@ export default function BlogDetailPage() {
 
           <div className="mt-5 flex items-start gap-3 border-t border-b border-slate-200 py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
-              <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
+              <Link href={blog.created_by ? `/info/user/profile/${blog.created_by}` : '/info/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
                 {blog.info_users?.profile_image_url ? <img src={blog.info_users.profile_image_url} alt={blog.info_users.full_name || 'Author'} className="h-full w-full object-cover" /> : (blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
               </Link>
               <div className="min-w-0">
-                <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="font-semibold text-slate-900 hover:text-sky-700">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
+                <Link href={blog.created_by ? `/info/user/profile/${blog.created_by}` : '/info/user/profile'} className="font-semibold text-slate-900 hover:text-sky-700">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
                   <span>{categories[blog.category] || blog.category}</span>
                   <span>•</span>

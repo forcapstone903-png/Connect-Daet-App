@@ -8,7 +8,6 @@ import {
   Bell,
   Camera,
   Check,
-  Compass,
   ImagePlus,
   Mic,
   MapPin,
@@ -17,8 +16,8 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
-import MediaUpload from '@/app/components/MediaUpload'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 import { FALLBACK_PLACES, FALLBACK_TOPICS, getOnboardingStepMeta, getRequiredSelectionCount } from '@/lib/onboardingUtils'
@@ -46,7 +45,7 @@ export default function OnboardingPage() {
       const id = session?.user_id || session?.id || ''
       setUserId(id)
       if (!id) {
-        router.replace('/login')
+        router.replace('/info/login')
         return
       }
 
@@ -131,7 +130,7 @@ export default function OnboardingPage() {
         profile_image_url: avatarUrl || '',
         onboarding_completed: true,
       })
-      router.replace('/user/dashboard')
+      router.replace('/info/user/dashboard')
     } catch (saveError) {
       console.error('Onboarding save failed:', saveError)
       setError(saveError.message || 'Unable to save your preferences right now.')
@@ -162,7 +161,7 @@ export default function OnboardingPage() {
       if (userError) throw userError
 
       updateStoredSession({ onboarding_completed: true })
-      router.replace('/user/dashboard')
+      router.replace('/info/user/dashboard')
     } catch (skipError) {
       console.error('Onboarding skip save failed:', skipError)
       setError(skipError.message || 'Unable to save your onboarding choice right now.')
@@ -288,8 +287,8 @@ export default function OnboardingPage() {
           eyebrow="Welcome aboard"
           title="Set up your experience"
           description="A few quick choices so your Daet community feed, places, and people match your interests."
-          emoji="🧭"
-          backHref="/user/dashboard"
+          icon={MapPin}
+          backHref="/info/user/dashboard"
           backLabel="Skip setup"
         >
           <span className="usr-section-counter">{progressLabel}</span>
@@ -307,7 +306,7 @@ export default function OnboardingPage() {
         <section className="usr-surface usr-enter overflow-hidden">
           <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-8">
             <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.2em] ${stepAccent}`}>
-              <Compass className="h-3.5 w-3.5" />
+              <MapPin className="h-3.5 w-3.5" />
               {stepMeta.kicker}
             </div>
             <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

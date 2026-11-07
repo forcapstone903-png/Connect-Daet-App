@@ -187,7 +187,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     setGifError('')
 
     try {
-      const response = await fetch(`/api/gifs?q=${encodeURIComponent(query || 'happy')}`, { credentials: 'same-origin' })
+      const response = await fetch(`/info/api/gifs?q=${encodeURIComponent(query || 'happy')}`, { credentials: 'same-origin' })
       const payload = await response.json().catch(() => ({ success: false, message: 'Unable to load GIFs.' }))
 
       if (!response.ok || !payload.success) {
@@ -248,7 +248,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     if (!confirmed) return
 
     try {
-      const response = await fetch(`/api/comments?commentId=${encodeURIComponent(commentId)}`, {
+      const response = await fetch(`/info/api/comments?commentId=${encodeURIComponent(commentId)}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })
@@ -271,7 +271,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     setSubmitting(true)
 
     try {
-      const response = await fetch('/api/comments', {
+      const response = await fetch('/info/api/comments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -833,7 +833,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
 
                     return (
                       <div key={`${reaction.user_id}-${reaction.created_at}`} className="flex items-center gap-3 rounded-xl px-2 py-2">
-                        <UserProfileLink href={`/user/profile/${encodeURIComponent(reaction.user_id)}?from=reactions`} user={reactionUser} className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-linear-to-br from-sky-500 to-violet-600 text-xs font-bold text-white transition hover:ring-2 hover:ring-sky-300">
+                        <UserProfileLink href={`/info/user/profile/${encodeURIComponent(reaction.user_id)}?from=reactions`} user={reactionUser} className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-linear-to-br from-sky-500 to-violet-600 text-xs font-bold text-white transition hover:ring-2 hover:ring-sky-300">
                           {reaction.user?.profile_image_url ? (
                             <img src={reaction.user.profile_image_url} alt={name} className="h-full w-full object-cover" />
                           ) : (
@@ -841,7 +841,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                           )}
                         </UserProfileLink>
                         <div className="min-w-0 flex-1">
-                          <UserProfileLink href={`/user/profile/${encodeURIComponent(reaction.user_id)}?from=reactions`} user={reactionUser} className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700">
+                          <UserProfileLink href={`/info/user/profile/${encodeURIComponent(reaction.user_id)}?from=reactions`} user={reactionUser} className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700">
                             {name}
                           </UserProfileLink>
                           <p className="text-xs text-slate-500">{reactionName}</p>

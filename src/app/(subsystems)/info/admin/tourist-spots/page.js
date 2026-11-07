@@ -1,18 +1,18 @@
-// app/admin/tourist-spots/page.js
+// app/(subsystems)/info/admin/tourist-spots/page.js
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import AdminSidebar from '@/app/components/AdminSidebar';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { supabase } from '@/lib/supabase';
-import ConfirmationModal from '@/app/components/ConfirmationModal';
-import { Icon } from '@/app/components/Icon';
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
-import MediaUpload from '@/app/components/MediaUpload';
-import Comments from '@/app/components/user/Comments';
-import Reactions from '@/app/components/user/Reactions';
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
+import Comments from '@/app/(subsystems)/info/components/user/Comments';
+import Reactions from '@/app/(subsystems)/info/components/user/Reactions';
 
 const DEFAULT_SPOT_CATEGORIES = [
   { value: 'beach', label: 'Beach', color: 'bg-cyan-100 text-cyan-700' },
@@ -89,7 +89,7 @@ export default function TouristSpotsManagement() {
       if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter);
       if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
 
-      const response = await fetch(`/api/admin/tourist-spots?${params.toString()}`);
+      const response = await fetch(`/info/api/admin/tourist-spots?${params.toString()}`);
       if (!response.ok) throw new Error('Failed to fetch spots');
       
       const result = await response.json();
@@ -152,13 +152,13 @@ export default function TouristSpotsManagement() {
 
       let response;
       if (editingSpot) {
-        response = await fetch(`/api/admin/tourist-spots/${editingSpot.id}`, {
+        response = await fetch(`/info/api/admin/tourist-spots/${editingSpot.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(spotData)
         });
       } else {
-        response = await fetch('/api/admin/tourist-spots', {
+        response = await fetch('/info/api/admin/tourist-spots', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(spotData)
@@ -190,7 +190,7 @@ export default function TouristSpotsManagement() {
     if (!confirmingSpot) return
 
     try {
-      const response = await fetch(`/api/admin/tourist-spots/${confirmingSpot.id}`, {
+      const response = await fetch(`/info/api/admin/tourist-spots/${confirmingSpot.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...confirmingSpot, status: 'draft' })
@@ -220,7 +220,7 @@ export default function TouristSpotsManagement() {
     if (!confirmingSpot) return
 
     try {
-      const response = await fetch(`/api/admin/tourist-spots/${confirmingSpot.id}`, {
+      const response = await fetch(`/info/api/admin/tourist-spots/${confirmingSpot.id}`, {
         method: 'DELETE'
       });
 
@@ -470,7 +470,7 @@ export default function TouristSpotsManagement() {
       const session = getStoredSession();
       if (!session) {
         setLoading(false);
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
 
@@ -478,7 +478,7 @@ export default function TouristSpotsManagement() {
         const userData = JSON.parse(session);
         if (!hasAdminAccess(userData.role)) {
           setLoading(false);
-          router.push('/admin/dashboard');
+          router.push('/info/admin/dashboard');
           return;
         }
 
@@ -488,7 +488,7 @@ export default function TouristSpotsManagement() {
       } catch (error) {
         console.error('Error loading admin user session:', error);
         if (isActive) {
-          router.push('/login');
+          router.push('/info/login');
         }
       } finally {
         if (isActive) {

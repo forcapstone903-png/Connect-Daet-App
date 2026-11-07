@@ -29,10 +29,10 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import Reactions from '@/app/components/user/Reactions'
-import ShareRepost from '@/app/components/user/ShareRepost'
-import MentionsAutoSuggest from '@/app/components/user/MentionsAutoSuggest'
-import MediaUpload from '@/app/components/MediaUpload'
+import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
+import ShareRepost from '@/app/(subsystems)/info/components/user/ShareRepost'
+import MentionsAutoSuggest from '@/app/(subsystems)/info/components/user/MentionsAutoSuggest'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 
 function formatDate(value) {
   if (!value) return 'New'
@@ -192,7 +192,7 @@ export default function ThreadDetailPage() {
     setGifLoading(true)
     setGifError('')
     try {
-      const response = await fetch(`/api/gifs?q=${encodeURIComponent(query || 'happy')}`)
+      const response = await fetch(`/info/api/gifs?q=${encodeURIComponent(query || 'happy')}`)
       const payload = await response.json().catch(() => ({}))
       if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to load GIFs.')
       const gifs = Array.isArray(payload.gifs) ? payload.gifs.filter((gif) => gif?.url) : []
@@ -409,9 +409,9 @@ export default function ThreadDetailPage() {
         return
       }
 
-      // Posted through /api/forum-replies so the write is authorised by the signed
+      // Posted through /info/api/forum-replies so the write is authorised by the signed
       // session cookie instead of a Supabase browser session (RLS `auth.uid()`).
-      const response = await fetch('/api/forum-replies', {
+      const response = await fetch('/info/api/forum-replies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -464,7 +464,7 @@ export default function ThreadDetailPage() {
   const deleteReply = async (replyId) => {
     if (!window.confirm('Delete this comment?')) return
     try {
-      const response = await fetch(`/api/forum-replies?replyId=${encodeURIComponent(replyId)}`, { method: 'DELETE' })
+      const response = await fetch(`/info/api/forum-replies?replyId=${encodeURIComponent(replyId)}`, { method: 'DELETE' })
       const payload = await response.json().catch(() => ({ success: false, message: 'Unable to delete the comment.' }))
       if (!response.ok || !payload.success) {
         throw new Error(payload.message || 'Unable to delete the comment.')
@@ -479,7 +479,7 @@ export default function ThreadDetailPage() {
     const content = editingReplyContent.trim()
     if (!content) return
     try {
-      const response = await fetch('/api/forum-replies', {
+      const response = await fetch('/info/api/forum-replies', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ replyId, content }),
@@ -587,7 +587,7 @@ export default function ThreadDetailPage() {
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <Link
-              href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
+              href={reply.user_id ? `/info/user/profile/${encodeURIComponent(reply.user_id)}` : '/info/user/profile'}
               className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700 hover:ring-2 hover:ring-sky-300"
               aria-label={`View ${reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}'s profile`}
             >
@@ -599,7 +599,7 @@ export default function ThreadDetailPage() {
             </Link>
             <div className="min-w-0">
               <Link
-                href={reply.user_id ? `/user/profile/${encodeURIComponent(reply.user_id)}` : '/user/profile'}
+                href={reply.user_id ? `/info/user/profile/${encodeURIComponent(reply.user_id)}` : '/info/user/profile'}
                 className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700"
               >
                 {reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}
@@ -677,7 +677,7 @@ export default function ThreadDetailPage() {
           <p className="mt-3 text-sm font-semibold text-slate-700">Thread not found</p>
           <p className="mt-1 text-xs text-slate-500">This discussion may have been archived, locked, or removed by its author.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Link href="/user/forums" className="usr-section-primary">Back to forums</Link>
+            <Link href="/info/user/forums" className="usr-section-primary">Back to forums</Link>
           </div>
         </div>
       </main>
@@ -690,7 +690,7 @@ export default function ThreadDetailPage() {
         {/* Header */}
         <div className="usr-card mb-4 flex items-center justify-between px-3 py-3 sm:px-4">
           <Link
-            href="/user/forums"
+            href="/info/user/forums"
             className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
           >
             <ArrowLeft className="h-4 w-4" />

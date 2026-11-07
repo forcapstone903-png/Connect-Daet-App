@@ -12,7 +12,7 @@ const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 // Written through this route so a signed-in user never needs a live Supabase
 // browser session (RLS `auth.uid()` checks) to comment in a forum thread. The
 // signed `daet_secure_session` cookie is the app's source of truth, exactly like
-// /api/comments already does for feed comments.
+// /info/api/comments already does for feed comments.
 const REPLY_SELECT = 'id, thread_id, user_id, parent_reply_id, content, image_url, video_url, gif_url, sticker_url, mention_data, status, created_at, updated_at, info_users(full_name, email, profile_image_url)'
 const LEGACY_REPLY_SELECT = 'id, thread_id, user_id, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)'
 const OPTIONAL_COLUMNS = ['parent_reply_id', 'image_url', 'video_url', 'gif_url', 'sticker_url', 'mention_data']

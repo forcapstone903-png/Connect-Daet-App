@@ -1,89 +1,48 @@
-// app/admin/settings/security/page.js — Security Settings
 'use client';
 
-import { useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
-import useStoredSetting from '../_components/useStoredSetting';
+
+const securityFacts = [
+  {
+    title: 'Signed server session',
+    detail: 'The application checks a signed, HTTP-only session cookie for protected routes and admin APIs.',
+  },
+  {
+    title: 'Session lifetime',
+    detail: 'Sessions expire after 24 hours by default, or 30 days when “Remember me” is selected.',
+  },
+  {
+    title: 'Administrator API access',
+    detail: 'Protected administrator APIs verify the server session and administrator role before processing requests.',
+  },
+];
 
 export default function AdminSettingsSecurity() {
-  const [securitySettings, setSecuritySettings] = useStoredSetting('admin_security_settings', {
-    two_factor_auth: true,
-    password_min_length: 8,
-    max_login_attempts: 5,
-    lockout_duration: 15,
-    session_timeout: 30,
-    password_reuse_limit: 5,
-    require_admin_approval: true
-  });
-  const [saving, setSaving] = useState(false);
-
   return (
     <SettingsShell
       title="Security Settings"
-      subtitle="Password policy, session management, and authentication"
+      subtitle="Review the authentication protections enforced by the application."
     >
-      {(showToast) => {
-        const saveSecuritySettings = () => {
-          setSaving(true);
-          try {
-            localStorage.setItem('admin_security_settings', JSON.stringify(securitySettings));
-            showToast('Security settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving security settings:', err);
-            showToast('Failed to save security settings', true);
-          } finally {
-            setSaving(false);
-          }
-        };
-
-        return (
-          <div className="space-y-6">
-{/* Security Settings */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Password & Authentication</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Minimum Password Length</label>
-                  <input type="number" value={securitySettings.password_min_length} onChange={e => setSecuritySettings(p => ({ ...p, password_min_length: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Login Attempts</label>
-                  <input type="number" value={securitySettings.max_login_attempts} onChange={e => setSecuritySettings(p => ({ ...p, max_login_attempts: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Lockout Duration (minutes)</label>
-                  <input type="number" value={securitySettings.lockout_duration} onChange={e => setSecuritySettings(p => ({ ...p, lockout_duration: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Password Reuse Limit</label>
-                  <input type="number" value={securitySettings.password_reuse_limit} onChange={e => setSecuritySettings(p => ({ ...p, password_reuse_limit: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
+      <div className="space-y-6">
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="mb-4 text-lg font-bold text-slate-800">Active application protections</h2>
+          <div className="space-y-4">
+            {securityFacts.map((fact) => (
+              <div key={fact.title} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <h3 className="font-semibold text-slate-800">{fact.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{fact.detail}</p>
               </div>
-            </div>
-
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Session & Access</h3>
-              <div className="space-y-4 max-w-2xl">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Session Timeout (minutes)</label>
-                  <input type="number" value={securitySettings.session_timeout} onChange={e => setSecuritySettings(p => ({ ...p, session_timeout: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={securitySettings.two_factor_auth} onChange={e => setSecuritySettings(p => ({ ...p, two_factor_auth: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Require two-factor authentication for admins</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={securitySettings.require_admin_approval} onChange={e => setSecuritySettings(p => ({ ...p, require_admin_approval: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Require admin approval for new user registrations</span>
-                </label>
-              </div>
-              <button onClick={saveSecuritySettings} disabled={saving} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Security Settings'}
-              </button>
-            </div>
+            ))}
           </div>
-        );
-      }}
+        </section>
+
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <h2 className="text-lg font-bold text-amber-900">Not configurable here</h2>
+          <p className="mt-2 text-sm text-amber-900">
+            Two-factor authentication, login lockout thresholds, password history, and administrator approval for new accounts are not implemented as application settings. The previous controls only changed browser storage and did not enforce these policies, so they have been removed. Configure provider-level authentication policies in the Supabase project and verify them independently.
+          </p>
+        </section>
+      </div>
     </SettingsShell>
   );
 }

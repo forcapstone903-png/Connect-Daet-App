@@ -27,6 +27,6 @@ ALTER TABLE public.user_favorites
 
 ALTER TABLE public.user_favorites
   ADD CONSTRAINT user_favorites_item_type_check
-  CHECK (item_type IN ('blog', 'event', 'amenity', 'spot', 'forum', 'user_post', 'announcement'));
+  CHECK (item_type IN ('blog', 'event', 'spot', 'forum', 'user_post', 'announcement'));
 
 COMMIT;

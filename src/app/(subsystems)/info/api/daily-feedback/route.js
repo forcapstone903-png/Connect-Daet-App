@@ -115,7 +115,7 @@ export async function POST(request) {
           title: 'Daily Visitor Feedback',
           message: questionText,
           type: 'feedback',
-          link: '/user/dashboard',
+          link: '/info/user/dashboard',
           is_read: false,
           }))
 

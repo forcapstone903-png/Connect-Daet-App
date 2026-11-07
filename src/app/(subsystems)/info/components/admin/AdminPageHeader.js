@@ -1,7 +1,7 @@
 // Shared admin page header: eyebrow, title, description, optional action area
 // and meta row. Visual rules live in the "ADMIN CONSOLE DESIGN SYSTEM" block of
 // src/app/globals.css, so light and dark mode stay in sync automatically.
-import { Icon } from '@/app/components/Icon'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 
 export default function AdminPageHeader({
   eyebrow,

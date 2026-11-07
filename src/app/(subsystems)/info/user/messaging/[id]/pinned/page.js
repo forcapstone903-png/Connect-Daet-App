@@ -34,7 +34,7 @@ export default function PinnedMessagesPage() {
   const loadPinned = async () => {
     if (!otherUserId) return
     try {
-      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}/pinned`, { credentials: 'same-origin', cache: 'no-store' })
+      const response = await fetch(`/info/api/messages/${encodeURIComponent(otherUserId)}/pinned`, { credentials: 'same-origin', cache: 'no-store' })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load pinned messages.')
       setCurrentUserId(result.current_user_id || '')
@@ -68,14 +68,14 @@ export default function PinnedMessagesPage() {
 
   const openPinnedMessage = (item) => {
     if (item.unavailable || !item.message?.id) return
-    router.push(`/user/messaging/${encodeURIComponent(otherUserId)}#message-${encodeURIComponent(item.message.id)}`)
+    router.push(`/info/user/messaging/${encodeURIComponent(otherUserId)}#message-${encodeURIComponent(item.message.id)}`)
   }
 
   return (
     <main className="min-h-screen bg-[#f4f8f6] text-slate-900">
       <div className="mx-auto min-h-screen w-full max-w-2xl bg-white shadow-sm sm:my-4 sm:min-h-[calc(100vh-2rem)] sm:rounded-2xl sm:border sm:border-slate-200">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:rounded-t-2xl">
-          <button type="button" onClick={() => router.replace(`/user/messaging/${encodeURIComponent(otherUserId)}`)} aria-label="Back to conversation" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></button>
+          <button type="button" onClick={() => router.replace(`/info/user/messaging/${encodeURIComponent(otherUserId)}`)} aria-label="Back to conversation" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></button>
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-black text-slate-950">Pinned Messages</h1>
             <p className="text-xs font-medium text-slate-500">Shared in this conversation</p>

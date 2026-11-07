@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { authorizeAdminApi } from '@/lib/adminApiAuth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -12,13 +13,15 @@ function missingConfig() {
   )
 }
 
-export async function GET() {
+export async function GET(request) {
+  const { response: authError } = authorizeAdminApi(request)
+  if (authError) return authError
   if (!adminSupabase) return missingConfig()
 
   try {
     const { data, error } = await adminSupabase
       .from('info_users')
-      .select('*')
+      .select('id, email, full_name, user_type, status, profile_image_url, points, last_login, is_online, created_at, updated_at')
       .order('created_at', { ascending: false })
 
     if (error) {

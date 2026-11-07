@@ -1,4 +1,4 @@
-// app/api/forgot-password/route.js
+// app/(subsystems)/info/api/forgot-password/route.js
 import { NextResponse } from 'next/server'
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase'
 import { maskEmail } from '@/lib/safeLogging'
@@ -44,7 +44,7 @@ export async function POST(request) {
       : null
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || vercelUrl || requestOrigin
 
-    const redirectUrl = `${appUrl}/reset-password`
+    const redirectUrl = `${appUrl}/info/reset-password`
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: redirectUrl,

@@ -5,10 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, CheckCircle2, FileText, Save, MessageSquare, CalendarDays, MessageCircle, FilePenLine } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import MediaUpload from '@/app/components/MediaUpload'
-import MultiMediaUpload from '@/app/components/MultiMediaUpload'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
-import { SectionLoading } from '@/app/components/user/UserSectionHeader'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import MultiMediaUpload from '@/app/(subsystems)/info/components/MultiMediaUpload'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import { normalizeErrorMessage, trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
@@ -114,7 +114,7 @@ export default function CreateBlogPage() {
         }
 
         await new Promise((resolve) => window.setTimeout(resolve, POST_SUBMIT_DELAY_MS))
-        const response = await fetch('/api/posts', {
+        const response = await fetch('/info/api/posts', {
           method: 'POST',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
@@ -127,8 +127,8 @@ export default function CreateBlogPage() {
         }
 
         setSuccess(true)
-        const shareDestinations = { forum: '/user/forums', event: '/user/events', feedback: '/user/feedback', blog: '/user/blogs' }
-        window.setTimeout(() => router.push(shareDestinations[shareType] || '/user/dashboard'), 1200)
+        const shareDestinations = { forum: '/info/user/forums', event: '/info/user/events', feedback: '/info/user/feedback', blog: '/info/user/blogs' }
+        window.setTimeout(() => router.push(shareDestinations[shareType] || '/info/user/dashboard'), 1200)
         return
       }
 
@@ -160,7 +160,7 @@ export default function CreateBlogPage() {
       }
 
       await new Promise((resolve) => window.setTimeout(resolve, POST_SUBMIT_DELAY_MS))
-      const response = await fetch('/api/user/blogs', {
+      const response = await fetch('/info/api/user/blogs', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -187,8 +187,8 @@ export default function CreateBlogPage() {
 
       setSuccess(true)
       const destination = form.status === 'published' && createdBlogId
-        ? `/user/blogs/${createdBlogId}`
-        : '/user/drafts'
+        ? `/info/user/blogs/${createdBlogId}`
+        : '/info/user/drafts'
       window.setTimeout(() => router.push(destination), 1200)
     } catch (error) {
       const errorMessage = normalizeErrorMessage(error)
@@ -219,7 +219,7 @@ export default function CreateBlogPage() {
           <h1 className="mt-2 text-xl font-black text-slate-900">Log in to publish an article</h1>
           <p className="mt-2 text-sm text-slate-600">You need an active account before creating a blog post for the community.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Link href="/login" className="usr-section-primary">
+            <Link href="/info/login" className="usr-section-primary">
               Log in
             </Link>
           </div>
@@ -237,7 +237,7 @@ export default function CreateBlogPage() {
             <FileText className="h-3.5 w-3.5" />
             Create Post
           </div>
-          <Link href="/user/drafts" className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+          <Link href="/info/user/drafts" className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
             <FilePenLine className="h-3.5 w-3.5" />
             Drafts
           </Link>
@@ -377,7 +377,7 @@ export default function CreateBlogPage() {
               </div>
 
               <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
-                <Link href="/user/blogs" className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Link href="/info/user/blogs" className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                   Cancel
                 </Link>
                 <button

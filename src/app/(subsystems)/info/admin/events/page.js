@@ -1,13 +1,13 @@
-// app/admin/events/page.js
+// app/(subsystems)/info/admin/events/page.js
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { Icon } from '@/app/components/Icon';
-import '@/app/components/admin/AdminCalendar.css';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
+import '@/app/(subsystems)/info/components/admin/AdminCalendar.css';
 import FullCalendar from '@fullcalendar/react';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -15,7 +15,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
-import MediaUpload from '@/app/components/MediaUpload';
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 
 const EVENT_CATEGORIES = [
   { value: 'festival', label: 'Festival' },
@@ -145,7 +145,7 @@ export default function AdminEventsPage() {
 
   const createContentNotifications = async ({ type, title, message, link, contentId }) => {
     try {
-      const response = await fetch('/api/admin/content-notifications', {
+      const response = await fetch('/info/api/admin/content-notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -302,7 +302,7 @@ export default function AdminEventsPage() {
           type: 'event',
           title,
           message: title,
-          link: `/user/events/${createdEvent.id}`,
+          link: `/info/user/events/${createdEvent.id}`,
           contentId: createdEvent.id,
         })
       }
@@ -888,11 +888,11 @@ export default function AdminEventsPage() {
   useEffect(() => {
     const checkAuth = async () => {
       const session = getStoredSession();
-      if (!session) { router.push('/login'); return; }
+      if (!session) { router.push('/info/login'); return; }
       const userData = JSON.parse(session);
       // Normalize session: login stores the user id as user_id, but the page expects .id
       if (!userData.id && userData.user_id) userData.id = userData.user_id;
-      if (!hasAdminAccess(userData.role)) { router.push('/admin/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/info/admin/dashboard'); return; }
       setUser(userData);
       await fetchEvents();
       setLoading(false);

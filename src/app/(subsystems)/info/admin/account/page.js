@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import AdminSidebar from '@/app/components/AdminSidebar'
-import { AdminPageHeader } from '@/app/components/admin'
-import { Icon } from '@/app/components/Icon'
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar'
+import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession, clearAuthCookie } from '@/lib/authCookies'
 
@@ -134,7 +134,7 @@ export default function AdminAccountPage() {
   useEffect(() => {
     const session = getStoredSession()
     if (!session) {
-      window.location.href = '/login'
+      window.location.href = '/info/login'
       return
     }
 
@@ -143,7 +143,7 @@ export default function AdminAccountPage() {
     // call setState, and the cleanup flag stops late writes after unmount.
     const loadSessions = async (userId) => {
       try {
-        const response = await fetch('/api/activity/track?scope=sessions', { credentials: 'same-origin', cache: 'no-store' })
+        const response = await fetch('/info/api/activity/track?scope=sessions', { credentials: 'same-origin', cache: 'no-store' })
         const result = await response.json()
         if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load sessions')
         return result.activities || []
@@ -157,7 +157,7 @@ export default function AdminAccountPage() {
       const userData = JSON.parse(session)
       if (!userData.id && userData.user_id) userData.id = userData.user_id
       if (!hasAdminAccess(userData.role)) {
-        window.location.href = '/admin/dashboard'
+        window.location.href = '/info/admin/dashboard'
         return
       }
 
@@ -191,7 +191,7 @@ export default function AdminAccountPage() {
       fetchProfileAndSessions()
     } catch (error) {
       console.error('Error loading session:', error)
-      window.location.href = '/login'
+      window.location.href = '/info/login'
     }
 
     return () => { isActive = false }
@@ -325,8 +325,56 @@ export default function AdminAccountPage() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600"></div>
+      <div className="min-h-screen bg-slate-50" aria-busy="true" aria-label="Loading account settings">
+        <AdminSidebar user={user} roleLabel="Administrator" userRole={user?.role} />
+        <main
+          style={{
+            marginLeft: 'var(--admin-sidebar-width)',
+            width: 'calc(100% - var(--admin-sidebar-width))',
+          }}
+          className="admin-page min-w-0"
+        >
+          <div className="animate-pulse space-y-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="h-3 w-24 rounded bg-slate-200" />
+              <div className="mt-3 h-7 w-48 max-w-full rounded bg-slate-200" />
+              <div className="mt-2 h-4 w-72 max-w-full rounded bg-slate-100" />
+            </div>
+
+            <div className="flex gap-2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+              {[20, 16, 24, 20, 14].map((width, index) => (
+                <div key={index} className="h-10 shrink-0 rounded-xl bg-slate-100" style={{ width: `${width * 0.25}rem` }} />
+              ))}
+            </div>
+
+            <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:flex-row">
+              <div className="h-16 w-16 shrink-0 rounded-full bg-slate-200" />
+              <div className="w-full space-y-2">
+                <div className="h-6 w-52 max-w-full rounded bg-slate-200" />
+                <div className="h-4 w-64 max-w-full rounded bg-slate-100" />
+                <div className="h-3 w-28 rounded bg-slate-100" />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-32 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="h-6 w-28 rounded bg-slate-200" />
+                  <div className="mt-4 h-4 w-24 rounded bg-slate-100" />
+                </div>
+              ))}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-28 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="h-6 w-40 max-w-full rounded bg-slate-200" />
+                  <div className="mt-3 h-4 w-52 max-w-full rounded bg-slate-100" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </main>
       </div>
     )
   }
@@ -361,7 +409,13 @@ return (
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="Administrator" userRole={user?.role} />
 
-      <main style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+      <main
+        style={{
+          marginLeft: 'var(--admin-sidebar-width)',
+          width: 'calc(100% - var(--admin-sidebar-width))',
+        }}
+        className="admin-page min-w-0"
+      >
         <AdminPageHeader
           eyebrow="My account"
           title="Account settings"
@@ -373,30 +427,30 @@ return (
 
         {/* ── Overview ─────────────────────────────────────────────────────── */}
         {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <div className={`${cardClass} flex flex-col gap-5 sm:flex-row sm:items-center`}>
+          <div className="min-w-0 space-y-6">
+            <div className={`${cardClass} flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center`}>
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-sky-600 to-emerald-500 text-xl font-black text-white">
                 {(profile.full_name || user.full_name || 'A').charAt(0).toUpperCase()}
               </div>
-              <div className="flex-1">
+              <div className="min-w-0 flex-1">
                 <h2 className="text-xl font-bold text-slate-900">{profile.full_name || user.full_name || 'Administrator'}</h2>
-                <p className="text-sm text-slate-600">{profile.email || user.email}</p>
+                <p className="break-all text-sm text-slate-600">{profile.email || user.email}</p>
                 <p className="mt-1 text-xs text-slate-400">Role: {String(user.role).replace(/_/g, ' ')}</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-3">
                 <button onClick={() => setActiveTab('profile')} className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">Edit profile</button>
                 <button onClick={() => setActiveTab('password')} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Security</button>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-4">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
               {[
                 { label: 'Account role', value: String(user.role).replace(/_/g, ' '), icon: 'profile', color: 'text-slate-900' },
                 { label: 'Status', value: profile.status || 'Active', icon: 'check', color: 'text-emerald-600' },
                 { label: '2FA status', value: twoFactor.enabled ? 'Enabled' : 'Disabled', icon: 'lock', color: twoFactor.enabled ? 'text-emerald-600' : 'text-amber-600' },
                 { label: 'Points', value: String(profile.points ?? 0), icon: 'star', color: 'text-blue-600' },
               ].map((stat) => (
-                <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div key={stat.label} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className={`text-lg font-bold ${stat.color} flex items-center gap-2`}>
                     <Icon name={stat.icon} className="w-5 h-5" />{stat.value}
                   </div>
@@ -405,18 +459,18 @@ return (
               ))}
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               {[
                 { title: 'Change Password', desc: 'Update your account password', icon: 'lock', target: 'password' },
                 { title: '2FA Settings', desc: 'Add an extra layer of security', icon: 'lock', target: '2fa' },
                 { title: 'Profile', desc: 'Update your personal information', icon: 'profile', target: 'profile' },
                 { title: 'Sessions', desc: 'View and manage active sessions', icon: 'analytics', target: 'sessions' },
               ].map((item) => (
-                <button key={item.target} onClick={() => setActiveTab(item.target)} className="group flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:shadow-md">
+                <button key={item.target} onClick={() => setActiveTab(item.target)} className="group flex min-w-0 items-center gap-4 rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:shadow-md">
                   <div className="rounded-xl bg-gradient-to-br from-sky-600 to-emerald-500 p-3 text-white">
                     <Icon name={item.icon} className="w-6 h-6" />
                   </div>
-                  <div className="flex-1">
+                  <div className="min-w-0 flex-1">
                     <h3 className="font-semibold text-slate-900 group-hover:text-sky-600">{item.title}</h3>
                     <p className="text-sm text-slate-600">{item.desc}</p>
                   </div>

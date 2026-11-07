@@ -42,7 +42,6 @@ In Supabase Dashboard → SQL Editor, execute in order:
 
 ### 4. Set Up Storage
 Create these storage buckets in Supabase Dashboard → Storage:
-- `amenities` (public)
 - `events` (public)
 - `blogs` (public)
 - `tourist-spots` (public)
@@ -58,7 +57,6 @@ Create these storage buckets in Supabase Dashboard → Storage:
 
 **Tables Created:**
 - `info_users` - User accounts and profiles
-- `info_amenities` - Tourism amenities (hotels, restaurants, etc.)
 - `info_events` - Event calendar and scheduling
 - `info_blogs` - Blog posts and articles
 - `info_announcements` - Admin announcements
@@ -105,10 +103,7 @@ Create these storage buckets in Supabase Dashboard → Storage:
 
 **Functions Created (15+):**
 - `search_content()` - Full-text search across all content
-- `get_amenities_by_category()` - Filter amenities
-- `get_nearby_amenities()` - Geographic search (within radius)
 - `get_upcoming_events()` - Events query
-- `get_featured_amenities()` - Featured content
 - `get_blog_posts()` - Blog with comment counts
 - `generate_password_reset_token()` - Auth
 - `verify_and_use_reset_token()` - Auth
@@ -172,7 +167,7 @@ Create these storage buckets in Supabase Dashboard → Storage:
 
 ### Tables Structure
 ```
-Users → Creates → Amenities/Events/Blogs/Comments
+Users → Creates → Events/Blogs/Comments
 Users → Reports → Moderation
 Users → Receives → Announcements
 Users → Can Reset → Password Resets
@@ -180,7 +175,6 @@ Users → Can Reset → Password Resets
 
 ### Relationships
 ```
-info_users.id ←→ info_amenities.created_by (1:N)
 info_users.id ←→ info_events.created_by (1:N)
 info_blogs.id ←→ info_comments.blog_id (1:N)
 info_blogs.created_by ←→ info_users.id (N:1)
@@ -199,23 +193,9 @@ All content tables have a `search_vector` column using PostgreSQL's `tsvector` f
 
 **Example:**
 ```sql
-SELECT * FROM info_amenities 
-WHERE search_vector @@ plainto_tsquery('restaurant beach')
-ORDER BY ts_rank(search_vector, plainto_tsquery('restaurant beach')) DESC;
-```
-
-## 🗺️ Geographic Features
-
-Using PostGIS extension for location-based queries:
-
-**Find nearby amenities:**
-```sql
-SELECT * FROM info_amenities
-WHERE earth_distance(
-  ll_to_earth(14.1067, 122.5631),
-  ll_to_earth(latitude, longitude)
-) / 1000 <= 5  -- Within 5km
-ORDER BY earth_distance(...) ASC;
+SELECT * FROM info_tourist_spots
+WHERE search_vector @@ plainto_tsquery('beaches')
+ORDER BY ts_rank(search_vector, plainto_tsquery('beaches')) DESC;
 ```
 
 ## 🛠️ Maintenance Tasks
@@ -235,10 +215,7 @@ ANALYZE;
 ### Manual Optimization
 ```sql
 -- Vacuum to clean up dead rows
-VACUUM ANALYZE info_amenities;
-
 -- Reindex for performance
-REINDEX INDEX idx_info_amenities_search_vector;
 ```
 
 ## 📝 API Integration
@@ -247,19 +224,18 @@ REINDEX INDEX idx_info_amenities_search_vector;
 
 **Import utilities:**
 ```javascript
-import { 
-  getAmenities, 
-  getEvents, 
+import {
+  getEvents,
   createBlog,
-  uploadMedia 
+  uploadMedia
 } from '@/lib/supabaseUtils';
 ```
 
 **Use in components:**
 ```javascript
-const result = await getAmenities({ type: 'restaurant' });
+const result = await getEvents();
 if (result.success) {
-  setAmenities(result.data);
+  setEvents(result.data);
 } else {
   console.error(result.error);
 }
@@ -276,13 +252,12 @@ if (result.success) {
 ### Issue: Search not working
 **Solution:** Verify search vectors are updated:
 ```sql
-REINDEX INDEX idx_info_amenities_search_vector;
 ```
 
 ### Issue: Slow queries
 **Solution:** Check query plan:
 ```sql
-EXPLAIN ANALYZE SELECT * FROM info_amenities;
+EXPLAIN ANALYZE SELECT * FROM info_tourist_spots;
 ```
 
 ### Issue: File upload fails

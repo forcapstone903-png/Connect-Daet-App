@@ -191,7 +191,7 @@ export async function POST(request) {
     .eq('id', senderId)
     .maybeSingle()
 
-  const displayLink = `/user/messaging/${senderId}`
+  const displayLink = `/info/user/messaging/${senderId}`
   const { error: notificationError } = await adminSupabase.from('info_notifications').insert({
     user_id: recipientId,
     title: 'New message',

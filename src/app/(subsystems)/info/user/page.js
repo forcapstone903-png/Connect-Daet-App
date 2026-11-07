@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
 export default function UserIndexPage() {
-  redirect('/user/dashboard')
+  redirect('/info/user/dashboard')
 }

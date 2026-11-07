@@ -15,7 +15,7 @@ const navigationHubs = [
     id: 'dashboard',
     label: 'Dashboard',
     iconName: 'dashboard',
-    href: '/admin/dashboard',
+    href: '/info/admin/dashboard',
     badge: null,
     requiredRoles: ['admin'],
   },
@@ -26,10 +26,11 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin', 'content_manager'],
     items: [
-      { href: '/admin/tourist-spots', label: 'Tourist Spots', iconName: 'attractions', badge: null },
-      { href: '/admin/events', label: 'Events', iconName: 'events', badge: null },
-      { href: '/admin/blog', label: 'Blogs & Articles', iconName: 'blog', badge: null },
-      { href: '/admin/announcement', label: 'Announcements', iconName: 'notifications', badge: null },
+      { href: '/info/admin/content', label: 'Content Overview', iconName: 'content', badge: null },
+      { href: '/info/admin/tourist-spots', label: 'Tourist Spots', iconName: 'attractions', badge: null },
+      { href: '/info/admin/events', label: 'Events', iconName: 'events', badge: null },
+      { href: '/info/admin/blog', label: 'Blogs & Articles', iconName: 'blog', badge: null },
+      { href: '/info/admin/announcement', label: 'Announcements', iconName: 'notifications', badge: null },
     ],
   },
   {
@@ -39,11 +40,11 @@ const navigationHubs = [
     badge: 0,
     requiredRoles: ['admin', 'moderator'],
     items: [
-      { href: '/admin/forum', label: 'Forums', iconName: 'forum', badge: null },
-      { href: '/admin/engagement', label: 'Engagement', iconName: 'analytics', badge: null },
-      { href: '/admin/feedback', label: 'Feedback', iconName: 'feedback', badge: 0 },
-      { href: '/admin/users', label: 'Users', iconName: 'users', badge: null },
-      { href: '/admin/moderation', label: 'Moderation Queue', iconName: 'moderation', badge: 0 },
+      { href: '/info/admin/forum', label: 'Forums', iconName: 'forum', badge: null },
+      { href: '/info/admin/engagement', label: 'Engagement', iconName: 'analytics', badge: null },
+      { href: '/info/admin/feedback', label: 'Feedback', iconName: 'feedback', badge: 0 },
+      { href: '/info/admin/users', label: 'Users', iconName: 'users', badge: null },
+      { href: '/info/admin/moderation', label: 'Moderation Queue', iconName: 'moderation', badge: 0 },
     ],
   },
   {
@@ -53,10 +54,10 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin', 'analyst'],
     items: [
-      { href: '/admin/analytics?tab=visitors', label: 'Visitor Statistics', iconName: 'analytics' },
-      { href: '/admin/analytics?tab=popular', label: 'Popular Content', iconName: 'analytics' },
-      { href: '/admin/analytics?tab=engagement', label: 'User Engagement', iconName: 'analytics' },
-      { href: '/admin/analytics?tab=reports', label: 'Export Reports', iconName: 'analytics' },
+      { href: '/info/admin/analytics/visitors', label: 'Visitor Statistics', iconName: 'analytics' },
+      { href: '/info/admin/analytics/content', label: 'Popular Content', iconName: 'analytics' },
+      { href: '/info/admin/analytics/engagement', label: 'User Engagement', iconName: 'analytics' },
+      { href: '/info/admin/analytics/reports', label: 'Export Reports', iconName: 'analytics' },
     ],
   },
   {
@@ -66,10 +67,10 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
-      { href: '/admin/settings/email', label: 'Email & Notifications', iconName: 'settings', exact: true },
-      { href: '/admin/settings/security', label: 'Security', iconName: 'settings', exact: true },
-      { href: '/admin/settings/maintenance', label: 'Maintenance Mode', iconName: 'settings', exact: true },
+      { href: '/info/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
+      { href: '/info/admin/settings/email', label: 'Email & Notifications', iconName: 'settings', exact: true },
+      { href: '/info/admin/settings/security', label: 'Security', iconName: 'settings', exact: true },
+      { href: '/info/admin/settings/maintenance', label: 'Maintenance Mode', iconName: 'settings', exact: true },
     ],
   },
   {
@@ -79,10 +80,10 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/file-management', label: 'Media Library', iconName: 'data' },
-      { href: '/admin/data?tab=backups', label: 'Backups', iconName: 'data' },
-      { href: '/admin/data-management', label: 'Import / Export', iconName: 'data' },
-      { href: '/admin/data?tab=retention', label: 'Data Retention', iconName: 'data' },
+      { href: '/info/admin/file-management', label: 'Media Library', iconName: 'data' },
+      { href: '/info/admin/data/backups', label: 'Backups', iconName: 'data' },
+      { href: '/info/admin/data/import-export', label: 'Import / Export', iconName: 'data' },
+      { href: '/info/admin/data/retention', label: 'Data Retention', iconName: 'data' },
     ],
   },
   {
@@ -92,9 +93,9 @@ const navigationHubs = [
     badge: 0,
     requiredRoles: ['admin'],
     items: [
-      { href: '/admin/announcement', label: 'Send Announcement', iconName: 'notifications' },
-      { href: '/admin/announcement-settings', label: 'Scheduled', iconName: 'notifications' },
-      { href: '/admin/announcement?tab=history', label: 'History', iconName: 'notifications' },
+      { href: '/info/admin/notifications/send', label: 'Send Announcement', iconName: 'notifications' },
+      { href: '/info/admin/notifications/scheduled', label: 'Scheduled', iconName: 'notifications' },
+      { href: '/info/admin/notifications/history', label: 'History', iconName: 'notifications' },
     ],
   },
   {
@@ -104,9 +105,9 @@ const navigationHubs = [
     badge: null,
     requiredRoles: ['admin', 'content_manager', 'moderator', 'analyst'],
     items: [
-      { href: '/admin/account?tab=password', label: 'Change Password', iconName: 'settings' },
-      { href: '/admin/account?tab=2fa', label: '2FA Settings', iconName: 'settings' },
-      { href: '/admin/account?tab=sessions', label: 'Sessions', iconName: 'settings' },
+      { href: '/info/admin/account?tab=password', label: 'Change Password', iconName: 'settings' },
+      { href: '/info/admin/account?tab=2fa', label: '2FA Settings', iconName: 'settings' },
+      { href: '/info/admin/account?tab=sessions', label: 'Sessions', iconName: 'settings' },
     ],
   },
 ]
@@ -158,9 +159,9 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
       return
     }
     // Centralized logout: clears the signed HTTP-only server cookie via
-    // /api/logout, the display-only client cookie, storage, and Supabase.
+    // /info/api/logout, the display-only client cookie, storage, and Supabase.
     await performLogout()
-    router.push('/login')
+    router.push('/info/login')
   }
 
   const sidebarWidth = isCollapsed ? 'w-20' : 'w-72'
@@ -178,25 +179,25 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
       }
 
       const route = normalizeHref(pathname)
-      if (['/admin/tourist-spots', '/admin/events', '/admin/blog', '/admin/announcement'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/tourist-spots', '/info/admin/events', '/info/admin/blog', '/info/admin/announcement'].some((entry) => route.startsWith(entry))) {
         nextExpanded.content = true
       }
-      if (['/admin/forum', '/admin/engagement', '/admin/feedback', '/admin/users', '/admin/moderation'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/forum', '/info/admin/engagement', '/info/admin/feedback', '/info/admin/users', '/info/admin/moderation'].some((entry) => route.startsWith(entry))) {
         nextExpanded.community = true
       }
-      if (['/admin/analytics'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/analytics'].some((entry) => route.startsWith(entry))) {
         nextExpanded.analytics = true
       }
-      if (['/admin/settings/general', '/admin/settings/email', '/admin/settings/security', '/admin/settings/maintenance'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/settings/general', '/info/admin/settings/email', '/info/admin/settings/security', '/info/admin/settings/maintenance'].some((entry) => route.startsWith(entry))) {
         nextExpanded.settings = true
       }
-      if (['/admin/file-management', '/admin/data', '/admin/data-management'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/file-management', '/info/admin/data', '/info/admin/data-management'].some((entry) => route.startsWith(entry))) {
         nextExpanded.data = true
       }
-      if (['/admin/announcement', '/admin/announcement-settings'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/announcement', '/info/admin/announcement-settings'].some((entry) => route.startsWith(entry))) {
         nextExpanded.notifications = true
       }
-      if (['/admin/account'].some((entry) => route.startsWith(entry))) {
+      if (['/info/admin/account'].some((entry) => route.startsWith(entry))) {
         nextExpanded.account = true
       }
 
@@ -305,10 +306,10 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
       <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Admin navigation">
         {/* Dashboard - Direct Link with active state */}
         <Link
-          href="/admin/dashboard"
+          href="/info/admin/dashboard"
           onClick={() => setMobileOpen(false)}
           className="admin-nav-item"
-          data-active={isActive('/admin/dashboard')}
+          data-active={isActive('/info/admin/dashboard')}
           title={isCollapsed ? 'Dashboard' : undefined}
         >
           <Icon name="dashboard" className="h-5 w-5 flex-shrink-0" />
@@ -380,10 +381,10 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
         {!isCollapsed && <p className="admin-nav-section mt-5">Account</p>}
 
         <Link
-          href="/admin/account"
+          href="/info/admin/account"
           onClick={() => setMobileOpen(false)}
           className="admin-nav-item"
-          data-active={isActive('/admin/account')}
+          data-active={isActive('/info/admin/account')}
           title={isCollapsed ? 'Account & settings' : undefined}
         >
           <Icon name="settings" className="h-5 w-5 flex-shrink-0" />

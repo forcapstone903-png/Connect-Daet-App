@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function usersPage() {
-  redirect('/admin/community?tab=users')
+export default function UsersPage() {
+  redirect('/info/admin/users')
 }

@@ -6,7 +6,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { ArrowLeft, CalendarDays, Clock, Loader, MapPin, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import Comments from '@/app/components/user/Comments'
+import Comments from '@/app/(subsystems)/info/components/user/Comments'
 
 export default function EventDetailPage() {
   const router = useRouter()
@@ -48,7 +48,7 @@ export default function EventDetailPage() {
         const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id } } : null)
 
         if (!activeSession?.user) {
-          router.push('/login')
+          router.push('/info/login')
           return
         }
 
@@ -57,7 +57,7 @@ export default function EventDetailPage() {
         await fetchEvent()
       } catch (err) {
         console.error('Auth error:', err)
-        router.push('/login')
+        router.push('/info/login')
       }
     }
 
@@ -122,7 +122,7 @@ export default function EventDetailPage() {
             >
               Try again
             </button>
-            <Link href="/user/events" className="usr-section-primary">
+            <Link href="/info/user/events" className="usr-section-primary">
               Back to events
             </Link>
           </div>
@@ -138,7 +138,7 @@ export default function EventDetailPage() {
   return (
     <main className="tourism-shell usr-section-page usr-detail usr-events min-h-screen text-slate-900">
       <div className="usr-section-container mx-auto max-w-6xl px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-          <Link href="/user/events" aria-label="Back to events" title="Back to events" className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
+          <Link href="/info/user/events" aria-label="Back to events" title="Back to events" className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
         </Link>
 

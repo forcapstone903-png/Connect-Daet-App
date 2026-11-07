@@ -6,8 +6,8 @@ import { Archive, Mail, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from '
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
-import UserSectionHeader, { SectionLoading } from '@/app/components/user/UserSectionHeader'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
+import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -85,7 +85,7 @@ export default function UserMessagingPage() {
         ? { deleteConversation: true }
         : { isMuted: action === 'mute' }
     try {
-      const response = await fetch(`/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) })
+      const response = await fetch(`/info/api/messages/${conversationId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(payload) })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update conversation.')
       if (action === 'archive' || action === 'delete') {
@@ -109,7 +109,7 @@ export default function UserMessagingPage() {
     const loadMessages = async () => {
       try {
         setLoadError('')
-        const response = await fetch('/api/messages', { credentials: 'same-origin' })
+        const response = await fetch('/info/api/messages', { credentials: 'same-origin' })
         const result = await response.json()
         if (active && response.ok && result.success) {
           setConversations(result.conversations || [])
@@ -168,7 +168,7 @@ export default function UserMessagingPage() {
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const response = await fetch('/api/search/users?limit=5000&connectionsOnly=true', { credentials: 'same-origin', signal: controller.signal })
+        const response = await fetch('/info/api/search/users?limit=5000&connectionsOnly=true', { credentials: 'same-origin', signal: controller.signal })
         const result = await response.json()
         if (!controller.signal.aborted) {
           setComposeResults(result.success ? result.users || [] : [])
@@ -214,7 +214,7 @@ export default function UserMessagingPage() {
     setComposeSending(true)
     setComposeError('')
     try {
-      const response = await fetch('/api/messages', {
+      const response = await fetch('/info/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -223,7 +223,7 @@ export default function UserMessagingPage() {
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send message.')
       setComposeOpen(false)
-      router.push(`/user/messaging/${encodeURIComponent(composeRecipient.id)}`)
+      router.push(`/info/user/messaging/${encodeURIComponent(composeRecipient.id)}`)
     } catch (error) {
       setComposeError(error.message || 'Unable to send message.')
     } finally {
@@ -235,7 +235,7 @@ export default function UserMessagingPage() {
     <main className="tourism-shell usr-section-page usr-inbox min-h-screen">
       <div className="usr-section-container mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
         <UserSectionHeader eyebrow="Your community, closer" title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
-          <Link href="/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
+          <Link href="/info/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
         </UserSectionHeader>
 
         {composeOpen && (
@@ -321,7 +321,7 @@ export default function UserMessagingPage() {
                       <div className="absolute inset-y-0 right-0 flex items-center gap-1 bg-slate-100 px-2">
                         <button type="button" onClick={() => void updateConversation(conversationId, 'archive')} aria-label="Archive conversation" title="Archive" className={`${revealedAction === 'archive' ? 'flex' : 'hidden'} h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-700`}><Archive className="h-4 w-4" /></button>
                       </div>
-                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed || actionMenuOpen) { event.preventDefault(); setRevealedConversation(null); setRevealedAction(null); setConversationMenu(null) } }} className={`relative flex min-w-0 flex-1 gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? (revealedAction === 'archive' ? '-translate-x-24' : 'translate-x-24') : 'translate-x-0'}`}>
+                      <UserProfileLink key={conversationId} user={conversation.other_user} href={`/info/user/messaging/${encodeURIComponent(conversationId)}`} onClick={(event) => { if (revealed || actionMenuOpen) { event.preventDefault(); setRevealedConversation(null); setRevealedAction(null); setConversationMenu(null) } }} className={`relative flex min-w-0 flex-1 gap-3 px-4 py-4 transition-transform duration-200 sm:px-5 ${hasUnread ? 'border-l-4 border-red-500 bg-emerald-50/70 hover:bg-emerald-50' : 'bg-white hover:bg-[#f5fbfa]'} ${revealed ? (revealedAction === 'archive' ? '-translate-x-24' : 'translate-x-24') : 'translate-x-0'}`}>
                         <ProfileAvatar user={conversation.other_user} />
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center justify-between gap-2">

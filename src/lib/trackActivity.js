@@ -94,14 +94,14 @@ function routeForEntity(entityType, entityId) {
 
   const normalized = String(entityType).toLowerCase()
   const map = {
-    blog: `/user/blogs/${entityId}`,
-    article: `/user/blogs/${entityId}`,
-    event: `/user/events/${entityId}`,
-    forum: `/user/forums/${entityId}`,
-    forum_thread: `/user/forums/${entityId}`,
-    post: `/user/posts/${entityId}`,
-    user_post: `/user/posts/${entityId}`,
-    announcement: `/user/announcements/${entityId}`,
+    blog: `/info/user/blogs/${entityId}`,
+    article: `/info/user/blogs/${entityId}`,
+    event: `/info/user/events/${entityId}`,
+    forum: `/info/user/forums/${entityId}`,
+    forum_thread: `/info/user/forums/${entityId}`,
+    post: `/info/user/posts/${entityId}`,
+    user_post: `/info/user/posts/${entityId}`,
+    announcement: `/info/user/announcements/${entityId}`,
   }
 
   return map[normalized] || null
@@ -128,7 +128,7 @@ async function trackUserActivity({
   if (!userId || !activityType) return { success: false }
 
   try {
-    const response = await fetch('/api/activity/track', {
+    const response = await fetch('/info/api/activity/track', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userId, activityType, entityType, entityId, description, metadata }),

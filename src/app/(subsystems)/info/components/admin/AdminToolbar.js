@@ -1,6 +1,6 @@
 // Filter / search toolbar rendered at the top of an AdminPanel, plus a search
 // field that matches the console input styling.
-import { Icon } from '@/app/components/Icon'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 
 export default function AdminToolbar({ children, className = '' }) {
   return <div className={`admin-toolbar ${className}`.trim()}>{children}</div>

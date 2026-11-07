@@ -49,13 +49,13 @@ async function main() {
     await send('Network.enable')
     for (const page of ['forums', 'messaging', 'notifications', 'blogs', 'events', 'announcements']) {
       errors = []
-      await send('Page.navigate', { url: `${process.env.BASE_URL || 'http://localhost:3000'}/user/${page}` })
+      await send('Page.navigate', { url: `${process.env.BASE_URL || 'http://localhost:3000'}/info/user/${page}` })
       await delay(4500)
       console.log('Route smoke:', JSON.stringify({ page, ...await evaluate('({url:location.href,title:document.title,heading:document.querySelector("h1")?.textContent})'), errors }))
     }
     const cssPath = path.join(root, 'src/app/globals.css')
     const compiled = await require('postcss')([require('@tailwindcss/postcss')({ base: root })]).process(fs.readFileSync(cssPath, 'utf8'), { from: cssPath })
-    const css = compiled.css + fs.readFileSync(path.join(root, 'src/app/user/user-sections.css'), 'utf8')
+    const css = compiled.css + fs.readFileSync(path.join(root, 'src/app/(subsystems)/info/user/user-sections.css'), 'utf8')
     const header = '<header class="usr-section-heading usr-card"><a class="usr-section-back">← Community dashboard</a><div class="usr-section-heading-row"><div class="min-w-0 flex-1"><p class="usr-section-eyebrow">Your community</p><h1 class="usr-section-title">Community stories <span class="usr-wave">✍️</span></h1><p class="usr-section-description">Discover local favorites and stories worth sharing from around Daet.</p></div><div class="usr-section-heading-actions"><button class="usr-section-secondary">Archived</button><button class="usr-section-primary">Start a discussion</button></div></div></header>'
     const card = '<article class="usr-content-card rounded-2xl border bg-white p-5"><h2>A community story</h2><p>' + 'LongUnbrokenTitle'.repeat(15) + '</p></article>'
     await send('Page.navigate', { url: 'about:blank' })

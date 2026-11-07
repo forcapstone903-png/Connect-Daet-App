@@ -10,7 +10,7 @@ export default function SearchBar() {
   const submit = (e) => {
     e.preventDefault()
     if (!q.trim()) return
-    router.push(`/search?q=${encodeURIComponent(q.trim())}`)
+    router.push(`/info/visitor/search?q=${encodeURIComponent(q.trim())}`)
   }
 
   return (

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function retentionPage() {
-  redirect('/admin/data?tab=retention')
+export default function RetentionPage() {
+  redirect('/info/admin/data-management#retention')
 }

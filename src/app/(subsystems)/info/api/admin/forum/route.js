@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { getServerSession } from '@/lib/serverAuth'
+import { authorizeAdminApi } from '@/lib/adminApiAuth'
 import { notifyFollowers } from '@/lib/notificationAudience'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
@@ -15,6 +15,8 @@ function missingConfig() {
 }
 
 export async function GET(request) {
+  const { response: authError } = authorizeAdminApi(request)
+  if (authError) return authError
   if (!adminSupabase) return missingConfig()
 
   try {
@@ -44,12 +46,12 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const { session, response: authError } = authorizeAdminApi(request)
+  if (authError) return authError
   if (!adminSupabase) return missingConfig()
 
   try {
-    const session = getServerSession(request)
-    const actorId = session?.user_id || null
-    if (!actorId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
+    const actorId = session.user_id
 
     const body = await request.json()
     const title = (body.title || '').trim()
@@ -86,7 +88,7 @@ export async function POST(request) {
     await notifyFollowers(adminSupabase, {
       authorId: actorId,
       type: 'forum',
-      link: `/user/forums/${data.id}`,
+      link: `/info/user/forums/${data.id}`,
       postId: data.id,
       title: 'New forum discussion',
       actionText: 'started a new discussion',

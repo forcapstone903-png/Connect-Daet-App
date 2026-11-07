@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import AdminSidebar from '@/app/components/AdminSidebar'
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar'
 import AdminPageHeader from './AdminPageHeader'
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies'
@@ -51,14 +51,14 @@ export default function AdminShell({
     const loadSession = () => {
       const session = getStoredSession()
       if (!session) {
-        router.replace('/login')
+        router.replace('/info/login')
         return
       }
 
       try {
         const userData = JSON.parse(session)
         if (!hasAdminAccess(userData.role)) {
-          router.replace('/admin/dashboard')
+          router.replace('/info/admin/dashboard')
           return
         }
         if (isActive) {
@@ -67,7 +67,7 @@ export default function AdminShell({
         }
       } catch (error) {
         console.error('Error loading admin session:', error)
-        router.replace('/login')
+        router.replace('/info/login')
       }
     }
 

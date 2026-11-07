@@ -9,7 +9,6 @@
 -- Overall System Statistics
 SELECT 
   (SELECT COUNT(*) FROM info_users) as total_users,
-  (SELECT COUNT(*) FROM info_amenities WHERE status = 'active') as active_amenities,
   (SELECT COUNT(*) FROM info_events WHERE status = 'published') as published_events,
   (SELECT COUNT(*) FROM info_blogs WHERE status = 'published') as published_blogs,
   (SELECT COUNT(*) FROM info_tourist_spots WHERE status = 'active') as active_spots;
@@ -24,17 +23,6 @@ SELECT
 FROM info_users
 GROUP BY user_type
 ORDER BY total DESC;
-
--- Amenities by Type with Average Ratings
-SELECT 
-  type,
-  COUNT(*) as total_amenities,
-  COUNT(CASE WHEN status = 'active' THEN 1 END) as active,
-  ROUND(AVG(rating), 2) as avg_rating,
-  COUNT(CASE WHEN featured = true THEN 1 END) as featured_count
-FROM info_amenities
-GROUP BY type
-ORDER BY total_amenities DESC;
 
 -- Events Summary
 SELECT 
@@ -64,16 +52,6 @@ ORDER BY total_blogs DESC;
 -- ============================================================================
 -- TRENDING & POPULAR CONTENT
 -- ============================================================================
-
--- Top Rated Amenities
-SELECT 
-  id, name, type, location, rating, review_count,
-  featured_image, opening_hours
-FROM info_amenities
-WHERE status = 'active'
-  AND rating IS NOT NULL
-ORDER BY rating DESC, review_count DESC
-LIMIT 10;
 
 -- Most Viewed Blogs
 SELECT 
@@ -110,25 +88,6 @@ LIMIT 15;
 -- Uncomment if PostGIS is available on your Supabase tier.
 -- If not available, use full-text search instead.
 
--- Find All Amenities Within Radius
--- Usage: Find restaurants within 5km of Bagasbas Beach (lat: 14.1067, lon: 122.5631)
---
--- SELECT 
---   id, name, type, location,
---   earth_distance(
---     ll_to_earth(14.1067, 122.5631),
---     ll_to_earth(latitude, longitude)
---   ) / 1000 as distance_km,
---   contact_number, website, opening_hours
--- FROM info_amenities
--- WHERE status = 'active'
---   AND type = 'restaurant'
---   AND earth_distance(
---     ll_to_earth(14.1067, 122.5631),
---     ll_to_earth(latitude, longitude)
---   ) / 1000 <= 5
--- ORDER BY distance_km ASC;
-
 -- Get All Tourist Spots in Geographic Order
 --
 -- SELECT 
@@ -162,16 +121,6 @@ LIMIT 15;
 
 -- Advanced Content Search with Ranking
 SELECT 
-  'amenity' as content_type,
-  id, name as title, description, featured_image,
-  ts_rank(search_vector, plainto_tsquery('beaches')) as relevance
-FROM info_amenities
-WHERE search_vector @@ plainto_tsquery('beaches')
-  AND status = 'active'
-
-UNION ALL
-
-SELECT 
   'event' as content_type,
   id, title, description, featured_image,
   ts_rank(search_vector, plainto_tsquery('beaches')) as relevance
@@ -191,22 +140,6 @@ WHERE search_vector @@ plainto_tsquery('beaches')
 
 ORDER BY relevance DESC
 LIMIT 50;
-
--- Multi-Filter Search
-SELECT 
-  id, name, type, location, rating, featured_image, opening_hours
-FROM info_amenities
-WHERE status = 'active'
-  AND type = ANY(ARRAY['restaurant', 'accommodation'])
-  AND (
-    featured = true
-    OR rating >= 4.5
-  )
-  AND (
-    amenities @> ARRAY['wifi']
-    OR price_range = '$'
-  )
-ORDER BY rating DESC, featured DESC;
 
 -- ============================================================================
 -- USER ANALYTICS
@@ -235,19 +168,17 @@ ORDER BY signup_date DESC;
 -- Most Active Content Creators
 SELECT 
   u.id, u.full_name, u.email,
-  COUNT(DISTINCT a.id) as amenities_created,
   COUNT(DISTINCT e.id) as events_created,
   COUNT(DISTINCT b.id) as blogs_created,
   COUNT(DISTINCT t.id) as spots_created
 FROM info_users u
-LEFT JOIN info_amenities a ON u.id = a.created_by
 LEFT JOIN info_events e ON u.id = e.created_by
 LEFT JOIN info_blogs b ON u.id = b.created_by
 LEFT JOIN info_tourist_spots t ON u.id = t.created_by
 WHERE u.user_type IN ('admin', 'business')
 GROUP BY u.id, u.full_name, u.email
-HAVING COUNT(DISTINCT a.id) + COUNT(DISTINCT e.id) + COUNT(DISTINCT b.id) + COUNT(DISTINCT t.id) > 0
-ORDER BY (COUNT(DISTINCT a.id) + COUNT(DISTINCT e.id) + COUNT(DISTINCT b.id) + COUNT(DISTINCT t.id)) DESC;
+HAVING COUNT(DISTINCT e.id) + COUNT(DISTINCT b.id) + COUNT(DISTINCT t.id) > 0
+ORDER BY (COUNT(DISTINCT e.id) + COUNT(DISTINCT b.id) + COUNT(DISTINCT t.id)) DESC;
 
 -- ============================================================================
 -- MODERATION & SAFETY
@@ -340,13 +271,6 @@ ORDER BY created_at DESC;
 
 -- Draft Content to Review
 SELECT 
-  'amenity' as type, id, name as title, status, created_by, created_at
-FROM info_amenities
-WHERE status IN ('pending', 'draft')
-
-UNION ALL
-
-SELECT 
   'event' as type, id, title, status, created_by, created_at
 FROM info_events
 WHERE status IN ('draft', 'pending')
@@ -369,14 +293,6 @@ ORDER BY created_at ASC;
 
 -- Content with Missing Images
 SELECT 
-  'amenity' as type, id, name as title, featured_image, 
-  array_length(images, 1) as image_count
-FROM info_amenities
-WHERE featured_image IS NULL OR featured_image = ''
-
-UNION ALL
-
-SELECT 
   'event' as type, id, title, featured_image,
   array_length(images, 1) as image_count
 FROM info_events
@@ -394,12 +310,6 @@ WHERE featured_image IS NULL OR featured_image = '';
 -- ============================================================================
 
 -- Find Orphaned Records (Records Referencing Deleted Users)
-SELECT 'amenities' as table_name, COUNT(*) as count
-FROM info_amenities
-WHERE created_by NOT IN (SELECT id FROM info_users)
-
-UNION ALL
-
 SELECT 'events' as table_name, COUNT(*) as count
 FROM info_events
 WHERE created_by NOT IN (SELECT id FROM info_users)
@@ -409,14 +319,6 @@ UNION ALL
 SELECT 'blogs' as table_name, COUNT(*) as count
 FROM info_blogs
 WHERE created_by NOT IN (SELECT id FROM info_users);
-
--- Duplicate Content Check
-SELECT 
-  name, COUNT(*) as duplicates,
-  array_agg(id) as ids
-FROM info_amenities
-GROUP BY name
-HAVING COUNT(*) > 1;
 
 -- Expired Password Reset Tokens Count
 SELECT COUNT(*) as expired_tokens
@@ -466,13 +368,11 @@ ORDER BY c.created_at ASC;
 
 -- Analyze Table Performance
 -- ANALYZE info_users;
--- ANALYZE info_amenities;
 -- ANALYZE info_events;
 -- ANALYZE info_blogs;
 
 -- Vacuum Tables (Clean Up Dead Rows)
 -- VACUUM ANALYZE info_users;
--- VACUUM ANALYZE info_amenities;
 -- VACUUM ANALYZE info_events;
 -- VACUUM ANALYZE info_blogs;
 
@@ -498,9 +398,6 @@ ORDER BY pg_relation_size(indexrelid) DESC;
 
 -- Export User Data (CSV format ready)
 \copy (SELECT id, email, full_name, user_type, status, created_at, last_login FROM info_users) TO '/tmp/users_backup.csv' WITH CSV HEADER;
-
--- Export Amenities Data
-\copy (SELECT id, name, type, location, status, created_at FROM info_amenities) TO '/tmp/amenities_backup.csv' WITH CSV HEADER;
 
 -- Export Events Data
 \copy (SELECT id, title, category, location, start_date, status, created_at FROM info_events) TO '/tmp/events_backup.csv' WITH CSV HEADER;

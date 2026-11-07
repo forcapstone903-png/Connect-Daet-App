@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Loader, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import Comments from '@/app/components/user/Comments'
+import Comments from '@/app/(subsystems)/info/components/user/Comments'
 
 export default function UserPostDetailPage() {
   const [post, setPost] = useState(null)
@@ -53,7 +53,7 @@ export default function UserPostDetailPage() {
     <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6">
       <div className="usr-empty-state max-w-xl">
         <p className="text-sm font-semibold text-slate-600">{error}</p>
-        <Link href="/user/dashboard" className="usr-section-primary mt-5 inline-flex">Back to dashboard</Link>
+        <Link href="/info/user/dashboard" className="usr-section-primary mt-5 inline-flex">Back to dashboard</Link>
       </div>
     </main>
   )
@@ -64,10 +64,10 @@ export default function UserPostDetailPage() {
       <article className="max-w-3xl">
         <div className="usr-card usr-enter p-5 sm:p-8">
           <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-            <Link href={post.user_id ? `/user/profile/${post.user_id}` : '/user/profile'} aria-label="View author's profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-teal-700">
+            <Link href={post.user_id ? `/info/user/profile/${post.user_id}` : '/info/user/profile'} aria-label="View author's profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-teal-700">
               {post.info_users?.profile_image_url ? <img src={post.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-4 w-4" />}
             </Link>
-            <Link href={post.user_id ? `/user/profile/${post.user_id}` : '/user/profile'} className="font-bold text-slate-800 hover:text-teal-700">{post.info_users?.full_name || post.info_users?.email || 'Community member'}</Link>
+            <Link href={post.user_id ? `/info/user/profile/${post.user_id}` : '/info/user/profile'} className="font-bold text-slate-800 hover:text-teal-700">{post.info_users?.full_name || post.info_users?.email || 'Community member'}</Link>
             <span aria-hidden="true">·</span>
             <time dateTime={post.created_at || undefined}>{new Date(post.created_at).toLocaleDateString()}</time>
             <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Community post</span>

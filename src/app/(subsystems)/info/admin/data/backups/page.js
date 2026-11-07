@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function backupsPage() {
-  redirect('/admin/data?tab=backups')
+export default function BackupsPage() {
+  redirect('/info/admin/data-management#backup')
 }

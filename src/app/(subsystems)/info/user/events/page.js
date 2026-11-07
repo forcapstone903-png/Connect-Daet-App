@@ -1,13 +1,13 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CalendarDays, ChevronRight, Loader, MapPin, Ticket } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 export default function UserEventsPage() {
   const router = useRouter()
@@ -34,7 +34,7 @@ export default function UserEventsPage() {
         const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id } } : null)
 
         if (!activeSession?.user) {
-          router.push('/login')
+          router.push('/info/login')
           return
         }
 
@@ -154,7 +154,7 @@ export default function UserEventsPage() {
             <div className="mt-4 border-t border-slate-100 pt-3">
               <div className="space-y-1.5">
                 {[...eventSummary.ongoing, ...eventSummary.upcoming].slice(0, 3).map((event) => (
-                  <Link key={event.id} href={`/user/events/${event.id}`} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 transition hover:bg-sky-50">
+                  <Link key={event.id} href={`/info/user/events/${event.id}`} className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 transition hover:bg-sky-50">
                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white text-sky-700 shadow-sm"><CalendarDays className="h-4 w-4" /></span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-bold text-slate-800">{event.title}</span>
@@ -222,7 +222,7 @@ export default function UserEventsPage() {
               return (
               <Link
                 key={event.id}
-                href={`/user/events/${event.id}`}
+                href={`/info/user/events/${event.id}`}
                 className="usr-event-card group min-w-0 overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
               >
                 {primaryMedia ? (

@@ -111,7 +111,7 @@ export default function MediaUpload({
       formData.append('bucket', bucket);
       formData.append('folder', folder);
 
-      const response = await fetch('/api/upload', {
+      const response = await fetch('/info/api/upload', {
         method: 'POST',
         body: formData
       });
@@ -162,7 +162,7 @@ export default function MediaUpload({
     const url = mediaPreview || existingMediaUrl
     if (url) {
       try {
-        const response = await fetch('/api/upload', {
+        const response = await fetch('/info/api/upload', {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ bucket, url }),

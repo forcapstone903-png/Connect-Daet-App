@@ -1,4 +1,4 @@
-// app/admin/settings/general/page.js — General Settings
+// app/(subsystems)/info/admin/settings/general/page.js — General Settings
 'use client';
 
 import { useState } from 'react';

@@ -1,35 +1,34 @@
-﻿'use client'
+'use client'
 
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function AuthConfirmPage() {
+function AuthConfirmContent() {
   const router = useRouter()
-  
-  // Derive initial message from URL params synchronously
-  const [message, setMessage] = useState(() => {
-    if (typeof window === 'undefined') return 'Verifying your email...'
-    const params = new URLSearchParams(window.location.search)
-    const tokenHash = params.get('token_hash')
-    const type = params.get('type')
-    if (!tokenHash || !type) {
-      return 'Missing verification data. Please request a new confirmation email.'
-    }
-    return 'Verifying your email...'
-  })
+  const searchParams = useSearchParams()
+  const tokenHash = searchParams.get('token_hash')
+  const type = searchParams.get('type')
+  const queryEmail = searchParams.get('email')
+  const missingVerification = !tokenHash || !type
+  const [message, setMessage] = useState('Verifying your email...')
+  const emailInputRef = useRef(null)
+  const [canResend, setCanResend] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resendMessage, setResendMessage] = useState('')
+  const [resendError, setResendError] = useState('')
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const tokenHash = params.get('token_hash')
-    const type = params.get('type')
+    if (emailInputRef.current) {
+      emailInputRef.current.value = queryEmail || ''
+    }
 
-    if (!tokenHash || !type) {
+    if (missingVerification) {
       return
     }
 
     const confirmEmail = async () => {
       try {
-        const response = await fetch('/api/auth/confirm-email', {
+        const response = await fetch('/info/api/auth/confirm-email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token_hash: tokenHash, type }),
@@ -44,15 +43,44 @@ export default function AuthConfirmPage() {
         setMessage('✅ Email verified successfully. Redirecting to login...')
 
         setTimeout(() => {
-          router.push('/login?message=Your email has been verified. Please sign in.&onboarding=1')
+          router.push('/info/login?message=Your email has been verified. Please sign in.&onboarding=1')
         }, 2000)
       } catch (error) {
         setMessage(error.message || 'Unable to verify your email right now.')
+        setCanResend(true)
       }
     }
 
     confirmEmail()
-  }, [router])
+  }, [missingVerification, queryEmail, router, tokenHash, type])
+
+  const handleResend = async (event) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const email = String(formData.get('email') || '').trim()
+    setResending(true)
+    setResendMessage('')
+    setResendError('')
+
+    try {
+      const response = await fetch('/info/api/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      })
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || data.message || 'Failed to resend verification email.')
+      }
+
+      setResendMessage('A new confirmation email has been sent. Check your inbox.')
+    } catch (error) {
+      setResendError(error.message || 'Unable to resend the confirmation email right now.')
+    } finally {
+      setResending(false)
+    }
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
@@ -63,8 +91,53 @@ export default function AuthConfirmPage() {
           </svg>
         </div>
         <h2 className="text-2xl font-bold text-gray-800">Email Verification</h2>
-        <p className="mt-4 text-gray-600">{message}</p>
+        <p className="mt-4 text-gray-600">
+          {missingVerification
+            ? 'Missing or expired verification data. Request a new confirmation email below.'
+            : message}
+        </p>
+        {(canResend || missingVerification) && (
+          <form onSubmit={handleResend} className="mt-6 space-y-3 text-left">
+            <label htmlFor="verification-email" className="block text-sm font-medium text-gray-700">
+              Email address
+            </label>
+            <input
+              ref={emailInputRef}
+              name="email"
+              id="verification-email"
+              type="email"
+              autoComplete="email"
+              required
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+              placeholder="you@example.com"
+            />
+            <button
+              type="submit"
+              disabled={resending}
+              className="w-full rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {resending ? 'Sending...' : 'Resend confirmation email'}
+            </button>
+            {resendMessage && <p role="status" className="text-sm text-green-700">{resendMessage}</p>}
+            {resendError && <p role="alert" className="text-sm text-red-700">{resendError}</p>}
+          </form>
+        )}
       </div>
     </div>
+  )
+}
+
+export default function AuthConfirmPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 px-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center">
+          <h2 className="text-2xl font-bold text-gray-800">Email Verification</h2>
+          <p className="mt-4 text-gray-600">Verifying your email...</p>
+        </div>
+      </div>
+    }>
+      <AuthConfirmContent />
+    </Suspense>
   )
 }

@@ -1,4 +1,4 @@
-// app/api/activity/track/route.js
+// app/(subsystems)/info/api/activity/track/route.js
 // Records user engagement (comment / like / share / save) into the activity log
 // and notifies all admins via the info_notifications table.
 //
@@ -31,15 +31,15 @@ function routeForEntity(entityType, entityId) {
   if (!entityType || !entityId) return null
   const normalized = String(entityType).toLowerCase()
   const map = {
-    blog: `/user/blogs/${entityId}`,
-    article: `/user/blogs/${entityId}`,
-    event: `/user/events/${entityId}`,
-    forum: `/user/forums/${entityId}`,
-    forum_thread: `/user/forums/${entityId}`,
-    user_post: `/user/posts/${entityId}`,
-    post: `/user/posts/${entityId}`,
-    announcement: `/user/announcements/${entityId}`,
-    comment: `/user/comments/${entityId}`,
+    blog: `/info/user/blogs/${entityId}`,
+    article: `/info/user/blogs/${entityId}`,
+    event: `/info/user/events/${entityId}`,
+    forum: `/info/user/forums/${entityId}`,
+    forum_thread: `/info/user/forums/${entityId}`,
+    user_post: `/info/user/posts/${entityId}`,
+    post: `/info/user/posts/${entityId}`,
+    announcement: `/info/user/announcements/${entityId}`,
+    comment: `/info/user/comments/${entityId}`,
   }
   return map[normalized] || null
 }
@@ -148,24 +148,58 @@ function buildAdminLink(entityType, entityId, metadata = {}) {
   if (String(entityType || '').toLowerCase() === 'comment') {
     return buildAdminLink(metadata.contentType, metadata.contentId)
   }
-  if (!entityId) return '/admin/dashboard'
+  if (!entityId) return '/info/admin/dashboard'
   const links = {
-    blog: `/admin/blog?open=${encodeURIComponent(entityId)}`,
-    event: `/admin/events?open=${encodeURIComponent(entityId)}`,
-    forum: `/admin/forum?open=${encodeURIComponent(entityId)}`,
-    forum_thread: `/admin/forum?open=${encodeURIComponent(entityId)}`,
-    announcement: `/admin/announcement?open=${encodeURIComponent(entityId)}`,
-    user_post: `/admin/users?open=${encodeURIComponent(entityId)}`,
-    post: `/admin/users?open=${encodeURIComponent(entityId)}`,
+    blog: `/info/admin/blog?open=${encodeURIComponent(entityId)}`,
+    event: `/info/admin/events?open=${encodeURIComponent(entityId)}`,
+    forum: `/info/admin/forum?open=${encodeURIComponent(entityId)}`,
+    forum_thread: `/info/admin/forum?open=${encodeURIComponent(entityId)}`,
+    announcement: `/info/admin/announcement?open=${encodeURIComponent(entityId)}`,
+    user_post: `/info/admin/users?open=${encodeURIComponent(entityId)}`,
+    post: `/info/admin/users?open=${encodeURIComponent(entityId)}`,
   }
-  return links[String(entityType || '').toLowerCase()] || '/admin/engagement'
+  return links[String(entityType || '').toLowerCase()] || '/info/admin/engagement'
 }
 
 export async function POST(request) {
   if (!adminSupabase) return missingConfig()
 
+  let rawBody
   try {
-    const body = await request.json()
+    rawBody = await request.text()
+  } catch (error) {
+    console.error('Activity request body read failed:', error)
+    return NextResponse.json(
+      { success: false, message: 'Unable to read the activity request body.' },
+      { status: 400 }
+    )
+  }
+
+  if (!rawBody.trim()) {
+    return NextResponse.json(
+      { success: false, message: 'Activity request body must not be empty.' },
+      { status: 400 }
+    )
+  }
+
+  let body
+  try {
+    body = JSON.parse(rawBody)
+  } catch {
+    return NextResponse.json(
+      { success: false, message: 'Activity request body must contain valid JSON.' },
+      { status: 400 }
+    )
+  }
+
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json(
+      { success: false, message: 'Activity request body must be a JSON object.' },
+      { status: 400 }
+    )
+  }
+
+  try {
     const authenticatedUserId = getServerSession(request)?.user_id
     const userId = authenticatedUserId
     const activityType = body.activityType || body.activity_type

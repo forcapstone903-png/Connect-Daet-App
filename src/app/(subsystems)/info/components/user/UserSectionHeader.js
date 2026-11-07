@@ -1,20 +1,57 @@
 import Link from 'next/link'
+import {
+  Archive,
+  Bell,
+  Bookmark,
+  CalendarDays,
+  FileText,
+  Handshake,
+  Lightbulb,
+  Mail,
+  Megaphone,
+  MessageSquare,
+  Pencil,
+  Search,
+  Settings,
+  Trophy,
+} from 'lucide-react'
+
+const HEADER_ICONS = {
+  '🎉': CalendarDays,
+  '💡': Lightbulb,
+  '📮': Mail,
+  '⚙️': Settings,
+  '🔖': Bookmark,
+  '🏆': Trophy,
+  '✏️': Pencil,
+  '🤝': Handshake,
+  '🗂️': Archive,
+  '📝': FileText,
+  '📬': Mail,
+  '💬': MessageSquare,
+  '📣': Megaphone,
+  '🔎': Search,
+  '✒️': Pencil,
+}
 
 export default function UserSectionHeader({
   eyebrow,
   title,
   description,
   emoji,
+  icon: Icon,
   backHref,
   backLabel,
   children,
 }) {
+  const HeaderIcon = Icon || HEADER_ICONS[emoji] || (emoji ? Bell : null)
+
   return (
     <header className="usr-section-heading usr-card usr-enter">
       <div className="usr-section-heading-row">
         <div className="min-w-0 flex-1">
           <p className="usr-section-eyebrow">{eyebrow}</p>
-          <h1 className="usr-section-title">{title} {emoji && <span className="usr-wave inline-block" aria-hidden="true">{emoji}</span>}</h1>
+          <h1 className="usr-section-title">{title} {HeaderIcon && <HeaderIcon className="inline-block h-5 w-5" aria-hidden="true" />}</h1>
           <p className="usr-section-description">{description}</p>
         </div>
         {children && <div className="usr-section-heading-actions">{children}</div>}

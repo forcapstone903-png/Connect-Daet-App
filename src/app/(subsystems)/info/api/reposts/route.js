@@ -8,7 +8,6 @@ export const runtime = 'nodejs'
 const ALLOWED_CONTENT_TYPES = new Set([
   'blog',
   'event',
-  'amenity',
   'forum_thread',
   'announcement',
   'user_post',
@@ -20,7 +19,6 @@ function normalizeContentType(value) {
 }
 
 const ORIGINAL_TABLES = {
-  amenity: { table: 'info_amenities', authorColumn: 'created_by', select: 'id, created_by, name, description, location, images, featured_image, created_at, status' },
   blog: { table: 'info_blogs', authorColumn: 'created_by', select: 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, status' },
   event: { table: 'info_events', authorColumn: 'created_by', select: 'id, created_by, title, description, featured_image, images, start_date, created_at, status' },
   forum_thread: { table: 'forum_threads', authorColumn: 'created_by', select: 'id, created_by, title, content, created_at, status' },
@@ -33,7 +31,6 @@ const ORIGINAL_ROUTES = {
   event: 'events',
   forum_thread: 'forums',
   announcement: 'announcements',
-  amenity: 'tourist-spots',
   user_post: 'posts',
 }
 
@@ -98,7 +95,6 @@ async function getOriginalContent(adminSupabase, contentType, contentId) {
 
   let query = adminSupabase.from(definition.table).select(definition.select).eq('id', contentId)
   if (contentType === 'user_post' || contentType === 'forum_thread') query = query.in('status', ['active', 'published'])
-  else if (contentType === 'amenity') query = query.eq('status', 'active')
   else if (contentType === 'blog' || contentType === 'event' || contentType === 'announcement') query = query.eq('status', 'published')
 
   const { data, error } = await query.maybeSingle()
@@ -212,7 +208,7 @@ export async function POST(request) {
       is_read: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      link: `/user/${ORIGINAL_ROUTES[contentType]}/${contentId}`,
+      link: `/info/user/${ORIGINAL_ROUTES[contentType]}/${contentId}`,
       post_id: contentId,
       post_owner_id: originalResult.authorId,
       actor_id: userId,

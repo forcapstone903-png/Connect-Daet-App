@@ -1,4 +1,4 @@
-// Admin route wrapper: every /admin page renders inside `.admin-page-shell`,
+// Admin route wrapper: every /info/admin page renders inside `.admin-page-shell`,
 // which carries the console design-system tokens (see the "ADMIN CONSOLE DESIGN
 // SYSTEM" block in src/app/globals.css) and the per-route scroll restoration.
 'use client'

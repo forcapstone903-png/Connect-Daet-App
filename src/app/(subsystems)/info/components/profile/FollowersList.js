@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
+import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 
 export default function FollowersList({ userId }) {
   const [followers, setFollowers] = useState([])

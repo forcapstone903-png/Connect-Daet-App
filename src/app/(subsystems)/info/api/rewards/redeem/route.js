@@ -64,7 +64,7 @@ export async function POST(request) {
       is_read: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      link: '/user/rewards',
+      link: '/info/user/rewards',
     })
     if (notificationError) console.error('Reward redemption notification failed:', notificationError)
 

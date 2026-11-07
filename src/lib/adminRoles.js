@@ -18,7 +18,7 @@ const getAdminRoleLabel = (role) => {
   return 'Admin Access'
 }
 
-const getAdminHomePath = () => '/admin/dashboard'
+const getAdminHomePath = () => '/info/admin/dashboard'
 
 module.exports = {
   ADMIN_ROLE,

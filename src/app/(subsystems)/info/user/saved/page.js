@@ -6,8 +6,8 @@ import { useRouter } from 'next/navigation'
 import { Bookmark, CalendarDays, FileText, Loader, MapPin, MessageSquare, MapPinned, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
-import UserSectionHeader, { SectionTabs } from '@/app/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 
 function parseSavedKey(key) {
   const separatorIndex = key.indexOf('-')
@@ -60,7 +60,7 @@ export default function UserSavedPage() {
           .select('id, title, excerpt, featured_image, category, published_at')
           .in('id', blogIds)
           .eq('status', 'published')
-        ;(data || []).forEach(item => results.push({ ...item, type: 'blog', typeLabel: 'Blog', href: `/user/blogs/${item.id}` }))
+        ;(data || []).forEach(item => results.push({ ...item, type: 'blog', typeLabel: 'Blog', href: `/info/user/blogs/${item.id}` }))
       }
 
       if (eventIds.length > 0) {
@@ -69,7 +69,7 @@ export default function UserSavedPage() {
           .select('id, title, description, location, featured_image, category, start_date')
           .in('id', eventIds)
           .eq('status', 'published')
-        ;(data || []).forEach(item => results.push({ ...item, type: 'event', typeLabel: 'Event', href: `/user/events/${item.id}` }))
+        ;(data || []).forEach(item => results.push({ ...item, type: 'event', typeLabel: 'Event', href: `/info/user/events/${item.id}` }))
       }
 
       if (forumIds.length > 0) {
@@ -78,7 +78,7 @@ export default function UserSavedPage() {
           .select('id, title, content, reply_count, last_activity_at')
           .in('id', forumIds)
           .eq('status', 'active')
-        ;(data || []).forEach(item => results.push({ ...item, type: 'forum', typeLabel: 'Forum', href: `/user/forums/${item.id}` }))
+        ;(data || []).forEach(item => results.push({ ...item, type: 'forum', typeLabel: 'Forum', href: `/info/user/forums/${item.id}` }))
       }
 
       if (touristSpotIds.length > 0) {
@@ -87,7 +87,7 @@ export default function UserSavedPage() {
           .select('id, name, description, location, featured_image, category, updated_at')
           .in('id', touristSpotIds)
           .eq('status', 'active')
-        ;(data || []).forEach(item => results.push({ ...item, title: item.name, excerpt: item.description, type: 'tourist_spot', typeLabel: 'Destination', href: `/tourist-spots/${item.id}` }))
+        ;(data || []).forEach(item => results.push({ ...item, title: item.name, excerpt: item.description, type: 'tourist_spot', typeLabel: 'Destination', href: `/info/visitor/tourist-spots/${item.id}` }))
       }
 
       const sorted = results.sort((a, b) => {
@@ -115,7 +115,7 @@ export default function UserSavedPage() {
         const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id } } : null)
 
         if (!activeSession?.user) {
-          router.push('/login')
+          router.push('/info/login')
           return
         }
 
@@ -124,7 +124,7 @@ export default function UserSavedPage() {
         await loadSavedItems(activeSession.user.id)
       } catch (err) {
         console.error('Auth error:', err)
-        router.push('/login')
+        router.push('/info/login')
       }
     }
 
@@ -192,7 +192,7 @@ export default function UserSavedPage() {
           emoji="🔖"
         >
           <span className="usr-section-counter">{savedItems.length} saved</span>
-          <Link href="/user/blogs" className="usr-section-secondary">Browse stories</Link>
+          <Link href="/info/user/blogs" className="usr-section-secondary">Browse stories</Link>
         </UserSectionHeader>
 
         <SectionTabs label="Saved content filters" value={activeType} onChange={setActiveType} options={typeFilters} />
@@ -215,8 +215,8 @@ export default function UserSavedPage() {
             <p className="text-sm font-semibold text-slate-600">Nothing saved here yet</p>
             <p className="mt-1 text-xs text-slate-500">Bookmark blogs, events, forum threads, or destinations and they will show up here.</p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
-              <Link href="/search" className="usr-section-primary">Explore content</Link>
-              <Link href="/user/blogs" className="usr-section-secondary">Browse stories</Link>
+              <Link href="/info/visitor/search" className="usr-section-primary">Explore content</Link>
+              <Link href="/info/user/blogs" className="usr-section-secondary">Browse stories</Link>
             </div>
           </div>
         ) : (

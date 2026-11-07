@@ -3,14 +3,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
-import { Icon } from '@/app/components/Icon';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
-
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export default function AnalyticsAndReportsPage() {
   const router = useRouter();
@@ -26,7 +24,13 @@ export default function AnalyticsAndReportsPage() {
     openInquiries: 0,
     avgRating: 0,
   });
-  const [trendData, setTrendData] = useState([]);
+  const [visitorMetrics, setVisitorMetrics] = useState({
+    days: 30,
+    pageViews: 0,
+    uniqueVisitors: 0,
+    daily: [],
+    topPages: [],
+  });
   const [categoryData, setCategoryData] = useState([]);
   const [latestReports, setLatestReports] = useState([]);
   const [toast, setToast] = useState(null);
@@ -38,15 +42,20 @@ export default function AnalyticsAndReportsPage() {
 
   const fetchAnalytics = useCallback(async () => {
     try {
-      const [usersRes, eventsRes, spotsRes, blogsRes, feedbackRes, inquiriesRes] = await Promise.all([
+      const [usersRes, eventsRes, spotsRes, blogsRes, feedbackRes, inquiriesRes, visitorResponse] = await Promise.all([
         supabase.from('info_users').select('id, status, user_type, last_login, created_at'),
         supabase.from('info_events').select('id, created_at'),
         supabase.from('info_tourist_spots').select('id, name, created_at'),
         supabase.from('info_blogs').select('id, created_at'),
         supabase.from('info_feedback').select('id, rating, created_at'),
         supabase.from('info_inquiries').select('id, status, category, created_at'),
+        fetch('/info/api/analytics/visits', { credentials: 'same-origin', cache: 'no-store' }),
       ]);
 
+      const visitorResult = await visitorResponse.json();
+      if (!visitorResponse.ok || !visitorResult.success) {
+        throw new Error(visitorResult.message || 'Unable to load visitor statistics.');
+      }
       if (usersRes.error) throw usersRes.error;
       if (eventsRes.error) throw eventsRes.error;
       if (spotsRes.error) throw spotsRes.error;
@@ -64,16 +73,6 @@ export default function AnalyticsAndReportsPage() {
       const avgRating = feedback.length
         ? (feedback.reduce((acc, item) => acc + (Number(item.rating) || 0), 0) / feedback.length).toFixed(1)
         : '0.0';
-
-      const trend = DAY_LABELS.map((day, index) => {
-        const base = index + 1;
-        return {
-          label: day,
-          visits: Math.max(18 + base * 9, 0),
-          feedback: Math.max(3 + base * 2, 0),
-          inquiries: Math.max(2 + base, 0),
-        };
-      });
 
       const categoryBreakdown = [
         { label: 'Safety', value: inquiries.filter((item) => item.category === 'safety').length },
@@ -101,7 +100,7 @@ export default function AnalyticsAndReportsPage() {
         avgRating: Number(avgRating),
       });
 
-      setTrendData(trend);
+      setVisitorMetrics(visitorResult.metrics);
       setCategoryData(categoryBreakdown);
       setLatestReports(reports);
     } catch (err) {
@@ -114,13 +113,13 @@ export default function AnalyticsAndReportsPage() {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
 
       const userData = JSON.parse(session);
       if (!hasAdminAccess(userData.role)) {
-        router.push('/admin/dashboard');
+        router.push('/info/admin/dashboard');
         return;
       }
 
@@ -143,6 +142,8 @@ export default function AnalyticsAndReportsPage() {
       ['Feedback Entries', stats.totalFeedback],
       ['Open Inquiries', stats.openInquiries],
       ['Average Rating', `${stats.avgRating}`],
+      ['Page Views (30 days)', visitorMetrics.pageViews],
+      ['Estimated Unique Visitors (30 days)', visitorMetrics.uniqueVisitors],
     ];
 
     const csv = rows
@@ -161,10 +162,32 @@ export default function AnalyticsAndReportsPage() {
 
   const handleLogout = async () => {
     await performLogout();
-    router.push('/login');
+    router.push('/info/login');
   };
 
-  const maxTrendValue = Math.max(...trendData.flatMap((item) => [item.visits, item.feedback, item.inquiries]), 1);
+  const maxTrendValue = Math.max(...visitorMetrics.daily.map((day) => day.pageViews), 1);
+
+  useEffect(() => {
+    if (loading) return;
+
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    const targetId = tab === 'visitors'
+      ? 'visitors'
+      : tab === 'content' || tab === 'popular'
+        ? 'content'
+        : tab === 'reports'
+          ? 'reports'
+          : null;
+    const hashId = window.location.hash.slice(1);
+    const section = targetId || hashId;
+
+    if (tab === 'engagement') {
+      router.replace('/info/admin/engagement');
+      return;
+    }
+
+    if (section) document.getElementById(section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [loading, router]);
 
   if (loading) {
     return (
@@ -203,41 +226,80 @@ export default function AnalyticsAndReportsPage() {
         </AdminStatGrid>
 
         <div className="mb-6 grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div id="visitors" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Engagement trend</p>
-                <h3 className="mt-2 text-lg font-bold text-slate-800">7-day performance snapshot</h3>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Visitor statistics</p>
+                <h3 className="mt-2 text-lg font-bold text-slate-800">Last 30 days</h3>
+                <p className="mt-1 text-xs text-slate-500">Estimated unique visitors count consented browsers, not verified people.</p>
               </div>
             </div>
 
-            <div className="flex h-56 items-end gap-3">
-              {trendData.map((day) => (
-                <div key={day.label} className="flex flex-1 flex-col items-center justify-end gap-2">
-                  <div className="flex h-36 w-full items-end justify-center gap-1">
-                    <div
-                      className="w-2 rounded-t-xl bg-sky-500"
-                      style={{ height: `${(day.visits / maxTrendValue) * 100}%` }}
-                      title={`${day.label}: ${day.visits} visits`}
-                    />
-                    <div
-                      className="w-2 rounded-t-xl bg-emerald-500"
-                      style={{ height: `${(day.feedback / maxTrendValue) * 100}%` }}
-                      title={`${day.label}: ${day.feedback} feedback`}
-                    />
-                    <div
-                      className="w-2 rounded-t-xl bg-violet-500"
-                      style={{ height: `${(day.inquiries / maxTrendValue) * 100}%` }}
-                      title={`${day.label}: ${day.inquiries} inquiries`}
-                    />
-                  </div>
-                  <span className="text-xs font-medium text-slate-500">{day.label}</span>
+            <div className="mb-5 grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-blue-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">Page views</p>
+                <p className="mt-1 text-2xl font-black text-blue-950">{visitorMetrics.pageViews.toLocaleString()}</p>
+              </div>
+              <div className="rounded-2xl bg-emerald-50 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Estimated unique visitors</p>
+                <p className="mt-1 text-2xl font-black text-emerald-950">{visitorMetrics.uniqueVisitors.toLocaleString()}</p>
+              </div>
+            </div>
+
+            {visitorMetrics.daily.length > 0 ? (
+              <>
+                <div className="mb-3 flex flex-wrap gap-4 text-xs font-medium text-slate-600">
+                  <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-blue-600" />Page views</span>
+                  <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Unique visitors</span>
                 </div>
-              ))}
+                <div className="overflow-x-auto pb-2">
+                  <div className="flex h-56 min-w-[720px] items-end gap-2">
+                    {visitorMetrics.daily.map((day) => {
+                      const label = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', {
+                        month: 'numeric',
+                        day: 'numeric',
+                        timeZone: 'UTC',
+                      });
+                      const pageHeight = (day.pageViews / maxTrendValue) * 100;
+                      const visitorHeight = (day.uniqueVisitors / maxTrendValue) * 100;
+
+                      return (
+                        <div key={day.date} className="flex h-full min-w-4 flex-1 flex-col items-center justify-end gap-2" title={`${day.date}: ${day.pageViews} page views, ${day.uniqueVisitors} estimated unique visitors`}>
+                          <div className="flex h-36 w-full items-end justify-center gap-0.5">
+                            <div className="w-1/2 rounded-t-md bg-blue-600" style={{ height: `${pageHeight}%` }} />
+                            <div className="w-1/2 rounded-t-md bg-emerald-500" style={{ height: `${visitorHeight}%` }} />
+                          </div>
+                          <span className="text-[9px] font-medium text-slate-500">{label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                No consented public page visits have been recorded in this period.
+              </p>
+            )}
+
+            <div className="mt-5 border-t border-slate-100 pt-4">
+              <h4 className="text-sm font-bold text-slate-800">Most-viewed public pages</h4>
+              {visitorMetrics.topPages.length ? (
+                <ol className="mt-2 space-y-2">
+                  {visitorMetrics.topPages.map((page) => (
+                    <li key={page.path} className="flex items-center justify-between gap-4 text-sm">
+                      <span className="min-w-0 truncate text-slate-600">{page.path}</span>
+                      <span className="shrink-0 font-semibold text-slate-800">{page.pageViews.toLocaleString()}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">Popular pages will appear after consented visits are recorded.</p>
+              )}
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div id="reports" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Key reports</p>
             <div className="mt-4 space-y-3">
               {latestReports.map((item) => (
@@ -251,7 +313,7 @@ export default function AnalyticsAndReportsPage() {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div id="content" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4">
               <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Content coverage</p>
               <h3 className="mt-2 text-lg font-bold text-slate-800">Platform inventory</h3>

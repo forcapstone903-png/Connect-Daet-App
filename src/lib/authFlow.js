@@ -19,7 +19,7 @@ function normalizeRegistrationPayload(payload = {}) {
     email,
     mobile_number: mobileNumber,
     password: String(payload.password || ''),
-    user_type: ['admin', 'moderator', 'tourist', 'business', 'artisan', 'operator'].includes(userType)
+    user_type: ['admin', 'moderator', 'tourist', 'business'].includes(userType)
       ? userType
       : 'tourist',
   }

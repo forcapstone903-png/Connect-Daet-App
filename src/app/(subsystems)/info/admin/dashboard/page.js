@@ -1,4 +1,4 @@
-// app/admin/dashboard/page.js
+// app/(subsystems)/info/admin/dashboard/page.js
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -6,23 +6,19 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Bell, MessageSquare } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import '@/app/components/admin/AdminCalendar.css';
+import '@/app/(subsystems)/info/components/admin/AdminCalendar.css';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
-import MediaUpload from '@/app/components/MediaUpload';
-import AdminAvatar from '@/app/components/admin/AdminAvatar';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { Icon } from '@/app/components/Icon';
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
+import AdminAvatar from '@/app/(subsystems)/info/components/admin/AdminAvatar';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess, canAccessAdminDashboard } from '@/lib/adminRoles'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
-
-// Weather API configuration
-const WEATHER_API_KEY = process.env.NEXT_PUBLIC_OPENWEATHER_API_KEY || 'eb04fa7f82400a4f1de5b71301e52119';
-const DAET_COORDS = { lat: 14.1122, lon: 122.9553 };
 
 // Weather advisories persist for one week before expiring.
 const WEATHER_ALERT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -62,29 +58,6 @@ const withTimeout = (promise, timeoutMs, label) => Promise.race([
   }),
 ]);
 
-
-// Deterministic fallback built from an explicit timestamp so render output
-// never depends on the current clock.
-const buildFallbackWeatherData = (now = new Date()) => ({
-  current: {
-    temp: 27,
-    feelsLike: 27,
-    condition: 'Rain',
-    description: 'moderate rain',
-    humidity: 92,
-    windSpeed: 2,
-    pressure: 1007,
-    icon: '10d',
-    rainAmount: 2,
-  },
-  forecast: [
-    { date: now.toISOString().slice(0, 10), temp: 27, temp_min: 25, temp_max: 29, condition: 'Rain', description: 'moderate rain', icon: '10d' },
-    { date: new Date(now.getTime() + 86400000).toISOString().slice(0, 10), temp: 26, temp_min: 24, temp_max: 28, condition: 'Rain', description: 'light rain', icon: '10d' },
-    { date: new Date(now.getTime() + 172800000).toISOString().slice(0, 10), temp: 28, temp_min: 25, temp_max: 30, condition: 'Clouds', description: 'partly cloudy', icon: '03d' },
-  ],
-  lastUpdated: now,
-  alert: null,
-});
 
 const loadStoredNotifications = () => {
   if (typeof window === 'undefined') return [];
@@ -146,7 +119,7 @@ export default function AdminDashboard() {
   
   // Analytics Stats
   const [stats, setStats] = useState({
-    totalUsers: 0, totalTourists: 0, totalArtisans: 0, totalOperators: 0, onlineUsers: 0,
+    totalUsers: 0, totalTourists: 0, totalBusinesses: 0, totalModerators: 0, onlineUsers: 0,
     totalEvents: 0, totalSpots: 0, totalBlogs: 0
   });
   const [dailyFeedbackQuestion, setDailyFeedbackQuestion] = useState(null);
@@ -216,7 +189,7 @@ export default function AdminDashboard() {
     if (!user) return undefined;
     let active = true;
     const loadDailyFeedback = async () => {
-      const response = await fetch('/api/daily-feedback', { credentials: 'same-origin' });
+      const response = await fetch('/info/api/daily-feedback', { credentials: 'same-origin' });
       const result = await response.json();
       const question = result.success ? result.question : null;
       if (!active) return;
@@ -238,7 +211,7 @@ export default function AdminDashboard() {
     if (!questionText) return;
     setPublishingFeedback(true);
     try {
-      const response = await fetch('/api/daily-feedback', {
+      const response = await fetch('/info/api/daily-feedback', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -420,7 +393,7 @@ export default function AdminDashboard() {
   
   const markAsRead = (id) => {
     setNotifications(prev => prev.map(notif => notif.id === id ? { ...notif, read: true } : notif));
-    void fetch('/api/notifications', {
+    void fetch('/info/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
@@ -429,7 +402,7 @@ export default function AdminDashboard() {
   
   const markAllAsRead = () => {
     setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
-    void fetch('/api/notifications', {
+    void fetch('/info/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ markAllRead: true }),
@@ -450,7 +423,7 @@ export default function AdminDashboard() {
     } catch (e) {
       // ignore storage errors
     }
-    void fetch('/api/notifications', { method: 'DELETE' });
+    void fetch('/info/api/notifications', { method: 'DELETE' });
     showToast('All notifications have been cleared', false);
   };
   
@@ -477,17 +450,17 @@ export default function AdminDashboard() {
 
       if (!sentNotifications[notificationKey]) {
         if (eventDate.toDateString() === now.toDateString()) {
-          addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          addNotification('Event Today', `"${eventTitle}" is happening today at ${event.location || 'venue TBA'}`, 'event', '/info/admin/events', 0);
           sentNotifications[notificationKey] = true;
         } else if (eventDate.toDateString() === tomorrow.toDateString()) {
-          addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          addNotification('Event Tomorrow', `"${eventTitle}" is happening tomorrow at ${event.location || 'venue TBA'}`, 'event', '/info/admin/events', 0);
           sentNotifications[notificationKey] = true;
         } else if (eventDate.toDateString() === threeDaysLater.toDateString()) {
-          addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          addNotification('Upcoming Event', `"${eventTitle}" will take place in 3 days at ${event.location || 'venue TBA'}`, 'event', '/info/admin/events', 0);
           sentNotifications[notificationKey] = true;
         } else if (eventDate > now && eventDate <= sevenDaysLater) {
           const daysDiff = Math.ceil((eventDate - now) / (1000 * 60 * 60 * 24));
-          addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', '/admin/events', 0);
+          addNotification('Upcoming Event', `"${eventTitle}" is in ${daysDiff} days at ${event.location || 'venue TBA'}`, 'event', '/info/admin/events', 0);
           sentNotifications[notificationKey] = true;
         }
       }
@@ -525,7 +498,7 @@ export default function AdminDashboard() {
       saveSentCache(SENT_WEATHER_ALERTS_KEY, sentAlerts);
     } catch (err) {
       console.error('Weather announcement persist error:', err);
-      addNotification('Weather Announcement Sync Failed', 'Weather advisory could not be stored in the announcement page.', 'error', '/admin/announcement', 0);
+      addNotification('Weather Announcement Sync Failed', 'Weather advisory could not be stored in the announcement page.', 'error', '/info/admin/announcement', 0);
     }
   };
 
@@ -598,51 +571,23 @@ export default function AdminDashboard() {
   const fetchWeather = async () => {
     setWeather(prev => ({ ...prev, loading: true, error: null }));
     try {
-      const currentRes = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${DAET_COORDS.lat}&lon=${DAET_COORDS.lon}&units=metric&appid=${WEATHER_API_KEY}`);
-      if (!currentRes.ok) throw new Error('Failed to fetch current weather');
-      const currentData = await currentRes.json();
-
-      const forecastRes = await fetch(`https://api.openweathermap.org/data/2.5/forecast?lat=${DAET_COORDS.lat}&lon=${DAET_COORDS.lon}&units=metric&appid=${WEATHER_API_KEY}`);
-      if (!forecastRes.ok) throw new Error('Failed to fetch forecast');
-      const forecastData = await forecastRes.json();
-
-      const dailyForecast = [];
-      const daysMap = new Map();
-      forecastData.list.forEach(item => {
-        const date = item.dt_txt.split(' ')[0];
-        if (!daysMap.has(date) && dailyForecast.length < 5) {
-          daysMap.set(date, {
-            date,
-            temp_min: item.main.temp_min,
-            temp_max: item.main.temp_max,
-            temp: item.main.temp,
-            condition: item.weather[0].main,
-            description: item.weather[0].description,
-            icon: item.weather[0].icon
-          });
-          dailyForecast.push(daysMap.get(date));
-        }
-      });
+      const response = await fetch('/info/api/admin/weather', { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.weather?.current) {
+        throw new Error(result.message || 'Live weather data is temporarily unavailable.');
+      }
 
       const weatherData = {
-        current: {
-          temp: Math.round(currentData.main.temp), feelsLike: Math.round(currentData.main.feels_like),
-          condition: currentData.weather[0].main, description: currentData.weather[0].description,
-          humidity: currentData.main.humidity, windSpeed: currentData.wind.speed,
-          pressure: currentData.main.pressure, sunrise: currentData.sys.sunrise, sunset: currentData.sys.sunset,
-          icon: currentData.weather[0].icon, rainAmount: currentData.rain ? currentData.rain['1h'] || 0 : 0
-        },
-        forecast: dailyForecast.slice(0, 5),
-        lastUpdated: new Date()
+        ...result.weather,
+        lastUpdated: new Date(result.weather.lastUpdated),
       };
       setWeather(prev => ({ ...weatherData, loading: false, error: null, alert: prev.alert }));
       checkWeatherNotifications(weatherData);
     } catch (err) {
       console.error('Weather fetch error:', err);
-      const fallback = buildFallbackWeatherData(new Date());
-      setWeather(prev => ({ ...fallback, loading: false, error: 'Weather feed unavailable — showing Daet fallback conditions.', alert: null }));
+      setWeather(prev => ({ ...prev, current: null, forecast: [], loading: false, error: 'Live weather data is unavailable. No forecast is being shown.', alert: null }));
       if (!markErrorNotified('weather_api_error')) {
-        addNotification('Weather API Disconnected', 'Weather API could not be reached. The dashboard is using the fallback forecast data.', 'error', null, 0);
+        addNotification('Weather API Disconnected', 'Live weather data could not be reached. No weather conditions or forecast are being shown.', 'error', null, 0);
       }
     }
   };
@@ -1019,7 +964,7 @@ export default function AdminDashboard() {
           .select('id, email, full_name, profile_image_url, user_type, status, is_online, created_at')
           .order('created_at', { ascending: false }),
         adminUserId
-          ? fetch('/api/notifications', { credentials: 'same-origin' }).then(async (response) => {
+          ? fetch('/info/api/notifications', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
               return { data: response.ok && result.success ? result.notifications || [] : [], error: response.ok ? null : new Error(result.message || 'Unable to load notifications') }
             })
@@ -1034,8 +979,8 @@ export default function AdminDashboard() {
         ...prev,
         totalUsers: list.length,
         totalTourists: list.filter(u => u.user_type === 'tourist').length,
-        totalArtisans: list.filter(u => u.user_type === 'artisan').length,
-        totalOperators: list.filter(u => u.user_type === 'operator').length,
+        totalBusinesses: list.filter(u => u.user_type === 'business').length,
+        totalModerators: list.filter(u => u.user_type === 'moderator').length,
         onlineUsers: list.filter(u => u.is_online === true).length
       }));
       setRecentUsers(list.filter(u => u.user_type !== 'admin').slice(0, 5));
@@ -1081,7 +1026,7 @@ export default function AdminDashboard() {
 
   async function fetchRecentActivity() {
     try {
-      const response = await fetch('/api/activity/track?scope=recent', { credentials: 'same-origin', cache: 'no-store' })
+      const response = await fetch('/info/api/activity/track?scope=recent', { credentials: 'same-origin', cache: 'no-store' })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load activity')
       const data = result.activities || []
@@ -1122,7 +1067,7 @@ export default function AdminDashboard() {
       if (!session) {
         if (active) {
           setLoading(false);
-          router.push('/login');
+          router.push('/info/login');
         }
         return;
       }
@@ -1133,7 +1078,7 @@ export default function AdminDashboard() {
       } catch (error) {
         if (active) {
           setLoading(false);
-          router.push('/login');
+          router.push('/info/login');
         }
         return;
       }
@@ -1142,7 +1087,7 @@ export default function AdminDashboard() {
       if (!canAccessAdminDashboard({ ...sessionUser, role: sessionUser.role || sessionUser.user_type })) {
         if (active) {
           setLoading(false);
-          router.push('/access-denied');
+          router.push('/info/access-denied');
         }
         return;
       }
@@ -1182,7 +1127,7 @@ export default function AdminDashboard() {
   const handleLogout = async () => {
     addNotification('Logged Out', 'You have been logged out successfully.', 'info', null, 0);
     await performLogout();
-    router.push('/login');
+    router.push('/info/login');
   };
 
   const getSeverityColor = (severity) => {
@@ -1339,7 +1284,7 @@ export default function AdminDashboard() {
                 {showWeatherDetails && (
                   <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
                     <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
-                      <div><h3 className="font-bold">Daet Weather Center</h3><p className="text-blue-100 text-xs">Real-time conditions & forecasts</p></div>
+                      <div><h3 className="font-bold">Daet Weather Center</h3><p className="text-blue-100 text-xs">Live conditions & forecasts</p></div>
                       <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white" aria-label="Close weather details"><Icon name="close" className="w-4 h-4" /></button>
                     </div>
                     
@@ -1417,7 +1362,22 @@ export default function AdminDashboard() {
                           {getWeatherRecommendation(weather.current.condition, weather.current.temp).text}
                         </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="p-4" role={weather.error ? 'alert' : 'status'}>
+                        <p className="text-sm text-slate-600">
+                          {weather.loading ? 'Loading live weather…' : weather.error || 'Live weather data is unavailable.'}
+                        </p>
+                        {!weather.loading && (
+                          <button
+                            type="button"
+                            onClick={fetchWeather}
+                            className="mt-3 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                          >
+                            Retry
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1752,7 +1712,7 @@ export default function AdminDashboard() {
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
               <><Icon name="users" className="inline-block w-4 h-4 mr-2" />Recent Registrations</>
             </h3>
-            <Link href="/admin/users" className="text-xs text-blue-600 hover:underline font-medium">View all users <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
+            <Link href="/info/admin/users" className="text-xs text-blue-600 hover:underline font-medium">View all users <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -1778,8 +1738,9 @@ export default function AdminDashboard() {
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
                         u.user_type === 'tourist' ? 'bg-blue-100 text-blue-800' : 
-                        u.user_type === 'artisan' ? 'bg-yellow-100 text-yellow-800' : 
-                        u.user_type === 'operator' ? 'bg-purple-100 text-purple-800' :
+                        u.user_type === 'business' ? 'bg-yellow-100 text-yellow-800' :
+                        u.user_type === 'moderator' ? 'bg-purple-100 text-purple-800' :
+                        u.user_type === 'admin' ? 'bg-red-100 text-red-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
                         {u.user_type}
@@ -1807,7 +1768,7 @@ export default function AdminDashboard() {
 
       {/* Floating Message Envelope for Inquiries - opens a separate page */}
       <button 
-        onClick={() => router.push('/admin/feedback')}
+        onClick={() => router.push('/info/admin/feedback')}
         className="fixed bottom-5 right-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-4 shadow-lg transition-all duration-200 z-30 group"
       >
         <div className="relative">

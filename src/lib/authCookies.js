@@ -47,7 +47,7 @@ export function getAuthCookieFromRequest(req) {
  *
  * The cookie fallback fixes the flicker/reload bug: `sessionStorage` is scoped
  * to a single tab, so opening a fresh tab cleared it and pages immediately
- * bounced to `/login`. The cookie survives across tabs and reloads.
+ * bounced to `/info/login`. The cookie survives across tabs and reloads.
  */
 export function getStoredSession() {
   if (typeof window === 'undefined') return null

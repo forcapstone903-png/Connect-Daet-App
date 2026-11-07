@@ -18,7 +18,7 @@ export async function GET(request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     if (error) {
       console.error('Callback code exchange failed:', error)
-      return NextResponse.redirect(new URL('/login?message=Unable to complete sign in. Please try again.', request.url))
+      return NextResponse.redirect(new URL('/info/login?message=Unable to complete sign in. Please try again.', request.url))
     }
 
     // Establish the full session so the proxy (which authorizes via the signed
@@ -36,7 +36,7 @@ export async function GET(request) {
 
         if (profile?.user_type) role = String(profile.user_type).trim().toLowerCase()
 
-        const redirectUrl = role === 'admin' ? '/admin/dashboard' : '/user/dashboard'
+        const redirectUrl = role === 'admin' ? '/info/admin/dashboard' : '/info/user/dashboard'
         const response = NextResponse.redirect(new URL(redirectUrl, request.url))
 
         const userProfile = {
@@ -70,5 +70,5 @@ export async function GET(request) {
   }
 
   // URL to redirect to after sign-in process completes
-  return NextResponse.redirect(new URL('/user/dashboard', request.url))
+  return NextResponse.redirect(new URL('/info/user/dashboard', request.url))
 }

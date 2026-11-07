@@ -2,9 +2,10 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import CookieConsent from '@/components/CookieConsent'
 import PushNotificationPrompt from '@/components/PushNotificationPrompt'
+import SiteVisitTracker from '@/components/SiteVisitTracker'
 import AlertToast from '@/components/AlertToast'
 import UserSettingsProvider from '@/components/UserSettingsProvider'
-import { InlineScript } from '@/app/components/InlineScript'
+import { InlineScript } from '@/app/(subsystems)/info/components/InlineScript'
 import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/themeBootstrap'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -33,6 +34,7 @@ export default function RootLayout({ children }) {
           <main>{children}</main>
         </UserSettingsProvider>
         <CookieConsent />
+        <SiteVisitTracker />
         <PushNotificationPrompt />
         <AlertToast />
       </body>

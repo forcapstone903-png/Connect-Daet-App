@@ -8,11 +8,54 @@ The shared implementation is in `src/lib/cache.js`:
 
 - Authenticated feed, profile, and notification data use a user-scoped in-memory TTL cache.
 - Public tourist spot data uses a versioned `localStorage` cache with a one-day TTL and background revalidation.
+- Public visitor review previews use the shared in-memory cache with a five-minute TTL and stale-while-revalidate behavior.
 - Logout clears user-scoped memory entries.
 - Profile, follow, reaction, save, and notification writes invalidate related memory entries.
 - Persistent cache corruption, quota errors, and private browsing storage failures fall back to the network.
 
+## Visitor Review Preview
+
+The public visitor page may show the latest published attraction reviews when review text is available.
+
+```text
+Feature: Public visitor review preview
+Data fetched: Public tourist-spot review text, rating, date, and public reviewer name/avatar
+Change frequency: Occasional; updated when a visitor submits a review
+Visibility: Public
+Freshness: Five minutes
+Stale behavior: Keep the last preview visible while revalidating; surface a retryable page error if revalidation fails
+Missing-cache behavior: Fetch on first load; show no testimonial section if there are no reviews
+Invalidation trigger: Successful attraction review upsert
+Cache layer: In-memory
+Cache key: visitor:public:reviews
+TTL: 5 minutes
+Offline behavior: Use stale in-memory reviews when available; otherwise surface the fetch error without placeholder reviews
+Security notes: Only public review fields are selected; authenticated actions and user-specific votes are not cached
+Manual clear method: invalidateCache('visitor:public:reviews')
+```
+
 Do not move authenticated data into persistent browser storage without an explicit security review.
+
+## Admin Weather
+
+The admin dashboard requests current Daet weather and forecast data from the server endpoint. Current observations can affect visitor safety, so the endpoint bypasses caches and never substitutes estimated conditions when the provider is unavailable.
+
+```text
+Feature: Admin dashboard weather
+Data fetched: Current conditions and five-day provider forecast for Daet
+Change frequency: Provider updates; dashboard polls every 30 minutes and supports manual retry
+Visibility: Admin-only; weather itself is public, provider credentials are sensitive
+Freshness: Fetch current provider data on each request
+Stale behavior: Do not display stale weather after a failed request
+Missing-cache behavior: Show a clear unavailable message and retry action
+Invalidation trigger: No cache
+Cache layer: None; upstream requests use no-store and the endpoint response is private/no-store
+Cache key: None
+TTL: None
+Offline behavior: No forecast is shown; the retry action remains available
+Security notes: OpenWeather credentials must be stored only in the server-side OPENWEATHER_API_KEY environment variable
+Manual clear method: None
+```
 
 ## Feature Decision Template
 
@@ -104,6 +147,27 @@ Only queue reversible actions such as like, save, or follow when the application
 Queued actions must be idempotent, deduplicated, retried with backoff, and cleared after confirmed sync.
 
 ## Read and Write Rules
+
+## Maintenance control-plane setting
+
+The public maintenance flag is intentionally uncached: stale state could leave the site unavailable after an administrator disables maintenance, or expose the site after enabling it. The proxy performs a `no-store` database lookup for applicable requests. A lookup failure is logged and fails open so a database outage does not block the entire application.
+
+```text
+Feature: Public-site maintenance gate
+Data fetched: Enabled flag and visitor-facing maintenance message
+Change frequency: Administrator controlled; expected to be rare
+Visibility: Public while maintenance is enabled
+Freshness: Next applicable request after a successful update
+Stale behavior: None; do not serve stale maintenance state
+Missing-cache behavior: Read the database for each applicable request
+Invalidation trigger: None; no cache is populated
+Cache layer: None; HTTP request uses no-store
+Cache key: None
+TTL: 0
+Offline behavior: Log lookup failures and fail open
+Security notes: Service-role read stays in server proxy; message is public and React-escaped on the maintenance page
+Manual clear method: None; there is no cache
+```
 
 ### Stale-while-revalidate
 

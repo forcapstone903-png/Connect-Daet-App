@@ -1,7 +1,7 @@
 // Admin stat tiles. Values can be numbers, formatted strings, or omitted while
 // loading (a subtle skeleton is shown instead of a misleading zero).
 import Link from 'next/link'
-import { Icon } from '@/app/components/Icon'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 
 export default function AdminStatCard({
   label,

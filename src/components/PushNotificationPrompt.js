@@ -23,28 +23,54 @@ const isRecentlyDismissed = () => {
 export default function PushNotificationPrompt() {
   const [availability, setAvailability] = useState(null)
   const [userId, setUserId] = useState(null)
+  const [permission, setPermission] = useState('default')
   const [status, setStatus] = useState('idle')
   const [message, setMessage] = useState('')
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
+    const syncPermission = () => {
+      if (typeof Notification !== 'undefined') {
+        setPermission(Notification.permission)
+      }
+    }
+
     const timer = window.setTimeout(async () => {
       setAvailability(getPushAvailability())
       const storedSession = getStoredSessionObject()
       const resolvedUserId = storedSession?.id || storedSession?.user_id || null
       setUserId(resolvedUserId)
       setDismissed(isRecentlyDismissed())
+      syncPermission()
 
       // Permission can remain granted after an earlier database save failed.
       // Re-save the existing device subscription when the app starts.
       if (resolvedUserId && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        void subscribeUserToPush({ userId: resolvedUserId }).catch((error) => {
+        setStatus('loading')
+        try {
+          const result = await subscribeUserToPush({ userId: resolvedUserId })
+          if (result.success) {
+            setStatus('success')
+          } else {
+            setStatus('error')
+            setMessage(result.message || 'Unable to finish setting up notifications.')
+          }
+        } catch (error) {
           console.error('Push subscription sync failed:', error)
-        })
+          setStatus('error')
+          setMessage(error?.message || 'Unable to finish setting up notifications.')
+        }
       }
     }, 0)
 
-    return () => window.clearTimeout(timer)
+    window.addEventListener('focus', syncPermission)
+    document.addEventListener('visibilitychange', syncPermission)
+
+    return () => {
+      window.clearTimeout(timer)
+      window.removeEventListener('focus', syncPermission)
+      document.removeEventListener('visibilitychange', syncPermission)
+    }
   }, [])
 
   useEffect(() => {
@@ -93,19 +119,59 @@ export default function PushNotificationPrompt() {
     )
   }
 
-  if (!availability.supported || Notification.permission === 'granted') return null
+  if (!availability.supported) return null
 
-  if (Notification.permission === 'denied') {
+  if (permission === 'granted') {
+    if (status === 'success' || status === 'loading') return null
+
+    return (
+      <div className="pointer-events-auto fixed bottom-4 left-1/2 z-[100] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border border-amber-200 bg-white p-4 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-900">Notifications are allowed</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              {message || 'Browser permission is on. Finish setting up notifications to receive updates.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissPrompt}
+            aria-label="Dismiss notification prompt"
+            className="shrink-0 rounded-full p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={enableNotifications}
+          className="mt-3 rounded-full bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-50"
+        >
+          {status === 'error' ? 'Retry setup' : 'Finish setup'}
+        </button>
+      </div>
+    )
+  }
+
+  if (permission === 'denied') {
     const checkPermissionAgain = async () => {
       const nextPermission = Notification.permission
+      setPermission(nextPermission)
       if (nextPermission === 'granted') {
+        setStatus('loading')
+        setMessage('')
         try {
-          await subscribeUserToPush({ userId })
+          const result = await subscribeUserToPush({ userId })
+          if (!result.success) {
+            setStatus('error')
+            setMessage(result.message || 'Unable to finish setting up notifications.')
+            return
+          }
           setStatus('success')
-          setMessage('Notifications enabled.')
         } catch (error) {
+          console.error('Push subscription setup failed:', error)
           setStatus('error')
-          setMessage(error?.message || 'Unable to save the notification subscription.')
+          setMessage(error?.message || 'Unable to finish setting up notifications.')
         }
         return
       }
@@ -146,7 +212,7 @@ export default function PushNotificationPrompt() {
     )
   }
 
-  const enableNotifications = async () => {
+  async function enableNotifications() {
     setStatus('loading')
     setMessage('')
 

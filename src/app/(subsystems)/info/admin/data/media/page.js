@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function mediaPage() {
-  redirect('/admin/data?tab=media')
+export default function MediaPage() {
+  redirect('/info/admin/file-management')
 }

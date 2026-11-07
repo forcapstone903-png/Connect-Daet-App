@@ -1,20 +1,20 @@
-// app/admin/users/page.js
+// app/(subsystems)/info/admin/users/page.js
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import AdminAvatar from '@/app/components/admin/AdminAvatar';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
-import { Icon } from '@/app/components/Icon';
+import AdminAvatar from '@/app/(subsystems)/info/components/admin/AdminAvatar';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
 
 // Lookup lists (populated from DB where available)
 // Defaults provided as fallbacks
-const DEFAULT_USER_TYPES = ['tourist', 'artisan', 'operator'];
+const SUPPORTED_USER_TYPES = ['tourist', 'business', 'admin', 'moderator'];
 const DEFAULT_USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];
 const DEFAULT_POST_STATUSES = ['pending', 'approved', 'rejected', 'flagged'];
 
@@ -23,10 +23,10 @@ export default function ManageUsersPage() {
   const [adminUser, setAdminUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
-  const [userTypes, setUserTypes] = useState(DEFAULT_USER_TYPES);
+  const [userTypes] = useState(SUPPORTED_USER_TYPES);
   const [userStatuses, setUserStatuses] = useState(DEFAULT_USER_STATUSES);
   const [postStatuses, setPostStatuses] = useState(DEFAULT_POST_STATUSES);
-  const [stats, setStats] = useState({ total: 0, tourists: 0, artisans: 0, operators: 0, active: 0, suspended: 0, pending: 0 });
+  const [stats, setStats] = useState({ total: 0, tourists: 0, businesses: 0, moderators: 0, active: 0, suspended: 0, pending: 0 });
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -73,8 +73,8 @@ export default function ManageUsersPage() {
     setStats({
       total: data.length,
       tourists: data.filter(u => u.user_type === 'tourist').length,
-      artisans: data.filter(u => u.user_type === 'artisan').length,
-      operators: data.filter(u => u.user_type === 'operator').length,
+      businesses: data.filter(u => u.user_type === 'business').length,
+      moderators: data.filter(u => u.user_type === 'moderator').length,
       active: data.filter(u => u.status === 'active').length,
       suspended: data.filter(u => u.status === 'suspended').length,
       pending: data.filter(u => u.status === 'pending').length,
@@ -84,7 +84,7 @@ export default function ManageUsersPage() {
   // ─── Fetch ─────────────────────────────────────────────────────────────────
   const fetchUsers = useCallback(async () => {
     try {
-      const response = await fetch('/api/admin/users');
+      const response = await fetch('/info/api/admin/users');
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load users');
       const users = (data.users || []).filter((user) => user.user_type !== 'admin');
@@ -99,9 +99,9 @@ export default function ManageUsersPage() {
   useEffect(() => {
     const checkAuth = async () => {
       const session = getStoredSession();
-      if (!session) { router.push('/login'); return; }
+      if (!session) { router.push('/info/login'); return; }
       const userData = JSON.parse(session);
-      if (!hasAdminAccess(userData.role)) { router.push('/admin/dashboard'); return; }
+      if (!hasAdminAccess(userData.role)) { router.push('/info/admin/dashboard'); return; }
       setAdminUser(userData);
       await fetchUsers();
       setLoading(false);
@@ -113,14 +113,10 @@ export default function ManageUsersPage() {
   useEffect(() => {
     const fetchLookups = async () => {
       try {
-        const [{ data: typesData }, { data: statusesData }, { data: postsData }] = await Promise.all([
-          supabase.from('info_users').select('user_type'),
+        const [{ data: statusesData }, { data: postsData }] = await Promise.all([
           supabase.from('info_users').select('status'),
           supabase.from('info_user_posts').select('status')
         ]);
-
-        const types = Array.from(new Set((typesData || []).map(r => r.user_type).filter(Boolean)));
-        if (types.length) setUserTypes(types);
 
         const statuses = Array.from(new Set((statusesData || []).map(r => r.status).filter(Boolean)));
         if (statuses.length) setUserStatuses(statuses);
@@ -516,15 +512,16 @@ export default function ManageUsersPage() {
 
   const handleLogout = async () => {
     await performLogout();
-    router.push('/login');
+    router.push('/info/login');
   };
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
   const getTypeBadge = (type) => {
     const map = {
       tourist: 'bg-blue-100 text-blue-800',
-      artisan: 'bg-yellow-100 text-yellow-800',
-      operator: 'bg-purple-100 text-purple-800',
+      business: 'bg-yellow-100 text-yellow-800',
+      admin: 'bg-red-100 text-red-800',
+      moderator: 'bg-purple-100 text-purple-800',
     };
     return map[type] || 'bg-gray-100 text-gray-800';
   };
@@ -606,8 +603,8 @@ export default function ManageUsersPage() {
         <AdminStatGrid>
           <AdminStatCard label="Total users" value={stats.total} icon="users" tone="brand" meta="All accounts" />
           <AdminStatCard label="Tourists" value={stats.tourists} icon="profile" tone="info" />
-          <AdminStatCard label="Artisans" value={stats.artisans} icon="edit" tone="warning" />
-          <AdminStatCard label="Operators" value={stats.operators} icon="users" tone="violet" />
+          <AdminStatCard label="Businesses" value={stats.businesses} icon="edit" tone="warning" />
+          <AdminStatCard label="Moderators" value={stats.moderators} icon="users" tone="violet" />
           <AdminStatCard label="Active" value={stats.active} icon="check" tone="success" />
           <AdminStatCard label="Suspended" value={stats.suspended} icon="warning" tone="danger" />
           <AdminStatCard label="Pending" value={stats.pending} icon="arrow" tone="neutral" />

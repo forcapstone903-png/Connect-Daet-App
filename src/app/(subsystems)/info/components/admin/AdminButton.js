@@ -2,7 +2,7 @@
 // default and a <Link> when `href` is provided, so navigation and actions look
 // identical across the admin area.
 import Link from 'next/link'
-import { Icon } from '@/app/components/Icon'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 
 const VARIANT_CLASSES = {
   primary: 'admin-btn-primary',

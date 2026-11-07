@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { authorizeAdminApi } from '@/lib/adminApiAuth'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -13,6 +14,8 @@ function missingConfig() {
 }
 
 export async function GET(request) {
+  const { response: authError } = authorizeAdminApi(request)
+  if (authError) return authError
   if (!adminSupabase) return missingConfig()
 
   try {
@@ -37,7 +40,7 @@ export async function GET(request) {
     }
 
     const { data, error } = await query
-    
+
     if (error) {
       console.error('Tourist spots fetch error:', error)
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
@@ -59,6 +62,8 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
+  const { response: authError } = authorizeAdminApi(request)
+  if (authError) return authError
   if (!adminSupabase) return missingConfig()
 
   try {

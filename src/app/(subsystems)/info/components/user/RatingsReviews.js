@@ -1,9 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Award, Star, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getCacheKey, invalidateCache } from '@/lib/cache'
 
 function StarRating({ value, onChange, readOnly = false }) {
   return (
@@ -14,7 +15,7 @@ function StarRating({ value, onChange, readOnly = false }) {
           type="button"
           disabled={readOnly}
           onClick={() => !readOnly && onChange(star)}
-          className={`${readOnly ? 'cursor-default' : 'cursor-pointer'} transition hover:scale-110`}
+          className={`flex min-h-11 min-w-11 items-center justify-center ${readOnly ? 'cursor-default' : 'cursor-pointer'} transition hover:scale-110`}
         >
           <Star
             className={`h-5 w-5 ${
@@ -39,12 +40,7 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
   const [showUserPolls, setShowUserPolls] = useState(false)
   const [userPolls, setUserPolls] = useState([])
 
-  useEffect(() => {
-    loadReviews()
-    loadUserPolls()
-  }, [attractionType, attractionId])
-
-  const loadReviews = async () => {
+  const loadReviews = useCallback(async () => {
     if (!attractionId) return
     try {
       const { data, error } = await supabase
@@ -85,9 +81,9 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
     } catch (err) {
       console.error('Failed to load ratings:', err)
     }
-  }
+  }, [attractionId, attractionType, userId])
 
-  const loadUserPolls = async () => {
+  const loadUserPolls = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from('user_polls')
@@ -99,7 +95,14 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
     } catch (err) {
       console.error('Failed to load user polls:', err)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    // Both loaders wait on Supabase requests before updating React state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadReviews()
+    loadUserPolls()
+  }, [loadReviews, loadUserPolls])
 
   const handleSubmitRating = async () => {
     if (!userId) {
@@ -126,6 +129,8 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
         review_text: reviewText.trim() || null,
       }, { onConflict: 'user_id,attraction_type,attraction_id' })
       if (error) throw error
+
+      invalidateCache(getCacheKey('visitor', 'public', 'reviews'))
 
       // Update aggregate rating on parent table
       const tableMap = {
@@ -263,6 +268,14 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
           </button>
         </div>
       )}
+      {!userId && (
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-sky-100 bg-sky-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-slate-700">Reviews and ratings are public. Sign up to rate this destination or mark a review helpful.</p>
+          <Link href="/info/register" className="inline-flex min-h-11 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800">
+            Create free account
+          </Link>
+        </div>
+      )}
 
       {userHasRated && (
         <div className="mb-4 rounded-[16px] border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
@@ -275,12 +288,11 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
         <div className="space-y-3">
           {reviews.map((review) => {
             const reviewerName = review.info_users?.full_name || review.info_users?.email?.split('@')[0] || 'Community member'
-            const helpfulCount = review.helpful_count || 0
             return (
               <div key={review.id} className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <Link href={`/user/profile/${review.user_id}`} aria-label={`View ${reviewerName}'s profile`} className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-[10px] font-bold text-white">
+                    <Link href={`/info/user/profile/${review.user_id}`} aria-label={`View ${reviewerName}'s profile`} className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-[10px] font-bold text-white">
                       {review.info_users?.profile_image_url ? (
                         <img src={review.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
                       ) : (
@@ -288,7 +300,7 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
                       )}
                     </Link>
                     <div>
-                      <Link href={`/user/profile/${review.user_id}`} className="text-sm font-bold text-slate-900 hover:text-sky-700">{reviewerName}</Link>
+                      <Link href={`/info/user/profile/${review.user_id}`} className="text-sm font-bold text-slate-900 hover:text-sky-700">{reviewerName}</Link>
                       <div className="flex items-center gap-2">
                         <StarRating value={review.rating} readOnly />
                         <span className="text-[10px] text-slate-500">
@@ -332,22 +344,26 @@ export default function RatingsReviews({ attractionType, attractionId, userId })
                   <button
                     type="button"
                     onClick={() => handleHelpfulness(review.id, true)}
+                    disabled={!userId}
+                    title={!userId ? 'Sign in to mark this review helpful' : undefined}
                     className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition ${
                       helpfulVotes[review.id] === true
                         ? 'bg-emerald-100 text-emerald-700'
                         : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     <ThumbsUp className="h-3 w-3" /> Helpful
                   </button>
                   <button
                     type="button"
                     onClick={() => handleHelpfulness(review.id, false)}
+                    disabled={!userId}
+                    title={!userId ? 'Sign in to vote on this review' : undefined}
                     className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition ${
                       helpfulVotes[review.id] === false
                         ? 'bg-red-100 text-red-700'
                         : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    }`}
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     <ThumbsDown className="h-3 w-3" /> Not helpful
                   </button>
@@ -393,11 +409,7 @@ function CommunityPoll({ poll, userId }) {
   const [userVote, setUserVote] = useState(null)
   const [votes, setVotes] = useState({})
 
-  useEffect(() => {
-    loadVotes()
-  }, [poll.id])
-
-  const loadVotes = async () => {
+  const loadVotes = useCallback(async () => {
     try {
       const [{ data: voteRows }, { data: myVote }] = await Promise.all([
         supabase.from('user_poll_votes').select('selected_option_index').eq('poll_id', poll.id),
@@ -415,7 +427,13 @@ function CommunityPoll({ poll, userId }) {
     } catch (err) {
       console.error('Failed to load poll votes:', err)
     }
-  }
+  }, [poll.id, userId])
+
+  useEffect(() => {
+    // Vote state is populated asynchronously from Supabase.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadVotes()
+  }, [loadVotes])
 
   const handleVote = async (optionIndex) => {
     if (!userId) {
@@ -462,18 +480,14 @@ function CommunityPoll({ poll, userId }) {
                 <span className="font-medium text-slate-700">{option}</span>
                 {userVote === idx && <span className="text-[10px] font-bold text-amber-600">✓ You</span>}
               </span>
-              {(userVote !== null || poll.is_closed) && (
-                <span className="relative z-10 flex items-center justify-between text-[10px] text-slate-500">
-                  <span>{count} votes</span>
-                  <span className="font-bold">{pct}%</span>
-                </span>
-              )}
-              {(userVote !== null || poll.is_closed) && (
-                <span
-                  className="absolute inset-y-0 left-0 bg-amber-100/60 transition-all"
-                  style={{ width: `${pct}%` }}
-                />
-              )}
+              <span className="relative z-10 flex items-center justify-between text-[10px] text-slate-500">
+                <span>{count} votes</span>
+                <span className="font-bold">{pct}%</span>
+              </span>
+              <span
+                className="absolute inset-y-0 left-0 bg-amber-100/60 transition-all"
+                style={{ width: `${pct}%` }}
+              />
             </button>
           )
         })}

@@ -6,7 +6,7 @@ I've created a **complete, production-ready Supabase backend** for your Connect-
 
 ### 1. **Database Schema** (10 tables + functions)
    - User management system
-   - Content management (amenities, events, blogs, tourist spots)
+   - Content management (events, blogs, tourist spots)
    - Announcement system
    - Moderation and reporting
    - Password reset system
@@ -21,7 +21,6 @@ I've created a **complete, production-ready Supabase backend** for your Connect-
 
 ### 3. **Advanced Features**
    - Full-text search across all content
-   - Geographic searches using PostGIS (find nearby amenities)
    - Automatic timestamp management
    - Audit logging for compliance
    - Password reset token system
@@ -93,7 +92,6 @@ In Supabase Dashboard → SQL Editor:
 ### Step 4: Create Storage Buckets
 ```
 In Supabase Dashboard → Storage → Create Bucket:
-- amenities (public)
 - events (public)
 - blogs (public)
 - tourist-spots (public)
@@ -124,19 +122,6 @@ console.log('Connected!', data);
 - created_at, updated_at (timestamps)
 ```
 **Indexes:** email, user_type, status, search_vector
-
-### 2. **info_amenities** (Hotels, Restaurants, Services)
-```sql
-- id, name, type, description, location
-- latitude, longitude (for geographic queries)
-- contact_number, email, website, opening_hours
-- price_range, amenities (features as array)
-- images, featured_image
-- rating, review_count, featured
-- status: 'active', 'inactive', 'pending', 'archived'
-- created_by (reference to user)
-```
-**Capabilities:** Nearby search (within 5km radius), category filtering
 
 ### 3. **info_events** (Calendar Events)
 ```sql
@@ -250,15 +235,6 @@ updateUserProfile(userId, updates)      // Update profile
 searchUsers(query)                      // Search users
 ```
 
-### Amenities
-```javascript
-getAmenities(filters)                   // List amenities with filters
-getAmenityById(id)                      // Get single amenity
-createAmenity(data, userId)             // Create new amenity
-updateAmenity(id, updates)              // Edit amenity
-deleteAmenity(id)                       // Remove amenity
-```
-
 ### Events
 ```javascript
 getEvents(filters)                      // List events
@@ -306,23 +282,13 @@ getContentStatistics()                  // Content counts by type
 ```javascript
 // Search across all content types
 const results = await searchContent('beaches restaurants');
-// Returns: amenities, events, blogs, tourist spots
-```
-
-### Geographic Search
-```javascript
-// Find amenities within 5km radius
-const nearby = await getNearbyAmenities(14.1067, 122.5631, 5);
+// Returns matching events, blogs, and tourist spots
 ```
 
 ### Filtered Search
 ```javascript
 // Complex filtering
-const amenities = await getAmenities({
-  type: 'restaurant',
-  featured: true,
-  search: 'daet'
-});
+const touristSpots = await getTouristSpots({ search: 'daet' });
 ```
 
 ---
@@ -349,14 +315,14 @@ const handleLogin = async (email, password) => {
 
 ### Fetch & Display Data
 ```javascript
-import { getAmenities } from '@/lib/supabaseUtils';
+import { getTouristSpots } from '@/lib/supabaseUtils';
 
 useEffect(() => {
   const fetchData = async () => {
-    const result = await getAmenities({ type: 'restaurant' });
+    const result = await getTouristSpots();
     
     if (result.success) {
-      setAmenities(result.data);
+      setTouristSpots(result.data);
     }
   };
   
@@ -369,7 +335,7 @@ useEffect(() => {
 import { uploadMedia } from '@/lib/supabaseUtils';
 
 const handleUpload = async (file) => {
-  const result = await uploadMedia('amenities', file, 'photos');
+  const result = await uploadMedia('tourist-spots', file, 'photos');
   
   if (result.success) {
     // Use the public URL
@@ -383,29 +349,12 @@ const handleUpload = async (file) => {
 };
 ```
 
-### Create Content
-```javascript
-import { createAmenity } from '@/lib/supabaseUtils';
-
-const handleSave = async (amenityForm) => {
-  const result = await createAmenity(amenityForm, userId);
-  
-  if (result.success) {
-    showToast('Amenity created!');
-    router.push(`/amenities/${result.data.id}`);
-  } else {
-    showToast(result.error, true);
-  }
-};
-```
-
 ---
 
 ## 🛠️ Storage Buckets
 
 | Bucket | Purpose | Max Size | Public |
 |--------|---------|----------|--------|
-| amenities | Amenity photos | 10 MB | Yes |
 | events | Event images/videos | 50 MB | Yes |
 | blogs | Blog featured images | 10 MB | Yes |
 | tourist-spots | Attraction photos | 50 MB | Yes |
@@ -455,7 +404,6 @@ project-root/
 // Get all statistics
 const stats = await getContentStatistics();
 // Returns: {
-//   total_amenities, active_amenities,
 //   total_events, published_events,
 //   total_blogs, published_blogs,
 //   total_tourist_spots, total_announcements

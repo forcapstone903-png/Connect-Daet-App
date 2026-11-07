@@ -28,7 +28,7 @@ export default function AccessDeniedPage() {
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Link
-            href="/login"
+            href="/info/login"
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
           >
             <ArrowLeft className="h-4 w-4" />

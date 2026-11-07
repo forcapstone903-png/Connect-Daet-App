@@ -1,4 +1,4 @@
-// app/api/reset-password/route.js
+// app/(subsystems)/info/api/reset-password/route.js
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase'

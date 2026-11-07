@@ -5,7 +5,7 @@ import { supabase } from './supabase'
 /**
  * Centralized client-side logout.
  *
- * Always calls `/api/logout` first so the signed, HTTP-only server session
+ * Always calls `/info/api/logout` first so the signed, HTTP-only server session
  * (`daet_secure_session`) is invalidated — not just the display-only client
  * cookie. Only best-effort cleanup is performed after that.
  */
@@ -14,7 +14,7 @@ export async function performLogout() {
   clearUserCache(userId)
 
   try {
-    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' })
+    await fetch('/info/api/logout', { method: 'POST', credentials: 'same-origin' })
   } catch (error) {
     console.error('Logout API call failed:', error)
   }

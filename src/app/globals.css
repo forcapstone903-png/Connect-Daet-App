@@ -6,17 +6,17 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --background: #f4f6f3;
-  --foreground: #1d2a27;
-  --ink: #1d2a27;
-  --muted-ink: #66736e;
-  --paper: #fffefa;
-  --paper-muted: #f7f8f4;
-  --line: #dde5df;
-  --brand: #16766f;
-  --brand-dark: #0e514d;
-  --sun: #e6a437;
-  --coral: #d96955;
+  --background: #f5f8ff;
+  --foreground: #172033;
+  --ink: #172033;
+  --muted-ink: #64748b;
+  --paper: #ffffff;
+  --paper-muted: #f1f5f9;
+  --line: #dbe3ef;
+  --brand: #2563eb;
+  --brand-dark: #1d4ed8;
+  --sun: #eab308;
+  --coral: #dc2626;
   --admin-sidebar-width: 18rem;
   color-scheme: light !important;
 }
@@ -37,10 +37,10 @@ html, body {
   --paper: #131d2c;
   --paper-muted: #0f1826;
   --line: #26344a;
-  --brand: #34d3c1;
-  --brand-dark: #8bf0e4;
-  --sun: #f0b455;
-  --coral: #ef7d69;
+  --brand: #60a5fa;
+  --brand-dark: #93c5fd;
+  --sun: #facc15;
+  --coral: #f87171;
   color-scheme: dark !important;
 }
 
@@ -62,6 +62,72 @@ html.dark ::selection {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-sky-50: var(--color-blue-50);
+  --color-sky-100: var(--color-blue-100);
+  --color-sky-200: var(--color-blue-200);
+  --color-sky-300: var(--color-blue-300);
+  --color-sky-400: var(--color-blue-400);
+  --color-sky-500: var(--color-blue-500);
+  --color-sky-600: var(--color-blue-600);
+  --color-sky-700: var(--color-blue-700);
+  --color-sky-800: var(--color-blue-800);
+  --color-sky-900: var(--color-blue-900);
+  --color-sky-950: var(--color-blue-950);
+  --color-indigo-50: var(--color-blue-50);
+  --color-indigo-100: var(--color-blue-100);
+  --color-indigo-200: var(--color-blue-200);
+  --color-indigo-300: var(--color-blue-300);
+  --color-indigo-400: var(--color-blue-400);
+  --color-indigo-500: var(--color-blue-500);
+  --color-indigo-600: var(--color-blue-600);
+  --color-indigo-700: var(--color-blue-700);
+  --color-indigo-800: var(--color-blue-800);
+  --color-indigo-900: var(--color-blue-900);
+  --color-indigo-950: var(--color-blue-950);
+  --color-teal-50: var(--color-blue-50);
+  --color-teal-100: var(--color-blue-100);
+  --color-teal-200: var(--color-blue-200);
+  --color-teal-300: var(--color-blue-300);
+  --color-teal-400: var(--color-blue-400);
+  --color-teal-500: var(--color-blue-500);
+  --color-teal-600: var(--color-blue-600);
+  --color-teal-700: var(--color-blue-700);
+  --color-teal-800: var(--color-blue-800);
+  --color-teal-900: var(--color-blue-900);
+  --color-teal-950: var(--color-blue-950);
+  --color-emerald-50: var(--color-green-50);
+  --color-emerald-100: var(--color-green-100);
+  --color-emerald-200: var(--color-green-200);
+  --color-emerald-300: var(--color-green-300);
+  --color-emerald-400: var(--color-green-400);
+  --color-emerald-500: var(--color-green-500);
+  --color-emerald-600: var(--color-green-600);
+  --color-emerald-700: var(--color-green-700);
+  --color-emerald-800: var(--color-green-800);
+  --color-emerald-900: var(--color-green-900);
+  --color-emerald-950: var(--color-green-950);
+  --color-amber-50: var(--color-yellow-50);
+  --color-amber-100: var(--color-yellow-100);
+  --color-amber-200: var(--color-yellow-200);
+  --color-amber-300: var(--color-yellow-300);
+  --color-amber-400: var(--color-yellow-400);
+  --color-amber-500: var(--color-yellow-500);
+  --color-amber-600: var(--color-yellow-600);
+  --color-amber-700: var(--color-yellow-700);
+  --color-amber-800: var(--color-yellow-800);
+  --color-amber-900: var(--color-yellow-900);
+  --color-amber-950: var(--color-yellow-950);
+  --color-rose-50: var(--color-red-50);
+  --color-rose-100: var(--color-red-100);
+  --color-rose-200: var(--color-red-200);
+  --color-rose-300: var(--color-red-300);
+  --color-rose-400: var(--color-red-400);
+  --color-rose-500: var(--color-red-500);
+  --color-rose-600: var(--color-red-600);
+  --color-rose-700: var(--color-red-700);
+  --color-rose-800: var(--color-red-800);
+  --color-rose-900: var(--color-red-900);
+  --color-rose-950: var(--color-red-950);
   --font-sans: 'Avenir Next', 'Segoe UI', sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -433,14 +499,14 @@ select {
    ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
-  --usr-radius-xs: 8px;
-  --usr-radius-sm: 10px;
-  --usr-radius: 14px;
-  --usr-radius-lg: 18px;
-  --usr-radius-xl: 22px;
-  --usr-brand: #16766f;
-  --usr-brand-dark: #0e514d;
-  --usr-brand-soft: #edf4f0;
+  --usr-radius-xs: 1rem;
+  --usr-radius-sm: 1rem;
+  --usr-radius: 1rem;
+  --usr-radius-lg: 1rem;
+  --usr-radius-xl: 1rem;
+  --usr-brand: #2563eb;
+  --usr-brand-dark: #1d4ed8;
+  --usr-brand-soft: #eff6ff;
   --usr-shadow-soft: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 26px rgba(15, 23, 42, 0.06);
   --usr-shadow-raised: 0 2px 6px rgba(15, 23, 42, 0.05), 0 20px 44px rgba(15, 23, 42, 0.11);
   --usr-shadow-header: 0 1px 0 rgba(15, 23, 42, 0.04), 0 12px 30px rgba(15, 23, 42, 0.07);
@@ -1383,6 +1449,7 @@ textarea {
 }
 
 .dark .bg-slate-50,
+.dark .bg-stone-50,
 .dark .bg-gray-50,
 .dark .bg-zinc-50,
 .dark .bg-neutral-50,
@@ -1407,6 +1474,21 @@ textarea {
 
 .dark [class*="bg-[#fffefa]"] {
   background-color: var(--paper);
+}
+
+.dark .visitor-page-shell [class*="bg-[#fffdf8]"] {
+  background-color: var(--paper-muted);
+  background-image: none;
+}
+
+.dark .visitor-page-shell [class*="bg-[linear-gradient(135deg,#f5fbff"] {
+  background-color: var(--paper);
+  background-image: none;
+}
+
+.dark .visitor-page-shell [class*="bg-[linear-gradient(180deg,#f8fcff"] {
+  background-color: var(--paper-muted);
+  background-image: none;
 }
 
 .dark [class*="bg-[#f3f5f9]"] {
@@ -1519,6 +1601,12 @@ textarea {
 .dark .text-purple-700,
 .dark .text-purple-800 { color: #c4b5fd; }
 .dark .text-indigo-700 { color: #a5b4fc; }
+
+/* Keep visitor-page status and accent text readable on dark tinted surfaces. */
+.dark .visitor-page-shell .text-blue-800 { color: #bfdbfe; }
+.dark .visitor-page-shell .text-sky-900 { color: #7dd3fc; }
+.dark .visitor-page-shell .text-orange-800 { color: #fed7aa; }
+.dark .visitor-page-shell .text-red-800 { color: #fecaca; }
 
 /* ── Borders and dividers ────────────────────────────────────────────────── */
 .dark .border-white { border-color: #1c2739; }
@@ -1709,7 +1797,7 @@ html[data-reduce-motion="true"] *::after {
    ADMIN CONSOLE DESIGN SYSTEM
    --------------------------------------------------------------------------
    One visual language for every /admin page. Components in
-   `src/app/components/admin/*` render these class names, and the shell rules
+   `src/app/(subsystems)/info/components/admin/*` render these class names, and the shell rules
    below normalise the legacy pages that still use raw Tailwind utilities.
    Colours come from the shared theme tokens (--paper, --line, --ink,
    --muted-ink) so light and dark mode stay in sync automatically.
@@ -1717,35 +1805,34 @@ html[data-reduce-motion="true"] *::after {
 
 :root {
   --admin-radius-sm: 6px;
-  --admin-radius: 10px;
-  --admin-radius-lg: 14px;
+  --admin-radius: 1rem;
+  --admin-radius-lg: 1rem;
 
-  /* Brand action colour: readable with white text in both themes. */
-  --admin-primary: #0f766e;
-  --admin-primary-hover: #115e59;
-  --admin-primary-soft: rgba(15, 118, 110, 0.1);
-  --admin-primary-ink: #0f766e;
-  --admin-success: #047857;
-  --admin-success-hover: #065f46;
+  --admin-primary: #2563eb;
+  --admin-primary-hover: #1d4ed8;
+  --admin-primary-soft: rgba(37, 99, 235, 0.1);
+  --admin-primary-ink: #1d4ed8;
+  --admin-success: #22c55e;
+  --admin-success-hover: #16a34a;
   --admin-danger: #dc2626;
   --admin-danger-hover: #b91c1c;
-  --admin-warning-ink: #b45309;
-  --admin-info-ink: #0369a1;
+  --admin-warning-ink: #a16207;
+  --admin-info-ink: #1d4ed8;
   --admin-violet-ink: #6d28d9;
 
   --admin-shadow-sm: 0 1px 2px rgba(29, 42, 39, 0.06);
   --admin-shadow: 0 6px 18px rgba(29, 42, 39, 0.07);
   --admin-shadow-lg: 0 18px 40px rgba(29, 42, 39, 0.09);
-  --admin-ring: rgba(15, 118, 110, 0.25);
+  --admin-ring: rgba(37, 99, 235, 0.25);
 }
 
 html.dark {
-  --admin-primary: #0d9488;
-  --admin-primary-hover: #14b8a6;
-  --admin-primary-soft: rgba(52, 211, 193, 0.14);
-  --admin-primary-ink: #5eead4;
-  --admin-success: #059669;
-  --admin-success-hover: #10b981;
+  --admin-primary: #3b82f6;
+  --admin-primary-hover: #60a5fa;
+  --admin-primary-soft: rgba(59, 130, 246, 0.18);
+  --admin-primary-ink: #93c5fd;
+  --admin-success: #22c55e;
+  --admin-success-hover: #4ade80;
   --admin-danger: #b91c1c;
   --admin-danger-hover: #dc2626;
   --admin-warning-ink: #fcd34d;
@@ -2104,7 +2191,7 @@ html.dark .admin-stat[data-tone='violet'] .admin-stat-icon { color: #c4b5fd; }
   gap: 0.5rem;
   padding: 0.5625rem 0.9375rem;
   border: 1px solid transparent;
-  border-radius: var(--admin-radius-sm);
+  border-radius: 9999px;
   font-size: 0.8125rem;
   font-weight: 600;
   line-height: 1;
@@ -2927,3 +3014,71 @@ html.dark .usr-section-page [class~='bg-emerald-50/60'] { background-color: rgba
 html.dark .usr-pop-in [class~='hover:bg-red-50']:hover { background-color: rgba(244, 63, 94, 0.24) !important; }
 html.dark .usr-badge[class~='ring-[#fffefa]'],
 html.dark .usr-badge[class~='ring-white'] { --tw-ring-color: var(--paper) !important; }
+
+/* Shared system UI: cards use the same 16px radius on every subsystem. */
+:is(
+  .tourism-panel,
+  .tourism-muted-panel,
+  .usr-card,
+  .usr-panel,
+  .usr-stat,
+  .usr-rail,
+  .admin-panel,
+  .admin-nav-card,
+  .admin-page-header,
+  .admin-stat-card,
+  [class*='bg-'][class*='shadow']
+) {
+  border-radius: 1rem !important;
+}
+
+/* Keep touch controls usable at the 375px mobile-first breakpoint. */
+:where(
+  button,
+  input[type='button'],
+  input[type='submit'],
+  input[type='reset'],
+  [role='button']
+) {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Primary actions share the same blue, pill-shaped treatment. */
+:is(
+  button,
+  a,
+  [role='button']
+):is(
+  .admin-btn-primary,
+  [class~='bg-blue-500'],
+  [class~='bg-blue-600'],
+  [class~='bg-blue-700'],
+  [class~='bg-sky-500'],
+  [class~='bg-sky-600'],
+  [class~='bg-sky-700'],
+  [class~='bg-indigo-500'],
+  [class~='bg-indigo-600'],
+  [class~='bg-indigo-700'],
+  [class~='bg-teal-500'],
+  [class~='bg-teal-600'],
+  [class~='bg-teal-700'],
+  [class*='bg-gradient-to-'][class*='from-blue-'],
+  [class*='bg-gradient-to-'][class*='from-sky-'],
+  [class*='bg-gradient-to-'][class*='from-indigo-'],
+  [class*='bg-gradient-to-'][class*='from-teal-']
+) {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 9999px !important;
+}
+
+:is(button, a, [role='button'])[class*='bg-gradient-to-']:is(
+  [class*='from-blue-'],
+  [class*='from-sky-'],
+  [class*='from-indigo-'],
+  [class*='from-teal-']
+) {
+  background-color: #2563eb !important;
+  background-image: none !important;
+}

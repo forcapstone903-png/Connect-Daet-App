@@ -7,28 +7,35 @@ import {
   AdminShell,
   AdminStatCard,
   AdminStatGrid,
-} from '@/app/components/admin'
+} from '@/app/(subsystems)/info/components/admin'
+import AdminTabRedirect from '@/app/(subsystems)/info/components/AdminTabRedirect'
 import useAdminMetrics from '@/lib/adminMetrics'
 import { supabase } from '@/lib/supabase'
+
+const NOTIFICATION_TABS = {
+  send: '/info/admin/notifications/send',
+  scheduled: '/info/admin/notifications/scheduled',
+  history: '/info/admin/notifications/history',
+}
 
 const NOTIFICATION_DESTINATIONS = [
   {
     title: 'Send announcement',
     description: 'Compose and broadcast a notice to the chosen audience.',
     icon: 'notifications',
-    href: '/admin/announcement',
+    href: '/info/admin/notifications/send',
   },
   {
-    title: 'Scheduled & templates',
-    description: 'Manage categories, templates, quiet hours, and emergency protocol.',
+    title: 'Scheduled announcements',
+    description: 'Review announcements scheduled for a future date.',
     icon: 'calendar',
-    href: '/admin/announcement-settings',
+    href: '/info/admin/notifications/scheduled',
   },
   {
     title: 'Delivery history',
     description: 'Audit previously published and archived announcements.',
     icon: 'data',
-    href: '/admin/announcement?tab=history',
+    href: '/info/admin/notifications/history',
   },
 ]
 
@@ -69,6 +76,7 @@ export default function NotificationsHubOverview() {
         </AdminButton>
       }
     >
+      <AdminTabRedirect routes={NOTIFICATION_TABS} />
       {error ? (
         <AdminPanel className="mb-4">
           <p className="text-sm text-amber-700">{error}</p>

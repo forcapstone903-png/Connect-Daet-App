@@ -1,7 +1,7 @@
 // Destination card used by the admin hub overview pages (Community, Data,
 // Notifications). Keeps icon, title, description, and call-to-action aligned.
 import Link from 'next/link'
-import { Icon } from '@/app/components/Icon'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 
 export default function AdminNavCard({
   href,

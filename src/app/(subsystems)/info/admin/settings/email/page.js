@@ -1,128 +1,122 @@
-// app/admin/settings/email/page.js — Email & Notifications Settings
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
-import useStoredSetting from '../_components/useStoredSetting';
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`The server returned an invalid response (${response.status}).`);
+  }
+}
 
 export default function AdminSettingsEmail() {
-  const [notificationSettings, setNotificationSettings] = useStoredSetting('notification_settings', {
-    emailAlerts: true,
-    systemAlerts: true,
-    weeklySummary: true,
-    eventNotifications: true
-  });
-  const [emailSettings, setEmailSettings] = useStoredSetting('admin_email_settings', {
-    smtp_host: 'smtp.gmail.com',
-    smtp_port: '587',
-    smtp_user: '',
-    smtp_password: '',
-    from_email: 'no-reply@daet.gov.ph',
-    use_ssl: true
-  });
-  const [saving, setSaving] = useState(false);
+  const [emailStatus, setEmailStatus] = useState({ status: 'loading', fromEmail: null, error: '' });
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadEmailStatus = async () => {
+      try {
+        const response = await fetch('/info/api/admin/settings/email', { cache: 'no-store' });
+        const data = await readJsonResponse(response);
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Unable to load email settings (${response.status}).`);
+        }
+        if (active) {
+          setEmailStatus({
+            status: data.configured ? 'configured' : 'missing',
+            fromEmail: data.fromEmail,
+            error: '',
+          });
+        }
+      } catch (error) {
+        if (active) setEmailStatus({ status: 'error', fromEmail: null, error: error.message });
+      }
+    };
+
+    loadEmailStatus();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <SettingsShell
       title="Email & Notifications"
-      subtitle="Configure email delivery and notification preferences"
+      subtitle="Check server-side email delivery and send a real test message."
     >
       {(showToast) => {
-        const saveNotificationSettings = () => {
-          setSaving(true);
+        const sendTestEmail = async () => {
+          setSending(true);
           try {
-            localStorage.setItem('notification_settings', JSON.stringify(notificationSettings));
-            showToast('Notification settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving notification settings:', err);
-            showToast('Failed to save notification settings', true);
+            const response = await fetch('/info/api/admin/settings/email', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: '{}',
+            });
+            const data = await readJsonResponse(response);
+            if (!response.ok || !data.success) {
+              throw new Error(data.message || `Unable to send test email (${response.status}).`);
+            }
+            showToast(data.message);
+          } catch (error) {
+            showToast(error.message || 'Unable to send test email.', true);
           } finally {
-            setSaving(false);
+            setSending(false);
           }
         };
 
-        const saveEmailSettings = () => {
-          setSaving(true);
-          try {
-            localStorage.setItem('admin_email_settings', JSON.stringify(emailSettings));
-            showToast('Email settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving email settings:', err);
-            showToast('Failed to save email settings', true);
-          } finally {
-            setSaving(false);
-          }
-        };
-
-        const sendTestEmail = () => {
-          showToast('Test email sent! Check your inbox.');
-        };
+        const configured = emailStatus.status === 'configured';
 
         return (
           <div className="space-y-6">
-{/* Notification Settings */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Notification Settings</h3>
-              <div className="space-y-2">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={notificationSettings.emailAlerts} onChange={e => setNotificationSettings(p => ({ ...p, emailAlerts: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Email alerts for system events</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={notificationSettings.systemAlerts} onChange={e => setNotificationSettings(p => ({ ...p, systemAlerts: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">System alerts and warnings</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={notificationSettings.weeklySummary} onChange={e => setNotificationSettings(p => ({ ...p, weeklySummary: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Weekly summary digest</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={notificationSettings.eventNotifications} onChange={e => setNotificationSettings(p => ({ ...p, eventNotifications: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Event reminders and updates</span>
-                </label>
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Server email delivery</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Email is sent through SendGrid using server-only environment variables. Provider secrets are not collected or stored in this page or the browser.
+              </p>
+
+              <div className={`mt-4 rounded-xl border p-4 ${configured ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`} aria-live="polite">
+                <p className={`font-semibold ${configured ? 'text-emerald-800' : 'text-amber-900'}`}>
+                  {emailStatus.status === 'loading' && 'Checking provider configuration…'}
+                  {emailStatus.status === 'configured' && 'SendGrid is configured'}
+                  {emailStatus.status === 'missing' && 'SendGrid is not configured'}
+                  {emailStatus.status === 'error' && 'Unable to check email configuration'}
+                </p>
+                {emailStatus.fromEmail && (
+                  <p className="mt-1 text-sm text-slate-700">Verified sender setting: {emailStatus.fromEmail}</p>
+                )}
+                {emailStatus.status === 'missing' && (
+                  <p className="mt-1 text-sm text-amber-900">
+                    Set SENDGRID_API_KEY and SENDGRID_FROM_EMAIL in the server deployment environment, then redeploy.
+                  </p>
+                )}
+                {emailStatus.error && <p className="mt-1 text-sm text-red-700">{emailStatus.error}</p>}
               </div>
-              <button onClick={saveNotificationSettings} disabled={saving} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700">
-                {saving ? 'Saving...' : 'Save Notification Settings'}
+
+              <button
+                type="button"
+                onClick={sendTestEmail}
+                disabled={!configured || sending}
+                className="mt-4 rounded-full bg-slate-800 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {sending ? 'Sending test email…' : 'Send test email to my admin account'}
               </button>
-            </div>
-{/* Email Settings */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Email Settings</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Host</label>
-                  <input type="text" value={emailSettings.smtp_host} onChange={e => setEmailSettings(p => ({ ...p, smtp_host: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Port</label>
-                  <input type="text" value={emailSettings.smtp_port} onChange={e => setEmailSettings(p => ({ ...p, smtp_port: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Username</label>
-                  <input type="text" value={emailSettings.smtp_user} onChange={e => setEmailSettings(p => ({ ...p, smtp_user: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">SMTP Password</label>
-                  <input type="password" value={emailSettings.smtp_password} onChange={e => setEmailSettings(p => ({ ...p, smtp_password: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">From Email</label>
-                  <input type="email" value={emailSettings.from_email} onChange={e => setEmailSettings(p => ({ ...p, from_email: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 mb-2">
-                    <input type="checkbox" checked={emailSettings.use_ssl} onChange={e => setEmailSettings(p => ({ ...p, use_ssl: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm text-gray-700">Use SSL/TLS</span>
-                  </label>
-                </div>
-              </div>
-              <div className="mt-4 flex gap-3">
-                <button onClick={saveEmailSettings} disabled={saving} className="bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50">
-                  {saving ? 'Saving...' : 'Save Email Settings'}
-                </button>
-                <button onClick={sendTestEmail} className="bg-slate-700 text-white px-6 py-2 rounded-full hover:bg-slate-800">Send Test Email</button>
-              </div>
-            </div>
+              <p className="mt-2 text-xs text-slate-500">
+                The test message is sent to the email address on the currently signed-in administrator account.
+              </p>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Notification preferences</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Per-admin email alerts and weekly summaries are not implemented. Their previous browser-only toggles did not change notification delivery and have been removed.
+              </p>
+            </section>
           </div>
         );
       }}

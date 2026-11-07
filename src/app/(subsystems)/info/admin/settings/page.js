@@ -1,10 +1,10 @@
-// app/admin/settings/page.js — Settings Overview
+// app/(subsystems)/info/admin/settings/page.js — Settings Overview
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import { Icon } from '@/app/components/Icon';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import SettingsShell from './_components/SettingsShell';
 
 export default function AdminSettingsOverview() {
@@ -57,7 +57,7 @@ export default function AdminSettingsOverview() {
             sessionStorage.clear();
             showToast('Cache cleared. Users will need to log in again.');
             setTimeout(() => {
-              router.push('/login');
+              router.push('/info/login');
             }, 2000);
           }
         };

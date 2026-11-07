@@ -1,15 +1,15 @@
-// app/admin/announcement/page.js
+// app/(subsystems)/info/admin/announcement/page.js
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { Icon } from '@/app/components/Icon';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
-import ConfirmationModal from '@/app/components/ConfirmationModal';
-import MediaUpload from '@/app/components/MediaUpload';
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal';
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 
 const ANNOUNCEMENT_TYPES = [
   { value: 'info', label: 'Info', icon: 'notifications', color: 'blue' },
@@ -49,10 +49,13 @@ export default function AdminAnnouncementPage() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [announcements, setAnnouncements] = useState([]);
+  const [currentTime, setCurrentTime] = useState(0);
   const [engagementByAnnouncement, setEngagementByAnnouncement] = useState({});
 
   // Modal states
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('tab') === 'send'
+  );
   const [editingAnnouncement, setEditingAnnouncement] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [previewAnnouncement, setPreviewAnnouncement] = useState(null);
@@ -61,6 +64,11 @@ export default function AdminAnnouncementPage() {
   const [filterType, setFilterType] = useState('all');
   const [filterSeverity, setFilterSeverity] = useState('all');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [announcementView, setAnnouncementView] = useState(() => {
+    if (typeof window === 'undefined') return 'all';
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    return tab === 'scheduled' || tab === 'history' ? tab : 'all';
+  });
   const [searchQuery, setSearchQuery] = useState('');
 
   // Form state
@@ -124,6 +132,7 @@ export default function AdminAnnouncementPage() {
       }));
 
       setAnnouncements(normalized);
+      setCurrentTime(Date.now());
 
       const announcementIds = normalized.map((announcement) => announcement.id).filter(Boolean);
       if (announcementIds.length) {
@@ -187,14 +196,14 @@ export default function AdminAnnouncementPage() {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
 
       try {
         const userData = JSON.parse(session);
         if (!hasAdminAccess(userData.role)) {
-          router.push('/admin/dashboard');
+          router.push('/info/admin/dashboard');
           return;
         }
 
@@ -204,7 +213,7 @@ export default function AdminAnnouncementPage() {
       } catch (err) {
         console.error('Error loading admin session:', err);
         if (isActive) {
-          router.push('/login');
+          router.push('/info/login');
         }
       } finally {
         if (isActive) {
@@ -240,6 +249,16 @@ export default function AdminAnnouncementPage() {
     if (filterStatus !== 'all') {
       filtered = filtered.filter(a => a.status === filterStatus);
     }
+    if (announcementView === 'scheduled') {
+      filtered = filtered.filter((announcement) =>
+        announcement.scheduled_for && new Date(announcement.scheduled_for).getTime() > currentTime
+      );
+    } else if (announcementView === 'history') {
+      filtered = filtered.filter((announcement) =>
+        ['published', 'archived'].includes(announcement.status)
+        && (!announcement.scheduled_for || new Date(announcement.scheduled_for).getTime() <= currentTime)
+      );
+    }
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(a =>
@@ -249,7 +268,7 @@ export default function AdminAnnouncementPage() {
     }
 
     return filtered;
-  }, [announcements, filterType, filterSeverity, filterStatus, searchQuery]);
+  }, [announcements, currentTime, filterType, filterSeverity, filterStatus, announcementView, searchQuery]);
 
   const handleImageUpload = async (file) => {
     if (!file) return null;
@@ -334,7 +353,7 @@ export default function AdminAnnouncementPage() {
           id: insertedAnnouncement.id,
           title: formData.title.trim(),
           message: formData.content.trim(),
-          link: `/user/announcements/${insertedAnnouncement.id}`,
+          link: `/info/user/announcements/${insertedAnnouncement.id}`,
           audience: announcementData.audience,
         })
       }
@@ -352,7 +371,7 @@ export default function AdminAnnouncementPage() {
 
   const createPushNotification = async ({ id, title, message, link, audience }) => {
     try {
-      const response = await fetch('/api/admin/content-notifications', {
+      const response = await fetch('/info/api/admin/content-notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -413,7 +432,8 @@ export default function AdminAnnouncementPage() {
     }
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = useCallback(() => {
+    setAnnouncementView('all');
     setEditingAnnouncement(null);
     setFormData({
       title: '',
@@ -429,7 +449,7 @@ export default function AdminAnnouncementPage() {
       video_url: '',
     });
     setShowModal(true);
-  };
+  }, []);
 
   const openEditModal = (announcement) => {
     setEditingAnnouncement(announcement);
@@ -592,6 +612,13 @@ export default function AdminAnnouncementPage() {
             </div>
           </div>
         </div>
+
+        {announcementView !== 'all' && (
+          <div className="mb-4 flex items-center justify-between rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
+            <span>{announcementView === 'scheduled' ? 'Showing future scheduled announcements.' : 'Showing published and archived announcement history.'}</span>
+            <button type="button" onClick={() => setAnnouncementView('all')} className="font-semibold underline">Show all</button>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.04)] backdrop-blur-sm">

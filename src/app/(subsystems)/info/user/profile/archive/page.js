@@ -4,9 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Archive } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
-import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 export default function ProfileArchivePage() {
   const [session] = useState(() => {
@@ -26,7 +26,7 @@ export default function ProfileArchivePage() {
     if (!session?.user_id) return
     setLoading(true)
     try {
-      const response = await fetch(`/api/users/${session.user_id}?archived=true`, { credentials: 'same-origin', cache: 'no-store' })
+      const response = await fetch(`/info/api/users/${session.user_id}?archived=true`, { credentials: 'same-origin', cache: 'no-store' })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load archive.')
       setReposts(result.content?.archived_reposts || [])
@@ -44,7 +44,7 @@ export default function ProfileArchivePage() {
   }, [loadArchive])
 
   const restore = async (repost) => {
-    const response = await fetch(`/api/reposts/${repost.repost_id}`, {
+    const response = await fetch(`/info/api/reposts/${repost.repost_id}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -61,7 +61,7 @@ export default function ProfileArchivePage() {
 
   const remove = async (repost) => {
     if (!window.confirm('Delete repost?\n\nThis will permanently remove your repost.')) return
-    const response = await fetch(`/api/reposts/${repost.repost_id}`, { method: 'DELETE', credentials: 'same-origin' })
+    const response = await fetch(`/info/api/reposts/${repost.repost_id}`, { method: 'DELETE', credentials: 'same-origin' })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) {
       setNotice(result.message || 'Unable to delete repost.')
@@ -71,7 +71,7 @@ export default function ProfileArchivePage() {
   }
 
   const restorePost = async (post) => {
-    const response = await fetch(`/api/posts/${post.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'published' }) })
+    const response = await fetch(`/info/api/posts/${post.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'published' }) })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) return setNotice(result.message || 'Unable to restore post.')
     setPosts((previous) => previous.filter((item) => item.id !== post.id))
@@ -79,7 +79,7 @@ export default function ProfileArchivePage() {
 
   const removePost = async (post) => {
     if (!window.confirm('Delete post?\n\nThis will permanently remove your post.')) return
-    const response = await fetch(`/api/posts/${post.id}`, { method: 'DELETE', credentials: 'same-origin' })
+    const response = await fetch(`/info/api/posts/${post.id}`, { method: 'DELETE', credentials: 'same-origin' })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) return setNotice(result.message || 'Unable to delete post.')
     setPosts((previous) => previous.filter((item) => item.id !== post.id))
@@ -96,7 +96,7 @@ export default function ProfileArchivePage() {
           title="Archive"
           description="Posts and reposts you hid from your profile stay here. Restore them anytime."
           emoji="🗂️"
-          backHref="/user/profile"
+          backHref="/info/user/profile"
           backLabel="Your profile"
         >
           <span className="usr-section-counter">{reposts.length + posts.length} archived</span>
@@ -141,7 +141,7 @@ export default function ProfileArchivePage() {
             <Archive className="mx-auto h-8 w-8 text-slate-300" />
             <p className="mt-3 text-sm font-semibold text-slate-600">Your archive is empty</p>
             <p className="mt-1 text-xs text-slate-500">Archived posts and reposts will be listed here so you can restore them.</p>
-            <Link href="/user/profile" className="usr-section-secondary mt-5 inline-flex">Back to profile</Link>
+            <Link href="/info/user/profile" className="usr-section-secondary mt-5 inline-flex">Back to profile</Link>
           </div>
         )}
       </div>

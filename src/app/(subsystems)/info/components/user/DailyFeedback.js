@@ -35,7 +35,7 @@ export default function DailyFeedback({ userId }) {
   useEffect(() => {
     let active = true
     const load = async () => {
-      const response = await fetch('/api/daily-feedback', { credentials: 'same-origin' })
+      const response = await fetch('/info/api/daily-feedback', { credentials: 'same-origin' })
       const result = await response.json()
       if (!active || !response.ok || !result.success || !result.question) return
       setQuestion(result.question)
@@ -63,7 +63,7 @@ export default function DailyFeedback({ userId }) {
     ]
 
     try {
-      const apiResponse = await fetch('/api/daily-feedback', {
+      const apiResponse = await fetch('/info/api/daily-feedback', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },

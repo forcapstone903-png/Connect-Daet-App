@@ -117,7 +117,7 @@ values (
   'USER_UUID',
   'New update',
   'There is a new update for you.',
-  '/user/notifications'
+  '/info/user/notifications'
 );
 ```
 
@@ -169,7 +169,7 @@ Manually invoke the Edge Function. Use a function token accepted by your deploye
 curl -i -X POST "https://YOUR_PROJECT_REF.supabase.co/functions/v1/push" `
   -H "Authorization: Bearer YOUR_FUNCTION_TOKEN" `
   -H "Content-Type: application/json" `
-  --data '{"record":{"user_id":"YOUR_AUTH_USER_UUID","title":"Manual push test","body":"Edge Function received the test payload.","url":"/user/notifications"}}'
+  --data '{"record":{"user_id":"YOUR_AUTH_USER_UUID","title":"Manual push test","body":"Edge Function received the test payload.","url":"/info/user/notifications"}}'
 ```
 
 Insert a test notification from a trusted SQL session and watch the function logs:
@@ -180,7 +180,7 @@ values (
   'YOUR_AUTH_USER_UUID',
   'Database webhook test',
   'This row should trigger the push function.',
-  '/user/notifications'
+  '/info/user/notifications'
 );
 ```
 

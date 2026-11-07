@@ -3,7 +3,7 @@ export default function manifest() {
     name: 'CONNECT Daet',
     short_name: 'Daet',
     description: 'A mobile-friendly travel and community app for Daet, Camarines Norte.',
-    start_url: '/user/dashboard',
+    start_url: '/info/user/dashboard',
     display: 'standalone',
     background_color: '#f8fafc',
     theme_color: '#0f172a',

@@ -8,7 +8,6 @@ export const runtime = 'nodejs'
 const ALLOWED_CONTENT_TYPES = new Set([
   'blog',
   'event',
-  'amenity',
   'forum_thread',
   'forum_reply',
   'comment',
@@ -32,13 +31,13 @@ const POST_OWNER_TABLES = {
 function routeForEntity(entityType, entityId) {
   const normalized = String(entityType || '').toLowerCase()
   const routes = {
-    blog: `/user/blogs/${entityId}`,
-    event: `/user/events/${entityId}`,
-    forum: `/user/forums/${entityId}`,
-    forum_thread: `/user/forums/${entityId}`,
-    post: `/user/posts/${entityId}`,
-    user_post: `/user/posts/${entityId}`,
-    announcement: `/user/announcements/${entityId}`,
+    blog: `/info/user/blogs/${entityId}`,
+    event: `/info/user/events/${entityId}`,
+    forum: `/info/user/forums/${entityId}`,
+    forum_thread: `/info/user/forums/${entityId}`,
+    post: `/info/user/posts/${entityId}`,
+    user_post: `/info/user/posts/${entityId}`,
+    announcement: `/info/user/announcements/${entityId}`,
   }
   return routes[normalized] || null
 }

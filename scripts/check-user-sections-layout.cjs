@@ -37,13 +37,13 @@ async function main() {
     await send('Page.enable')
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true })
     for (const page of ['messaging', 'notifications', 'blogs', 'events', 'announcements', 'forums']) {
-      await send('Page.navigate', { url: `${process.env.TEST_BASE_URL || 'http://localhost:3000'}/user/${page}` })
+      await send('Page.navigate', { url: `${process.env.TEST_BASE_URL || 'http://localhost:3000'}/info/user/${page}` })
       await delay(3500)
       console.log('Live route:', page, await evaluate('({url:location.href,title:document.querySelector("h1")?.textContent,overflow:document.documentElement.scrollWidth>innerWidth})'))
     }
     const globalPath = path.join(root, 'src/app/globals.css')
     const result = await require('postcss')([require('@tailwindcss/postcss')({ base: root })]).process(fs.readFileSync(globalPath, 'utf8'), { from: globalPath })
-    const css = result.css + fs.readFileSync(path.join(root, 'src/app/user/user-sections.css'), 'utf8')
+    const css = result.css + fs.readFileSync(path.join(root, 'src/app/(subsystems)/info/user/user-sections.css'), 'utf8')
     const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><main class="usr-section-page usr-stories min-h-screen"><div class="usr-section-container mx-auto max-w-6xl px-3"><header class="usr-section-heading usr-card usr-enter"><a href="#" class="usr-section-back">← Community dashboard</a><div class="usr-section-heading-row"><div class="min-w-0 flex-1"><p class="usr-section-eyebrow">Through a local lens</p><h1 class="usr-section-title">Community stories <span class="usr-wave">✍️</span></h1><p class="usr-section-description">Discover hidden gems, local favorites, and stories worth sharing from around Daet.</p></div><div class="usr-section-heading-actions"><button class="usr-section-primary">Write a story</button></div></div></header><div class="usr-content-grid">${[1, 2, 3].map((n) => `<article class="usr-card usr-content-card p-5"><h2>Community story ${n}</h2><p>${'LongUnbrokenCommunityName'.repeat(8)}</p><button class="usr-section-secondary">Read story</button></article>`).join('')}</div></div></main>`
     const fixture = path.join(temp, 'sections.html')
     fs.writeFileSync(fixture, html)

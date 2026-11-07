@@ -54,14 +54,14 @@ export async function POST(request) {
       await notifyFollowers(adminSupabase, {
         authorId: userId,
         type: 'forum',
-        link: `/user/forums/${data.id}`,
+        link: `/info/user/forums/${data.id}`,
         postId: data.id,
         title: 'New forum discussion',
         actionText: 'started a new discussion',
         subject: title,
       })
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/user/dashboard' })
+      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/dashboard' })
     }
 
     if (shareType === 'event') {
@@ -97,14 +97,14 @@ export async function POST(request) {
       await notifyFollowers(adminSupabase, {
         authorId: userId,
         type: 'event',
-        link: `/user/events/${data.id}`,
+        link: `/info/user/events/${data.id}`,
         postId: data.id,
         title: 'New event',
         actionText: 'created a new event',
         subject: title,
       })
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/user/events' })
+      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/events' })
     }
 
     if (shareType === 'complaint') {
@@ -150,7 +150,7 @@ export async function POST(request) {
         console.error('Complaint notification insert failed:', notificationError)
       }
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/user/feedback' })
+      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback' })
     }
 
     if (shareType === 'feedback') {
@@ -196,7 +196,7 @@ export async function POST(request) {
         console.error('Feedback notification insert failed:', notificationError)
       }
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/user/feedback' })
+      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback' })
     }
 
     return NextResponse.json({ success: false, message: 'Unsupported post type.' }, { status: 400 })

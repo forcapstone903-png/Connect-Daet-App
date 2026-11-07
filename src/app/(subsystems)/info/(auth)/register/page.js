@@ -144,7 +144,7 @@ export default function RegisterPage() {
     }
 
     try {
-      const response = await fetch('/api/register', {
+      const response = await fetch('/info/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -176,7 +176,7 @@ export default function RegisterPage() {
       })
 
       setTimeout(() => {
-        router.push('/login?message=Please check your email to confirm your account before logging in.&onboarding=1')
+        router.push('/info/login?message=Please check your email to confirm your account before logging in.&onboarding=1')
       }, 5000)
     } catch (error) {
       setError(error.message || 'An error occurred during registration')
@@ -417,9 +417,9 @@ export default function RegisterPage() {
                     />
                     <span className="leading-6">
                       I agree to the{' '}
-                      <Link href="/legal/privacy-policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Privacy Policy</Link>,{' '}
-                      <Link href="/legal/terms-and-conditions" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Terms and Conditions</Link>, and{' '}
-                      <Link href="/legal/cookie-policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Cookie Policy</Link>.
+                      <Link href="/info/legal/privacy-policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Privacy Policy</Link>,{' '}
+                      <Link href="/info/legal/terms-and-conditions" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Terms and Conditions</Link>, and{' '}
+                      <Link href="/info/legal/cookie-policy" className="font-semibold text-sky-700 underline-offset-2 hover:underline">Cookie Policy</Link>.
                     </span>
                   </label>
                 </div>
@@ -438,12 +438,12 @@ export default function RegisterPage() {
             <div className="mt-6 space-y-2 text-center text-sm text-slate-600">
               <div>
                 Already have an account?{' '}
-                <Link href="/login" className="font-semibold text-sky-700 transition hover:text-sky-800">
+                <Link href="/info/login" className="font-semibold text-sky-700 transition hover:text-sky-800">
                   Sign in here
                 </Link>
               </div>
               <div>
-                <Link href="/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
+                <Link href="/info/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
                   ← Back to visitor page
                 </Link>
               </div>

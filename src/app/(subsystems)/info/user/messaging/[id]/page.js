@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Archive, ArrowLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Pin, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
+import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { getPinActivityText } from '@/lib/messagePinActivity'
@@ -231,7 +231,7 @@ export default function ConversationPage() {
   }
 
   const reactToMessage = async (message, reaction) => {
-    const response = await fetch('/api/messages/reactions', {
+    const response = await fetch('/info/api/messages/reactions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -253,7 +253,7 @@ export default function ConversationPage() {
     try {
       const isOwnMessage = messageToDelete.sender_id === currentUser?.id
       if (deleteFor === 'all' && !isOwnMessage) return
-      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}?messageId=${encodeURIComponent(messageToDelete.id)}&deleteFor=${deleteFor}`, {
+      const response = await fetch(`/info/api/messages/${encodeURIComponent(otherUserId)}?messageId=${encodeURIComponent(messageToDelete.id)}&deleteFor=${deleteFor}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })
@@ -291,7 +291,7 @@ export default function ConversationPage() {
       return
     }
     try {
-      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}`, {
+      const response = await fetch(`/info/api/messages/${encodeURIComponent(otherUserId)}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -350,7 +350,7 @@ export default function ConversationPage() {
       : action === 'delete'
         ? { deleteConversation: true }
         : { isMuted: action === 'mute' }
-    const response = await fetch(`/api/messages/${otherUserId}`, {
+    const response = await fetch(`/info/api/messages/${otherUserId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -363,14 +363,14 @@ export default function ConversationPage() {
     }
     if (action === 'mute' || action === 'unmute') setConversationMuted(action === 'mute')
     setConversationMenuOpen(false)
-    if (action === 'archive' || action === 'delete') router.push('/user/messaging')
+    if (action === 'archive' || action === 'delete') router.push('/info/user/messaging')
   }
 
   const forwardToUser = async (user) => {
     if (!forwardMessage || !user?.id) return
     setForwardSending(true)
     try {
-      const response = await fetch('/api/messages', {
+      const response = await fetch('/info/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -402,7 +402,7 @@ export default function ConversationPage() {
       }
       setForwardLoading(true)
       try {
-        const response = await fetch(`/api/search/users?limit=20&q=${encodeURIComponent(forwardQuery.trim())}`, { credentials: 'same-origin', signal: controller.signal })
+        const response = await fetch(`/info/api/search/users?limit=20&q=${encodeURIComponent(forwardQuery.trim())}`, { credentials: 'same-origin', signal: controller.signal })
         const result = await response.json().catch(() => ({}))
         if (!controller.signal.aborted) setForwardUsers(result.success ? (result.users || []).filter((user) => user.id !== currentUser?.id) : [])
       } catch (searchError) {
@@ -520,13 +520,13 @@ export default function ConversationPage() {
       }
       setError('')
 
-      const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}`, {
+      const response = await fetch(`/info/api/messages/${encodeURIComponent(otherUserId)}`, {
         credentials: 'same-origin',
         cache: 'no-store',
       })
       const result = await response.json().catch(() => ({}))
       if (response.status === 401) {
-        router.replace('/login?message=Please%20sign%20in%20again%20to%20view%20messages.')
+        router.replace('/info/login?message=Please%20sign%20in%20again%20to%20view%20messages.')
         return
       }
       if (!response.ok) {
@@ -556,7 +556,7 @@ export default function ConversationPage() {
         return merged
       })
       if (incomingMessages.length) {
-        const reactionResponse = await fetch(`/api/messages/reactions?messageIds=${incomingMessages.map((message) => message.id).join(',')}`, { credentials: 'same-origin' })
+        const reactionResponse = await fetch(`/info/api/messages/reactions?messageIds=${incomingMessages.map((message) => message.id).join(',')}`, { credentials: 'same-origin' })
         const reactionResult = await reactionResponse.json().catch(() => ({}))
         if (reactionResponse.ok && reactionResult.success) {
           const reactionMap = {}
@@ -585,7 +585,7 @@ export default function ConversationPage() {
   const markConversationRead = async () => {
     if (!otherUserId || document.visibilityState !== 'visible') return
 
-    const response = await fetch(`/api/messages/${encodeURIComponent(otherUserId)}`, {
+    const response = await fetch(`/info/api/messages/${encodeURIComponent(otherUserId)}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -783,7 +783,7 @@ export default function ConversationPage() {
     setGifsLoading(true)
     setGifError('')
     try {
-      const response = await fetch(`/api/gifs?q=${encodeURIComponent(query || 'happy')}`, { signal: controller.signal, credentials: 'same-origin' })
+      const response = await fetch(`/info/api/gifs?q=${encodeURIComponent(query || 'happy')}`, { signal: controller.signal, credentials: 'same-origin' })
       const result = await response.json()
       if (!response.ok || !result.success) {
         throw new Error(result.message || 'Unable to load GIFs.')
@@ -840,7 +840,7 @@ export default function ConversationPage() {
         uploadData.append('file', mediaFile)
         uploadData.append('bucket', 'profile-media')
         uploadData.append('folder', `messages/${currentUser.id}`)
-        const uploadResponse = await fetch('/api/upload', { method: 'POST', credentials: 'same-origin', body: uploadData })
+        const uploadResponse = await fetch('/info/api/upload', { method: 'POST', credentials: 'same-origin', body: uploadData })
         const uploadResult = await uploadResponse.json()
         if (!uploadResponse.ok || !uploadResult.success) throw new Error(uploadResult.error || 'Unable to upload attachment.')
         uploadedMediaUrl = uploadResult.url
@@ -848,7 +848,7 @@ export default function ConversationPage() {
         messageType = mediaType || 'image'
       }
 
-      const response = await fetch('/api/messages', {
+      const response = await fetch('/info/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -967,7 +967,7 @@ export default function ConversationPage() {
     <main className="conversation-page usr-section-page flex w-full flex-col overflow-hidden text-slate-900" style={{ height: viewportHeight, minHeight: viewportHeight, maxHeight: viewportHeight }}>
       <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
         <header className="conversation-header relative flex flex-[0_0_auto] items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
-          <button type="button" onClick={() => router.replace('/user/messaging')} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
+          <button type="button" onClick={() => router.replace('/info/user/messaging')} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
             <ArrowLeft className="h-5 w-5" />
           </button>
           {otherUser && (
@@ -982,7 +982,7 @@ export default function ConversationPage() {
           <div className="relative ml-auto shrink-0">
             <button type="button" onClick={() => setConversationMenuOpen((open) => !open)} aria-label="Conversation actions" title="Conversation actions" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100"><MoreHorizontal className="h-5 w-5" /></button>
             {conversationMenuOpen && <div className="absolute right-0 top-11 z-40 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-              <button type="button" onClick={() => router.push(`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Pin className="h-4 w-4" />Pinned messages</button>
+              <button type="button" onClick={() => router.push(`/info/user/messaging/${encodeURIComponent(otherUserId)}/pinned`)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Pin className="h-4 w-4" />Pinned messages</button>
               <button type="button" onClick={() => void updateConversation(conversationMuted ? 'unmute' : 'mute')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">{conversationMuted ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}{conversationMuted ? 'Unmute' : 'Mute'}</button>
               <button type="button" onClick={() => void updateConversation('archive')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50"><Archive className="h-4 w-4" />Archive</button>
               <button type="button" onClick={() => void updateConversation('delete')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><Trash2 className="h-4 w-4" />Delete</button>
@@ -1039,7 +1039,7 @@ export default function ConversationPage() {
                       <div className="max-w-[80%] text-center text-xs font-medium text-slate-600">
                         <span>{activityText}</span>
                         <span className="mx-1 text-slate-400">·</span>
-                        <Link href={`/user/messaging/${encodeURIComponent(otherUserId)}/pinned`} className="font-semibold text-[#147d75] underline-offset-2 hover:underline">
+                        <Link href={`/info/user/messaging/${encodeURIComponent(otherUserId)}/pinned`} className="font-semibold text-[#147d75] underline-offset-2 hover:underline">
                           View all
                         </Link>
                       </div>

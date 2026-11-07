@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function historyPage() {
-  redirect('/admin/notifications?tab=history')
+export default function HistoryPage() {
+  redirect('/info/admin/announcement?tab=history')
 }

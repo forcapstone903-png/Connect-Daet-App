@@ -113,7 +113,7 @@ export async function POST(request) {
           full_name: full_name || '',
           user_type: 'tourist',
         },
-        emailRedirectTo: `${appUrl}/confirm`,
+        emailRedirectTo: `${appUrl}/info/confirm`,
       },
     })
 

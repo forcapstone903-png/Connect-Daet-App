@@ -60,7 +60,7 @@ function LoginContent() {
     setMessage('')
 
     try {
-      const response = await fetch('/api/resend-verification', {
+      const response = await fetch('/info/api/resend-verification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: formData.email.trim() }),
@@ -89,7 +89,7 @@ function LoginContent() {
     setVerificationSent(false)
 
     try {
-      const response = await fetch('/api/login', {
+      const response = await fetch('/info/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -136,7 +136,7 @@ function LoginContent() {
       setAuthCookie(sessionData, rememberMe ? 30 : 1)
 
       // Remembered sessions are persisted server-side via the HTTP-only
-      // `daet_secure_session` cookie (see /api/login). The localStorage entry
+      // `daet_secure_session` cookie (see /info/api/login). The localStorage entry
       // below is only a convenience reminder for the "welcome back" banner; it
       // is no longer used to restore authentication.
       const rememberMeKey = 'daet_remember_me_session'
@@ -157,11 +157,11 @@ function LoginContent() {
       }
 
       if (user.user_type === 'admin') {
-        router.push('/admin/dashboard')
+        router.push('/info/admin/dashboard')
       } else if (shouldStartOnboarding) {
-        router.push('/user/onboarding')
+        router.push('/info/user/onboarding')
       } else {
-        router.push('/user/dashboard')
+        router.push('/info/user/dashboard')
       }
     } catch (err) {
       setError(err.message)
@@ -341,7 +341,7 @@ function LoginContent() {
                     Remember me
                   </label>
 
-                  <Link href="/forgot-password" className="text-sm font-medium text-sky-700 transition hover:text-sky-800">
+                  <Link href="/info/forgot-password" className="text-sm font-medium text-sky-700 transition hover:text-sky-800">
                     Forgot password?
                   </Link>
                 </div>
@@ -359,12 +359,12 @@ function LoginContent() {
               <div className="mt-6 space-y-2 text-center text-sm text-slate-600">
                 <div>
                   Don&apos;t have an account?{' '}
-                  <Link href="/register" className="font-semibold text-sky-700 transition hover:text-sky-800">
+                  <Link href="/info/register" className="font-semibold text-sky-700 transition hover:text-sky-800">
                     Sign up here
                   </Link>
                 </div>
                 <div>
-                  <Link href="/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
+                  <Link href="/info/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
                     ← Back to visitor page
                   </Link>
                 </div>

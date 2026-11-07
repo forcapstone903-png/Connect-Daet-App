@@ -3,9 +3,9 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { Play } from 'lucide-react'
-import SocialActionBar from '@/app/components/user/SocialActionBar'
-import ConfirmationModal from '@/app/components/ConfirmationModal'
-import PostActionMenu from '@/app/components/user/PostActionMenu'
+import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
+import PostActionMenu from '@/app/(subsystems)/info/components/user/PostActionMenu'
 import { getRepostTarget } from '@/lib/repostIdentity'
 
 function getInitials(name = '') {
@@ -79,10 +79,10 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
   return (
     <>
       <div className="flex items-center gap-2 text-[11px] text-slate-600">
-        <Link href={reposterId ? `/user/profile/${reposterId}` : '#'} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700" aria-label={`View ${reposterDisplayName}'s profile`}>
+        <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700" aria-label={`View ${reposterDisplayName}'s profile`}>
           {reposter?.profile_image_url ? <img src={reposter.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(reposterDisplayName)}
         </Link>
-        <Link href={reposterId ? `/user/profile/${reposterId}` : '#'} className="font-bold text-slate-900 hover:text-sky-700">{reposterDisplayName}</Link>
+        <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="font-bold text-slate-900 hover:text-sky-700">{reposterDisplayName}</Link>
         <span aria-hidden="true" className="text-emerald-600">🔄</span>
         <span>reposted</span>
         <span className="text-slate-400">·</span>
@@ -141,10 +141,10 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
       <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="px-0 py-0">
           <div className="flex items-center gap-2 px-3 pt-3">
-            <Link href={originalAuthor.id ? `/user/profile/${originalAuthor.id}` : originalHref} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-black text-sky-700">
+            <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-[10px] font-black text-sky-700">
               {originalAuthor.profile_image_url ? <img src={originalAuthor.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(originalAuthorName)}
             </Link>
-            <Link href={originalAuthor.id ? `/user/profile/${originalAuthor.id}` : originalHref} className="min-w-0 truncate text-sm font-bold text-slate-900 hover:text-sky-700">{originalAuthorName}</Link>
+            <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref} className="min-w-0 truncate text-sm font-bold text-slate-900 hover:text-sky-700">{originalAuthorName}</Link>
             <span className="text-slate-400">·</span>
             <time className="text-xs text-slate-500" dateTime={original.created_at || undefined}>{formatRelativeTime(original.created_at)}</time>
           </div>

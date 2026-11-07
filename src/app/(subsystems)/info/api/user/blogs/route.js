@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 async function notifyFollowersOfPublishedBlog(adminSupabase, { authorId, blogId, title }) {
-  const link = `/user/blogs/${blogId}`
+  const link = `/info/user/blogs/${blogId}`
   const { data: follows, error: followsError } = await adminSupabase
     .from('user_follows')
     .select('follower_id')

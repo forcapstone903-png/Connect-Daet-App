@@ -2,36 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
-import { hasAdminAccess } from '@/lib/adminRoles'
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
 
-const STORAGE_KEY = 'daet_data_management_settings';
-const BACKUP_HISTORY_KEY = 'daet_backup_history';
-
-const defaultSettings = {
-  backupFrequency: 'daily',
-  backupTime: '02:00',
-  backupLocation: 'Cloud Storage',
-  includeMedia: true,
-  retention: {
-    events: 365,
-    attractions: 540,
-    blogs: 180,
-    feedback: 90,
-    announcements: 120,
-    users: 1095,
-  },
-  validationMode: 'strict',
-  autoPurge: true,
-};
-
-const defaultBackups = [
-  { id: 1, name: 'Daily Full Backup', createdAt: '2026-08-13 02:00', size: '4.2 GB', status: 'Completed' },
-  { id: 2, name: 'Weekly Snapshot', createdAt: '2026-08-10 02:00', size: '3.8 GB', status: 'Completed' },
-  { id: 3, name: 'Monthly Archive', createdAt: '2026-08-01 02:00', size: '5.1 GB', status: 'Verified' },
-];
+const BACKUP_API = '/info/api/admin/data-management/backup';
+const MAX_BACKUP_SIZE = 50 * 1024 * 1024;
 
 const readStoredSession = () => {
   if (typeof window === 'undefined') return null;
@@ -44,144 +21,134 @@ const readStoredSession = () => {
   }
 };
 
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`The server returned an invalid response (${response.status}).`);
+  }
+}
+
 export default function DataManagementPage() {
   const router = useRouter();
   const [user] = useState(() => readStoredSession());
-  const [settings, setSettings] = useState(() => {
-    if (typeof window === 'undefined') return defaultSettings;
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      return saved || defaultSettings;
-    } catch {
-      return defaultSettings;
-    }
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [validationBusy, setValidationBusy] = useState(false);
+  const [validationStatus, setValidationStatus] = useState({
+    status: 'Not checked',
+    details: 'Check that backup tables are available before creating or restoring a snapshot.',
+    lastRun: null,
   });
-  const [backupHistory, setBackupHistory] = useState(() => {
-    if (typeof window === 'undefined') return defaultBackups;
-    try {
-      const saved = JSON.parse(localStorage.getItem(BACKUP_HISTORY_KEY) || 'null');
-      return Array.isArray(saved) && saved.length ? saved : defaultBackups;
-    } catch {
-      return defaultBackups;
-    }
-  });
-  const [validationStatus, setValidationStatus] = useState({ status: 'Healthy', details: '3 checks passed', lastRun: 'Today 09:15 AM' });
   const [toast, setToast] = useState(null);
-  const [purgeDays, setPurgeDays] = useState(180);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
     if (!user) {
-      router.push('/login');
+      router.push('/info/login');
       return;
     }
 
-    if (!hasAdminAccess(user.role)) {
-      router.push('/admin/dashboard');
-    }
+    if (!hasAdminAccess(user.role)) router.push('/info/admin/dashboard');
   }, [router, user]);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
-
-  useEffect(() => {
-    localStorage.setItem(BACKUP_HISTORY_KEY, JSON.stringify(backupHistory));
-  }, [backupHistory]);
-
-  const showToast = (msg, isError = false) => {
-    setToast({ msg, isError });
-    setTimeout(() => setToast(null), 2600);
+  const showToast = (message, isError = false) => {
+    setToast({ message, isError });
+    setTimeout(() => setToast(null), 5000);
   };
 
-  const exportJson = () => {
-    const exportObject = {
-      generatedAt: new Date().toISOString(),
-      system: 'Daet Tourism Admin',
-      data: {
-        settings,
-        backupHistory,
-        retention: settings.retention,
-      },
-    };
+  const downloadBackup = async () => {
+    setBackupBusy(true);
+    try {
+      const response = await fetch(BACKUP_API, { cache: 'no-store' });
+      if (!response.ok) {
+        const data = await readJsonResponse(response);
+        throw new Error(data.message || `Backup failed (${response.status}).`);
+      }
 
-    const blob = new Blob([JSON.stringify(exportObject, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `daet-data-export-${Date.now()}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast('Data export created successfully.');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const filename = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1]
+        || `connect-daet-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('Database snapshot downloaded. Store the file securely.');
+    } catch (error) {
+      showToast(error.message || 'Unable to create a database snapshot.', true);
+    } finally {
+      setBackupBusy(false);
+    }
   };
 
-  const handleImport = (event) => {
+  const restoreBackup = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (loadEvent) => {
-      try {
-        const result = loadEvent.target?.result;
-        const parsed = JSON.parse(String(result));
-        if (parsed && parsed.data) {
-          showToast(`Imported ${file.name}. Data validation queued.`);
-        } else {
-          showToast('Imported file did not contain valid dataset metadata.', true);
-        }
-      } catch {
-        showToast('Unable to parse the uploaded file. Please use JSON or CSV export format.', true);
+    setRestoreBusy(true);
+    try {
+      if (file.size > MAX_BACKUP_SIZE) {
+        throw new Error('Backup files must be 50 MB or smaller.');
       }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-  };
 
-  const createBackup = () => {
-    const item = {
-      id: Date.now(),
-      name: `Manual Backup ${new Date().toLocaleDateString()}`,
-      createdAt: new Date().toLocaleString('sv-SE').replace(' ', ' '),
-      size: '4.3 GB',
-      status: 'Completed',
-    };
-    setBackupHistory((prev) => [item, ...prev]);
-    showToast('Backup created successfully.');
-  };
+      const response = await fetch(BACKUP_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: await file.text(),
+      });
+      const data = await readJsonResponse(response);
+      if (!response.ok || !data.success) {
+        const partialResult = data.restoredRows
+          ? ` ${data.restoredRows} rows were merged before the error; upload the same file again to retry.`
+          : '';
+        throw new Error(`${data.message || `Restore failed (${response.status}).`}${partialResult}`);
+      }
 
-  const restoreBackup = (backupId) => {
-    const target = backupHistory.find((item) => item.id === backupId);
-    if (!target) {
-      showToast('Backup not found.', true);
-      return;
+      showToast(`Merged ${data.restoredRows} rows across ${data.restoredTables} tables from ${file.name}.`);
+      setValidationStatus({
+        status: 'Restore complete',
+        details: `${data.restoredRows} rows merged across ${data.restoredTables} tables. Existing records were not deleted.`,
+        lastRun: new Date().toLocaleString(),
+      });
+    } catch (error) {
+      showToast(error.message || 'Unable to restore this backup.', true);
+    } finally {
+      setRestoreBusy(false);
+      event.target.value = '';
     }
-
-    showToast(`Restored from ${target.name}.`);
   };
 
-  const runValidation = () => {
-    const issues = [
-      settings.retention.events > 0 ? 'Retention policy valid' : 'Retention policy missing',
-      settings.backupFrequency ? 'Backup schedule configured' : 'Backup schedule missing',
-      settings.includeMedia ? 'Media backup enabled' : 'Media backup disabled',
-    ];
+  const validateBackupTables = async () => {
+    setValidationBusy(true);
+    try {
+      const response = await fetch(`${BACKUP_API}?validate=1`, { cache: 'no-store' });
+      const data = await readJsonResponse(response);
+      if (!response.ok || !data.success) {
+        const failures = data.failedTables?.length ? ` Unavailable: ${data.failedTables.join(', ')}.` : '';
+        throw new Error(`${data.message || `Validation failed (${response.status}).`}${failures}`);
+      }
 
-    const passed = issues.filter((entry) => entry.includes('valid') || entry.includes('configured') || entry.includes('enabled')).length;
-    setValidationStatus({
-      status: passed >= 3 ? 'Healthy' : 'Attention needed',
-      details: `${passed}/3 checks passed`,
-      lastRun: new Date().toLocaleString(),
-    });
-    showToast('Data validation completed.');
-  };
-
-  const purgeOldData = () => {
-    if (!purgeDays || Number(purgeDays) <= 0) {
-      showToast('Please set a valid purge period.', true);
-      return;
+      setValidationStatus({
+        status: 'Available',
+        details: `${data.tablesChecked} backup tables are accessible. This check does not inspect row-level data integrity.`,
+        lastRun: new Date().toLocaleString(),
+      });
+      showToast('Backup table availability check completed.');
+    } catch (error) {
+      setValidationStatus({
+        status: 'Check failed',
+        details: error.message || 'Unable to check backup table availability.',
+        lastRun: new Date().toLocaleString(),
+      });
+      showToast(error.message || 'Unable to check backup table availability.', true);
+    } finally {
+      setValidationBusy(false);
     }
-
-    showToast(`Purged records older than ${purgeDays} days.`);
   };
 
   if (!user) return null;
@@ -194,119 +161,100 @@ export default function DataManagementPage() {
         <AdminPageHeader
           eyebrow="Data"
           title="Data management & backup"
-          description="Protect, restore, and maintain data integrity across the tourism platform."
+          description="Create downloadable application-data snapshots and merge a verified snapshot into the database."
           icon="save"
           actions={
-            <AdminButton variant="primary" icon="plus" onClick={createBackup}>Create backup</AdminButton>
+            <AdminButton variant="primary" icon="plus" onClick={downloadBackup} disabled={backupBusy}>
+              {backupBusy ? 'Creating snapshot…' : 'Create backup'}
+            </AdminButton>
           }
         />
 
         <AdminStatGrid>
-          <AdminStatCard label="Backups" value={backupHistory.length} icon="save" tone="brand" meta="Stored snapshots" />
-          <AdminStatCard label="Validation" value={validationStatus.status} icon="check" tone="success" meta="Latest integrity check" />
-          <AdminStatCard label="Retention" value={`${settings.retention.events}d`} icon="calendar" tone="violet" meta="Events kept" />
-          <AdminStatCard label="Auto purge" value={settings.autoPurge ? 'On' : 'Off'} icon="delete" tone="warning" meta="Scheduled cleanup" />
+          <AdminStatCard label="Backup type" value="On demand" icon="save" tone="brand" meta="Downloaded as JSON" />
+          <AdminStatCard label="Backup scope" value="Application data" icon="data" tone="info" meta="Passwords and push credentials excluded" />
+          <AdminStatCard label="Restore mode" value="Merge only" icon="check" tone="success" meta="Never deletes existing rows" />
+          <AdminStatCard label="Automated backups" value="Not configured" icon="calendar" tone="warning" meta="No schedule or cloud archive" />
         </AdminStatGrid>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
           <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Export & Import</h2>
+            <section id="backup" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="mb-2 text-lg font-bold text-slate-800">Export and restore</h2>
+              <p className="mb-4 text-sm text-slate-600">
+                Export creates a snapshot from the current database. Restore accepts only this application&apos;s versioned JSON snapshot and inserts or updates matching records; it does not delete records absent from the file.
+              </p>
               <div className="flex flex-wrap gap-3">
-                <button onClick={exportJson} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Export Data</button>
-                <button onClick={() => fileInputRef.current?.click()} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Import Data</button>
-                <input ref={fileInputRef} type="file" accept=".json,.csv" className="hidden" onChange={handleImport} />
+                <button
+                  type="button"
+                  onClick={downloadBackup}
+                  disabled={backupBusy}
+                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {backupBusy ? 'Creating snapshot…' : 'Export database snapshot'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={restoreBusy}
+                  className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {restoreBusy ? 'Merging data…' : 'Restore from JSON'}
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  aria-label="Select a Connect Daet database snapshot"
+                  onChange={restoreBackup}
+                />
               </div>
-              <p className="mt-3 text-sm text-slate-500">Export complete database as JSON and import attractions or events via CSV / JSON files.</p>
-            </div>
+              <p className="mt-3 text-xs text-slate-500">
+                Includes application tables, including user and community data. Password hashes, password-reset records, push-subscription credentials, page-view telemetry, and server-side maintenance settings are excluded. Media files are not included.
+              </p>
+              <p className="mt-2 text-xs font-medium text-amber-800">
+                Snapshots may contain personal and private application data. Store downloaded files securely. Existing user passwords are preserved on restore; users newly added from a snapshot must reset their password before signing in.
+              </p>
+            </section>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Scheduled Backup Settings</h2>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Backup Frequency</label>
-                  <select value={settings.backupFrequency} onChange={(e) => setSettings((prev) => ({ ...prev, backupFrequency: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Backup Time</label>
-                  <input type="time" value={settings.backupTime} onChange={(e) => setSettings((prev) => ({ ...prev, backupTime: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-              </div>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Storage Location</label>
-                  <input value={settings.backupLocation} onChange={(e) => setSettings((prev) => ({ ...prev, backupLocation: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-                <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                  <input type="checkbox" checked={settings.includeMedia} onChange={(e) => setSettings((prev) => ({ ...prev, includeMedia: e.target.checked }))} className="h-4 w-4 accent-blue-600" />
-                  Include media files
-                </label>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Data Retention & Purge</h2>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                {Object.entries(settings.retention).map(([key, value]) => (
-                  <div key={key}>
-                    <label className="mb-1 block text-sm font-medium capitalize text-slate-700">{key}</label>
-                    <input type="number" value={value} onChange={(e) => setSettings((prev) => ({ ...prev, retention: { ...prev.retention, [key]: Number(e.target.value) || 0 } }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center gap-3">
-                <input type="number" value={purgeDays} onChange={(e) => setPurgeDays(Number(e.target.value) || 0)} min="1" className="w-36 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                <button onClick={purgeOldData} className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">Purge Old Data</button>
-              </div>
-            </div>
+            <section id="retention" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="mb-2 text-lg font-bold text-slate-800">Backup behavior</h2>
+              <p className="text-sm text-slate-600">
+                Backups run only when an administrator downloads a snapshot. This page does not configure scheduled cloud storage, media-file backup, automatic retention, or data purging. No existing records are removed by backup or restore.
+              </p>
+            </section>
           </div>
 
           <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Backup History</h2>
-              <div className="space-y-3">
-                {backupHistory.map((backup) => (
-                  <div key={backup.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-medium text-slate-800">{backup.name}</p>
-                        <p className="text-xs text-slate-500">{backup.createdAt}</p>
-                      </div>
-                      <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">{backup.status}</span>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-500">
-                      <span>{backup.size}</span>
-                      <button onClick={() => restoreBackup(backup.id)} className="rounded-full bg-slate-900 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-slate-800">Restore</button>
-                    </div>
-                  </div>
-                ))}
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="mb-4 text-lg font-bold text-slate-800">Backup table availability</h2>
+              <div className={`rounded-xl border p-4 ${validationStatus.status === 'Check failed' ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50'}`} aria-live="polite">
+                <p className={`text-sm font-semibold ${validationStatus.status === 'Check failed' ? 'text-red-700' : 'text-slate-700'}`}>
+                  {validationStatus.status}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">{validationStatus.details}</p>
+                {validationStatus.lastRun && <p className="mt-2 text-xs text-slate-500">Last checked: {validationStatus.lastRun}</p>}
               </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Data Validation</h2>
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-sm font-semibold text-emerald-700">{validationStatus.status}</p>
-                <p className="mt-1 text-sm text-emerald-800">{validationStatus.details}</p>
-                <p className="mt-2 text-xs text-emerald-700">Last run: {validationStatus.lastRun}</p>
-              </div>
-              <button onClick={runValidation} className="mt-4 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700">Validate Integrity</button>
-            </div>
+              <button
+                type="button"
+                onClick={validateBackupTables}
+                disabled={validationBusy}
+                className="mt-4 rounded-full bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {validationBusy ? 'Checking tables…' : 'Check backup tables'}
+              </button>
+            </section>
           </div>
         </div>
       </div>
 
       {toast && (
-        <div className={`fixed bottom-5 right-5 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-600' : 'bg-emerald-600'}`}>
-          {toast.msg}
+        <div
+          role={toast.isError ? 'alert' : 'status'}
+          className={`fixed bottom-5 right-5 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-600' : 'bg-emerald-600'}`}
+        >
+          {toast.message}
         </div>
       )}
     </div>

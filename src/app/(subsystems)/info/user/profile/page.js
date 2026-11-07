@@ -15,17 +15,17 @@ import {
   Users,
   Wand2,
 } from 'lucide-react'
-import MediaUpload from '@/app/components/MediaUpload'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
-import ProfileFeedActions from '@/app/components/user/ProfileFeedActions'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
+import ProfileFeedActions from '@/app/(subsystems)/info/components/user/ProfileFeedActions'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import { filterValidUuidValues } from '@/lib/uuid'
-import PostMediaGallery from '@/app/components/user/PostMediaGallery'
-import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
+import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
+import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
 import { getPostImages } from '@/lib/postMedia'
 
 const STORAGE_KEYS = {
@@ -102,6 +102,7 @@ function getBadgeTone(name) {
 export default function UserProfilePage() {
   const [session] = useState(readStoredSession)
   const [loading, setLoading] = useState(true)
+  const [profileLoadError, setProfileLoadError] = useState('')
   const [saveNotice, setSaveNotice] = useState('')
   const [userId, setUserId] = useState('')
   const [profileForm, setProfileForm] = useState({
@@ -193,7 +194,7 @@ export default function UserProfilePage() {
 
     const loadProfile = async () => {
       try {
-        const [{ data: userData }, { data: profileData }, { data: followSummary }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }, { data: profileContent }] = await Promise.all([
+        const [{ data: userData }, { data: profileData }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }, profileResult] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
@@ -204,11 +205,6 @@ export default function UserProfilePage() {
             .select('*')
             .eq('user_id', fallbackUserId)
             .maybeSingle(),
-          fetch(`/api/users/${fallbackUserId}`, { credentials: 'same-origin' }).then(async (response) => {
-            const result = await response.json()
-            if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load follow relationships')
-            return { data: result }
-          }),
           supabase
             .from('user_badges')
             .select('*')
@@ -236,13 +232,19 @@ export default function UserProfilePage() {
             .eq('created_by', fallbackUserId)
             .eq('status', 'published')
             .order('start_date', { ascending: false }),
-          fetch(`/api/users/${fallbackUserId}`, { credentials: 'same-origin' }).then(async (response) => {
+          fetch(`/info/api/users/${fallbackUserId}`, { credentials: 'same-origin' }).then(async (response) => {
             const result = await response.json()
-            if (!response.ok || !result.success) throw new Error(result.message || 'Failed to load profile content')
-            return { data: result.content || {} }
+            if (!response.ok || !result.success) {
+              const error = new Error(result.message || 'Failed to load your profile')
+              error.status = response.status
+              throw error
+            }
+            return result
           }),
         ])
 
+        const followSummary = profileResult
+        const profileContent = profileResult.content || {}
         const mergedLocation = profileData?.location || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte'
         const nextProfile = {
           full_name: profileData?.full_name || userData?.full_name || fallbackName,
@@ -266,7 +268,7 @@ export default function UserProfilePage() {
             content: post.content || 'Shared a community post.',
             created_at: post.created_at,
             category: 'Community',
-            href: `/user/posts/${post.id}`,
+            href: `/info/user/posts/${post.id}`,
             media: post.featured_image || (post.images || [])[0] || '',
             pinned: false,
             accent: 'bg-amber-100 text-amber-700',
@@ -279,7 +281,7 @@ export default function UserProfilePage() {
             content: blog.excerpt || blog.content || 'Shared a new story.',
             created_at: blog.published_at || blog.created_at,
             category: blog.category || 'Story',
-            href: `/user/blogs/${blog.id}`,
+            href: `/info/user/blogs/${blog.id}`,
             media: blog.featured_image || '',
             pinned: Boolean(blog.is_pinned || blog.pinned),
             accent: 'bg-sky-100 text-sky-700',
@@ -292,7 +294,7 @@ export default function UserProfilePage() {
             content: thread.content || 'Started a new discussion.',
             created_at: thread.created_at,
             category: thread.tags?.[0] || 'Community',
-            href: `/user/forums/${thread.id}`,
+            href: `/info/user/forums/${thread.id}`,
             media: '',
             pinned: Boolean(thread.is_pinned || thread.pinned),
             accent: 'bg-cyan-100 text-cyan-700',
@@ -305,17 +307,17 @@ export default function UserProfilePage() {
             content: event.description || 'Shared an upcoming event.',
             created_at: event.start_date || event.created_at,
             category: event.category || 'Event',
-            href: `/user/events/${event.id}`,
+            href: `/info/user/events/${event.id}`,
             media: event.featured_image || (Array.isArray(event.images) ? event.images[0] : '') || '',
             pinned: Boolean(event.is_pinned || event.pinned),
             accent: 'bg-amber-100 text-amber-700',
           })),
           ...((profileContent?.reposts || []).map((repost) => {
             const typeMap = {
-              blog: { type: 'Blog', category: repost.category || 'Story', href: `/user/blogs/${repost.original_content_id}`, accent: 'bg-sky-100 text-sky-700', content: repost.excerpt || repost.content || 'Shared a new story.' },
-              forum_thread: { type: 'Forum', category: 'Community', href: `/user/forums/${repost.original_content_id}`, accent: 'bg-cyan-100 text-cyan-700', content: repost.content || 'Started a new discussion.' },
-              event: { type: 'Event', category: repost.category || 'Event', href: `/user/events/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.description || 'Shared an upcoming event.' },
-              user_post: { type: 'Post', category: 'Community', href: `/user/posts/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.content || 'Shared a community post.' },
+              blog: { type: 'Blog', category: repost.category || 'Story', href: `/info/user/blogs/${repost.original_content_id}`, accent: 'bg-sky-100 text-sky-700', content: repost.excerpt || repost.content || 'Shared a new story.' },
+              forum_thread: { type: 'Forum', category: 'Community', href: `/info/user/forums/${repost.original_content_id}`, accent: 'bg-cyan-100 text-cyan-700', content: repost.content || 'Started a new discussion.' },
+              event: { type: 'Event', category: repost.category || 'Event', href: `/info/user/events/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.description || 'Shared an upcoming event.' },
+              user_post: { type: 'Post', category: 'Community', href: `/info/user/posts/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.content || 'Shared a community post.' },
             }
             const mapped = typeMap[repost.original_content_type] || typeMap.user_post
             return {
@@ -411,7 +413,12 @@ export default function UserProfilePage() {
           points: userData?.points || nextProfile.points || 0,
         })
       } catch (error) {
-        console.error('Profile fetch failed:', error)
+        if (error?.status === 404) {
+          setProfileLoadError('We could not find an active profile for this account. Sign in again, or contact support if the problem continues.')
+        } else {
+          console.error('Profile fetch failed:', error)
+          setProfileLoadError(error?.message || 'Unable to load your profile right now.')
+        }
       } finally {
         setLoading(false)
       }
@@ -430,7 +437,7 @@ export default function UserProfilePage() {
       if (detail.action === 'removed') {
         setUserPosts((previous) => previous.filter((post) => !(post.isRepost && post.original_content_id === detail.contentId)))
         setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
-        invalidateCachePrefix(`profile:user:${userId}`)
+        invalidateCachePrefix('profile:user:')
         return
       }
 
@@ -438,10 +445,10 @@ export default function UserProfilePage() {
       const repost = detail.repost
       if (!original || !repost?.id) return
       const typeMap = {
-        blog: { type: 'Blog', category: 'Story', href: `/user/blogs/${repost.original_content_id}`, content: original.excerpt || original.content || 'Shared a new story.' },
-        forum_thread: { type: 'Forum', category: 'Community', href: `/user/forums/${repost.original_content_id}`, content: original.content || 'Started a new discussion.' },
-        event: { type: 'Event', category: 'Event', href: `/user/events/${repost.original_content_id}`, content: original.description || 'Shared an upcoming event.' },
-        user_post: { type: 'Post', category: 'Community', href: `/user/posts/${repost.original_content_id}`, content: original.content || 'Shared a community post.' },
+        blog: { type: 'Blog', category: 'Story', href: `/info/user/blogs/${repost.original_content_id}`, content: original.excerpt || original.content || 'Shared a new story.' },
+        forum_thread: { type: 'Forum', category: 'Community', href: `/info/user/forums/${repost.original_content_id}`, content: original.content || 'Started a new discussion.' },
+        event: { type: 'Event', category: 'Event', href: `/info/user/events/${repost.original_content_id}`, content: original.description || 'Shared an upcoming event.' },
+        user_post: { type: 'Post', category: 'Community', href: `/info/user/posts/${repost.original_content_id}`, content: original.content || 'Shared a community post.' },
       }
       const mapped = typeMap[repost.original_content_type] || typeMap.user_post
       const nextPost = {
@@ -471,7 +478,7 @@ export default function UserProfilePage() {
       }
       setUserPosts((previous) => [nextPost, ...previous.filter((post) => post.id !== nextPost.id)])
       setStats((previous) => ({ ...previous, posts: previous.posts + 1 }))
-      invalidateCachePrefix(`profile:user:${userId}`)
+      invalidateCachePrefix('profile:user:')
     }
 
     window.addEventListener('daet-repost-created', handleRepostChange)
@@ -484,7 +491,7 @@ export default function UserProfilePage() {
       if (!repostId || !['delete', 'archive'].includes(event.detail?.action)) return
       setUserPosts((previous) => previous.filter((post) => post.id !== `repost-${repostId}`))
       setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
-      invalidateCachePrefix(`profile:user:${userId}`)
+      invalidateCachePrefix('profile:user:')
     }
     window.addEventListener('daet-repost-visibility-changed', handleRepostVisibilityChange)
     return () => window.removeEventListener('daet-repost-visibility-changed', handleRepostVisibilityChange)
@@ -495,7 +502,7 @@ export default function UserProfilePage() {
 
   const updateProfilePost = async (post, action) => {
     const isRepost = Boolean(post?.isRepost)
-    const endpoint = isRepost ? `/api/reposts/${post.repost_id}` : `/api/posts/${post.id}`
+    const endpoint = isRepost ? `/info/api/reposts/${post.repost_id}` : `/info/api/posts/${post.id}`
     const isDelete = action === 'delete'
     const confirmation = isDelete
       ? (isRepost ? 'Delete repost?\n\nThis removes only your repost.' : 'Delete post?\n\nThis permanently removes your post.')
@@ -515,13 +522,13 @@ export default function UserProfilePage() {
     setUserPosts((previous) => previous.filter((item) => item.id !== post.id && !(isDelete && !isRepost && item.original_content_id === post.id)))
     setOpenPostMenu(null)
     setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
-    invalidateCachePrefix(`profile:user:${userId}`)
+    invalidateCachePrefix('profile:user:')
   }
 
   const updateProfilePostPrivacy = async (post, visibility) => {
     if (!post || post.isRepost || post.type !== 'Post' || post.user_id !== userId) return
 
-    const response = await fetch(`/api/posts/${post.id}`, {
+    const response = await fetch(`/info/api/posts/${post.id}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -536,7 +543,7 @@ export default function UserProfilePage() {
 
     setUserPosts((previous) => previous.map((item) => item.id === post.id ? { ...item, visibility } : item))
     setOpenPostMenu(null)
-    invalidateCachePrefix(`profile:user:${userId}`)
+    invalidateCachePrefix('profile:user:')
   }
 
   const editProfilePost = async (post) => {
@@ -545,7 +552,7 @@ export default function UserProfilePage() {
     if (title === null) return
     const content = window.prompt('Edit post content:', post.content || '')
     if (content === null) return
-    const response = await fetch(`/api/posts/${post.id}`, {
+    const response = await fetch(`/info/api/posts/${post.id}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -558,7 +565,7 @@ export default function UserProfilePage() {
     }
     setUserPosts((previous) => previous.map((item) => item.id === post.id ? { ...item, title, content } : item))
     setOpenPostMenu(null)
-    invalidateCachePrefix(`profile:user:${userId}`)
+    invalidateCachePrefix('profile:user:')
   }
 
   const handleSaveProfile = async () => {
@@ -620,7 +627,7 @@ export default function UserProfilePage() {
       writeLocalState(STORAGE_KEYS.profilePreferences, {
         notificationPrefs,
       })
-      invalidateCachePrefix(`profile:user:${userId}`)
+      invalidateCachePrefix('profile:user:')
       setSaveNotice('Profile updated successfully.')
     } catch (error) {
       console.error('Profile update failed:', error)
@@ -654,17 +661,17 @@ export default function UserProfilePage() {
                 </div>
               </div>
               <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-                <Link href="/user/blogs/new" className="usr-section-secondary">Create post</Link>
-                <Link href="/user/profile/edit" className="usr-section-primary">Edit profile</Link>
+                <Link href="/info/user/blogs/new" className="usr-section-secondary">Create post</Link>
+                <Link href="/info/user/profile/edit" className="usr-section-primary">Edit profile</Link>
                 <div className="relative">
                   <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="usr-press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
                     <MoreHorizontal className="h-5 w-5" />
                   </button>
                   {profileActionsOpen && (
                     <div className="usr-pop-in absolute right-0 top-12 z-20 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                      <Link href="/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
-                      <Link href="/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
-                      <Link href="/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
+                      <Link href="/info/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
+                      <Link href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
+                      <Link href="/info/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
                     </div>
                   )}
                 </div>
@@ -674,8 +681,8 @@ export default function UserProfilePage() {
 
           <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-center">
             <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="usr-stat-label mt-0.5">Posts</p></div>
-            <Link href="/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
-            <Link href="/user/profile/connections?tab=following" className="px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="usr-stat-label mt-0.5">Following</p></Link>
+            <Link href="/info/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
+            <Link href="/info/user/profile/connections?tab=following" className="px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="usr-stat-label mt-0.5">Following</p></Link>
           </div>
 
           <div className="px-3 py-4 sm:px-5 sm:py-5">
@@ -709,10 +716,10 @@ export default function UserProfilePage() {
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
                   <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-                    <Link href="/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                    <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
-                    <Link href="/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                    <Link href="/info/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
@@ -770,7 +777,7 @@ export default function UserProfilePage() {
                       <div className="usr-empty-state !border-dashed text-sm text-slate-500">
                         <p className="font-semibold text-slate-700">Nothing on your wall yet</p>
                         <p className="mt-1">Share a story or start a forum discussion to fill it with your latest community updates.</p>
-                        <Link href="/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a post</Link>
+                        <Link href="/info/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a post</Link>
                       </div>
                     )}
                 </div>
@@ -933,6 +940,11 @@ export default function UserProfilePage() {
         {loading ? (
           <div className="usr-surface mt-6 p-5 text-sm text-slate-600">
             Loading your profile...
+          </div>
+        ) : null}
+        {profileLoadError ? (
+          <div className="usr-surface mt-6 p-5 text-sm text-rose-700" role="alert">
+            {profileLoadError}
           </div>
         ) : null}
       </div>

@@ -1,15 +1,15 @@
-// app/admin/blog/page.js
+// app/(subsystems)/info/admin/blog/page.js
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminButton, AdminPageHeader } from '@/app/components/admin';
-import { Icon } from '@/app/components/Icon';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminButton, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
-import MediaUpload from '@/app/components/MediaUpload';
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 import { trackUserActivity } from '@/lib/trackActivity';
 
 const BLOG_CATEGORIES = [
@@ -122,7 +122,7 @@ export default function BlogManagement() {
 
   const createContentNotifications = async ({ type, title, message, link, contentId }) => {
     try {
-      const response = await fetch('/api/admin/content-notifications', {
+      const response = await fetch('/info/api/admin/content-notifications', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
@@ -185,7 +185,7 @@ export default function BlogManagement() {
       if (result.error) throw result.error;
 
       if (!editingBlog && savedBlogId && user?.id) {
-        const blogLink = `/user/blogs/${savedBlogId}`
+        const blogLink = `/info/user/blogs/${savedBlogId}`
         await createContentNotifications({
           type: 'blog',
           title: blogForm.title.trim(),
@@ -356,14 +356,14 @@ export default function BlogManagement() {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
 
       try {
         const userData = JSON.parse(session);
         if (!hasAdminAccess(userData.role)) {
-          router.push('/admin/dashboard');
+          router.push('/info/admin/dashboard');
           return;
         }
 
@@ -371,7 +371,7 @@ export default function BlogManagement() {
         await fetchBlogs();
       } catch (err) {
         console.error('Auth check failed:', err);
-        router.push('/login');
+        router.push('/info/login');
       } finally {
         setLoading(false);
       }

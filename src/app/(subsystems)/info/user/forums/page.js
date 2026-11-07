@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Link from 'next/link'
 import {
   ChevronRight,
@@ -16,7 +16,7 @@ import {
   User,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 const forumCategories = [
   { id: 'general', label: 'General Discussion', icon: '💬' },
@@ -370,7 +370,7 @@ export default function ForumsPage() {
                 {filteredThreads.map((thread) => (
                   <Link
                     key={thread.id}
-                    href={`/user/forums/${thread.id}`}
+                    href={`/info/user/forums/${thread.id}`}
                     className="tourism-panel feed-card block overflow-hidden rounded-[18px] border border-slate-200 border-l-4 border-l-emerald-300 bg-white p-4 transition hover:border-sky-300 hover:shadow-md sm:p-5"
                   >
                     <div className="flex items-start justify-between gap-4">

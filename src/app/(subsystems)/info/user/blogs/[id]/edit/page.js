@@ -7,10 +7,10 @@ import { Eye, FilePenLine, Save, Send, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
-import MediaUpload from '@/app/components/MediaUpload'
-import MultiMediaUpload from '@/app/components/MultiMediaUpload'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
-import UserSectionHeader, { SectionLoading } from '@/app/components/user/UserSectionHeader'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import MultiMediaUpload from '@/app/(subsystems)/info/components/MultiMediaUpload'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 
 const categories = [
   { value: 'travel_guides', label: 'Travel Guides' },
@@ -131,7 +131,7 @@ export default function EditBlogPage() {
     if (nextStatus) payload.status = nextStatus
 
     try {
-      const response = await fetch(`/api/user/blogs/${id}`, {
+      const response = await fetch(`/info/api/user/blogs/${id}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -150,7 +150,7 @@ export default function EditBlogPage() {
 
       if (nextStatus === 'published') {
         setNotice('Story published. Opening your story...')
-        router.push(`/user/blogs/${id}`)
+        router.push(`/info/user/blogs/${id}`)
         return
       }
 
@@ -169,7 +169,7 @@ export default function EditBlogPage() {
     setDeleting(true)
     setError('')
     try {
-      const response = await fetch(`/api/user/blogs/${id}`, {
+      const response = await fetch(`/info/api/user/blogs/${id}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })
@@ -180,7 +180,7 @@ export default function EditBlogPage() {
       }
       invalidateCachePrefix('feed:user:')
       invalidateCachePrefix('profile:user:')
-      router.push('/user/drafts')
+      router.push('/info/user/drafts')
     } catch (deleteError) {
       console.error('Blog delete failed:', deleteError)
       setError('Unable to delete this story right now.')
@@ -212,8 +212,8 @@ export default function EditBlogPage() {
             Only the author can edit a story, and deleted stories cannot be restored.
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Link href="/user/drafts" className="usr-section-secondary">Your drafts</Link>
-            <Link href="/user/blogs" className="usr-section-primary">Community stories</Link>
+            <Link href="/info/user/drafts" className="usr-section-secondary">Your drafts</Link>
+            <Link href="/info/user/blogs" className="usr-section-primary">Community stories</Link>
           </div>
         </div>
       </main>
@@ -231,12 +231,12 @@ export default function EditBlogPage() {
           title="Edit story"
           description="Refine your draft, add media, then publish it to the community when it is ready."
           emoji="📝"
-          backHref="/user/drafts"
+          backHref="/info/user/drafts"
           backLabel="Your drafts"
         >
           <span className="usr-section-counter">{isPublished ? 'Published' : 'Draft'}</span>
           {isPublished ? (
-            <Link href={`/user/blogs/${id}`} className="usr-section-secondary">
+            <Link href={`/info/user/blogs/${id}`} className="usr-section-secondary">
               <Eye className="h-4 w-4" />
               View story
             </Link>

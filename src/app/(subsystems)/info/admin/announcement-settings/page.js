@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminPageHeader } from '@/app/components/admin';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -76,12 +76,12 @@ export default function AnnouncementSettingsPage() {
 
   useEffect(() => {
     if (!user) {
-      router.push('/login');
+      router.push('/info/login');
       return;
     }
 
     if (!hasAdminAccess(user.role)) {
-      router.push('/admin/dashboard');
+      router.push('/info/admin/dashboard');
     }
   }, [router, user]);
 

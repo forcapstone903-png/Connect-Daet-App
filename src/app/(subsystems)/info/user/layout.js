@@ -1,19 +1,17 @@
 'use client'
 
 import './user-sections.css'
-import MobileNav from '@/app/components/user/MobileNav'
+import MobileNav from '@/app/(subsystems)/info/components/user/MobileNav'
 import { usePathname } from 'next/navigation'
 
 export default function UserLayout({ children }) {
   const pathname = usePathname()
-  const isConversationPage = /^\/user\/messaging\/(?!archived(?:\/|$))[^/]+$/.test(pathname || '')
+  const isConversationPage = /^\/info\/user\/messaging\/(?!archived(?:\/|$))[^/]+$/.test(pathname || '')
 
   return (
     <>
       {!isConversationPage && <MobileNav />}
-      {/* Reserve space at the bottom for the fixed mobile navigation bar so
-          content, buttons, and form actions are never hidden behind it. */}
-      <div className={`user-page-shell ${isConversationPage ? 'min-h-screen' : 'pb-20 lg:pb-0'}`}>{children}</div>
+      <div className={`user-page-shell ${isConversationPage ? 'min-h-screen' : 'pt-16 lg:pt-0'}`}>{children}</div>
     </>
   )
 }

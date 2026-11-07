@@ -24,7 +24,7 @@ export default function MultiMediaUpload({ value = [], onChange, bucket = 'post-
         formData.append('file', file)
         formData.append('bucket', bucket)
         formData.append('folder', folder)
-        const response = await fetch('/api/upload', { method: 'POST', body: formData })
+        const response = await fetch('/info/api/upload', { method: 'POST', body: formData })
         const result = await response.json()
         if (!response.ok || !result.success) throw new Error(result.error || `Unable to upload ${file.name}.`)
         uploaded.push({ url: result.url, type: file.type.startsWith('video/') ? 'video' : 'image', name: file.name })

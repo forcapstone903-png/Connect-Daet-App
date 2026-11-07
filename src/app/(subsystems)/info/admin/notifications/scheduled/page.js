@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function scheduledPage() {
-  redirect('/admin/notifications?tab=scheduled')
+export default function ScheduledPage() {
+  redirect('/info/admin/announcement?tab=scheduled')
 }

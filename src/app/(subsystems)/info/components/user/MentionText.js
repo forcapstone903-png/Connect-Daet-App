@@ -13,7 +13,7 @@ export default function MentionText({ text = '', mentions = [], className = '' }
           ) : (
             <Link
               key={`${part.userId}-${index}`}
-              href={`/user/profile/${encodeURIComponent(part.userId)}?from=comments`}
+              href={`/info/user/profile/${encodeURIComponent(part.userId)}?from=comments`}
               className="font-bold text-sky-700 hover:underline"
             >
               {part.value}

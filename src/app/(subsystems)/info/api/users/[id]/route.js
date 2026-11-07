@@ -10,6 +10,13 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 const adminSupabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
+function canViewVisibility(visibility, authorId, viewerId, followedUserIds) {
+  if (authorId === viewerId) return true
+  if (visibility === 'private') return false
+  if (visibility === 'followers') return followedUserIds.has(authorId)
+  return true
+}
+
 export async function GET(request, { params }) {
   if (!adminSupabase) {
     return NextResponse.json({ success: false, message: 'Profile service is not configured.' }, { status: 500 })
@@ -66,6 +73,7 @@ export async function GET(request, { params }) {
     if (privacyLevel !== 'public' && !isOwnProfile && !followRow) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
+    const followedProfileIds = new Set(followRow ? [profileId] : [])
 
     const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: reposts }, { data: followRows }, { count: followersCount, error: followersCountError }, { count: followingCount, error: followingCountError }, { data: blockedRows, error: blockedError }] = await Promise.all([
       (async () => {
@@ -153,7 +161,13 @@ export async function GET(request, { params }) {
     if (followingCountError) throw followingCountError
     if (blockedError && blockedError.code !== '42P01') throw blockedError
 
-    const repostIdsByType = (type) => [...new Set((reposts || []).filter((repost) => repost.original_content_type === type).map((repost) => repost.original_content_id).filter(Boolean))]
+    const visibleUserPosts = (userPosts || []).filter((post) =>
+      canViewVisibility(post.visibility, profileId, viewerId, followedProfileIds)
+    )
+    const visibleReposts = (reposts || []).filter((repost) =>
+      canViewVisibility(repost.visibility, profileId, viewerId, followedProfileIds)
+    )
+    const repostIdsByType = (type) => [...new Set(visibleReposts.filter((repost) => repost.original_content_type === type).map((repost) => repost.original_content_id).filter(Boolean))]
     const repostOriginalQueries = [
       ['user_post', 'info_user_posts', 'id, user_id, title, content, created_at, updated_at, visibility', 'created_at'],
       ['blog', 'info_blogs', 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, category', 'published_at'],
@@ -169,11 +183,31 @@ export async function GET(request, { params }) {
       return [type, data || []]
     })
     const repostOriginalEntries = await Promise.all(repostOriginalQueries)
+    const originalUserPostAuthors = [...new Set(
+      repostOriginalEntries
+        .filter(([type]) => type === 'user_post')
+        .flatMap(([, items]) => items.map((item) => item.user_id).filter(Boolean))
+    )]
+    const { data: originalFollowRows, error: originalFollowError } = viewerId && originalUserPostAuthors.length
+      ? await adminSupabase
+          .from('user_follows')
+          .select('following_id')
+          .eq('follower_id', viewerId)
+          .in('following_id', originalUserPostAuthors)
+      : { data: [], error: null }
+    if (originalFollowError) throw originalFollowError
+    const followedOriginalAuthors = new Set((originalFollowRows || []).map((row) => row.following_id))
+    const visibleRepostOriginalEntries = repostOriginalEntries.map(([type, items]) => [
+      type,
+      type === 'user_post'
+        ? items.filter((post) => canViewVisibility(post.visibility, post.user_id, viewerId, followedOriginalAuthors))
+        : items,
+    ])
     const repostOriginalByKey = new Map()
-    repostOriginalEntries.forEach(([type, items]) => {
+    visibleRepostOriginalEntries.forEach(([type, items]) => {
       items.forEach((item) => repostOriginalByKey.set(`${type}:${item.id}`, item))
     })
-    const repostAuthorIds = [...new Set(repostOriginalEntries.flatMap(([, items]) => items.map((item) => item.user_id || item.created_by).filter(Boolean)))]
+    const repostAuthorIds = [...new Set(visibleRepostOriginalEntries.flatMap(([, items]) => items.map((item) => item.user_id || item.created_by).filter(Boolean)))]
     const { data: repostAuthors } = repostAuthorIds.length
       ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url, user_type').in('id', repostAuthorIds)
       : { data: [] }
@@ -208,7 +242,7 @@ export async function GET(request, { params }) {
       ...(engagementByKey.get(`${type}:${item.id}`) || { reactions_count: 0, comments_count: 0 }),
     }))
 
-    const repostContent = (reposts || []).map((repost) => {
+    const repostContent = visibleReposts.map((repost) => {
       const original = repostOriginalByKey.get(`${repost.original_content_type}:${repost.original_content_id}`)
       if (!original) return null
       const originalAuthorId = original.user_id || original.created_by
@@ -259,8 +293,8 @@ export async function GET(request, { params }) {
         country: profileData?.country || userData.country,
       },
       content: {
-        user_posts: archivedOnly && viewerId === profileId ? [] : attachEngagement(userPosts, 'user_post'),
-        archived_user_posts: archivedOnly && viewerId === profileId ? userPosts : [],
+        user_posts: archivedOnly && viewerId === profileId ? [] : attachEngagement(visibleUserPosts, 'user_post'),
+        archived_user_posts: archivedOnly && viewerId === profileId ? visibleUserPosts : [],
         blogs: attachEngagement(blogs, 'blog'),
         threads: attachEngagement(threads, 'forum_thread'),
         events: attachEngagement(events, 'event'),

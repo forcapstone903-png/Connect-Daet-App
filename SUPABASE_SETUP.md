@@ -45,46 +45,7 @@ ORDER BY created_at DESC;
 
 ---
 
-### 2. **info_amenities** - Tourism Amenities
-Stores amenities like hotels, restaurants, shops, services, facilities.
-
-**Columns:**
-- `id` (UUID): Primary key
-- `name` (VARCHAR): Amenity name
-- `type` (VARCHAR): 'accommodation', 'restaurant', 'transport', 'shop', 'service', 'facility'
-- `description` (TEXT): Detailed description
-- `location` (VARCHAR): Human-readable location
-- `latitude`, `longitude` (NUMERIC): GPS coordinates
-- `contact_number`, `email`, `website` (VARCHAR): Contact info
-- `opening_hours` (VARCHAR): Business hours
-- `price_range` (VARCHAR): Price category
-- `amenities` (TEXT[]): Array of features (wifi, parking, etc.)
-- `images` (TEXT[]): Array of image URLs
-- `featured_image` (TEXT): Main image
-- `rating` (NUMERIC): Average rating (0-5)
-- `review_count` (INTEGER): Number of reviews
-- `status` (VARCHAR): 'active', 'inactive', 'pending', 'archived'
-- `featured` (BOOLEAN): Featured in listings
-- `created_by` (UUID): Creator reference
-
-**Indexes:**
-- Type, status, featured (for filtering)
-- Location (GiST index for nearby searches)
-- Search vector (for full-text search)
-
-**Example Query:**
-```sql
--- Get nearby restaurants
-SELECT * FROM info_amenities 
-WHERE type = 'restaurant' AND status = 'active'
-ORDER BY earth_distance(ll_to_earth(latitude, longitude), 
-  ll_to_earth(14.1067, 122.5631)) / 1000 ASC
-LIMIT 10;
-```
-
----
-
-### 3. **info_events** - Events Calendar
+### 2. **info_events** - Events Calendar
 Stores events with scheduling and multimedia.
 
 **Columns:**
@@ -197,7 +158,7 @@ Stores user reports and moderation actions.
 
 **Columns:**
 - `id` (UUID): Primary key
-- `report_type` (VARCHAR): 'user', 'content', 'amenity', 'event', 'blog', 'comment'
+- `report_type` (VARCHAR): 'user', 'content', 'event', 'blog', 'comment'
 - `reported_item_id` (UUID): ID of reported content
 - `reported_item_table` (VARCHAR): Table name of reported content
 - `reason` (VARCHAR): Report reason
@@ -264,27 +225,23 @@ Create these storage buckets in Supabase Dashboard:
 
 ### Bucket Configuration
 
-1. **amenities** - Amenity photos
-   - Public: Yes
-   - File types: jpg, png, webp (max 10MB)
-
-2. **events** - Event images and posters
+1. **events** - Event images and posters
    - Public: Yes
    - File types: jpg, png, webp, mp4 (max 50MB for videos)
 
-3. **blogs** - Blog featured images
+2. **blogs** - Blog featured images
    - Public: Yes
    - File types: jpg, png, webp (max 10MB)
 
-4. **tourist-spots** - Attraction photos
+3. **tourist-spots** - Attraction photos
    - Public: Yes
    - File types: jpg, png, webp, mp4 (max 50MB)
 
-5. **user-profiles** - User profile images
+4. **user-profiles** - User profile images
    - Public: Yes
    - File types: jpg, png, webp (max 5MB)
 
-6. **announcements** - Announcement graphics
+5. **announcements** - Announcement graphics
    - Public: Yes
    - File types: jpg, png, webp, svg (max 5MB)
 
@@ -293,14 +250,14 @@ Create these storage buckets in Supabase Dashboard:
 ```sql
 -- Allow public read access
 CREATE POLICY "Public Read Access" ON storage.objects
-  FOR SELECT USING (bucket_id IN ('amenities', 'events', 'blogs', 'tourist-spots', 'announcements'));
+  FOR SELECT USING (bucket_id IN ('events', 'blogs', 'tourist-spots', 'announcements'));
 
 -- Allow authenticated users to upload
 CREATE POLICY "Authenticated Upload" ON storage.objects
   FOR INSERT 
   WITH CHECK (
     auth.role() = 'authenticated' 
-    AND bucket_id IN ('amenities', 'events', 'blogs', 'tourist-spots', 'user-profiles', 'announcements')
+    AND bucket_id IN ('events', 'blogs', 'tourist-spots', 'user-profiles', 'announcements')
   );
 
 -- Allow deletion by uploader
@@ -337,21 +294,6 @@ CREATE POLICY "users_update_own" ON public.info_users
   WITH CHECK (auth.uid()::text = id::text);
 ```
 
-### Content-Specific Policies
-
-```sql
--- Everyone can view published content
-CREATE POLICY "amenities_select_public" ON public.info_amenities
-  FOR SELECT
-  USING (status = 'active' OR created_by = auth.uid() OR is_admin(auth.uid()));
-
--- Only creators and admins can update
-CREATE POLICY "amenities_update" ON public.info_amenities
-  FOR UPDATE
-  USING (is_admin(auth.uid()) OR created_by = auth.uid())
-  WITH CHECK (is_admin(auth.uid()) OR created_by = auth.uid());
-```
-
 ---
 
 ## Helper Functions
@@ -365,8 +307,6 @@ Pre-built PostgreSQL functions for common operations:
 
 ### Search Functions
 - `search_content(query)` - Full-text search across all content
-- `get_amenities_by_category(category)` - Filter amenities
-- `get_nearby_amenities(lat, lon, distance)` - Geo search
 - `get_upcoming_events(limit)` - Next events
 
 ### Auth Functions
@@ -408,7 +348,7 @@ In Supabase Dashboard → SQL Editor, run migrations in order:
 
 ### Step 4: Create Storage Buckets
 In Supabase Dashboard → Storage:
-1. Create each bucket (amenities, events, blogs, etc.)
+1. Create each bucket (events, blogs, and other listed media buckets)
 2. Make them public
 3. Set up policies (shown above)
 
@@ -442,16 +382,12 @@ const loginResult = await loginUser('user@example.com', 'SecurePass123!');
 sessionStorage.setItem('user_session', JSON.stringify(loginResult.user));
 ```
 
-### Fetch Amenities
+### Fetch Tourist Spots
 
 ```javascript
-import { getAmenities, getTouristSpots } from '@/lib/supabaseUtils';
+import { getTouristSpots } from '@/lib/supabaseUtils';
 
-// Get all active restaurants
-const result = await getAmenities({ type: 'restaurant' });
-
-// Get nearby amenities
-const nearby = await getNearbyAmenities(14.1067, 122.5631, 5); // 5km radius
+const result = await getTouristSpots();
 ```
 
 ### Manage Events
@@ -501,7 +437,7 @@ import { searchContent } from '@/lib/supabaseUtils';
 
 // Search across all content
 const results = await searchContent('beaches daet');
-// Returns: amenities, events, blogs, tourist spots matching query
+// Returns matching events, blogs, and tourist spots
 ```
 
 ### File Upload
@@ -509,12 +445,12 @@ const results = await searchContent('beaches daet');
 ```javascript
 import { uploadMedia } from '@/lib/supabaseUtils';
 
-// Upload amenity photo
+// Upload a tourist-spot photo
 const file = event.target.files[0];
-const result = await uploadMedia('amenities', file, 'restaurants');
+const result = await uploadMedia('tourist-spots', file, 'photos');
 // Returns: { success: true, url: 'https://...' }
 
-const amenityData = {
+const touristSpotData = {
   ...form,
   featured_image: result.url
 };
@@ -556,9 +492,9 @@ All functions return standardized responses:
 
 Example:
 ```javascript
-const result = await getAmenities();
+const result = await getTouristSpots();
 if (result.success) {
-  console.log(result.data); // Array of amenities
+  console.log(result.data); // Array of tourist spots
 } else {
   console.error(result.error); // Error message
 }

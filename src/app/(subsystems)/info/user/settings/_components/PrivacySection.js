@@ -79,7 +79,7 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
         label={t('settings.legal.privacy')}
         hint={t('settings.legal.description')}
       >
-        <Link href="/legal/privacy-policy" className="text-xs font-bold text-sky-700">{t('settings.legal.privacy')}</Link>
+        <Link href="/info/legal/privacy-policy" className="text-xs font-bold text-sky-700">{t('settings.legal.privacy')}</Link>
       </ActionRow>
     </SettingsCard>
   )

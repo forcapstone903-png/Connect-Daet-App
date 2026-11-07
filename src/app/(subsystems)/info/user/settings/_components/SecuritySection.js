@@ -44,7 +44,7 @@ export default function SecuritySection({
         label={t('settings.security.profile')}
         hint={t('settings.security.profileHint')}
       >
-        <LinkButton href="/user/profile/edit">{t('settings.security.profile')}</LinkButton>
+        <LinkButton href="/info/user/profile/edit">{t('settings.security.profile')}</LinkButton>
       </ActionRow>
 
       <ActionRow

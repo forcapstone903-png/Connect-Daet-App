@@ -66,7 +66,7 @@ function buildRepostFeedItem({ repost = null, original = null, reposter = null }
     published_at: repost.created_at,
     category: 'Repost',
     type: isBlog ? 'blog' : 'post',
-    href: isBlog ? `/user/blogs/${originalContentId}` : `/user/posts/${originalContentId}`,
+    href: isBlog ? `/info/user/blogs/${originalContentId}` : `/info/user/posts/${originalContentId}`,
     is_repost: true,
     author: reposter || { id: repost.user_id || null, full_name: null, profile_image_url: null, user_type: null },
     original_author_id: original.user_id || original.created_by || null,

@@ -27,7 +27,7 @@ export default function AnnouncementDetailPage() {
         const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id } } : null)
 
         if (!activeSession?.user) {
-          router.push('/login')
+          router.push('/info/login')
           return
         }
 
@@ -85,7 +85,7 @@ export default function AnnouncementDetailPage() {
       <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9] p-6">
         <div className="w-full max-w-md rounded-[24px] border border-red-200 bg-white p-6 text-center shadow-sm">
           <p className="text-red-600">{error || 'Announcement not found'}</p>
-          <Link href="/user/announcements" className="mt-4 inline-block rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white">
+          <Link href="/info/user/announcements" className="mt-4 inline-block rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white">
             Back to Announcements
           </Link>
         </div>
@@ -99,7 +99,7 @@ export default function AnnouncementDetailPage() {
   return (
     <main className="usr-section-page usr-detail min-h-screen text-slate-900">
       <div className="usr-section-container mx-auto max-w-[880px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-        <Link href="/user/announcements" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
+        <Link href="/info/user/announcements" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
           Back to Announcements
         </Link>

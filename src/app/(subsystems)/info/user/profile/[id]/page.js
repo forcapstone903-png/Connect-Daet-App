@@ -21,11 +21,11 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import ProfileFeedActions from "@/app/components/user/ProfileFeedActions";
-import PostMediaGallery from "@/app/components/user/PostMediaGallery";
+import ProfileFeedActions from "@/app/(subsystems)/info/components/user/ProfileFeedActions";
+import PostMediaGallery from "@/app/(subsystems)/info/components/user/PostMediaGallery";
 import { getPostImages } from "@/lib/postMedia";
-import UserTopHeader from "@/app/components/user/UserTopHeader";
-import { SectionLoading } from "@/app/components/user/UserSectionHeader";
+import UserTopHeader from "@/app/(subsystems)/info/components/user/UserTopHeader";
+import { SectionLoading } from "@/app/(subsystems)/info/components/user/UserSectionHeader";
 import {
   getAuthCookieFromDocument,
   getStoredSessionObject,
@@ -103,25 +103,25 @@ function buildPostList(content) {
     blog: {
       type: "Blog",
       text: "Shared a travel story with the community.",
-      href: `/user/blogs/`,
+      href: `/info/user/blogs/`,
       label: "Travel story",
     },
     forum_thread: {
       type: "Forum",
       text: "Started a community discussion.",
-      href: `/user/forums/`,
+      href: `/info/user/forums/`,
       label: "Discussion",
     },
     event: {
       type: "Event",
       text: "Shared an upcoming community event.",
-      href: `/user/events/`,
+      href: `/info/user/events/`,
       label: "Event",
     },
     user_post: {
       type: "Post",
       text: "Shared a community post.",
-      href: `/user/posts/`,
+      href: `/info/user/posts/`,
       label: "Community post",
     },
   };
@@ -136,7 +136,7 @@ function buildPostList(content) {
       media: post.featured_image || (post.images || [])[0] || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
-      href: `/user/posts/${post.id}`,
+      href: `/info/user/posts/${post.id}`,
     })),
     ...(content.blogs || []).map((post) => ({
       id: post.id,
@@ -147,7 +147,7 @@ function buildPostList(content) {
       media: post.featured_image || (post.images || [])[0] || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
-      href: `/user/blogs/${post.id}`,
+      href: `/info/user/blogs/${post.id}`,
     })),
     ...(content.threads || []).map((post) => ({
       id: post.id,
@@ -157,7 +157,7 @@ function buildPostList(content) {
       date: post.created_at,
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
-      href: `/user/forums/${post.id}`,
+      href: `/info/user/forums/${post.id}`,
     })),
     ...(content.events || []).map((post) => ({
       id: post.id,
@@ -168,7 +168,7 @@ function buildPostList(content) {
       media: post.featured_image || (post.images || [])[0] || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
-      href: `/user/events/${post.id}`,
+      href: `/info/user/events/${post.id}`,
     })),
     ...(content.reposts || []).map((post) => {
       const meta =
@@ -289,7 +289,7 @@ export default function PublicProfilePage() {
 
         // The account owner keeps the private profile editor layout.
         if (currentViewerId === profileId) {
-          router.replace("/user/profile");
+          router.replace("/info/user/profile");
           return;
         }
 
@@ -303,7 +303,7 @@ export default function PublicProfilePage() {
         const cachedProfile = getCache(cacheKey)?.data;
         if (cachedProfile) {
           if (cachedProfile.viewer_id === profileId) {
-            router.replace("/user/profile");
+            router.replace("/info/user/profile");
             return;
           }
           applyProfileResult(cachedProfile);
@@ -311,7 +311,7 @@ export default function PublicProfilePage() {
           return;
         }
 
-        const profileResponse = await fetch(`/api/users/${profileId}`, {
+        const profileResponse = await fetch(`/info/api/users/${profileId}`, {
           credentials: "same-origin",
         });
         const profileResult = await profileResponse.json();
@@ -324,7 +324,7 @@ export default function PublicProfilePage() {
         // Keep the account owner's profile on the same layout regardless of
         // whether it was opened from navigation, a post, or a notification.
         if (profileResult.viewer_id && profileResult.viewer_id === profileId) {
-          router.replace("/user/profile");
+          router.replace("/info/user/profile");
           return;
         }
 
@@ -366,7 +366,7 @@ export default function PublicProfilePage() {
 
     setFollowLoading(true);
     try {
-      const response = await fetch(`/api/users/${profileId}/follow`, {
+      const response = await fetch(`/info/api/users/${profileId}/follow`, {
         method: isFollowing ? "DELETE" : "POST",
         credentials: "same-origin",
       });
@@ -385,7 +385,7 @@ export default function PublicProfilePage() {
       setIsMutual(Boolean(result.is_mutual));
       setFollowerCount(result.followers_count ?? 0);
       setFollowingCount(result.following_count ?? 0);
-      invalidateCachePrefix(`profile:user:${profileId}`);
+      invalidateCachePrefix("profile:user:");
       if (viewerId) invalidateCachePrefix(`feed:user:${viewerId}`);
       if (!isFollowing && typeof window !== "undefined") {
         window.dispatchEvent(new Event("daet-notifications-updated"));
@@ -415,7 +415,7 @@ export default function PublicProfilePage() {
 
     setBlockLoading(true);
     try {
-      const response = await fetch(`/api/users/${profileId}/block`, {
+      const response = await fetch(`/info/api/users/${profileId}/block`, {
         method: isBlocked ? "DELETE" : "POST",
         credentials: "same-origin",
       });
@@ -430,7 +430,7 @@ export default function PublicProfilePage() {
         setIsFollowing(false);
         setIsMutual(false);
       }
-      invalidateCachePrefix(`profile:user:${profileId}`);
+      invalidateCachePrefix("profile:user:");
       if (viewerId) invalidateCachePrefix(`feed:user:${viewerId}`);
       showNotice(
         nextBlocked
@@ -520,7 +520,7 @@ export default function PublicProfilePage() {
             <button type="button" onClick={retryLoad} className="usr-section-secondary">
               Try again
             </button>
-            <Link href="/search" className="usr-section-primary">
+            <Link href="/info/visitor/search" className="usr-section-primary">
               Find other members
             </Link>
           </div>
@@ -602,10 +602,10 @@ export default function PublicProfilePage() {
               <div className="relative flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                 {isOwnProfile ? (
                   <>
-                    <Link href="/user/profile" className="usr-section-secondary">
+                    <Link href="/info/user/profile" className="usr-section-secondary">
                       View my profile
                     </Link>
-                    <Link href="/user/profile/edit" className="usr-section-primary">
+                    <Link href="/info/user/profile/edit" className="usr-section-primary">
                       Edit profile
                     </Link>
                   </>
@@ -627,7 +627,7 @@ export default function PublicProfilePage() {
                             : "Follow"}
                     </button>
                     <Link
-                      href={`/user/messaging/${encodeURIComponent(profile.id)}`}
+                      href={`/info/user/messaging/${encodeURIComponent(profile.id)}`}
                       className="usr-section-secondary"
                     >
                       <MessageCircle className="h-4 w-4" />
@@ -707,14 +707,14 @@ export default function PublicProfilePage() {
               <p className="usr-stat-label mt-0.5">Posts</p>
             </div>
             <Link
-              href={`/user/profile/connections?user=${profile.id}&tab=followers`}
+              href={`/info/user/profile/connections?user=${profile.id}&tab=followers`}
               className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"
             >
               <p className="text-lg font-black text-slate-900">{followerCount}</p>
               <p className="usr-stat-label mt-0.5">Followers</p>
             </Link>
             <Link
-              href={`/user/profile/connections?user=${profile.id}&tab=following`}
+              href={`/info/user/profile/connections?user=${profile.id}&tab=following`}
               className="px-2 py-3 transition hover:bg-teal-50"
             >
               <p className="text-lg font-black text-slate-900">{followingCount}</p>
@@ -787,16 +787,16 @@ export default function PublicProfilePage() {
                 </div>
                 {isOwnProfile ? (
                   <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
-                    <Link href="/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                    <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
-                    <Link href="/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                    <Link href="/info/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
                 ) : (
                   <Link
-                    href={`/user/messaging/${encodeURIComponent(profile.id)}`}
+                    href={`/info/user/messaging/${encodeURIComponent(profile.id)}`}
                     className="usr-section-secondary min-w-0 flex-1 sm:flex-none"
                   >
                     <MessageCircle className="h-4 w-4" /> Send a message
@@ -916,4 +916,3 @@ export default function PublicProfilePage() {
     </main>
   );
 }
-

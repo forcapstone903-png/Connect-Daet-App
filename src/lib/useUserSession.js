@@ -19,16 +19,16 @@ export function useUserSession() {
   const logout = useCallback(async () => {
     try {
       // Call logout API
-      await fetch('/api/logout', { method: 'POST' })
+      await fetch('/info/api/logout', { method: 'POST' })
       
       // Clear session storage
       sessionStorage.removeItem('user_session')
       
       // Redirect to login
-      window.location.href = '/login'
+      window.location.href = '/info/login'
     } catch (error) {
       console.error('Logout error:', error)
-      window.location.href = '/login'
+      window.location.href = '/info/login'
     }
   }, [])
 

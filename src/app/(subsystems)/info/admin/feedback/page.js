@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
@@ -54,13 +54,13 @@ export default function FeedbackAndComplaintPage() {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
 
       const userData = JSON.parse(session);
       if (!hasAdminAccess(userData.role)) {
-        router.push('/admin/dashboard');
+        router.push('/info/admin/dashboard');
         return;
       }
 
@@ -201,7 +201,7 @@ export default function FeedbackAndComplaintPage() {
 
   const handleLogout = async () => {
     await performLogout();
-    router.push('/login');
+    router.push('/info/login');
   };
 
   if (loading) {

@@ -7,8 +7,8 @@ import { Bell, BellRing, CheckCheck, MessageCircle, Search, ShieldAlert, Sparkle
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
-import UserSectionHeader, { SectionLoading } from '@/app/components/user/UserSectionHeader'
-import Comments from '@/app/components/user/Comments'
+import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import Comments from '@/app/(subsystems)/info/components/user/Comments'
 
 const NOTIFICATIONS_CACHE_TTL_MS = 30 * 1000
 const NOTIFICATIONS_REFRESH_INTERVAL_MS = 10_000
@@ -105,10 +105,10 @@ function getNotificationActorId(notification) {
   if (notification?.actor_id) return notification.actor_id
 
   const link = String(notification?.link || notification?.action_url || notification?.href || '')
-  const profileMatch = link.match(/\/user\/profile\/([^/?#]+)/)
+  const profileMatch = link.match(/\/(?:info\/)?user\/profile\/([^/?#]+)/)
   if (profileMatch?.[1]) return profileMatch[1]
 
-  const messageMatch = link.match(/\/user\/messaging\/([^/?#]+)/)
+  const messageMatch = link.match(/\/(?:info\/)?user\/messaging\/([^/?#]+)/)
   return messageMatch?.[1] || null
 }
 
@@ -311,7 +311,7 @@ export default function UserNotificationsPage() {
         const timeout = window.setTimeout(() => controller.abort(), 10000)
 
         try {
-          const response = await fetch('/api/notifications', {
+          const response = await fetch('/info/api/notifications', {
             method: 'GET',
             credentials: 'same-origin',
             cache: 'no-store',
@@ -518,7 +518,10 @@ export default function UserNotificationsPage() {
 
   const getNotificationHref = (notification) => {
     const metadata = notification.metadata && typeof notification.metadata === 'object' ? notification.metadata : {}
-    const routeCandidate = notification.link || notification.action_url || notification.href || metadata.link || metadata.href || metadata.action_url || null
+    const rawRouteCandidate = notification.link || notification.action_url || notification.href || metadata.link || metadata.href || metadata.action_url || null
+    const routeCandidate = typeof rawRouteCandidate === 'string'
+      ? rawRouteCandidate.replace(/^\/(admin|user)(?=\/|[?#]|$)/, '/info/$1')
+      : rawRouteCandidate
     const postId = notification.post_id || metadata.post_id || metadata.entityId || null
     const notificationType = String(notification.type || metadata.type || '').toLowerCase()
     const commentId = notification.comment_id || notification.reply_id || metadata.comment_id || metadata.reply_id
@@ -528,7 +531,7 @@ export default function UserNotificationsPage() {
       || /\b(?:comment|repl(?:ied|y)|reacted to your comment)\b/i.test(String(notification.message || notification.title || ''))
 
     if (commentRelated && (routeCandidate || postId)) {
-      const routeMatch = String(routeCandidate).match(/\/user\/(blogs|events|forums|posts|announcements)\/([^/?#]+)/)
+      const routeMatch = String(routeCandidate).match(/\/(?:info\/)?user\/(blogs|events|forums|posts|announcements)\/([^/?#]+)/)
       const relatedPostId = postId || routeMatch?.[2]
       if (relatedPostId) {
         const routeType = routeMatch?.[1]
@@ -548,33 +551,33 @@ export default function UserNotificationsPage() {
           contentId: String(relatedPostId),
         })
         if (commentId) params.set('commentId', String(commentId))
-        return `/user/notifications?${params.toString()}`
+        return `/info/user/notifications?${params.toString()}`
       }
     }
 
     if (notificationType === 'message' && routeCandidate && userId) {
       const messagePath = String(routeCandidate).split('?')[0].replace(/\/+$/, '')
-      if (messagePath === `/user/messaging/${userId}`) return '/user/messaging'
+      if (messagePath === `/info/user/messaging/${userId}`) return '/info/user/messaging'
     }
 
-    if (routeCandidate?.startsWith('/user/announcements/')) {
+    if (routeCandidate?.startsWith('/info/user/announcements/')) {
       return routeCandidate
     }
 
-    if (routeCandidate?.startsWith('/user/posts/')) {
-      return postId ? `/user/posts/${postId}` : routeCandidate
+    if (routeCandidate?.startsWith('/info/user/posts/')) {
+      return postId ? `/info/user/posts/${postId}` : routeCandidate
     }
 
-    if (routeCandidate?.startsWith('/admin/')) {
+    if (routeCandidate?.startsWith('/info/admin/')) {
       return routeCandidate
     }
 
     if (!routeCandidate && postId) {
       if (notificationType === 'announcement') {
-        return `/user/announcements/${postId}`
+        return `/info/user/announcements/${postId}`
       }
 
-      return `/user/posts/${postId}`
+      return `/info/user/posts/${postId}`
     }
 
     return routeCandidate || null
@@ -584,7 +587,7 @@ export default function UserNotificationsPage() {
     try {
       const link = notification?.link || notification?.action_url || notification?.href || ''
       const cleaned = String(link).split('?')[0]
-      const match = cleaned.match(/\/user\/profile\/([^/?#]+)/)
+      const match = cleaned.match(/\/(?:info\/)?user\/profile\/([^/?#]+)/)
       return match?.[1] || notification?.actor_id || null
     } catch {
       return null
@@ -593,7 +596,7 @@ export default function UserNotificationsPage() {
 
   const getActorProfileHref = (notification) => {
     const actorId = getNotificationActorId(notification)
-    return actorId ? `/user/profile/${encodeURIComponent(actorId)}` : null
+    return actorId ? `/info/user/profile/${encodeURIComponent(actorId)}` : null
   }
 
   const NotificationAvatar = ({ notification, actor, actorName, actorProfileHref }) => {
@@ -657,14 +660,14 @@ export default function UserNotificationsPage() {
     }
 
     if (getFollowActionCompletedFromNotification(notification)) {
-      router.push(`/user/messaging/${actorId}`)
+      router.push(`/info/user/messaging/${actorId}`)
       return
     }
 
     const messageBody = actionType === 'wave' ? '👋 Wave from the app' : 'Hi there! 👋'
 
     try {
-      const response = await fetch('/api/messages', {
+      const response = await fetch('/info/api/messages', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -677,7 +680,7 @@ export default function UserNotificationsPage() {
       }
 
       const nextLink = appendFollowActionCompletion(notification, actionType)
-      const patchResponse = await fetch('/api/notifications', {
+      const patchResponse = await fetch('/info/api/notifications', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -707,7 +710,7 @@ export default function UserNotificationsPage() {
     if (!id) return
 
     try {
-      const response = await fetch('/api/notifications', {
+      const response = await fetch('/info/api/notifications', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -734,7 +737,7 @@ export default function UserNotificationsPage() {
     if (!userId) return
 
     try {
-      const response = await fetch('/api/notifications', {
+      const response = await fetch('/info/api/notifications', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -761,7 +764,7 @@ export default function UserNotificationsPage() {
     if (!id) return
 
     try {
-      const response = await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, {
+      const response = await fetch(`/info/api/notifications?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
         credentials: 'same-origin',
       })
@@ -786,7 +789,7 @@ export default function UserNotificationsPage() {
   const openNotification = async (notification) => {
     const href = getNotificationHref(notification)
     if (!notification.is_read) await markAsRead(notification.id)
-    if (href?.startsWith('/user/notifications?openComments=')) {
+    if (href?.startsWith('/info/user/notifications?openComments=')) {
       const params = new URLSearchParams(href.split('?')[1])
       const sheetData = {
         contentType: params.get('contentType') || '',
@@ -809,7 +812,7 @@ export default function UserNotificationsPage() {
     setDeletingHistory(true)
     setActionNotice('')
     try {
-      const response = await fetch('/api/notifications', {
+      const response = await fetch('/info/api/notifications', {
         method: 'DELETE',
         credentials: 'same-origin',
       })
@@ -1005,7 +1008,7 @@ export default function UserNotificationsPage() {
                                 <div className="text-xs text-slate-500">{relativeTime}</div>
                                 <div className="flex shrink-0 items-center gap-2">
                                   {followActionMode === 'message' ? (
-                                    <button type="button" onClick={(event) => { event.stopPropagation(); const actorId = parseProfileActorId(notification); if (actorId) router.push(`/user/messaging/${actorId}`) }} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-700">Message</button>
+                                    <button type="button" onClick={(event) => { event.stopPropagation(); const actorId = parseProfileActorId(notification); if (actorId) router.push(`/info/user/messaging/${actorId}`) }} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-bold text-slate-700">Message</button>
                                   ) : (
                                     <button type="button" onClick={(event) => { event.stopPropagation(); void sendFollowSideAction(notification, 'hi') }} className="rounded-full bg-sky-700 px-3 py-1 text-[11px] font-bold text-white hover:bg-sky-800">Say Hi</button>
                                   )}

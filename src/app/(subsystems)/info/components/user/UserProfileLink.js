@@ -4,7 +4,7 @@ import Link from 'next/link'
 
 export default function UserProfileLink({ user, href, children, className, onClick, ariaLabel, prefetch = false, ...props }) {
   const userId = user?.id || user?.user_id || user?.userId || null
-  const profileHref = href || (userId ? `/user/profile/${encodeURIComponent(userId)}` : '/user/profile')
+  const profileHref = href || (userId ? `/info/user/profile/${encodeURIComponent(userId)}` : '/info/user/profile')
 
   if (!userId && !href) {
     return <>{children}</>

@@ -32,14 +32,6 @@ ALTER TABLE public.info_tourist_spots
   ADD COLUMN IF NOT EXISTS share_count INTEGER NOT NULL DEFAULT 0;
 
 -- ============================================================
--- Add missing columns for info_amenities
--- ============================================================
-ALTER TABLE public.info_amenities
-  ADD COLUMN IF NOT EXISTS view_count INTEGER NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS save_count INTEGER NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS gallery_images TEXT[] DEFAULT '{}';
-
--- ============================================================
 -- Add missing columns for info_users
 -- ============================================================
 ALTER TABLE public.info_users

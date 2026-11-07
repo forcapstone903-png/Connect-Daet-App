@@ -15,14 +15,14 @@ export default function SplashPage() {
       if (cookieSession?.logged_in || session) {
         const role = String(cookieSession?.role || session?.user?.user_metadata?.user_type || '').toLowerCase()
         if (role === 'admin') {
-          router.push('/admin/dashboard')
+          router.push('/info/admin/dashboard')
         } else {
-          router.push('/user/dashboard')
+          router.push('/info/user/dashboard')
         }
         return
       }
 
-      router.push('/visitor')
+      router.push('/info/visitor')
     }
 
     checkSession()

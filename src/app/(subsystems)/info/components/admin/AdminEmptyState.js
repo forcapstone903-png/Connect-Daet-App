@@ -1,5 +1,5 @@
 // Consistent empty / no-results state for admin tables, lists, and panels.
-import { Icon } from '@/app/components/Icon'
+import { Icon } from '@/app/(subsystems)/info/components/Icon'
 
 export default function AdminEmptyState({
   icon = 'data',

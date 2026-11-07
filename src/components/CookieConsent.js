@@ -1,32 +1,73 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
 const STORAGE_KEY = 'daet-cookie-consent'
 
+function getStoredConsent() {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) || ''
+  } catch {
+    return ''
+  }
+}
+
+function subscribeToConsent(callback) {
+  window.addEventListener('daet-cookie-consent', callback)
+  window.addEventListener('storage', callback)
+
+  return () => {
+    window.removeEventListener('daet-cookie-consent', callback)
+    window.removeEventListener('storage', callback)
+  }
+}
+
 export default function CookieConsent() {
-  const [visible, setVisible] = useState(false)
-  const [isMounted, setIsMounted] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [sessionConsent, setSessionConsent] = useState('')
+  const [storageError, setStorageError] = useState('')
+  const storedConsent = useSyncExternalStore(subscribeToConsent, getStoredConsent, () => '')
+  const visible = editing || !(storedConsent || sessionConsent)
 
   useEffect(() => {
-    setIsMounted(true)
-    const stored = window.localStorage.getItem(STORAGE_KEY)
-    setVisible(!stored)
+    const openSettings = () => setEditing(true)
+    window.addEventListener('daet-open-cookie-settings', openSettings)
+    return () => window.removeEventListener('daet-open-cookie-settings', openSettings)
   }, [])
 
   const applyConsent = (choice) => {
     const normalized = choice === 'accepted' ? 'accepted' : 'essential-only'
-    window.localStorage.setItem(STORAGE_KEY, normalized)
-    window.localStorage.setItem('daet-analytics-consent', choice === 'accepted' ? 'granted' : 'denied')
+    setSessionConsent(normalized)
+    setStorageError('')
+
+    try {
+      window.localStorage.setItem('daet-analytics-consent', 'denied')
+      window.localStorage.setItem(STORAGE_KEY, normalized)
+      if (choice === 'accepted') {
+        window.localStorage.setItem('daet-analytics-consent', 'granted')
+      }
+    } catch (error) {
+      console.error('Cookie consent could not be saved:', error)
+      setStorageError('Your choice applies for this session, but could not be saved on this device.')
+    }
+
+    setEditing(false)
     window.dispatchEvent(new CustomEvent('daet-cookie-consent', { detail: { consent: normalized } }))
-    setVisible(false)
   }
 
-  if (!isMounted || !visible) return null
+  if (!visible) {
+    if (!storageError) return null
+
+    return (
+      <p role="status" className="fixed inset-x-3 bottom-3 z-[1000] mx-auto max-w-xl rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950 shadow-xl">
+        {storageError}
+      </p>
+    )
+  }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-slate-950/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm">
+    <div role="region" aria-label="Cookie consent" className="pointer-events-auto fixed inset-x-0 bottom-0 z-[1000] max-h-[85vh] overflow-y-auto border-t border-slate-200 bg-slate-950/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl">
           <p className="text-sm font-black uppercase tracking-[0.18em] text-sky-300">Cookie notice</p>
@@ -34,8 +75,8 @@ export default function CookieConsent() {
             We use cookies to keep the app secure, remember preferences, and measure how visitors use our services. You can accept all cookies, allow essentials only, or learn more before deciding.
           </p>
           <div className="mt-3 flex flex-wrap gap-3 text-xs text-sky-200">
-            <Link href="/legal/cookie-policy" className="font-semibold underline underline-offset-4">Cookie policy</Link>
-            <Link href="/legal/privacy-policy" className="font-semibold underline underline-offset-4">Privacy policy</Link>
+            <Link href="/info/legal/cookie-policy" className="font-semibold underline underline-offset-4">Cookie policy</Link>
+            <Link href="/info/legal/privacy-policy" className="font-semibold underline underline-offset-4">Privacy policy</Link>
           </div>
         </div>
 

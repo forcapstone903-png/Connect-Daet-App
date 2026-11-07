@@ -148,7 +148,7 @@ export async function subscribeUserToPush({ userId } = {}) {
   try {
     const controller = new AbortController()
     timeout = window.setTimeout(() => controller.abort(), 10000)
-    response = await fetch('/api/push-subscriptions', {
+    response = await fetch('/info/api/push-subscriptions', {
       method: 'POST',
       credentials: 'same-origin',
       cache: 'no-store',

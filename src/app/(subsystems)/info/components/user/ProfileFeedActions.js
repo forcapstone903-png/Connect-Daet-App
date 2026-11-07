@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { isValidUuid } from '@/lib/uuid'
-import SocialActionBar from '@/app/components/user/SocialActionBar'
+import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
 
 function normalizeFavoriteItemType(value) {
   if (!value) return value

@@ -33,15 +33,15 @@ async function main() {
     };
     await send('Page.enable');
     for(const page of ['dashboard','events']) {
-      await send('Page.navigate',{url:`http://localhost:3000/admin/${page}`}); await delay(2000);
+      await send('Page.navigate',{url:`http://localhost:3000/info/admin/${page}`}); await delay(2000);
       console.log('Actual page:',await evaluate('({url:location.href,calendarPresent:!!document.querySelector(".fc-view")})'));
     }
     const globalPath=path.join(root,'src/app/globals.css');
     const result=await require('postcss')([require('@tailwindcss/postcss')({base:root})]).process(fs.readFileSync(globalPath,'utf8'),{from:globalPath});
-    const css=result.css+fs.readFileSync(path.join(root,'src/app/components/admin/AdminCalendar.css'),'utf8');
+    const css=result.css+fs.readFileSync(path.join(root,'src/app/(subsystems)/info/components/admin/AdminCalendar.css'),'utf8');
     const scripts=['core','daygrid','timegrid','interaction'].map(n=>`<script>${fs.readFileSync(path.join(root,'node_modules/@fullcalendar',n,'index.global.min.js'),'utf8')}</script>`).join('');
     for(const page of ['dashboard','events']) {
-      const source=fs.readFileSync(path.join(root,'src/app/admin',page,'page.js'),'utf8');
+      const source=fs.readFileSync(path.join(root,'src/app/(subsystems)/info/admin',page,'page.js'),'utf8');
       const height=Number(source.match(/height=\{(\d+)\}/)[1]);
       const grid=source.match(/className="(grid grid-cols-1 lg:grid-cols-\[minmax[^"]+)"/)[1];
       const html=`<!doctype html><meta charset="utf-8"><style>${css}</style><body class="admin-page-shell"><main style="padding:24px"><div class="${grid}"><section class="admin-events-calendar admin-panel min-w-0 p-3 sm:p-5"><h2>Event calendar</h2><div class="admin-events-calendar-scroll"><div id="calendar"></div></div><p>Festival / Workshop</p></section><aside class="admin-panel min-w-0 p-3 sm:p-5">Upcoming Events</aside></div></main>${scripts}<script>window.calendar=new FullCalendar.Calendar(document.getElementById('calendar'),{initialView:'dayGridMonth',initialDate:'2026-09-18',height:${height},fixedWeekCount:true,dayMaxEvents:3,headerToolbar:{left:'title',right:'prev,next today dayGridMonth,timeGridWeek'},events:[{title:'Workshop',start:'2026-09-18T09:00:00',end:'2026-09-18T11:00:00'}]});calendar.render();</script>`;

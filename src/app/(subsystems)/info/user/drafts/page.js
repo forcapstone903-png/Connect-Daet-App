@@ -5,8 +5,8 @@ import Link from 'next/link'
 import { FilePenLine, Plus, Clock3 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 export default function UserDraftsPage() {
   const [drafts, setDrafts] = useState([])
@@ -45,11 +45,11 @@ export default function UserDraftsPage() {
           title="Drafts"
           description="Unfinished stories are saved here. Pick one up whenever inspiration strikes."
           emoji="✒️"
-          backHref="/user/blogs"
+          backHref="/info/user/blogs"
           backLabel="Community stories"
         >
           <span className="usr-section-counter">{drafts.length} draft{drafts.length === 1 ? '' : 's'}</span>
-          <Link href="/user/blogs/new" className="usr-section-primary"><Plus className="h-4 w-4" />New post</Link>
+          <Link href="/info/user/blogs/new" className="usr-section-primary"><Plus className="h-4 w-4" />New post</Link>
         </UserSectionHeader>
 
         {loading ? (
@@ -69,7 +69,7 @@ export default function UserDraftsPage() {
             {drafts.map((draft) => (
               <Link
                 key={draft.id}
-                href={`/user/blogs/${draft.id}/edit`}
+                href={`/info/user/blogs/${draft.id}/edit`}
                 className="usr-list-row group block focus-visible:outline-none"
               >
                 <article className="flex w-full min-w-0 items-start gap-3">
@@ -94,7 +94,7 @@ export default function UserDraftsPage() {
             <FilePenLine className="mx-auto h-9 w-9 text-slate-300" />
             <h2 className="mt-3 text-base font-bold text-slate-800">No drafts yet</h2>
             <p className="mt-1 text-sm text-slate-500">Save a blog post as a draft and it will appear here.</p>
-            <Link href="/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a draft</Link>
+            <Link href="/info/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a draft</Link>
           </div>
         )}
       </div>

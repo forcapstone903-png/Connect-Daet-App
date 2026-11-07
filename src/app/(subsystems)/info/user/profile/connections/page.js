@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Ban, Check, UserRoundMinus } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
-import UserSectionHeader, { SectionTabs } from '@/app/components/user/UserSectionHeader'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import { invalidateCachePrefix } from '@/lib/cache'
+import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 function getInitials(name = '') {
   return (name || 'U').split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -38,7 +39,7 @@ export default function ProfileConnectionsPage() {
       return
     }
 
-    fetch(`/api/users/${profileId}`, { credentials: 'same-origin' })
+    fetch(`/info/api/users/${profileId}`, { credentials: 'same-origin' })
       .then(async (response) => {
         const result = await response.json()
         if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load connections.')
@@ -56,10 +57,11 @@ export default function ProfileConnectionsPage() {
     setBusyId(personId)
     setNotice('')
     try {
-      const response = await fetch(`/api/users/${personId}/follow`, { method: 'DELETE', credentials: 'same-origin' })
+      const response = await fetch(`/info/api/users/${personId}/follow`, { method: 'DELETE', credentials: 'same-origin' })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to unfollow this user.')
       setFollowing((current) => current.filter((person) => person.id !== personId))
+      invalidateCachePrefix('profile:user:')
     } catch (error) {
       setNotice(error.message)
     } finally {
@@ -72,7 +74,7 @@ export default function ProfileConnectionsPage() {
     setBusyId(personId)
     setNotice('')
     try {
-      const response = await fetch(`/api/users/${personId}/block`, { method: isBlocked ? 'DELETE' : 'POST', credentials: 'same-origin' })
+      const response = await fetch(`/info/api/users/${personId}/block`, { method: isBlocked ? 'DELETE' : 'POST', credentials: 'same-origin' })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update the block setting.')
       setBlockedIds((current) => {
@@ -101,7 +103,7 @@ export default function ProfileConnectionsPage() {
           title="Connections"
           description="See who follows you and who you follow, and keep your feed comfortable."
           emoji="🤝"
-          backHref="/user/profile"
+          backHref="/info/user/profile"
           backLabel="Your profile"
         >
           <span className="usr-section-counter">{followers.length + following.length} people</span>
@@ -138,7 +140,7 @@ export default function ProfileConnectionsPage() {
                     ? 'Share your profile so other travelers can follow your stories.'
                     : 'Follow community members to see their stories and updates first.'}
                 </p>
-                <Link href="/search" className="usr-section-secondary mt-4 inline-flex">Find people</Link>
+                <Link href="/info/visitor/search" className="usr-section-secondary mt-4 inline-flex">Find people</Link>
               </div>
             ) : (
               <div className="usr-stagger divide-y divide-slate-100">
@@ -147,7 +149,7 @@ export default function ProfileConnectionsPage() {
                   const isBusy = busyId === person.id
                   return (
                     <div key={person.id} className="flex min-h-[72px] items-center gap-3 rounded-2xl px-3 py-3 transition hover:bg-slate-50 sm:px-4">
-                      <Link href={`/user/profile/${person.id}`} className="group flex min-w-0 flex-1 items-center gap-3">
+                      <Link href={`/info/user/profile/${person.id}`} className="group flex min-w-0 flex-1 items-center gap-3">
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black text-teal-700">{person.profile_image_url ? <img src={person.profile_image_url} alt={person.full_name || 'User'} className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span>
                         <span className="min-w-0 truncate text-sm font-bold text-slate-900 group-hover:text-teal-700">{person.full_name || 'Community member'}</span>
                       </Link>

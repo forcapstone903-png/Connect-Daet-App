@@ -5,11 +5,11 @@ const cookieSections = [
   },
   {
     heading: 'Types of cookies',
-    body: 'Essential cookies support login, navigation, and basic security. Functional cookies remember user preferences. Analytics cookies help us improve performance and content quality.'
+    body: 'Essential cookies support login, navigation, and basic security. Functional storage remembers user preferences. If you accept analytics, a random first-party browser identifier is stored in local storage for up to 30 days so we can estimate unique visitors. The server stores only a one-way hash of that identifier, public page paths, and visit timestamps for up to 90 days. We do not store IP addresses, names, email addresses, or full URLs/query strings in this site-visit analytics feature.'
   },
   {
     heading: 'Your control',
-    body: 'You can accept all cookies, allow essentials only, or change your settings later from the cookie banner or browser settings. Disabling analytics cookies will not block core platform functions.'
+    body: 'You can accept all cookies or allow essentials only in the cookie notice. Analytics is off unless you accept it. Use the Privacy settings button available on every page to change your choice or withdraw consent. Withdrawing consent stops future analytics collection and removes the browser identifier; previously collected records are retained for no more than 90 days. Disabling analytics will not block core platform functions.'
   },
   {
     heading: 'Third-party services',

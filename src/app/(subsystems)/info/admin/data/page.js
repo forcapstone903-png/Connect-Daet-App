@@ -7,33 +7,41 @@ import {
   AdminShell,
   AdminStatCard,
   AdminStatGrid,
-} from '@/app/components/admin'
+} from '@/app/(subsystems)/info/components/admin'
+import AdminTabRedirect from '@/app/(subsystems)/info/components/AdminTabRedirect'
 import useAdminMetrics, { countRows, resolveMetricEntries } from '@/lib/adminMetrics'
+
+const DATA_TABS = {
+  backups: '/info/admin/data/backups',
+  'import-export': '/info/admin/data/import-export',
+  media: '/info/admin/data/media',
+  retention: '/info/admin/data/retention',
+}
 
 const DATA_DESTINATIONS = [
   {
     title: 'Media library',
     description: 'Browse uploaded images, videos, and documents with storage details.',
     icon: 'image',
-    href: '/admin/file-management',
+    href: '/info/admin/file-management',
   },
   {
     title: 'Backups',
-    description: 'Create, schedule, and restore database snapshots.',
+    description: 'Create on-demand database snapshots and restore from a saved file.',
     icon: 'save',
-    href: '/admin/data?tab=backups',
+    href: '/info/admin/data/backups',
   },
   {
     title: 'Import / Export',
     description: 'Move attractions and events in or out as CSV and JSON.',
     icon: 'data',
-    href: '/admin/data-management',
+    href: '/info/admin/data-management',
   },
   {
     title: 'Data retention',
-    description: 'Define how long visitor activity and records are kept.',
+    description: 'Review the current retention and deletion capabilities.',
     icon: 'delete',
-    href: '/admin/data?tab=retention',
+    href: '/info/admin/data/retention',
   },
 ]
 
@@ -63,6 +71,7 @@ export default function DataHubOverview() {
         </AdminButton>
       }
     >
+      <AdminTabRedirect routes={DATA_TABS} />
       {error ? (
         <AdminPanel className="mb-4">
           <p className="text-sm text-amber-700">{error}</p>

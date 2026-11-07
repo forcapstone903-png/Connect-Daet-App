@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import { AtSign } from 'lucide-react'
@@ -56,7 +56,7 @@ function createMentionNode(user, router) {
     event.preventDefault()
     event.stopPropagation()
     if (user?.id && !user.isAudienceMention) {
-      router.push(`/user/profile/${encodeURIComponent(user.id)}?from=comments`)
+      router.push(`/info/user/profile/${encodeURIComponent(user.id)}?from=comments`)
     }
   }
 
@@ -95,7 +95,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     const requestId = ++requestIdRef.current
 
     try {
-      const response = await fetch(`/api/users/followers?q=${encodeURIComponent(query)}&limit=8`, {
+      const response = await fetch(`/info/api/users/followers?q=${encodeURIComponent(query)}&limit=8`, {
         credentials: 'same-origin',
       })
       const result = await response.json().catch(() => ({}))

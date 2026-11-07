@@ -43,7 +43,7 @@ function ResetPasswordContent() {
     }
 
     try {
-      const response = await fetch('/api/reset-password', {
+      const response = await fetch('/info/api/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, email, newPassword: password }),
@@ -57,7 +57,7 @@ function ResetPasswordContent() {
       setConfirmPassword('')
 
       setTimeout(() => {
-        router.push('/login?message=Password reset successful. Please sign in with your new password.')
+        router.push('/info/login?message=Password reset successful. Please sign in with your new password.')
       }, 2000)
     } catch (err) {
       setError(err.message || 'Unable to reset your password right now.')
@@ -101,7 +101,7 @@ function ResetPasswordContent() {
         )}
 
         <div className="mt-6 text-center">
-          <Link href="/login" className="text-yellow-600 font-semibold hover:underline">Back to Login</Link>
+          <Link href="/info/login" className="text-yellow-600 font-semibold hover:underline">Back to Login</Link>
         </div>
       </div>
     </div>

@@ -15,7 +15,7 @@ const REACTION_TYPES = [
   { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
 
-export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false }) {
+export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, onRequireAuth, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -136,7 +136,12 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
 
   // Determine the most used reaction (displayed as primary)
   const handleReact = async (reactionType) => {
-    if (!userId || !isValidUuid(String(contentId))) {
+    if (!userId) {
+      if (onRequireAuth) onRequireAuth()
+      else alert('Sign in or create an account to react to this content.')
+      return
+    }
+    if (!isValidUuid(String(contentId))) {
       alert('This content is unavailable for reactions right now.')
       return
     }
@@ -160,7 +165,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
     try {
       const alreadyLiked = previousReaction === reactionType
       const method = alreadyLiked ? 'DELETE' : 'POST'
-      const response = await fetch('/api/reactions', {
+      const response = await fetch('/info/api/reactions', {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contentType, contentId, reactionType }),
@@ -198,6 +203,14 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
 
   const activeReactionMeta = REACTION_TYPES.find((r) => r.type === userReaction)
   const visibleReactionTypes = REACTION_TYPES.filter((reaction) => (reactionCounts[reaction.type] || 0) > 0)
+  const togglePicker = () => {
+    if (!userId) {
+      if (onRequireAuth) onRequireAuth()
+      else alert('Sign in or create an account to react to this content.')
+      return
+    }
+    setShowPicker((value) => !value)
+  }
 
   return (
     breakdown ? (
@@ -216,7 +229,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
         </div>
         <button
           type="button"
-          onClick={() => setShowPicker((value) => !value)}
+          onClick={togglePicker}
           disabled={loading}
           aria-expanded={showPicker}
           aria-label={userReaction ? `${activeReactionMeta?.label || 'Reaction'} reaction, ${totalCount} total` : `React to this post, ${totalCount} total`}
@@ -252,7 +265,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
       <div className={`relative ${onCountClick ? 'min-w-0 flex-1' : 'w-full'}`} ref={pickerRef}>
         <button
           type="button"
-          onClick={() => setShowPicker((v) => !v)}
+          onClick={togglePicker}
           disabled={loading}
           aria-label={userReaction ? `${activeReactionMeta?.label || 'Reaction'} reaction, ${totalCount} total` : `React to this post, ${totalCount} total`}
           title="React to this post"

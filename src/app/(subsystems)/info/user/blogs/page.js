@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Link from 'next/link'
 import {
   ChevronRight,
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { filterValidUuidValues } from '@/lib/uuid'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 const categories = [
   { id: 'travel_guides', label: 'Travel Guides', icon: '✈️' },
@@ -260,7 +260,7 @@ export default function BlogsPage() {
       <UserTopHeader />
       <div className="usr-section-container mx-auto max-w-6xl px-3 pb-8 pt-2 sm:px-4 lg:px-6">
         <UserSectionHeader eyebrow="Through a local lens" title="Community stories" description="Discover hidden gems, local favorites, and stories worth sharing from around Daet." emoji="✍️">
-          <Link href="/user/blogs/new" className="usr-section-primary">Write a story</Link>
+          <Link href="/info/user/blogs/new" className="usr-section-primary">Write a story</Link>
         </UserSectionHeader>
         <div className="usr-section-toolbar mb-5 flex flex-wrap items-center gap-3">
             <select
@@ -294,7 +294,7 @@ export default function BlogsPage() {
               {featuredBlogs.map((blog) => (
                 <Link
                   key={blog.id}
-                  href={`/user/blogs/${blog.id}`}
+                  href={`/info/user/blogs/${blog.id}`}
                   className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:shadow-lg hover:border-sky-200"
                 >
                   <BlogMedia blog={blog} compact />
@@ -345,7 +345,7 @@ export default function BlogsPage() {
               {recentReads.length > 0 ? (
                 <div className="space-y-1.5">
                   {recentReads.map((read) => (
-                    <Link key={read.id} href={`/user/blogs/${read.id}`} className="block rounded-xl border border-slate-200 bg-slate-50 p-2.5 hover:border-sky-200">
+                    <Link key={read.id} href={`/info/user/blogs/${read.id}`} className="block rounded-xl border border-slate-200 bg-slate-50 p-2.5 hover:border-sky-200">
                       <p className="text-sm font-semibold text-slate-800 line-clamp-1">{read.title}</p>
                       <p className="mt-1 text-[10px] uppercase tracking-wide text-slate-400">{read.time}</p>
                     </Link>
@@ -466,12 +466,12 @@ export default function BlogsPage() {
                   >
                     <div className="p-4 sm:p-5">
                       <div className="flex items-start gap-3">
-                        <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label="View author's profile">
+                        <Link href={blog.created_by ? `/info/user/profile/${blog.created_by}` : '/info/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label="View author's profile">
                           {blog.info_users?.profile_image_url ? <img src={blog.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : (blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
                         </Link>
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                            <Link href={blog.created_by ? `/user/profile/${blog.created_by}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
+                            <Link href={blog.created_by ? `/info/user/profile/${blog.created_by}` : '/info/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
                             <span className="text-slate-400">·</span>
                             <time dateTime={blog.published_at || undefined} title={formatPostedDate(blog.published_at)} className="text-slate-500">{formatDate(blog.published_at)}</time>
                           </div>
@@ -483,7 +483,7 @@ export default function BlogsPage() {
                       </div>
 
                       {blog.featured_image && (
-                        <Link href={`/user/blogs/${blog.id}`} className="mt-3 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
+                        <Link href={`/info/user/blogs/${blog.id}`} className="mt-3 block overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
                           <BlogMedia blog={blog} />
                         </Link>
                       )}
@@ -493,7 +493,7 @@ export default function BlogsPage() {
                           <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${getCategoryColor(blog.category)}`}>{categories.find((c) => c.id === blog.category)?.label || blog.category}</span>
                           {blog.featured && <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700"><Flame className="h-3 w-3" />Featured</span>}
                         </div>
-                        <Link href={`/user/blogs/${blog.id}`}><h3 className="mt-3 line-clamp-2 text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{blog.title}</h3></Link>
+                        <Link href={`/info/user/blogs/${blog.id}`}><h3 className="mt-3 line-clamp-2 text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{blog.title}</h3></Link>
                         <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-600">{blog.excerpt || blog.content}</p>
                         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
                           <span className="inline-flex items-center gap-1"><Heart className="h-3.5 w-3.5" />{blog._reaction_count ?? blog.likes ?? 0} reactions</span>

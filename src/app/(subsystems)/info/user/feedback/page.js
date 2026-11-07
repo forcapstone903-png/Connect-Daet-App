@@ -14,11 +14,11 @@ import {
   Trash2,
   Upload,
 } from 'lucide-react'
-import MediaUpload from '@/app/components/MediaUpload'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
-import UserSectionHeader, { SectionTabs } from '@/app/components/user/UserSectionHeader'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
+import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -149,7 +149,7 @@ export default function UserFeedbackPage() {
           : null,
       }
 
-      const response = await fetch('/api/posts', {
+      const response = await fetch('/info/api/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -221,7 +221,7 @@ export default function UserFeedbackPage() {
           emoji="📮"
         >
           <span className="usr-section-counter">{stats.total} submission{stats.total === 1 ? '' : 's'}</span>
-          <Link href="/user/notifications" className="usr-section-secondary">
+          <Link href="/info/user/notifications" className="usr-section-secondary">
             <BellRing className="h-4 w-4" />
             Notifications
           </Link>

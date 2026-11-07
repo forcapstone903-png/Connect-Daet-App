@@ -93,23 +93,29 @@ export async function POST(request) {
     console.log('✅ User authenticated:', authData.user.id)
 
     // Get or create user profile
-    let userProfile = null
     const metadataRole = String(authData.user.user_metadata?.user_type || 'tourist').trim().toLowerCase()
     const normalizedRole = ['admin', 'moderator', 'tourist', 'business'].includes(metadataRole) ? metadataRole : 'tourist'
     const dbUserType = normalizedRole
+    let userProfile = null
 
     try {
-      // Try to get existing profile
-      const { data, error } = await supabase
+      const { data: existingProfile, error: profileLookupError } = await supabase
         .from('info_users')
         .select('*')
         .eq('id', authData.user.id)
-        .single()
+        .maybeSingle()
 
-      if (error) {
-        console.log('📝 Profile not found, creating one...')
-        
-        // Create new profile
+      if (profileLookupError) {
+        console.error('🔴 Profile lookup error:', profileLookupError)
+        return NextResponse.json(
+          { success: false, message: 'Unable to load your account profile. Please try again.' },
+          { status: 500 }
+        )
+      }
+
+      userProfile = existingProfile
+
+      if (!userProfile) {
         const newProfile = {
           id: authData.user.id,
           email: authData.user.email,
@@ -129,32 +135,30 @@ export async function POST(request) {
 
         if (createError) {
           console.error('🔴 Profile creation error:', createError)
-          // Fallback to using auth metadata
-          userProfile = {
-            id: authData.user.id,
-            email: authData.user.email,
-            full_name: authData.user.user_metadata?.full_name || authData.user.email,
-            user_type: dbUserType || 'tourist',
-            points: 0,
-          }
-        } else {
-          console.log('✅ Created profile:', sanitizeUserProfileForLog(created))
-          userProfile = created
+          return NextResponse.json(
+            { success: false, message: 'Unable to create your account profile. Please try again or contact support.' },
+            { status: 500 }
+          )
         }
+
+        console.log('✅ Created profile:', sanitizeUserProfileForLog(created))
+        userProfile = created
       } else {
-        console.log('✅ Profile found:', sanitizeUserProfileForLog(data))
-        userProfile = data
+        console.log('✅ Profile found:', sanitizeUserProfileForLog(userProfile))
+      }
+
+      if (!userProfile || userProfile.status !== 'active') {
+        return NextResponse.json(
+          { success: false, message: 'This account is not active. Please contact support.' },
+          { status: 403 }
+        )
       }
     } catch (error) {
       console.error('🔴 Profile fetch exception:', error)
-      // Fallback to auth data
-      userProfile = {
-        id: authData.user.id,
-        email: authData.user.email,
-        full_name: authData.user.user_metadata?.full_name || authData.user.email,
-        user_type: dbUserType || 'tourist',
-        points: 0,
-      }
+      return NextResponse.json(
+        { success: false, message: 'Unable to load your account profile. Please try again.' },
+        { status: 500 }
+      )
     }
 
     // Return success with user data

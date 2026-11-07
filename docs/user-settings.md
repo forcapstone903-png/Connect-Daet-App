@@ -1,6 +1,6 @@
 # User Settings (appearance, language, privacy)
 
-The user-facing Settings surface lives at `/user/settings` and is made of one tab
+The user-facing Settings surface lives at `/info/user/settings` and is made of one tab
 per concern:
 
 | Tab | What it controls | Where it is stored |
@@ -24,10 +24,10 @@ Display changes apply immediately. Reset restores device defaults and a draft; S
 Deactivation sets the `info_users` status to `suspended` and signs the user out; signing in again exposes a reactivation action. Deletion requests also suspend the account and store a deadline 30 days later. A trusted scheduled cleanup job must delete accounts whose `deletion_scheduled_for` has passed; the settings route only creates, cancels, and reports the request.
 
 
-## Notification inbox behaviour (`/user/notifications`)
+## Notification inbox behaviour (`/info/user/notifications`)
 
 - Read state is per notification. Opening a notification, "Mark read", and "Mark all read" clear the unread flag; loading the page no longer marks the whole list read, so the New/Earlier split, unread dots, and the bell badge stay meaningful.
-- The header bell badge uses the server's exact `unread_count` (from `GET /api/notifications`) instead of counting the loaded page, which is capped at 50 rows.
+- The header bell badge uses the server's exact `unread_count` (from `GET /info/api/notifications`) instead of counting the loaded page, which is capped at 50 rows.
 - Incoming notifications arrive over Supabase Realtime, play a short chime, and update the badge through the `daet-notifications-updated` window event consumed by `UserTopHeader`, `MobileNav`, and the dashboard.
 - The chime is opt-in per device and stored at `daet:notification-sound` (`'on'` / `'off'`), a display-only preference that contains no personal data. It is a separate key from `daet:user-settings:v1` because it is scoped to the notification inbox, not to account settings.
 - The notification list cache stays memory-only and user-scoped (`notifications:user:{userId}`, 30 s TTL) with invalidation after every read-state, delete, and follow-action write.

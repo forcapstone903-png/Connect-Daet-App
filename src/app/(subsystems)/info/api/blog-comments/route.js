@@ -46,7 +46,7 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
 
   const actionText = isMention ? `mentioned you in ${isReply ? 'a reply' : 'a comment'}` : isReply ? 'replied to your comment' : 'commented on your post'
   const notificationMessage = isMention ? `${actorName} ${actionText}.` : `${actorName} ${actionText}: ${content.slice(0, 120)}`
-  const link = `/user/blogs/${blogId}#comment-${commentId || ''}`
+  const link = `/info/user/blogs/${blogId}#comment-${commentId || ''}`
   const { data: existing } = await adminSupabase
     .from('info_notifications')
     .select('id')
@@ -275,7 +275,7 @@ export async function POST(request) {
         .eq('user_id', mention.mentioned_user_id)
         .eq('type', 'comment')
         .eq('actor_id', userId)
-        .eq('link', `/user/blogs/${blogId}#comment-${data.id}`)
+        .eq('link', `/info/user/blogs/${blogId}#comment-${data.id}`)
 
       await createBlogCommentNotification(adminSupabase, {
         recipientId: mention.mentioned_user_id,

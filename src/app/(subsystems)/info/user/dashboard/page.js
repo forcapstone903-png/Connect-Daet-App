@@ -17,13 +17,15 @@ import {
   ArrowUp,
   CalendarDays,
   Flame,
+  FilePenLine,
+  FileText,
   Gift,
   ImagePlus,
   Loader,
   LogOut,
   Mail,
   Megaphone,
-  MapPinned,
+  MessageSquare,
   MapPin,
   PenLine,
   RefreshCw,
@@ -37,26 +39,27 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { getDaetDestinationImage } from '@/lib/daetDestinationImages'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
-import { clearUserCache, getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
+import { clearUserCache, getCache, getCacheKey, invalidateCache, invalidateCachePrefix, setCache } from '@/lib/cache'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
 import { buildRepostFeedItem } from '@/lib/repostIdentity'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
-import SocialActionBar from '@/app/components/user/SocialActionBar'
-import QuoteRepostCard from '@/app/components/user/QuoteRepostCard'
-import PostActionMenu from '@/app/components/user/PostActionMenu'
-import Comments from '@/app/components/user/Comments'
-import DailyFeedback from '@/app/components/user/DailyFeedback'
-import UserProfileLink from '@/app/components/user/UserProfileLink'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
-import ConfirmationModal from '@/app/components/ConfirmationModal'
+import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
+import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
+import PostActionMenu from '@/app/(subsystems)/info/components/user/PostActionMenu'
+import Comments from '@/app/(subsystems)/info/components/user/Comments'
+import DailyFeedback from '@/app/(subsystems)/info/components/user/DailyFeedback'
+import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
 import { prioritizePinnedFeedItems } from '@/lib/feedOrdering'
 import { trackUserActivity } from '@/lib/trackActivity'
-import PostMediaGallery from '@/app/components/user/PostMediaGallery'
+import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
 import { getPostImages } from '@/lib/postMedia'
 
 // Database table constants
@@ -84,12 +87,12 @@ const FEED_SCOPES = [
 
 // Visual identity per content type: emoji for the badge, icon for quick actions.
 const POST_TYPE_META = {
-  blog: { emoji: '📝', label: 'Blog', tone: 'bg-violet-50 text-violet-700 border-violet-200' },
-  event: { emoji: '🎉', label: 'Event', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-  forum: { emoji: '💬', label: 'Forum', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  tourist_spot: { emoji: '📍', label: 'Tourist spot', tone: 'bg-sky-50 text-sky-700 border-sky-200' },
-  announcement: { emoji: '📣', label: 'Announcement', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-  post: { emoji: '✍️', label: 'Post', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
+  blog: { icon: FileText, label: 'Blog', tone: 'bg-violet-50 text-violet-700 border-violet-200' },
+  event: { icon: CalendarDays, label: 'Event', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
+  forum: { icon: MessageSquare, label: 'Forum', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  tourist_spot: { icon: MapPin, label: 'Tourist spot', tone: 'bg-sky-50 text-sky-700 border-sky-200' },
+  announcement: { icon: Megaphone, label: 'Announcement', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
+  post: { icon: FilePenLine, label: 'Post', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
 }
 
 const getPostTypeMeta = (type) => POST_TYPE_META[type] || POST_TYPE_META.post
@@ -151,6 +154,31 @@ function getInitials(name = '') {
     .slice(0, 2)
     .map((p) => p[0]?.toUpperCase() || '')
     .join('') || 'T'
+}
+
+function SuggestedLocationCard({ spot }) {
+  const image = getImageUrl(spot.featured_image || spot.images || spot.gallery_images, getDaetDestinationImage(spot.title))
+
+  return (
+    <Link
+      href={spot.href}
+      aria-label={`View ${spot.title} destination details`}
+      className="group relative block aspect-[0.78] min-w-[150px] max-w-[190px] flex-1 overflow-hidden rounded-[22px] bg-slate-800 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+    >
+      <img src={image} alt="" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
+      <div className="absolute inset-0 bg-gradient-to-b from-slate-950/15 via-transparent to-slate-950/85" />
+      <span className="absolute left-3 top-3 rounded-full border border-white/40 bg-slate-950/30 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white backdrop-blur-md">
+        {spot.category || 'Daet'}
+      </span>
+      <div className="absolute inset-x-3 bottom-3 text-white">
+        <p className="line-clamp-2 text-sm font-black leading-tight drop-shadow">{spot.title}</p>
+        <p className="mt-1.5 flex items-center gap-1 text-[10px] font-medium leading-snug text-white/85">
+          <MapPin className="h-3 w-3 shrink-0" aria-hidden="true" />
+          <span className="line-clamp-2">{spot.location || 'Daet, Camarines Norte'}</span>
+        </p>
+      </div>
+    </Link>
+  )
 }
 
 export default function UserDashboardPage() {
@@ -225,7 +253,7 @@ export default function UserDashboardPage() {
     let active = true
     const loadUnreadAlerts = async () => {
       try {
-        const response = await fetch('/api/notifications', { credentials: 'same-origin', cache: 'no-store' })
+        const response = await fetch('/info/api/notifications', { credentials: 'same-origin', cache: 'no-store' })
         const result = response.ok ? await response.json() : null
         if (active && result?.success) setUnreadAlerts(Number(result.unread_count) || 0)
       } catch {
@@ -297,7 +325,7 @@ export default function UserDashboardPage() {
           published_at: restored.created_at,
           category: 'Repost',
           type: restored.original_content_type === 'blog' ? 'blog' : 'post',
-          href: restored.original_content_type === 'blog' ? `/user/blogs/${restored.original_content_id}` : `/user/posts/${restored.original_content_id}`,
+          href: restored.original_content_type === 'blog' ? `/info/user/blogs/${restored.original_content_id}` : `/info/user/posts/${restored.original_content_id}`,
           is_repost: true,
           author: activeAuthor,
           original_author: restored.original_author || original.author || null,
@@ -376,7 +404,7 @@ export default function UserDashboardPage() {
     const hydrateAuthors = async () => {
       const profiles = await Promise.all(authorIds.map(async (authorId) => {
         try {
-          const response = await fetch(`/api/users/${encodeURIComponent(authorId)}`, { credentials: 'same-origin' })
+          const response = await fetch(`/info/api/users/${encodeURIComponent(authorId)}`, { credentials: 'same-origin' })
           const result = await response.json()
           return response.ok && result.success ? result.profile : null
         } catch {
@@ -417,7 +445,7 @@ export default function UserDashboardPage() {
     let isMounted = true
     const loadFollowedPeople = async () => {
       try {
-        const response = await fetch('/api/users/following', { credentials: 'same-origin' })
+        const response = await fetch('/info/api/users/following', { credentials: 'same-origin' })
         const result = await response.json()
         if (!isMounted || !response.ok || !result.success) return
         setFollowedSuggestions(new Set(result.following_ids || []))
@@ -604,7 +632,11 @@ export default function UserDashboardPage() {
   const suggestions = useMemo(() => {
     const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId && !followedSuggestions.has(item.author.id))
     const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
-    const suggestedLocations = [...new Set(feed.map((item) => item.location).filter(Boolean))].slice(0, 4)
+    const suggestedLocations = [...new Map(
+      feed
+        .filter((item) => item.type === 'tourist_spot')
+        .map((spot) => [spot.id, spot])
+    ).values()].slice(0, 4)
     const suggestedContent = feed.filter((item) => item.type === 'blog' || item.type === 'forum').slice(0, 2)
     return {
       suggestedPost: availableFeed[0] || feed[0] || null,
@@ -617,11 +649,12 @@ export default function UserDashboardPage() {
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
     try {
-      const response = await fetch(`/api/users/${personId}/follow`, { method: 'POST', credentials: 'same-origin' })
+      const response = await fetch(`/info/api/users/${personId}/follow`, { method: 'POST', credentials: 'same-origin' })
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this person right now')
       setFollowedSuggestions((previous) => new Set([...previous, personId]))
       invalidateCache(getDashboardCacheKey(userId))
+      invalidateCachePrefix('profile:user:')
     } catch (followError) {
       console.error('Suggested follow failed:', followError?.message || followError)
       setToastMessage(followError?.message || 'Unable to follow this person right now')
@@ -657,7 +690,7 @@ export default function UserDashboardPage() {
 
   const updateOwnRepostPrivacy = async (item, visibility) => {
     if (!item?.repost_id || item.reposted_by !== userId) return
-    const response = await fetch(`/api/reposts/${item.repost_id}`, {
+    const response = await fetch(`/info/api/reposts/${item.repost_id}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -667,6 +700,7 @@ export default function UserDashboardPage() {
     if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update repost privacy.')
     setFeed((previous) => previous.map((feedItem) => feedItem.repost_id === item.repost_id ? { ...feedItem, visibility } : feedItem))
     invalidateCache(getDashboardCacheKey(userId))
+    invalidateCachePrefix('profile:user:')
     setToastMessage('Repost privacy updated.')
     setTimeout(() => setToastMessage(''), 2500)
   }
@@ -675,7 +709,7 @@ export default function UserDashboardPage() {
     if (!item?.repost_id || item.reposted_by !== userId) return
     const isDelete = action === 'delete'
     try {
-      const response = await fetch(`/api/reposts/${item.repost_id}`, {
+      const response = await fetch(`/info/api/reposts/${item.repost_id}`, {
         method: isDelete ? 'DELETE' : 'PATCH',
         credentials: 'same-origin',
         headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
@@ -704,7 +738,7 @@ export default function UserDashboardPage() {
     if (!item?.repost_id || item.reposted_by !== userId) return
 
     try {
-      const response = await fetch(`/api/reposts/${item.repost_id}`, {
+      const response = await fetch(`/info/api/reposts/${item.repost_id}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -729,7 +763,7 @@ export default function UserDashboardPage() {
     const isDelete = action === 'delete'
     if (!window.confirm(isDelete ? 'Delete post?\n\nThis will permanently remove your post and its repost relationships.' : 'Archive post?\n\nThis will hide your post until you restore it.')) return
     try {
-      const response = await fetch(`/api/posts/${item.id}`, {
+      const response = await fetch(`/info/api/posts/${item.id}`, {
         method: isDelete ? 'DELETE' : 'PATCH',
         credentials: 'same-origin',
         headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
@@ -752,7 +786,7 @@ export default function UserDashboardPage() {
     const isDelete = action === 'delete'
 
     try {
-      const response = await fetch(`/api/user/blogs/${item.id}`, {
+      const response = await fetch(`/info/api/user/blogs/${item.id}`, {
         method: isDelete ? 'DELETE' : 'PATCH',
         credentials: 'same-origin',
         headers: isDelete ? undefined : { 'Content-Type': 'application/json' },
@@ -785,7 +819,7 @@ export default function UserDashboardPage() {
 
   const editOwnBlog = (item) => {
     if (item?.type !== 'blog' || item?.is_repost || item.created_by !== userId) return
-    router.push(`/user/blogs/${item.id}/edit`)
+    router.push(`/info/user/blogs/${item.id}/edit`)
     setOpenPostMenu(null)
   }
 
@@ -796,7 +830,7 @@ export default function UserDashboardPage() {
     const content = window.prompt('Edit post content:', item.content || '')
     if (content === null) return
     try {
-      const response = await fetch(`/api/posts/${item.id}`, {
+      const response = await fetch(`/info/api/posts/${item.id}`, {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -817,7 +851,7 @@ export default function UserDashboardPage() {
 
   const updateOwnPostPrivacy = async (item, visibility) => {
     if (item?.type !== 'post' || item?.is_repost || item.user_id !== userId) return
-    const response = await fetch(`/api/posts/${item.id}`, {
+    const response = await fetch(`/info/api/posts/${item.id}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -827,13 +861,14 @@ export default function UserDashboardPage() {
     if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update post privacy.')
     setFeed((previous) => previous.map((feedItem) => feedItem.id === item.id ? { ...feedItem, visibility } : feedItem))
     invalidateCache(getDashboardCacheKey(userId))
+    invalidateCachePrefix('profile:user:')
     setToastMessage('Post privacy updated.')
     setTimeout(() => setToastMessage(''), 2500)
   }
 
   const updateOwnBlogPrivacy = async (item, visibility) => {
     if (item?.type !== 'blog' || item?.is_repost || item.created_by !== userId) return
-    const response = await fetch(`/api/blogs/${item.id}`, {
+    const response = await fetch(`/info/api/blogs/${item.id}`, {
       method: 'PATCH',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
@@ -843,6 +878,7 @@ export default function UserDashboardPage() {
     if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update blog privacy.')
     setFeed((previous) => previous.map((feedItem) => feedItem.id === item.id ? { ...feedItem, visibility } : feedItem))
     invalidateCache(getDashboardCacheKey(userId))
+    invalidateCachePrefix('profile:user:')
     setToastMessage('Blog privacy updated.')
     setTimeout(() => setToastMessage(''), 2500)
   }
@@ -922,7 +958,7 @@ export default function UserDashboardPage() {
 
         if (!activeSession?.user) {
           setAuthError('Please log in to continue')
-          router.push('/login')
+          router.push('/info/login')
           return
         }
 
@@ -954,7 +990,7 @@ export default function UserDashboardPage() {
       } catch (err) {
         console.error('Auth error:', err)
         setAuthError(err.message || 'Authentication failed')
-        router.push('/login')
+        router.push('/info/login')
       }
     }
 
@@ -1132,7 +1168,7 @@ export default function UserDashboardPage() {
               .eq('status', 'active')
               .order('created_at', { ascending: false })
               .limit(20),
-            fetch('/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
+            fetch('/info/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
               if (!response.ok || !result.success) return { data: [], error: null }
               return { data: (result.following_ids || []).map((followingId) => ({ following_id: followingId })), error: null }
@@ -1226,7 +1262,7 @@ export default function UserDashboardPage() {
               excerpt: originalPost.content,
               category: 'Repost',
               type: repost.original_content_type === 'blog' ? 'blog' : 'post',
-              href: repost.original_content_type === 'blog' ? `/user/blogs/${originalPost.id}` : `/user/posts/${originalPost.id}`,
+              href: repost.original_content_type === 'blog' ? `/info/user/blogs/${originalPost.id}` : `/info/user/posts/${originalPost.id}`,
               is_repost: true,
               original_author_id: originalPost.user_id || originalPost.created_by,
               original_post: originalPost,
@@ -1278,22 +1314,22 @@ export default function UserDashboardPage() {
           ...(blogsFeed.data || []).map((blog) => ({
             ...withAuthor(blog),
             type: 'blog',
-            href: `/user/blogs/${blog.id}`,
+            href: `/info/user/blogs/${blog.id}`,
           })),
           ...(eventsFeed.data || []).map((event) => ({
             ...withAuthor(event),
             type: 'event',
-            href: `/user/events/${event.id}`,
+            href: `/info/user/events/${event.id}`,
           })),
           ...(threadsFeed.data || []).map((thread) => ({
             ...withAuthor(thread),
             type: 'forum',
-            href: `/user/forums/${thread.id}`,
+            href: `/info/user/forums/${thread.id}`,
           })),
           ...(touristSpotPosts || []).map((spot) => ({
             ...withAuthor(spot),
             type: 'tourist_spot',
-            href: `/tourist-spots/${spot.id}`,
+            href: `/info/visitor/tourist-spots/${spot.id}`,
             title: spot.name,
             description: spot.description,
             content: spot.description,
@@ -1307,7 +1343,7 @@ export default function UserDashboardPage() {
           ...followedPosts.map((post) => ({
             ...withAuthor(post),
             type: 'post',
-            href: `/user/profile/${post.user_id}`,
+            href: `/info/user/profile/${post.user_id}`,
           })),
           ...repostFeed.map((repost) => ({
             ...withAuthor(repost),
@@ -1325,7 +1361,7 @@ export default function UserDashboardPage() {
               user_type: 'admin',
             },
             type: 'announcement',
-            href: `/user/announcements/${announcement.id}`,
+            href: `/info/user/announcements/${announcement.id}`,
           })),
         ].sort((a, b) => new Date(b.published_at || b.last_activity_at || 0) - new Date(a.published_at || a.last_activity_at || 0))
 
@@ -1380,7 +1416,7 @@ export default function UserDashboardPage() {
     } catch (err) {
       console.error('User logout error:', err)
     } finally {
-      window.location.assign('/login')
+      window.location.assign('/info/login')
     }
   }
 
@@ -1544,7 +1580,7 @@ export default function UserDashboardPage() {
         commentId: notificationCommentRequest.commentId,
       })
       setNotificationCommentRequest(null)
-      router.replace('/user/dashboard', { scroll: false })
+      router.replace('/info/user/dashboard', { scroll: false })
     }, 0)
     return () => window.clearTimeout(timer)
   }, [feed, loading, notificationCommentRequest, router, userId])
@@ -1572,16 +1608,16 @@ export default function UserDashboardPage() {
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 
   const statTiles = [
-    { key: 'blogs', label: 'Blogs', value: stats.blogs, icon: PenLine, href: '/user/blogs' },
-    { key: 'events', label: 'Events', value: stats.events, icon: CalendarDays, href: '/user/events' },
-    { key: 'announcements', label: 'Notices', value: stats.announcements, icon: Megaphone, href: '/user/announcements' },
+    { key: 'blogs', label: 'Blogs', value: stats.blogs, icon: PenLine, href: '/info/user/blogs' },
+    { key: 'events', label: 'Events', value: stats.events, icon: CalendarDays, href: '/info/user/events' },
+    { key: 'announcements', label: 'Notices', value: stats.announcements, icon: Megaphone, href: '/info/user/announcements' },
   ]
 
   const quickActions = [
-    { href: '/user/blogs/new', label: 'Write a story', icon: PenLine, tone: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
-    { href: '/user/blogs/new?share=media', label: 'Photo or video', icon: ImagePlus, tone: 'bg-sky-50 text-sky-700 hover:bg-sky-100' },
-    { href: '/user/events', label: 'Events', icon: CalendarDays, tone: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
-    { href: '/user/rewards', label: 'Rewards', icon: Gift, tone: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+    { href: '/info/user/blogs/new', label: 'Write a story', icon: PenLine, tone: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
+    { href: '/info/user/blogs/new?share=media', label: 'Photo or video', icon: ImagePlus, tone: 'bg-sky-50 text-sky-700 hover:bg-sky-100' },
+    { href: '/info/user/events', label: 'Events', icon: CalendarDays, tone: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+    { href: '/info/user/rewards', label: 'Rewards', icon: Gift, tone: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
   ]
 
   useEffect(() => {
@@ -1625,7 +1661,7 @@ export default function UserDashboardPage() {
             <AlertCircle className="h-5 w-5" aria-hidden="true" />
           </span>
           <p className="mt-4 text-sm font-bold text-red-800">{authError}</p>
-          <Link href="/login" className="usr-press mt-4 inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-700">
+          <Link href="/info/login" className="usr-press mt-4 inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2.5 text-xs font-bold text-white hover:bg-red-700">
             Go to sign in
           </Link>
         </div>
@@ -1693,13 +1729,13 @@ export default function UserDashboardPage() {
             <div className="min-w-0 flex-1">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#16766f]">{todayLabel}</p>
               <h1 className="mt-0.5 truncate text-lg font-black leading-tight text-slate-950 sm:text-xl">
-                {greeting}, {firstName}<span className="usr-wave ml-1" aria-hidden="true">👋</span>
+                {greeting}, {firstName}
               </h1>
               <p className="mt-1 line-clamp-2 text-[12px] font-medium text-slate-500 sm:text-sm">
                 Fresh stories, events, and places from the Daet community.
               </p>
             </div>
-            <Link href="/user/rewards" className="usr-press usr-lift hidden shrink-0 items-center gap-2 rounded-full bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 sm:flex" title="Your rewards and streak">
+            <Link href="/info/user/rewards" className="usr-press usr-lift hidden shrink-0 items-center gap-2 rounded-full bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 sm:flex" title="Your rewards and streak">
               <Flame className="usr-flame h-4 w-4 text-amber-300" aria-hidden="true" />
               {gamification.streak}-day streak
             </Link>
@@ -1712,10 +1748,10 @@ export default function UserDashboardPage() {
             <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-[11px] font-black text-white">
               {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
             </span>
-            <Link href="/user/blogs/new" className="usr-press flex min-h-[50px] flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
+            <Link href="/info/user/blogs/new" className="usr-press flex min-h-[50px] flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
               Share something with Daet...
             </Link>
-            <Link href="/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-[0_8px_18px_rgba(22,118,111,0.22)] transition hover:bg-[#0e514d]">
+            <Link href="/info/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-[0_8px_18px_rgba(22,118,111,0.22)] transition hover:bg-[#0e514d]">
               <Zap className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
@@ -1749,7 +1785,7 @@ export default function UserDashboardPage() {
 
             <DailyFeedback userId={userId} />
 
-            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length > 0 || suggestions.suggestedContent.length > 0 || suggestions.suggestedLocations.length > 0) && (
               <section className="usr-card usr-enter rounded-[22px] p-4 sm:p-5 lg:hidden">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1773,7 +1809,12 @@ export default function UserDashboardPage() {
                   )}
 
                   {suggestions.suggestedLocations.length > 0 && (
-                    <div className="rounded-xl bg-violet-50 p-3"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Suggested locations</p><div className="mt-2 flex flex-wrap gap-2">{suggestions.suggestedLocations.map((location) => <Link key={location} href={`/search?q=${encodeURIComponent(location)}`} className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:text-violet-700"><MapPinned className="h-3 w-3 text-violet-600" />{location}</Link>)}</div></div>
+                    <div className="rounded-xl bg-violet-50 p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Daet places to explore</p>
+                      <div className="mt-2 flex gap-2.5 overflow-x-auto pb-1">
+                        {suggestions.suggestedLocations.map((spot) => <SuggestedLocationCard key={spot.id} spot={spot} />)}
+                      </div>
+                    </div>
                   )}
                 </div>
               </section>
@@ -1800,7 +1841,7 @@ export default function UserDashboardPage() {
               </div>
             ) : filteredFeed.length === 0 ? (
               <div className="usr-card rounded-[22px] border-dashed p-8 text-center">
-                <span className="text-3xl" aria-hidden="true">🧭</span>
+                <MapPin className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
                 <p className="mt-3 text-sm font-bold text-slate-800">Nothing here yet</p>
                 <p className="mt-1 text-xs text-slate-500">Try another topic, clear the filters, or search the community.</p>
               </div>
@@ -1819,7 +1860,7 @@ export default function UserDashboardPage() {
                   const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
-                  const authorHref = author?.id ? `/user/profile/${author.id}` : item.href
+                  const authorHref = author?.id ? `/info/user/profile/${author.id}` : item.href
                   const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
                   const authorRoleLabel = getAuthorRoleLabel(author || {})
                   const itemDate = item.reposted_at || item.last_activity_at || item.published_at || item.created_at || item.start_date
@@ -1896,12 +1937,12 @@ export default function UserDashboardPage() {
                     <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card usr-enter overflow-hidden rounded-[22px]">
                       <div className="p-4 sm:p-5 lg:p-6">
                         <div className="flex items-start gap-3">
-                          <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
+                          <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
                             {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
                           </Link>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                              <Link href={author?.id ? `/user/profile/${author.id}` : '/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
+                              <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
                               {authorRoleLabel && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">{authorRoleLabel}</span>}
                               {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
                               <span className="text-slate-400">·</span>
@@ -1910,7 +1951,7 @@ export default function UserDashboardPage() {
 
                             <div className="mt-1.5 flex flex-wrap items-center gap-2">
                               <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${typeMeta.tone}`}>
-                                <span aria-hidden="true">{typeMeta.emoji}</span>
+                                <typeMeta.icon className="h-3.5 w-3.5" aria-hidden="true" />
                                 {typeMeta.label}
                               </span>
                               {item.type === 'blog' && (
@@ -1918,7 +1959,7 @@ export default function UserDashboardPage() {
                               )}
                             </div>
 
-                            {item.is_repost && <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"><span className="font-semibold text-slate-700">{authorName} reposted</span><span>·</span><span>Originally shared by</span><Link href={item.original_author?.id ? `/user/profile/${item.original_author.id}` : item.href} className="font-bold text-slate-800 hover:text-sky-700">{item.original_author?.full_name || 'Community member'}</Link></div>}
+                            {item.is_repost && <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"><span className="font-semibold text-slate-700">{authorName} reposted</span><span>·</span><span>Originally shared by</span><Link href={item.original_author?.id ? `/info/user/profile/${item.original_author.id}` : item.href} className="font-bold text-slate-800 hover:text-sky-700">{item.original_author?.full_name || 'Community member'}</Link></div>}
                             {item.is_repost && item.repost_quote && <div className="mt-3 rounded-xl border-l-4 border-emerald-300 bg-emerald-50 px-3 py-2.5 text-[13px] leading-5 text-slate-700"><span className="font-bold text-emerald-800">{authorName}</span>{' '}{item.repost_quote}</div>}
 
                             {item.type === 'event' && (
@@ -2082,7 +2123,7 @@ export default function UserDashboardPage() {
                   </>
                 ) : (
                   <>
-                    <p className="text-xs font-semibold text-slate-600">You have reached the end of this feed. 🎉</p>
+                    <p className="text-xs font-semibold text-slate-600">You have reached the end of this feed.</p>
                     <button
                       type="button"
                       onClick={() => window.dispatchEvent(new Event('daet-feed-refresh'))}
@@ -2110,10 +2151,10 @@ export default function UserDashboardPage() {
                   <p className="truncate text-sm font-black text-slate-900">{userName}</p>
                   <p className="truncate text-[11px] font-semibold text-slate-500">{todayLabel}</p>
                 </div>
-                <Link href="/user/profile" className="usr-press usr-lift shrink-0 rounded-full border border-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:border-sky-300 hover:text-sky-700">Profile</Link>
+                <Link href="/info/user/profile" className="usr-press usr-lift shrink-0 rounded-full border border-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:border-sky-300 hover:text-sky-700">Profile</Link>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
-                <Link href="/user/settings" className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100">
+                <Link href="/info/user/settings" className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100">
                   <Settings className="h-3.5 w-3.5" aria-hidden="true" />Settings
                 </Link>
                 <button type="button" onClick={handleLogout} className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-red-600 hover:bg-red-50">
@@ -2139,7 +2180,7 @@ export default function UserDashboardPage() {
                   </div>
                 ))}
               </div>
-              <Link href="/user/rewards" className="usr-press usr-lift mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800">
+              <Link href="/info/user/rewards" className="usr-press usr-lift mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white hover:bg-slate-800">
                 <Star className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />View rewards
               </Link>
             </section>
@@ -2177,12 +2218,8 @@ export default function UserDashboardPage() {
                   {suggestions.suggestedLocations.length > 0 && (
                     <div className="rounded-xl bg-violet-50 p-3">
                       <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-violet-700">Places to explore</p>
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {suggestions.suggestedLocations.map((location) => (
-                          <Link key={location} href={`/search?q=${encodeURIComponent(location)}`} className="usr-press inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:text-violet-700">
-                            <MapPinned className="h-3 w-3 text-violet-600" aria-hidden="true" />{location}
-                          </Link>
-                        ))}
+                      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                        {suggestions.suggestedLocations.map((spot) => <SuggestedLocationCard key={spot.id} spot={spot} />)}
                       </div>
                     </div>
                   )}

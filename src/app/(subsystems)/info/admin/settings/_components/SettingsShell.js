@@ -6,9 +6,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminPageHeader } from '@/app/components/admin';
-import { Icon } from '@/app/components/Icon';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -29,20 +29,20 @@ export default function SettingsShell({ title, subtitle, children }) {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
 
       try {
         const userData = JSON.parse(session);
         if (!hasAdminAccess(userData.role)) {
-          router.push('/admin/dashboard');
+          router.push('/info/admin/dashboard');
           return;
         }
         if (isActive) setUser(userData);
       } catch (err) {
         console.error('Error loading admin user session:', err);
-        if (isActive) router.push('/login');
+        if (isActive) router.push('/info/login');
       } finally {
         if (isActive) setLoading(false);
       }

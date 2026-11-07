@@ -14,8 +14,8 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 import { getDailyStreak, getLevelFromPoints, getLevelProgress, getRewardBadges } from '@/lib/gamification'
-import UserTopHeader from '@/app/components/user/UserTopHeader'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -155,7 +155,7 @@ export default function UserRewardsPage() {
     setRedeeming(reward.title)
     setRedemptionNotice('')
     try {
-      const response = await fetch('/api/rewards/redeem', {
+      const response = await fetch('/info/api/rewards/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',

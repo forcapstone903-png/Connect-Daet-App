@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
 
-export default function feedbackPage() {
-  redirect('/admin/community?tab=feedback')
+export default function FeedbackPage() {
+  redirect('/info/admin/feedback')
 }

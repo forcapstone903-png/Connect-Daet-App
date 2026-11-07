@@ -46,7 +46,7 @@
 
 ### PostGIS Geographic Features (Optional)
 - **Latitude/Longitude columns** are included in all tables for future use
-- **Geographic search** (nearby amenities) is NOT required for the app to work
+- **Geographic search** is NOT required for the app to work
 - If PostGIS is available on your tier, geographic features can be enabled later
 - The app includes fallback non-geographic search using full-text search
 
@@ -61,7 +61,6 @@
 - ✅ Moderation system
 
 ### Geographic Features (Requires PostGIS) 🗺️
-- ❌ Find nearby amenities (within X km)
 - ❌ Geographic search by location
 - ❌ Radius-based queries
 
@@ -91,7 +90,6 @@ If geographic features (nearby search) are needed:
 
 **What this creates:**
 - `info_users` - User management
-- `info_amenities` - Amenities/services
 - `info_events` - Events calendar
 - `info_blogs` - Blog posts
 - `info_announcements` - Admin announcements
@@ -139,7 +137,6 @@ If geographic features (nearby search) are needed:
 
 | Bucket Name | Public? | Max Size | Purpose |
 |---|---|---|---|
-| amenities | Yes | 10MB | Amenity photos |
 | events | Yes | 50MB | Event images/videos |
 | blogs | Yes | 10MB | Blog featured images |
 | tourist-spots | Yes | 50MB | Attraction photos |
@@ -154,7 +151,7 @@ If geographic features (nearby search) are needed:
 **Policy 1: Public Read**
 ```sql
 CREATE POLICY "Public Read" ON storage.objects
-  FOR SELECT USING (bucket_id IN ('amenities', 'events', 'blogs', 'tourist-spots', 'announcements'));
+  FOR SELECT USING (bucket_id IN ('events', 'blogs', 'tourist-spots', 'announcements'));
 ```
 
 **Policy 2: Authenticated Upload**
@@ -162,7 +159,7 @@ CREATE POLICY "Public Read" ON storage.objects
 CREATE POLICY "Authenticated Upload" ON storage.objects
   FOR INSERT WITH CHECK (
     auth.role() = 'authenticated' 
-    AND bucket_id IN ('amenities', 'events', 'blogs', 'tourist-spots', 'user-profiles', 'announcements')
+    AND bucket_id IN ('events', 'blogs', 'tourist-spots', 'user-profiles', 'announcements')
   );
 ```
 
@@ -188,7 +185,7 @@ INSERT INTO public.info_users (
 4. Store credentials securely
 
 ### Step 4.2: Publish verified tourism content
-Use the authenticated administration pages to enter office-approved amenities, destinations, and events. Do not import demonstration accounts or fabricated activity into the production database.
+Use the authenticated administration pages to enter office-approved destinations and events. Do not import demonstration accounts or fabricated activity into the production database.
 
 ---
 
@@ -197,7 +194,6 @@ Use the authenticated administration pages to enter office-approved amenities, d
 ### Step 5.1: Import Utils in Components
 ```javascript
 import { 
-  getAmenities, 
   getEvents, 
   getBlogs,
   uploadMedia 
@@ -220,28 +216,14 @@ const handleLogin = async (email, password) => {
 };
 ```
 
-### Step 5.3: Fetch and Display Content
-```javascript
-// In amenities page
-useEffect(() => {
-  const fetchAmenities = async () => {
-    const result = await getAmenities({ type: 'restaurant' });
-    if (result.success) {
-      setAmenities(result.data);
-    }
-  };
-  fetchAmenities();
-}, []);
-```
-
-### Step 5.4: Handle File Uploads
+### Step 5.3: Handle File Uploads
 ```javascript
 // In media upload component
 const handleUpload = async (file) => {
-  const result = await uploadMedia('amenities', file, 'photos');
+  const result = await uploadMedia('tourist-spots', file, 'photos');
   if (result.success) {
     setImageUrl(result.url);
-    // Update amenity form
+    // Update the destination form
   }
 };
 ```
@@ -262,30 +244,13 @@ Open browser → Network tab → Check for successful Supabase API calls
 3. Verify session storage shows user data
 4. Check admin dashboard loads
 
-### Step 6.3: Test CRUD Operations
-1. Create new amenity:
-   - Go to admin/amenities
-   - Click "Add Amenity"
-   - Fill form and submit
-   - Verify in database
-
-2. Update content:
-   - Edit amenity
-   - Verify changes saved
-   - Check updated_at timestamp
-
-3. Delete content:
-   - Delete amenity
-   - Verify removed from UI
-   - Check database
-
-### Step 6.4: Test Search Functionality
+### Step 6.3: Test Search Functionality
 1. Go to main search
 2. Search for "restaurant"
-3. Verify results from amenities, blogs, events
+3. Verify results from tourist spots, blogs, and events
 4. Check relevance ordering
 
-### Step 6.5: Test File Uploads
+### Step 6.4: Test File Uploads
 1. Try uploading image
 2. Verify file appears in storage bucket
 3. Verify public URL works
@@ -431,12 +396,11 @@ import { loginUser, registerUser } from '@/lib/supabaseUtils';
 
 ### Fetch Data
 ```javascript
-import { getAmenities, getEvents, getBlogs } from '@/lib/supabaseUtils';
+import { getEvents, getBlogs } from '@/lib/supabaseUtils';
 ```
 
 ### Create/Update
 ```javascript
-import { createAmenity, updateAmenity } from '@/lib/supabaseUtils';
 ```
 
 ### Upload Files

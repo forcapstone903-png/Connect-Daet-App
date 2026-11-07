@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import UserSectionHeader from '@/app/components/user/UserSectionHeader'
+import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Bell, Loader, MessageCircle, Zap } from 'lucide-react'
@@ -27,7 +27,7 @@ export default function UserAnnouncementsPage() {
         const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id } } : null)
 
         if (!activeSession?.user) {
-          router.push('/login')
+          router.push('/info/login')
           return
         }
 
@@ -40,7 +40,7 @@ export default function UserAnnouncementsPage() {
             .eq('status', 'published')
             .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
             .order('published_at', { ascending: false }),
-          fetch('/api/daily-feedback', { credentials: 'same-origin' }),
+          fetch('/info/api/daily-feedback', { credentials: 'same-origin' }),
         ])
 
         if (error) throw error
@@ -155,7 +155,7 @@ export default function UserAnnouncementsPage() {
               const styles = getTypeStyles(announcement.announcement_type)
               const TypeIcon = styles.icon
               return (
-                <Link key={announcement.id} href={`/user/announcements/${announcement.id}`} className={`usr-announcement-card block min-w-0 rounded-[24px] border p-5 transition hover:shadow-md sm:p-6 ${styles.bg}`}>
+                <Link key={announcement.id} href={`/info/user/announcements/${announcement.id}`} className={`usr-announcement-card block min-w-0 rounded-[24px] border p-5 transition hover:shadow-md sm:p-6 ${styles.bg}`}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-start gap-3">
                       <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-white ${styles.iconColor}`}>

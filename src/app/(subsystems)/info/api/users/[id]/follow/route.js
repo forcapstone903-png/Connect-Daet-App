@@ -128,7 +128,7 @@ export async function POST(request, { params }) {
       .maybeSingle()
 
     const actorName = actor?.full_name || 'Someone'
-    const actorProfileLink = `/user/profile/${viewerId}`
+    const actorProfileLink = `/info/user/profile/${viewerId}`
 
     if (originalFollowRow?.id) {
       if (!targetUser?.user_type || targetUser.user_type !== 'admin') {

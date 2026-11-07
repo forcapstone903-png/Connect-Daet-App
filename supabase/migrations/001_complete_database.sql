@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS public.system_categories (
 CREATE TABLE IF NOT EXISTS public.user_favorites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
-  item_type TEXT NOT NULL CHECK (item_type IN ('blog', 'event', 'amenity', 'spot')),
+  item_type TEXT NOT NULL CHECK (item_type IN ('blog', 'event', 'spot')),
   item_id UUID NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, item_type, item_id)
@@ -152,32 +152,6 @@ CREATE TABLE IF NOT EXISTS public.follows (
 -- ============================================================
 -- Content tables
 -- ============================================================
-
-CREATE TABLE IF NOT EXISTS public.info_amenities (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  type TEXT NOT NULL DEFAULT 'service',
-  description TEXT,
-  location TEXT,
-  address TEXT,
-  latitude NUMERIC(10,7),
-  longitude NUMERIC(10,7),
-  contact_number TEXT,
-  email TEXT,
-  website TEXT,
-  opening_hours TEXT,
-  price_range TEXT,
-  amenities TEXT[],
-  images TEXT[] DEFAULT '{}',
-  featured_image TEXT,
-  rating NUMERIC(3,2) DEFAULT 0,
-  review_count INTEGER NOT NULL DEFAULT 0,
-  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'pending', 'archived')),
-  featured BOOLEAN NOT NULL DEFAULT FALSE,
-  created_by UUID REFERENCES public.info_users(id) ON DELETE SET NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 
 CREATE TABLE IF NOT EXISTS public.info_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -428,8 +402,6 @@ CREATE INDEX IF NOT EXISTS idx_info_users_email ON public.info_users(email);
 CREATE INDEX IF NOT EXISTS idx_info_users_user_type ON public.info_users(user_type);
 CREATE INDEX IF NOT EXISTS idx_info_users_status ON public.info_users(status);
 CREATE INDEX IF NOT EXISTS idx_info_users_created_at ON public.info_users(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_info_amenities_status ON public.info_amenities(status);
-CREATE INDEX IF NOT EXISTS idx_info_amenities_type ON public.info_amenities(type);
 CREATE INDEX IF NOT EXISTS idx_info_events_status ON public.info_events(status);
 CREATE INDEX IF NOT EXISTS idx_info_events_start_date ON public.info_events(start_date);
 CREATE INDEX IF NOT EXISTS idx_info_blogs_status ON public.info_blogs(status);
@@ -460,10 +432,6 @@ FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE TRIGGER tr_system_categories_updated_at
 BEFORE UPDATE ON public.system_categories
-FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
-
-CREATE TRIGGER tr_info_amenities_updated_at
-BEFORE UPDATE ON public.info_amenities
 FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 CREATE TRIGGER tr_info_events_updated_at
@@ -546,7 +514,6 @@ FOR EACH ROW EXECUTE FUNCTION public.update_forum_thread_metrics();
 
 ALTER TABLE public.info_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.info_amenities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.info_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.info_blogs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.info_tourist_spots ENABLE ROW LEVEL SECURITY;
@@ -625,32 +592,6 @@ CREATE POLICY "system_categories_manage_admin" ON public.system_categories
 FOR ALL
 USING (public.is_admin(auth.uid()))
 WITH CHECK (public.is_admin(auth.uid()));
-
--- info_amenities policies
-CREATE POLICY "info_amenities_select_public" ON public.info_amenities
-FOR SELECT
-USING (status = 'active' OR public.is_admin(auth.uid()) OR created_by = auth.uid());
-
-CREATE POLICY "info_amenities_insert_own_or_admin" ON public.info_amenities
-FOR INSERT
-WITH CHECK (
-  (auth.uid() IS NOT NULL AND created_by = auth.uid()) OR public.is_admin(auth.uid())
-);
-
-CREATE POLICY "info_amenities_update_own_or_admin" ON public.info_amenities
-FOR UPDATE
-USING (
-  created_by = auth.uid() OR public.is_admin(auth.uid())
-)
-WITH CHECK (
-  created_by = auth.uid() OR public.is_admin(auth.uid())
-);
-
-CREATE POLICY "info_amenities_delete_own_or_admin" ON public.info_amenities
-FOR DELETE
-USING (
-  created_by = auth.uid() OR public.is_admin(auth.uid())
-);
 
 -- info_events policies
 CREATE POLICY "info_events_select_public" ON public.info_events
@@ -982,7 +923,7 @@ USING (auth.uid() = user_id OR public.is_admin(auth.uid()));
 GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon, authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.info_users, public.profiles, public.user_feed_preferences, public.user_favorites, public.follows, public.info_amenities, public.info_events, public.info_blogs, public.info_tourist_spots, public.info_comments, public.info_feedback, public.info_inquiries, public.info_notifications, public.info_user_posts, public.user_activity_log, public.forum_threads, public.forum_replies, public.forum_subscriptions TO authenticated;
+GRANT INSERT, UPDATE, DELETE ON public.info_users, public.profiles, public.user_feed_preferences, public.user_favorites, public.follows, public.info_events, public.info_blogs, public.info_tourist_spots, public.info_comments, public.info_feedback, public.info_inquiries, public.info_notifications, public.info_user_posts, public.user_activity_log, public.forum_threads, public.forum_replies, public.forum_subscriptions TO authenticated;
 GRANT INSERT, UPDATE, DELETE ON public.info_moderation, public.info_audit_log, public.info_password_resets, public.user_points, public.reward_history, public.user_badges TO authenticated;
 
 COMMIT;

@@ -1,13 +1,13 @@
-// app/admin/moderation/page.js
+// app/(subsystems)/info/admin/moderation/page.js
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminBadge, AdminPageHeader } from '@/app/components/admin';
-import { Icon } from '@/app/components/Icon';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminBadge, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
@@ -267,12 +267,12 @@ export default function AdminModerationPage() {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) {
-        router.push('/login');
+        router.push('/info/login');
         return;
       }
       const userData = JSON.parse(session);
       if (!hasAdminAccess(userData.role)) {
-        router.push('/admin/dashboard');
+        router.push('/info/admin/dashboard');
         return;
       }
       setUser(userData);

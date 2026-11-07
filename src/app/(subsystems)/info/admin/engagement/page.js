@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Repeat2, Search, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import AdminSidebar from '@/app/components/AdminSidebar'
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/components/admin'
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar'
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin'
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies'
 
@@ -124,21 +124,21 @@ export default function AdminEngagementPage() {
   useEffect(() => {
     const session = getStoredSession()
     if (!session) {
-      router.push('/login')
+      router.push('/info/login')
       return
     }
 
     try {
       const user = JSON.parse(session)
       if (!hasAdminAccess(user.role)) {
-        router.push('/admin/dashboard')
+        router.push('/info/admin/dashboard')
         return
       }
       setAdminUser(user)
       loadEngagement()
     } catch (authError) {
       console.error('Engagement auth failed:', authError)
-      router.push('/login')
+      router.push('/info/login')
     }
   }, [loadEngagement, router])
 

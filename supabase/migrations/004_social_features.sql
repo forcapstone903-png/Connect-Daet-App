@@ -7,7 +7,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS public.content_reactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
-  content_type TEXT NOT NULL CHECK (content_type IN ('blog', 'event', 'amenity', 'forum_thread', 'forum_reply', 'comment', 'announcement', 'user_post', 'rating', 'poll')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('blog', 'event', 'forum_thread', 'forum_reply', 'comment', 'announcement', 'user_post', 'rating', 'poll')),
   content_id UUID NOT NULL,
   reaction_type TEXT NOT NULL CHECK (reaction_type IN ('like', 'love', 'laugh', 'wow', 'sad', 'angry')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -24,7 +24,7 @@ CREATE INDEX IF NOT EXISTS idx_content_reactions_user ON public.content_reaction
 
 CREATE TABLE IF NOT EXISTS public.content_comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  content_type TEXT NOT NULL CHECK (content_type IN ('blog', 'event', 'amenity', 'forum_thread', 'forum_reply', 'announcement', 'user_post', 'rating', 'poll')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('blog', 'event', 'forum_thread', 'forum_reply', 'announcement', 'user_post', 'rating', 'poll')),
   content_id UUID NOT NULL,
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
   parent_id UUID REFERENCES public.content_comments(id) ON DELETE CASCADE,
@@ -111,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_hashtag_follows_user ON public.hashtag_follows(us
 CREATE TABLE IF NOT EXISTS public.content_shares (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
-  content_type TEXT NOT NULL CHECK (content_type IN ('blog', 'event', 'amenity', 'forum_thread', 'announcement', 'user_post')),
+  content_type TEXT NOT NULL CHECK (content_type IN ('blog', 'event', 'forum_thread', 'announcement', 'user_post')),
   content_id UUID NOT NULL,
   share_type TEXT NOT NULL DEFAULT 'repost' CHECK (share_type IN ('repost', 'quote', 'dm', 'external')),
   caption TEXT,
@@ -127,7 +127,7 @@ CREATE INDEX IF NOT EXISTS idx_content_shares_recipient ON public.content_shares
 CREATE TABLE IF NOT EXISTS public.reposts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
-  original_content_type TEXT NOT NULL CHECK (original_content_type IN ('blog', 'event', 'amenity', 'forum_thread', 'announcement', 'user_post')),
+  original_content_type TEXT NOT NULL CHECK (original_content_type IN ('blog', 'event', 'forum_thread', 'announcement', 'user_post')),
   original_content_id UUID NOT NULL,
   quote_text TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -183,7 +183,7 @@ CREATE INDEX IF NOT EXISTS idx_poll_votes_poll ON public.poll_votes(poll_id);
 CREATE TABLE IF NOT EXISTS public.attraction_ratings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
-  attraction_type TEXT NOT NULL CHECK (attraction_type IN ('tourist_spot', 'amenity', 'event')),
+  attraction_type TEXT NOT NULL CHECK (attraction_type IN ('tourist_spot', 'event')),
   attraction_id UUID NOT NULL,
   rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
   pros TEXT[] DEFAULT '{}',

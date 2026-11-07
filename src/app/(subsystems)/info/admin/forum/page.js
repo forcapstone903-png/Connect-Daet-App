@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import AdminSidebar from '@/app/components/AdminSidebar';
-import { AdminButton, AdminPageHeader } from '@/app/components/admin';
+import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { AdminButton, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
@@ -41,7 +41,7 @@ export default function AdminForumPage() {
 
   const fetchThreads = async () => {
     try {
-      let query = '/api/admin/forum';
+      let query = '/info/api/admin/forum';
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
       if (statusFilter !== 'all') params.append('status', statusFilter);
@@ -99,7 +99,7 @@ export default function AdminForumPage() {
     setSaving(true);
     try {
       const method = editingThread ? 'PUT' : 'POST';
-      const url = editingThread ? `/api/admin/forum/${editingThread.id}` : '/api/admin/forum';
+      const url = editingThread ? `/info/api/admin/forum/${editingThread.id}` : '/info/api/admin/forum';
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -130,7 +130,7 @@ export default function AdminForumPage() {
     if (!confirm(`Delete thread "${thread.title}"?`)) return;
 
     try {
-      const res = await fetch(`/api/admin/forum/${thread.id}`, {
+      const res = await fetch(`/info/api/admin/forum/${thread.id}`, {
         method: 'DELETE',
       });
       const data = await res.json();
@@ -145,7 +145,7 @@ export default function AdminForumPage() {
 
   const archiveThread = async (thread) => {
     try {
-      const res = await fetch(`/api/admin/forum/${thread.id}`, {
+      const res = await fetch(`/info/api/admin/forum/${thread.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'archived' }),
@@ -203,9 +203,9 @@ export default function AdminForumPage() {
   useEffect(() => {
     const checkAuth = async () => {
       const session = getStoredSession();
-      if (!session) return window.location.assign('/login');
+      if (!session) return window.location.assign('/info/login');
       const sessionUser = JSON.parse(session);
-      if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/admin/dashboard');
+      if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/info/admin/dashboard');
       setUser(sessionUser);
       await fetchThreads();
       await fetchReports();

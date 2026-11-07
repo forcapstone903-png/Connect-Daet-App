@@ -1,4 +1,4 @@
-// Barrel for the admin console UI kit. Import from '@/app/components/admin'.
+// Barrel for the admin console UI kit. Import from '@/app/(subsystems)/info/components/admin'.
 export { default as AdminShell, AdminLoadingScreen } from './AdminShell'
 export { default as AdminPageHeader } from './AdminPageHeader'
 export { default as AdminPanel } from './AdminPanel'

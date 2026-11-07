@@ -23,15 +23,14 @@ This index contains all files created for a complete, production-ready Supabase 
 
 **Tables Created:**
 1. info_users - User accounts & profiles
-2. info_amenities - Tourism amenities
-3. info_events - Event calendar
-4. info_blogs - Blog posts
-5. info_announcements - Admin announcements
-6. info_tourist_spots - Tourist attractions
-7. info_moderation - Moderation reports
-8. info_password_resets - Auth tokens
-9. info_comments - Blog comments
-10. info_audit_log - Audit trail
+2. info_events - Event calendar
+3. info_blogs - Blog posts
+4. info_announcements - Admin announcements
+5. info_tourist_spots - Tourist attractions
+6. info_moderation - Moderation reports
+7. info_password_resets - Auth tokens
+8. info_comments - Blog comments
+9. info_audit_log - Audit trail
 
 ---
 
@@ -49,7 +48,6 @@ This index contains all files created for a complete, production-ready Supabase 
 
 **Policies by Table:**
 - Users: Self-access + admin override
-- Amenities: Active visible to all, editable by creator
 - Events: Published visible, drafts private
 - Blogs: Published visible, drafts private
 - Announcements: Public only
@@ -73,8 +71,6 @@ This index contains all files created for a complete, production-ready Supabase 
 
 **Functions Created:**
 - `search_content()` - Full-text search
-- `get_amenities_by_category()` - Filter amenities
-- `get_nearby_amenities()` - Geographic search
 - `get_upcoming_events()` - Event queries
 - `get_blog_posts()` - Blog queries
 - `generate_password_reset_token()` - Auth
@@ -134,7 +130,7 @@ Create real office accounts through the supported account workflow and publish a
   - Standardized error handling
   - Response formatting
   - Complete CRUD operations
-- **Usage:** `import { getAmenities } from '@/lib/supabaseUtils'`
+- **Usage:** `import { getTouristSpots } from '@/lib/supabaseUtils'`
 
 **Function Groups:**
 
@@ -149,13 +145,6 @@ Create real office accounts through the supported account workflow and publish a
 - `requestPasswordReset(email)` - Initiate reset
 - `verifyResetToken(token)` - Validate token
 - `resetPassword(userId, newPassword)` - Set new password
-
-#### Amenities (5 functions)
-- `getAmenities(filters)` - List amenities
-- `getAmenityById(id)` - Get single
-- `createAmenity(data, userId)` - Create
-- `updateAmenity(id, updates)` - Edit
-- `deleteAmenity(id)` - Delete
 
 #### Events (5 functions)
 - `getEvents(filters)` - List events
@@ -322,12 +311,12 @@ Expected time: 3-5 seconds
 ```
 
 ### Step 4: Office-approved content
-Enter verified destinations, amenities, and events through authenticated administration pages.
+Enter verified destinations and events through authenticated administration pages.
 
 ### ✅ Step 5: Frontend (File: supabaseUtils.js)
 Import functions in your components
 ```javascript
-import { getAmenities } from '@/lib/supabaseUtils';
+import { getTouristSpots } from '@/lib/supabaseUtils';
 // Use functions in components
 ```
 
