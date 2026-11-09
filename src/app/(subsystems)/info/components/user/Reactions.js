@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ThumbsUp } from 'lucide-react'
+import { Heart, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { isValidUuid } from '@/lib/uuid'
@@ -15,7 +15,7 @@ const REACTION_TYPES = [
   { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
 
-export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, onRequireAuth, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false }) {
+export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, onRequireAuth, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false, heartOnly = false, compactFeed = false }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -203,6 +203,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
 
   const activeReactionMeta = REACTION_TYPES.find((r) => r.type === userReaction)
   const visibleReactionTypes = REACTION_TYPES.filter((reaction) => (reactionCounts[reaction.type] || 0) > 0)
+  const loveCount = reactionCounts.love || 0
   const togglePicker = () => {
     if (!userId) {
       if (onRequireAuth) onRequireAuth()
@@ -213,7 +214,25 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   }
 
   return (
-    breakdown ? (
+    heartOnly ? (
+      <div ref={pickerRef} className={`relative flex min-w-0 items-center ${compactFeed ? '' : 'w-full justify-center'}`}>
+        <button
+          type="button"
+          onClick={() => handleReact('love')}
+          disabled={loading}
+          aria-label={userReaction === 'love' ? `Unlike, ${loveCount} hearts` : `Like with heart, ${loveCount} hearts`}
+          aria-pressed={userReaction === 'love'}
+          title={userReaction === 'love' ? 'Unlike' : 'Like with heart'}
+          className={`usr-press usr-lift inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-1 py-1.5 text-sm font-medium transition ${compactFeed ? 'medium-home-heart-button' : 'w-full'} ${
+            userReaction === 'love' ? 'text-rose-600' : 'text-slate-600 hover:text-rose-600'
+          }`}
+        >
+          <Heart aria-hidden="true" className={`h-4 w-4 ${userReaction === 'love' ? 'fill-current' : ''}`} />
+          <span key={loveCount} className="usr-count-pop">{loveCount}</span>
+        </button>
+        {burstEmoji && <span aria-hidden="true" className="usr-emoji-burst">{burstEmoji}</span>}
+      </div>
+    ) : breakdown ? (
       <div ref={pickerRef} className="relative flex w-full min-w-0 flex-col items-center gap-0.5">
         <div className="flex h-4 items-center justify-center gap-0.5 text-xs leading-4" aria-hidden="true">
           {visibleReactionTypes.slice(0, 4).map((reaction) => (

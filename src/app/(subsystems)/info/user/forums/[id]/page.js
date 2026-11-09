@@ -739,6 +739,16 @@ export default function ThreadDetailPage() {
           </div>
 
           {editingThread ? <textarea value={threadDraft.content} onChange={(event) => setThreadDraft((current) => ({ ...current, content: event.target.value }))} rows={5} className="mt-5 w-full rounded-lg border border-slate-200 p-3 text-[15px] leading-7 outline-none" /> : <div className="mt-5 text-[15px] leading-7 text-slate-700">{thread.content}</div>}
+          {thread.location && <p className="mt-3 text-sm font-medium text-slate-500">📍 {thread.location}</p>}
+          {Array.isArray(thread.image_urls) && thread.image_urls.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {thread.image_urls.map((url, index) => (
+                <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-slate-200">
+                  <img src={url} alt={`Discussion attachment ${index + 1}`} className="h-36 w-full object-cover transition hover:scale-[1.02]" />
+                </a>
+              ))}
+            </div>
+          )}
 
           {isThreadOwner && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
             {editingThread ? <><button type="button" onClick={saveThread} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Save changes</button><button type="button" onClick={() => setEditingThread(false)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button></> : <button type="button" onClick={() => setEditingThread(true)} className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700"><Pencil className="h-3.5 w-3.5" /> Edit</button>}

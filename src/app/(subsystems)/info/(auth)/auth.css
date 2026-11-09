@@ -1,0 +1,76 @@
+.auth-page {
+  color: #0f172a;
+}
+
+.auth-page input:not([type='checkbox']) {
+  border-color: #cbd5e1 !important;
+  background-color: #fff !important;
+  color: #0f172a !important;
+}
+
+.auth-page input:not([type='checkbox'])::placeholder {
+  color: #94a3b8 !important;
+}
+
+.auth-page .bg-white,
+.auth-page [class*='bg-white/'] {
+  background-color: #fff !important;
+}
+
+.auth-page .bg-slate-50 {
+  background-color: #f8fafc !important;
+}
+
+.auth-page .bg-slate-200 {
+  background-color: #e2e8f0 !important;
+}
+
+.auth-page .bg-blue-50 {
+  background-color: #eff6ff !important;
+}
+
+.auth-page .bg-blue-100 {
+  background-color: #dbeafe !important;
+}
+
+.auth-page .bg-red-50 {
+  background-color: #fef2f2 !important;
+}
+
+.auth-page .bg-emerald-50 {
+  background-color: #ecfdf5 !important;
+}
+
+.auth-page .text-slate-900 {
+  color: #0f172a !important;
+}
+
+.auth-page .text-slate-700 {
+  color: #334155 !important;
+}
+
+.auth-page .text-slate-600 {
+  color: #475569 !important;
+}
+
+.auth-page .text-slate-500 {
+  color: #64748b !important;
+}
+
+.auth-page .text-blue-700,
+.auth-page .text-sky-700 {
+  color: #1d4ed8 !important;
+}
+
+.auth-page .text-blue-800,
+.auth-page .text-sky-800 {
+  color: #1e40af !important;
+}
+
+.auth-page .border-slate-200 {
+  border-color: #e2e8f0 !important;
+}
+
+.auth-page .border-blue-100 {
+  border-color: #dbeafe !important;
+}

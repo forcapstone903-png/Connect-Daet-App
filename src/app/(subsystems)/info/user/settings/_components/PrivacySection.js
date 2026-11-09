@@ -29,7 +29,7 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
             }))}
             value={settings.privacy.privacyLevel}
             onChange={(value) => onPrivacyChange('privacyLevel', value)}
-            columns={2}
+            columns={3}
           />
         </div>
       </div>

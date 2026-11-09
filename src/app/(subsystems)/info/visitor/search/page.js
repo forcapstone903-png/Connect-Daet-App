@@ -7,20 +7,27 @@ import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Newspaper, X
 import { supabase } from '@/lib/supabase'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
-import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { useUserSearchSuggestions } from '@/lib/useUserSearchSuggestions'
 import { Suspense } from 'react'
+import styles from './SearchPage.module.css'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 const defaultBlogImage = 'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=80'
 const popularSearches = ['Bagasbas Beach', 'Calaguas', 'Daet events', 'local food', 'travel stories']
 
 function SearchContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const initialQuery = searchParams?.get('q') || ''
+
+  return <SearchContentView key={initialQuery} initialQuery={initialQuery} />
+}
+
+function SearchContentView({ initialQuery }) {
+  const router = useRouter()
   const [query, setQuery] = useState(initialQuery)
   const [searchFocused, setSearchFocused] = useState(false)
+  const { users: suggestedUsers, loading: suggestedUsersLoading } = useUserSearchSuggestions(query, searchFocused)
   const [showFilters, setShowFilters] = useState(false)
   const [recentSearches, setRecentSearches] = useState(() => {
     if (typeof window === 'undefined') return []
@@ -51,15 +58,61 @@ function SearchContent() {
     mentions: [],
   })
 
+  useEffect(() => {
+    const handleLiveSearch = (event) => {
+      setQuery(String(event.detail?.query ?? ''))
+      setLoading(true)
+      setSearchFocused(false)
+    }
+    const handleRecentSearchesUpdate = (event) => {
+      if (Array.isArray(event.detail?.searches)) setRecentSearches(event.detail.searches)
+    }
+    const handleStorage = (event) => {
+      if (event.key !== 'daet_recent_searches' && event.key !== null) return
+      try {
+        const searches = JSON.parse(event.newValue || '[]')
+        setRecentSearches(Array.isArray(searches) ? searches.filter((search) => typeof search === 'string').slice(0, 5) : [])
+      } catch (error) {
+        console.error('Unable to read recent searches:', error)
+      }
+    }
+
+    window.addEventListener('daet-search-input', handleLiveSearch)
+    window.addEventListener('daet-recent-searches-updated', handleRecentSearchesUpdate)
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      window.removeEventListener('daet-search-input', handleLiveSearch)
+      window.removeEventListener('daet-recent-searches-updated', handleRecentSearchesUpdate)
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [])
+
   const saveRecentSearch = (value) => {
     const normalizedValue = value.trim()
     if (!normalizedValue) return
     const nextSearches = [normalizedValue, ...recentSearches.filter((entry) => entry.toLowerCase() !== normalizedValue.toLowerCase())].slice(0, 5)
     setRecentSearches(nextSearches)
-    localStorage.setItem('daet_recent_searches', JSON.stringify(nextSearches))
+    try {
+      localStorage.setItem('daet_recent_searches', JSON.stringify(nextSearches))
+      window.dispatchEvent(new CustomEvent('daet-recent-searches-updated', { detail: { searches: nextSearches } }))
+    } catch (error) {
+      console.error('Unable to save recent search:', error)
+    }
+  }
+
+  const clearRecentSearches = () => {
+    try {
+      localStorage.removeItem('daet_recent_searches')
+      setRecentSearches([])
+      window.dispatchEvent(new CustomEvent('daet-recent-searches-updated', { detail: { searches: [] } }))
+    } catch (error) {
+      console.error('Unable to clear recent searches:', error)
+    }
   }
 
   useEffect(() => {
+    let active = true
+
     const loadResults = async () => {
       setLoading(true)
       setError('')
@@ -97,10 +150,13 @@ function SearchContent() {
           fetch(`/info/api/search/users?q=${encodeURIComponent(q)}&limit=20`, { credentials: 'same-origin' }).then((response) => response.json()),
         ])
 
+        if (!active) return
+
         const viewerId = sessionData?.session?.user?.id || null
         const { data: followingRows } = viewerId
           ? await supabase.from('user_follows').select('following_id').eq('follower_id', viewerId)
           : { data: [] }
+        if (!active) return
         if (viewerId) setFollowingIds(new Set((followingRows || []).map((row) => row.following_id)))
 
         const authorIds = [...new Set([
@@ -110,6 +166,7 @@ function SearchContent() {
         ].filter(Boolean))]
         if (authorIds.length) {
           const { data: authors } = await supabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', authorIds)
+          if (!active) return
           setAuthorProfiles(Object.fromEntries((authors || []).map((author) => [author.id, author])))
         } else {
           setAuthorProfiles({})
@@ -120,6 +177,7 @@ function SearchContent() {
         const { data: forumComments } = forumIds.length
           ? await supabase.from('content_comments').select('id, content_id, user_id, body, created_at, info_users(full_name, profile_image_url)').eq('content_type', 'forum_thread').eq('status', 'active').in('content_id', forumIds).ilike('body', `%${q}%`).order('created_at', { ascending: false })
           : { data: [] }
+        if (!active) return
         const userIds = users.map((user) => user.id).filter(Boolean)
         let userContent = []
         let userComments = []
@@ -134,6 +192,7 @@ function SearchContent() {
             supabase.from('content_comments').select('id, user_id, content_type, content_id, body, gif_url, sticker_url, created_at').in('user_id', userIds).eq('status', 'active').order('created_at', { ascending: false }),
             supabase.from('mentions').select('id, mentioned_user_id, content_type, content_id, mention_text, created_at').in('mentioned_user_id', userIds).order('created_at', { ascending: false }),
           ])
+          if (!active) return
           userContent = [
             ...(userPostsRes.data || []).map((item) => ({ ...item, contentKind: 'post', authorId: item.user_id, href: `/info/user/profile/${item.user_id}` })),
             ...(blogsByUserRes.data || []).map((item) => ({ ...item, contentKind: 'blog', authorId: item.created_by, href: `/info/visitor/blog/${item.id}` })),
@@ -156,16 +215,20 @@ function SearchContent() {
           mentions,
         })
       } catch (error) {
+        if (!active) return
         console.error('Search failed:', error)
         setError('We could not complete your search right now. Please check your connection and try again.')
         setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], forumComments: [], mentions: [] })
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
-    const debounceTimer = setTimeout(loadResults, 300)
-    return () => clearTimeout(debounceTimer)
+    const debounceTimer = setTimeout(loadResults, 150)
+    return () => {
+      active = false
+      clearTimeout(debounceTimer)
+    }
   }, [query, refreshKey])
 
   const handleSubmit = (e) => {
@@ -211,7 +274,14 @@ function SearchContent() {
     ...results.threads.map((item) => item.title),
   ].filter((value, index, values) => value && values.indexOf(value) === index).slice(0, 5)
 
-  const visibleSuggestions = query.trim() ? suggestions : popularSearches
+  const normalizedSearchQuery = query.trim().toLowerCase()
+  const matchingRecentSearches = normalizedSearchQuery
+    ? recentSearches.filter((search) => search.toLowerCase().startsWith(normalizedSearchQuery)).slice(0, 4)
+    : recentSearches.slice(0, 5)
+  const searchSuggestionOptions = normalizedSearchQuery
+    ? suggestions.filter((suggestion) => suggestion.toLowerCase().includes(normalizedSearchQuery))
+      .filter((suggestion, index, matches) => matches.indexOf(suggestion) === index).slice(0, 5)
+    : recentSearches.length ? recentSearches : popularSearches
 
   const communityCount = results.users.length + results.userContent.length + results.userComments.length + results.mentions.length
   const totalCount = results.spots.length + results.events.length + results.blogs.length + results.threads.length + communityCount
@@ -259,28 +329,21 @@ function SearchContent() {
   }
 
   return (
-    <main className="tourism-shell usr-section-page usr-search min-h-screen text-slate-900">
+    <main className={`tourism-shell usr-section-page usr-search min-h-screen text-slate-900 ${styles.searchPage}`}>
       <UserTopHeader />
-      <div className="usr-section-container mx-auto max-w-5xl px-3 pb-28 pt-2 sm:px-4 sm:pb-12 lg:px-6">
-        <UserSectionHeader
-          eyebrow="Explore Daet"
-          title="Search"
-          description="Find destinations, stories, events, forum discussions, and community members in one place."
-          emoji="🔎"
-        >
-          <span className="usr-section-counter">{loading ? 'Searching…' : `${totalCount} result${totalCount === 1 ? '' : 's'}`}</span>
-        </UserSectionHeader>
-
+      <div className="usr-section-container mx-auto max-w-5xl px-3 pb-12 pt-2 sm:px-4 lg:px-6">
         {/* Header */}
-        <header className="usr-card usr-glass sticky top-2 z-30 mb-4 px-3 py-3 md:px-5">
+        <header className="usr-card usr-glass usr-search-toolbar mb-4 px-3 py-3 md:px-5">
           <div className="flex items-center justify-between gap-3">
             <div className="relative hidden flex-1 items-center justify-center lg:flex">
             <div className="flex w-full max-w-xl items-center gap-2">
-            <form onSubmit={handleSubmit} className="min-w-0 flex-1">
+            <form onSubmit={handleSubmit} autoComplete="off" className="min-w-0 flex-1">
               <div className="w-full max-w-xl rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
                 <div className="flex items-center gap-2">
                   <SearchIcon className="h-4 w-4 flex-shrink-0" />
                   <input
+                    type="search"
+                    autoComplete="off"
                     value={query}
                     onFocus={() => setSearchFocused(true)}
                     onChange={(e) => setQuery(e.target.value)}
@@ -304,11 +367,41 @@ function SearchContent() {
               <SlidersHorizontal className="h-4 w-4" />
             </button>
             </div>
-            {searchFocused && (
-              <div className="absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-xl">
-                <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}</p>
-                {(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).length ? <div className="space-y-1">{(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50"><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div> : <p className="px-3 py-2 text-sm text-slate-500">{query.trim() ? 'No suggestions yet.' : 'No popular searches yet.'}</p>}
-                <button type="button" onClick={() => setSearchFocused(false)} className="mt-1 w-full border-t border-slate-100 px-3 pt-3 text-left text-xs font-bold text-sky-700">View search history</button>
+            {searchFocused && query.trim() && (
+              <div className={`search-suggestions absolute left-1/2 top-[calc(100%+0.5rem)] z-40 w-full max-w-xl -translate-x-1/2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 text-left shadow-xl ${styles.searchSuggestions}`}>
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}</p>
+                  {recentSearches.length > 0 && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={clearRecentSearches} className={styles.resetSearches}>Reset history</button>}
+                </div>
+                {query.trim().length >= 2 && (
+                  <div className="space-y-1">
+                    <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>
+                    {suggestedUsers.map((user) => (
+                      <UserProfileLink key={user.id} user={user} onMouseDown={(event) => event.preventDefault()} onClick={() => setSearchFocused(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${styles.searchSuggestionOption}`}>
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
+                          {user.profile_image_url ? <img src={user.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-4 w-4" aria-hidden="true" />}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{user.full_name}</span>
+                        <span className="shrink-0 text-[10px] text-slate-400">Person</span>
+                      </UserProfileLink>
+                    ))}
+                    {suggestedUsersLoading && <p className="px-3 py-2 text-xs text-slate-500">Finding people…</p>}
+                    {!suggestedUsersLoading && !suggestedUsers.length && <p className="px-3 py-2 text-xs text-slate-500">No matching people found.</p>}
+                  </div>
+                )}
+                {query.trim() && matchingRecentSearches.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Recent searches</p>
+                    {matchingRecentSearches.map((suggestion) => <button key={`recent-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}
+                  </div>
+                )}
+                {searchSuggestionOptions.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    {query.trim() && <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Matching results</p>}
+                    {searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}
+                  </div>
+                )}
+                {query.trim() && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { saveRecentSearch(query); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(query.trim())}`) }} className={`mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 opacity-60" />Search for “{query.trim()}”</button>}
               </div>
             )}
             </div>
@@ -317,9 +410,11 @@ function SearchContent() {
 
           <div className="mt-3 lg:hidden">
             <div className="relative flex items-center gap-2">
-            <form onSubmit={handleSubmit} className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
+            <form onSubmit={handleSubmit} autoComplete="off" className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
               <SearchIcon className="h-4 w-4 flex-shrink-0" />
               <input
+                type="search"
+                autoComplete="off"
                 value={query}
                 onFocus={() => setSearchFocused(true)}
                 onChange={(e) => setQuery(e.target.value)}
@@ -340,7 +435,57 @@ function SearchContent() {
             <button type="button" onClick={() => setShowFilters((value) => !value)} aria-label="Open search filters" aria-expanded={showFilters} className={`usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${showFilters ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-500 hover:border-teal-200 hover:text-teal-700'}`}>
               <SlidersHorizontal className="h-4 w-4" />
             </button>
-            {searchFocused && <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl"><p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}</p>{(query.trim() ? suggestions : recentSearches.length ? recentSearches : popularSearches).slice(0, 5).map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50"><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}</div>}
+            {searchFocused && query.trim() && (
+              <div className={`search-suggestions absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-slate-200 bg-white p-2 shadow-xl ${styles.searchSuggestions}`}>
+                <div className="flex items-center justify-between gap-3 px-3 py-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+                    {query.trim() ? 'Suggestions' : recentSearches.length ? 'Recent searches' : 'Popular searches'}
+                  </p>
+                  {recentSearches.length > 0 && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={clearRecentSearches} className={styles.resetSearches}>Reset history</button>}
+                </div>
+                {query.trim().length >= 2 && (
+                  <div className="space-y-1">
+                    <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">People</p>
+                    {suggestedUsers.map((user) => (
+                      <UserProfileLink key={user.id} user={user} onMouseDown={(event) => event.preventDefault()} onClick={() => setSearchFocused(false)} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${styles.searchSuggestionOption}`}>
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-500">
+                          {user.profile_image_url ? <img src={user.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-4 w-4" aria-hidden="true" />}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{user.full_name}</span>
+                        <span className="shrink-0 text-[10px] text-slate-400">Person</span>
+                      </UserProfileLink>
+                    ))}
+                    {suggestedUsersLoading && <p className="px-3 py-2 text-xs text-slate-500">Finding people…</p>}
+                    {!suggestedUsersLoading && !suggestedUsers.length && <p className="px-3 py-2 text-xs text-slate-500">No matching people found.</p>}
+                  </div>
+                )}
+                {query.trim() && matchingRecentSearches.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Recent searches</p>
+                    {matchingRecentSearches.map((suggestion) => (
+                      <button key={`recent-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}>
+                        <SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchSuggestionOptions.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    {query.trim() && <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Matching results</p>}
+                    {searchSuggestionOptions.slice(0, 5).map((suggestion) => (
+                      <button key={`result-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}>
+                        <SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {query.trim() && (
+                  <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { saveRecentSearch(query); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(query.trim())}`) }} className={`mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${styles.searchSuggestionOption}`}>
+                    <SearchIcon className="h-4 w-4 opacity-60" />Search for “{query.trim()}”
+                  </button>
+                )}
+              </div>
+            )}
             </div>
           </div>
 
@@ -357,7 +502,7 @@ function SearchContent() {
         </header>
 
         {/* Search Results Header */}
-        <div className="usr-card usr-enter mb-6 p-4 sm:p-5">
+        <div className="usr-card usr-enter usr-search-results mb-6">
           <p className="usr-section-eyebrow">{query.trim() ? 'Search results' : 'Start exploring'}</p>
           <h2 className="mt-1 text-2xl font-black text-slate-900">
             {query.trim() ? (
@@ -429,7 +574,7 @@ function SearchContent() {
             <p className="text-sm text-slate-500">
               {query.trim() ? 'No results found. Try different keywords.' : 'Type something to search across Daet.'}
             </p>
-            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{visibleSuggestions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
+            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
             {query.trim() && (
               <button
                 type="button"
@@ -669,9 +814,53 @@ function SearchContent() {
   )
 }
 
+function SearchPageSkeleton() {
+  return (
+    <main className={`tourism-shell usr-section-page usr-search min-h-screen text-slate-900 ${styles.searchPage}`}>
+      <UserTopHeader />
+      <div className="usr-section-container mx-auto max-w-5xl space-y-5 px-3 pb-12 pt-6 sm:px-4 lg:px-6">
+        <div role="status" aria-live="polite" className="space-y-5">
+          <span className="sr-only">Loading search page</span>
+          <section aria-hidden="true" className="usr-card space-y-4 p-5 sm:p-6">
+            <div className="usr-section-skeleton h-3 w-28 rounded-full" />
+            <div className="usr-section-skeleton h-8 w-40 rounded-lg" />
+            <div className="usr-section-skeleton h-3 w-full max-w-xl rounded-full" />
+            <div className="usr-section-skeleton h-3 w-4/5 max-w-lg rounded-full" />
+          </section>
+
+          <section aria-hidden="true" className="usr-card flex items-center gap-3 p-3 sm:p-4">
+            <div className="usr-section-skeleton h-11 flex-1 rounded-full" />
+            <div className="usr-section-skeleton h-11 w-11 shrink-0 rounded-full" />
+          </section>
+
+          <div aria-hidden="true" className="usr-section-tabs">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="usr-section-skeleton h-9 w-20 shrink-0 rounded-full" />
+            ))}
+          </div>
+
+          <div aria-hidden="true" className="space-y-4">
+            {[0, 1, 2].map((item) => (
+              <article key={item} className="usr-card flex gap-4 p-4 sm:p-5">
+                <div className="usr-section-skeleton h-24 w-24 shrink-0 rounded-xl sm:h-32 sm:w-40" />
+                <div className="min-w-0 flex-1 space-y-3 py-1">
+                  <div className="usr-section-skeleton h-3 w-24 rounded-full" />
+                  <div className="usr-section-skeleton h-5 w-3/4 rounded-full" />
+                  <div className="usr-section-skeleton h-3 w-full rounded-full" />
+                  <div className="usr-section-skeleton h-3 w-4/5 rounded-full" />
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </div>
+    </main>
+  )
+}
+
 export default function SearchPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#f3f5f9]"><p className="text-slate-600">Loading...</p></div>}>
+    <Suspense fallback={<SearchPageSkeleton />}>
       <SearchContent />
     </Suspense>
   )

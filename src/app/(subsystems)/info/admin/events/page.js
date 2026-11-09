@@ -902,7 +902,7 @@ export default function AdminEventsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
           <p className="mt-4 text-slate-600 font-medium">Loading events...</p>
@@ -912,7 +912,7 @@ export default function AdminEventsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)]">
+    <div className="min-h-screen bg-slate-100">
       <AdminSidebar user={user} roleLabel="Events Manager" />
 
       <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">

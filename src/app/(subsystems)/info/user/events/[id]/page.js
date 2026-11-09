@@ -1,224 +1,60 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
-import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, CalendarDays, Clock, Loader, MapPin, Users } from 'lucide-react'
+import { useParams, useRouter } from 'next/navigation'
+import { LoaderCircle } from 'lucide-react'
+import EventDetailsView from '@/app/(subsystems)/info/components/user/EventDetailsView'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import Comments from '@/app/(subsystems)/info/components/user/Comments'
 
 export default function EventDetailPage() {
   const router = useRouter()
   const params = useParams()
-  const eventId = params.id
+  const eventId = params?.id
+  const [userId, setUserId] = useState('')
   const [authChecking, setAuthChecking] = useState(true)
-  const [loading, setLoading] = useState(true)
-  const [event, setEvent] = useState(null)
-  const [userId, setUserId] = useState(null)
-  const [error, setError] = useState(null)
-
-  async function fetchEvent() {
-    try {
-      const { data, error } = await supabase
-        .from('info_events')
-        .select('*')
-        .eq('id', eventId)
-        .eq('status', 'published')
-        .single()
-
-      if (error) throw error
-      setEvent(data)
-    } catch (err) {
-      console.error('Error loading event:', err)
-      setError('Event not found or unavailable')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   useEffect(() => {
+    let active = true
     const checkAuth = async () => {
       try {
         const cookieSession = getAuthCookieFromDocument()
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-
+        const { data: { session } } = await supabase.auth.getSession()
         const activeSession = session || (cookieSession?.logged_in ? { user: { id: cookieSession.user_id } } : null)
 
-        if (!activeSession?.user) {
+        if (!activeSession?.user?.id) {
           router.push('/info/login')
           return
         }
 
-        setUserId(activeSession.user.id)
-        setAuthChecking(false)
-        await fetchEvent()
-      } catch (err) {
-        console.error('Auth error:', err)
+        if (active) {
+          setUserId(activeSession.user.id)
+          setAuthChecking(false)
+        }
+      } catch (error) {
+        console.error('Event detail authentication failed:', error)
         router.push('/info/login')
       }
     }
 
-    checkAuth()
-  }, [router, eventId])
+    void checkAuth()
+    return () => { active = false }
+  }, [router])
 
-  const getMediaUrl = (value, fallback = null) => {
-    if (Array.isArray(value) && value.length > 0 && value[0]) return value[0]
-    if (typeof value === 'string' && value.trim()) return value
-    return fallback
-  }
-
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'TBA'
-    return new Date(dateStr).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
-  }
-
-  const formatTime = (timeStr) => {
-    if (!timeStr) return ''
-    return timeStr
-  }
-
-  const getCategoryColor = (category) => {
-    const colors = {
-      festival: 'bg-purple-100 text-purple-700',
-      concert: 'bg-red-100 text-red-700',
-      exhibition: 'bg-yellow-100 text-yellow-700',
-      workshop: 'bg-blue-100 text-blue-700',
-      sports: 'bg-cyan-100 text-cyan-700',
-      cultural: 'bg-pink-100 text-pink-700',
-    }
-    return colors[category] || 'bg-slate-100 text-slate-700'
-  }
-
-  if (authChecking || loading) {
+  if (authChecking) {
     return (
-      <main className="tourism-shell usr-section-page usr-detail usr-events flex min-h-screen items-center justify-center p-6 text-slate-900">
-        <div role="status" aria-live="polite" className="usr-card usr-pop-in p-6 text-center">
-          <Loader className="usr-spin mx-auto mb-3 h-6 w-6 text-teal-700" aria-hidden="true" />
-          <p className="text-sm font-semibold text-slate-600">Loading this event...</p>
+      <main className="event-detail-page -mt-16 min-h-screen lg:mt-0">
+        <div className="event-detail-loading" role="status" aria-live="polite">
+          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+          <span>Verifying your session…</span>
         </div>
       </main>
     )
   }
-
-  if (error || !event) {
-    return (
-      <main className="tourism-shell usr-section-page usr-detail usr-events flex min-h-screen items-center justify-center p-6 text-slate-900">
-        <div className="usr-empty-state max-w-xl">
-          <CalendarDays className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">{error || 'Event not found'}</p>
-          <p className="mt-1 text-xs text-slate-500">This event may have been removed or is no longer published.</p>
-          <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setError(null)
-                setLoading(true)
-                void fetchEvent()
-              }}
-              className="usr-section-secondary"
-            >
-              Try again
-            </button>
-            <Link href="/info/user/events" className="usr-section-primary">
-              Back to events
-            </Link>
-          </div>
-        </div>
-      </main>
-    )
-  }
-
-  const firstImage = getMediaUrl(event.featured_image || event.images)
-  const firstVideo = getMediaUrl(event.videos || event.video_url)
-  const primaryMedia = firstVideo || firstImage
 
   return (
-    <main className="tourism-shell usr-section-page usr-detail usr-events min-h-screen text-slate-900">
-      <div className="usr-section-container mx-auto max-w-6xl px-3 pb-10 pt-3 sm:px-4 lg:px-6">
-          <Link href="/info/user/events" aria-label="Back to events" title="Back to events" className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
-          {primaryMedia ? (
-            <div className="relative h-64 w-full md:h-80">
-              {firstVideo ? (
-                <video src={firstVideo} className="h-full w-full object-cover" controls preload="metadata" />
-              ) : (
-                <img src={firstImage} alt={event.title} className="h-full w-full object-cover" />
-              )}
-              {event.is_free && (
-                <span className="absolute left-4 top-4 rounded-full bg-emerald-500 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white shadow-sm">
-                  Free
-                </span>
-              )}
-              <span className={`absolute right-4 top-4 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider ${getCategoryColor(event.category)}`}>
-                {event.category || 'General'}
-              </span>
-            </div>
-          ) : (
-            <div className="flex h-48 w-full items-center justify-center bg-gradient-to-br from-sky-100 to-emerald-100">
-              <CalendarDays className="h-16 w-16 text-sky-400" />
-            </div>
-          )}
-
-          <div className="p-5 md:p-8">
-            <h1 className="text-2xl font-black text-slate-900 md:text-3xl">{event.title}</h1>
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                <CalendarDays className="h-3.5 w-3.5 text-sky-600" />
-                {formatDate(event.start_date)}
-                {event.end_date && event.end_date !== event.start_date && ` – ${formatDate(event.end_date)}`}
-              </span>
-              {event.start_time && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                  <Clock className="h-3.5 w-3.5 text-sky-600" />
-                  {formatTime(event.start_time)}
-                  {event.end_time && ` – ${formatTime(event.end_time)}`}
-                </span>
-              )}
-              {event.location && (
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700">
-                  <MapPin className="h-3.5 w-3.5 text-sky-600" />
-                  {event.location}
-                </span>
-              )}
-            </div>
-
-            {event.description && (
-              <div className="mt-6">
-                <h2 className="text-sm font-bold uppercase tracking-[0.15em] text-slate-400">About This Event</h2>
-                <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700 md:text-base">{event.description}</p>
-              </div>
-            )}
-
-            {event.organizer && (
-              <div className="mt-6 grid gap-3 rounded-[20px] border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
-                    <Users className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Organizer</p>
-                    <p className="text-sm font-semibold text-slate-800">{event.organizer}</p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-
-        <section className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
-          <Comments contentType="event" contentId={event.id} userId={userId} contentOwnerId={event.created_by} contentTitle={event.title} articleStyle />
-        </section>
-        </div>
-      </div>
-    </main>
+    <div className="-mt-16 lg:mt-0">
+      <EventDetailsView key={String(eventId)} eventId={eventId} userId={userId} backHref="/info/user/events" />
+    </div>
   )
 }

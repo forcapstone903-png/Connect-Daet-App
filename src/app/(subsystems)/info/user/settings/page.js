@@ -1,8 +1,7 @@
 'use client'
 
-// Complete user Settings surface: appearance (light/dark/system + reduced
-// motion), language (English / Filipino / Bikol), notifications, privacy,
-// account & security, device data, and legal links.
+// Complete user Settings surface: notifications, language, account & security,
+// privacy, device data, and legal links.
 //
 // Persistence model
 // - Appearance, language, and reduced motion: device-local (versioned
@@ -21,8 +20,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { Bell, Check, HardDrive, Info, Languages, Lock, Save, ShieldCheck, Sun } from 'lucide-react'
+import { ArrowLeft, Bell, Check, ChevronRight, FileText, HardDrive, Languages, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -32,6 +32,7 @@ import {
   clearLocalAppData,
   createDefaultSettings,
   getLocalStorageUsage,
+  hasStoredThemePreference,
   invalidateSettingsCaches,
   mergeSettings,
   readStoredSettings,
@@ -40,9 +41,6 @@ import {
   settingsFromProfileRow,
 } from '@/lib/userSettings'
 import { StatusBanner } from './_components/SettingsControls'
-import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
-import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
-import AppearanceSection from './_components/AppearanceSection'
 import LanguageSection from './_components/LanguageSection'
 import NotificationsSection from './_components/NotificationsSection'
 import PrivacySection from './_components/PrivacySection'
@@ -51,17 +49,19 @@ import DataStorageSection from './_components/DataStorageSection'
 import LegalSection from './_components/LegalSection'
 
 const TABS = [
-  { id: 'appearance', labelKey: 'settings.nav.appearance', icon: Sun },
-  { id: 'language', labelKey: 'settings.nav.language', icon: Languages },
-  { id: 'notifications', labelKey: 'settings.nav.notifications', icon: Bell },
-  { id: 'privacy', labelKey: 'settings.nav.privacy', icon: Lock },
-  { id: 'security', labelKey: 'settings.nav.security', icon: ShieldCheck },
-  { id: 'data', labelKey: 'settings.nav.data', icon: HardDrive },
-  { id: 'legal', labelKey: 'settings.nav.legal', icon: Info },
+  { id: 'privacy', titleKey: 'settings.nav.privacy', descriptionKey: 'settings.privacy.description', icon: LockKeyhole },
+  { id: 'security', titleKey: 'settings.nav.security', descriptionKey: 'settings.security.description', icon: ShieldCheck },
+  { id: 'notifications', titleKey: 'settings.nav.notifications', descriptionKey: 'settings.notifications.description', icon: Bell },
+  { id: 'language', titleKey: 'settings.nav.language', descriptionKey: 'settings.language.description', icon: Languages },
+  { id: 'data', titleKey: 'settings.nav.data', descriptionKey: 'settings.data.description', icon: HardDrive },
+  { id: 'legal', titleKey: 'settings.nav.legal', descriptionKey: 'settings.legal.description', icon: FileText },
 ]
 
-const PROFILE_SETTINGS_COLUMNS = 'privacy_level, is_public, language_preference, notification_preferences, privacy_preferences, ui_preferences'
-const PROFILE_LEGACY_COLUMNS = 'privacy_level, is_public, language_preference, notification_preferences'
+const SETTINGS_GROUPS = [
+  { title: 'Profile', items: ['privacy', 'security'] },
+  { title: 'Preferences', items: ['notifications', 'language', 'data'] },
+  { title: 'Safety', items: ['legal'] },
+]
 
 function triggerDownload(filename, contents) {
   try {
@@ -82,9 +82,9 @@ function triggerDownload(filename, contents) {
 }
 export default function UserSettingsPage() {
   const router = useRouter()
-  const { settings: deviceSettings, resolvedTheme, t, updateSettings, resetSettings } = useUserSettings()
+  const { settings: deviceSettings, t, updateSettings, resetSettings } = useUserSettings()
 
-  const [activeTab, setActiveTab] = useState('appearance')
+  const [activeTab, setActiveTab] = useState(null)
   const [draftValue, setDraft] = useState(null)
   const draft = draftValue ?? deviceSettings
   const [savedValue, setSavedSnapshot] = useState(null)
@@ -92,6 +92,7 @@ export default function UserSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState('')
   const [email, setEmail] = useState('')
+  const [profileIdentity, setProfileIdentity] = useState({ name: '', avatarUrl: '' })
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
   const [storageUsage, setStorageUsage] = useState({ bytes: 0, entries: 0 })
@@ -131,19 +132,31 @@ export default function UserSettingsPage() {
         return
       }
       setEmail(session?.user?.email || storedSession?.user_email || '')
-      let result = await supabase.from('profiles').select(PROFILE_SETTINGS_COLUMNS).eq('user_id', id).maybeSingle()
-      if (result.error && ['42703', 'PGRST204'].includes(result.error.code)) {
-        result = await supabase.from('profiles').select(PROFILE_LEGACY_COLUMNS).eq('user_id', id).maybeSingle()
-      }
-      // A signed-in user without a Supabase JS session cannot read the row
-      // (RLS filters it out). Fall back to device-local settings instead of
-      // failing the whole page.
-      const permissionDenied = result.error && ['42501', 'PGRST301'].includes(result.error.code)
-      if (result.error && !permissionDenied) throw result.error
-      const next = mergeSettings(readStoredSettings(), settingsFromProfileRow(result.data))
+      setProfileIdentity({
+        name: session?.user?.user_metadata?.full_name
+          || session?.user?.user_metadata?.name
+          || storedSession?.user_name
+          || storedSession?.full_name
+          || session?.user?.email?.split('@')[0]
+          || storedSession?.user_email?.split('@')[0]
+          || '',
+        avatarUrl: session?.user?.user_metadata?.avatar_url
+          || storedSession?.avatar_url
+          || storedSession?.profile_image_url
+          || '',
+      })
+      const response = await fetch('/info/api/user/settings', { cache: 'no-store' })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || tRef.current('settings.status.loadFailed'))
+      const localSettings = readStoredSettings()
+      const profileSettings = settingsFromProfileRow(result.profile)
+      const next = mergeSettings(localSettings, {
+        ...profileSettings,
+        ...(hasStoredThemePreference() ? { theme: localSettings.theme } : {}),
+      })
       setDraft(next)
       setSavedSnapshot(next)
-      setUserId(id)
+      setUserId(result.user_id || id)
       updateSettings({ theme: next.theme, language: next.language, reduceMotion: next.reduceMotion })
       const lifecycleResponse = await fetch('/info/api/account/lifecycle', { cache: 'no-store' })
       const lifecycleResult = await lifecycleResponse.json().catch(() => ({}))
@@ -168,7 +181,7 @@ export default function UserSettingsPage() {
   }, [loadSession])
 
   const applyDeviceSetting = useCallback((patch) => {
-    // Appearance, language, and motion apply instantly on this device.
+    // Language changes apply instantly on this device.
     setDraft((previous) => mergeSettings(previous ?? deviceSettings, patch))
     updateSettings(patch)
   }, [deviceSettings, updateSettings])
@@ -182,12 +195,8 @@ export default function UserSettingsPage() {
     setNotice(null)
 
     try {
-      // Always keep the device copy in sync with what is on screen.
-      updateSettings({ theme: draft.theme, language: draft.language, reduceMotion: draft.reduceMotion })
-
       if (!userId) {
         setNotice({ tone: 'warning', text: t('settings.status.notSignedIn') })
-        setSavedSnapshot(draft)
         return
       }
 
@@ -196,26 +205,23 @@ export default function UserSettingsPage() {
         return
       }
 
-      const result = await saveSettingsToProfile({ client: supabase, userId, settings: draft })
+      const result = await saveSettingsToProfile({ settings: draft })
       if (!result.ok) {
-        setNotice({ tone: 'error', text: t('settings.status.saveFailed') })
+        setNotice({ tone: 'error', text: result.error?.message || t('settings.status.saveFailed') })
         return
       }
 
+      updateSettings({ theme: draft.theme, language: draft.language, reduceMotion: draft.reduceMotion })
       invalidateSettingsCaches(userId)
       setSavedSnapshot(draft)
       window.dispatchEvent(new Event('daet-settings-updated'))
 
-      if (result.partial) {
-        setNotice({ tone: 'warning', text: t('settings.status.saveFailed') })
-      } else {
-        const savedMessage = t('common.saved')
-        setNotice({ tone: 'success', text: savedMessage })
-        if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
-        noticeTimerRef.current = window.setTimeout(() => {
-          setNotice((current) => current?.text === savedMessage ? null : current)
-        }, 3000)
-      }
+      const savedMessage = t('common.saved')
+      setNotice({ tone: 'success', text: savedMessage })
+      if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
+      noticeTimerRef.current = window.setTimeout(() => {
+        setNotice((current) => current?.text === savedMessage ? null : current)
+      }, 3000)
     } catch (error) {
       console.error('Settings save failed:', error)
       setNotice({ tone: 'error', text: t('settings.status.saveFailed') })
@@ -247,15 +253,30 @@ export default function UserSettingsPage() {
       : { tone: 'error', text: t('settings.status.saveFailed') })
   }, [draft, t])
 
-  const handleResetSettings = useCallback(() => {
+  const handleResetSettings = useCallback(async () => {
     const defaults = createDefaultSettings()
-    resetSettings()
-    setDraft(defaults)
-    setSavedSnapshot(defaults)
-    setConfirmAction(null)
-    setResetPending(false)
-    setNotice({ tone: 'info', text: t('common.reset') })
-  }, [resetSettings, t])
+    setResetPending(true)
+    setNotice(null)
+    try {
+      if (!userId) throw new Error(t('settings.status.notSignedIn'))
+      const result = await saveSettingsToProfile({ settings: defaults })
+      if (!result.ok) throw result.error || new Error(t('settings.status.saveFailed'))
+
+      resetSettings()
+      updateSettings({ theme: defaults.theme, language: defaults.language, reduceMotion: defaults.reduceMotion })
+      setDraft(defaults)
+      setSavedSnapshot(defaults)
+      invalidateSettingsCaches(userId)
+      window.dispatchEvent(new Event('daet-settings-updated'))
+      setConfirmAction(null)
+      setNotice({ tone: 'success', text: t('common.reset') })
+    } catch (error) {
+      console.error('Settings reset failed:', error)
+      setNotice({ tone: 'error', text: error.message || t('settings.status.saveFailed') })
+    } finally {
+      setResetPending(false)
+    }
+  }, [resetSettings, t, updateSettings, userId])
 
   const handlePasswordReset = useCallback(async () => {
     if (!email) return
@@ -354,138 +375,154 @@ export default function UserSettingsPage() {
       : confirmAction === 'delete'
         ? () => handleAccountAction('schedule_deletion')
         : handleSignOutAll
+  const activeSetting = TABS.find(({ id }) => id === activeTab)
+
   return (
     <main className="tourism-shell usr-section-page usr-settings min-h-screen w-full overflow-x-clip text-slate-900">
-      <UserTopHeader />
-      <div className="usr-section-container mx-auto w-full max-w-6xl px-3 pb-28 pt-2 sm:px-4 lg:px-6 lg:pb-16">
-        <UserSectionHeader
-          eyebrow={t('settings.nav.security')}
-          title={t('settings.title')}
-          description={t('settings.subtitle')}
-          emoji="⚙️"
+      <header className="settings-topbar">
+        <button
+          type="button"
+          onClick={() => activeTab ? setActiveTab(null) : router.push('/info/user/dashboard')}
+          aria-label={activeTab ? 'Back to settings' : 'Back to dashboard'}
+          className="settings-back-button"
         >
-          <span className="usr-section-counter">{isDirty ? t('common.unsaved') : t('common.saved')}</span>
-        </UserSectionHeader>
-
+          <ArrowLeft className="h-6 w-6" aria-hidden="true" />
+        </button>
+        <h1>{t('settings.title')}</h1>
+      </header>
+      <div className="usr-section-container settings-container mx-auto w-full max-w-none px-0 pb-24 pt-0">
         {notice ? (
-          <div className="mb-4">
+          <div className="settings-notice">
             <StatusBanner tone={notice.tone}>{notice.text}</StatusBanner>
           </div>
         ) : null}
 
-        <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5">
-          <nav aria-label={t('settings.title')} className="lg:sticky lg:top-24 lg:self-start">
-            <div role="tablist" aria-orientation="vertical" className="usr-card mb-4 flex gap-1.5 overflow-x-auto rounded-3xl p-2 lg:mb-0 lg:flex-col">
-              {TABS.map(({ id, labelKey, icon: Icon }) => {
-                const isActive = activeTab === id
-                return (
-                  <button
-                    key={id}
-                    type="button"
-                    role="tab"
-                    id={`settings-tab-${id}`}
-                    aria-selected={isActive}
-                    aria-controls={`settings-panel-${id}`}
-                    onClick={() => setActiveTab(id)}
-                    className="usr-section-tab usr-press lg:w-full lg:justify-start"
-                  >
-                    <Icon className="h-4 w-4" />
-                    {t(labelKey)}
+        {!activeTab ? (
+          <div className="settings-index">
+            {profileIdentity.name ? (
+              <Link href="/info/user/profile/edit" className="settings-profile-link">
+                <span className="settings-profile-avatar">
+                  {profileIdentity.avatarUrl
+                    ? <Image src={profileIdentity.avatarUrl} alt="" width={60} height={60} unoptimized />
+                    : <UserRound className="h-9 w-9" aria-hidden="true" />}
+                </span>
+                <span className="settings-profile-copy">
+                  <strong>{profileIdentity.name}</strong>
+                  <span>{email || t('settings.security.profile')}</span>
+                </span>
+                <ChevronRight className="settings-row-chevron h-5 w-5" aria-hidden="true" />
+              </Link>
+            ) : null}
+
+            {SETTINGS_GROUPS.map((group) => (
+              <section key={group.title} className="settings-group" aria-labelledby={`settings-group-${group.title}`}>
+                <h2 id={`settings-group-${group.title}`}>{group.title}</h2>
+                <div>
+                  {group.items.map((id) => {
+                    const item = TABS.find((setting) => setting.id === id)
+                    if (!item) return null
+                    const description = t(item.descriptionKey)
+
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => setActiveTab(item.id)}
+                        className="settings-index-row"
+                        aria-label={`${t(item.titleKey)}. ${description}`}
+                      >
+                        <item.icon className="settings-row-icon" aria-hidden="true" />
+                        <span className="settings-row-copy">
+                          <strong>{t(item.titleKey)}</strong>
+                          <span>{description}</span>
+                        </span>
+                        <ChevronRight className="settings-row-chevron h-5 w-5" aria-hidden="true" />
+                      </button>
+                    )
+                  })}
+                </div>
+              </section>
+            ))}
+
+            {isDirty ? (
+              <div className="settings-save-bar">
+                <div className="flex items-center justify-between gap-3">
+                  <p>{t('common.unsaved')}</p>
+                  <button type="button" onClick={saveSettings} disabled={saving || loading || !userId} className="usr-section-primary">
+                    <Check className="h-4 w-4" />
+                    {saving ? t('common.saving') : t('common.save')}
                   </button>
-                )
-              })}
-            </div>
-          </nav>
-
-          <fieldset disabled={loading || saving} className="min-w-0 space-y-4">
-            <div role="tabpanel" id="settings-panel-appearance" aria-labelledby="settings-tab-appearance" hidden={activeTab !== 'appearance'}>
-              <AppearanceSection
-                settings={draft}
-                t={t}
-                resolvedTheme={resolvedTheme}
-                onThemeChange={(theme) => applyDeviceSetting({ theme })}
-                onReduceMotionChange={(reduceMotion) => applyDeviceSetting({ reduceMotion })}
-              />
-            </div>
-
-            <div role="tabpanel" id="settings-panel-language" aria-labelledby="settings-tab-language" hidden={activeTab !== 'language'}>
-              <LanguageSection
-                settings={draft}
-                t={t}
-                onLanguageChange={(language) => applyDeviceSetting({ language })}
-              />
-            </div>
-
-            <div role="tabpanel" id="settings-panel-notifications" aria-labelledby="settings-tab-notifications" hidden={activeTab !== 'notifications'}>
-              <NotificationsSection
-                settings={draft}
-                t={t}
-                userId={userId}
-                onNotificationChange={handleNotificationChange}
-              />
-            </div>
-            <div role="tabpanel" id="settings-panel-privacy" aria-labelledby="settings-tab-privacy" hidden={activeTab !== 'privacy'}>
-              <PrivacySection settings={draft} t={t} onPrivacyChange={handlePrivacyChange} />
-            </div>
-
-            <div role="tabpanel" id="settings-panel-security" aria-labelledby="settings-tab-security" hidden={activeTab !== 'security'}>
-              <SecuritySection
-                t={t}
-                email={email}
-                resetStatus={resetStatus}
-                signingOut={signOutPending}
-                accountLifecycle={accountLifecycle}
-                accountActionPending={accountActionPending}
-                onResetPassword={handlePasswordReset}
-                onDeactivate={() => setConfirmAction('deactivate')}
-                onReactivate={() => handleAccountAction('reactivate')}
-                onScheduleDeletion={() => setConfirmAction('delete')}
-                onCancelDeletion={() => handleAccountAction('cancel_deletion')}
-                onSignOutAll={() => {
-                  setSignOutPending(true)
-                  setConfirmAction('signout')
-                }}
-              />
-            </div>
-
-            <div role="tabpanel" id="settings-panel-data" aria-labelledby="settings-tab-data" hidden={activeTab !== 'data'}>
-              <DataStorageSection
-                t={t}
-                storageUsage={storageUsage}
-                cacheCleared={cacheCleared}
-                clearingCache={clearingCache}
-                resetPending={resetPending}
-                onClearCache={handleClearCache}
-                onDownloadSettings={handleDownloadSettings}
-                onResetSettings={() => {
-                  setResetPending(true)
-                  setConfirmAction('reset')
-                }}
-              />
-            </div>
-
-            <div role="tabpanel" id="settings-panel-legal" aria-labelledby="settings-tab-legal" hidden={activeTab !== 'legal'}>
-              <LegalSection t={t} />
-            </div>
-
-            <div className="usr-card sticky bottom-4 z-20 p-3 backdrop-blur-xl">
-              <div className="flex flex-wrap items-center gap-3">
-                <p className="min-w-0 flex-1 text-xs font-semibold text-slate-500">
-                  {isDirty ? t('common.unsaved') : t('common.saved')}
-                </p>
-                <button
-                  type="button"
-                  onClick={saveSettings}
-                  disabled={saving || loading || !userId}
-                  className="usr-section-primary"
-                >
-                  <Check className="h-4 w-4" />
-                  {saving ? t('common.saving') : t('common.save')}
-                </button>
+                </div>
               </div>
-            </div>
-          </fieldset>
-        </div>
+            ) : null}
+          </div>
+        ) : (
+          <section className="settings-detail" aria-label={activeSetting ? t(activeSetting.titleKey) : t('settings.title')}>
+            <fieldset disabled={loading || saving} className="settings-panels min-w-0">
+              {activeTab === 'language' ? (
+                <LanguageSection settings={draft} t={t} onLanguageChange={(language) => applyDeviceSetting({ language })} />
+              ) : null}
+              {activeTab === 'notifications' ? (
+                <NotificationsSection settings={draft} t={t} userId={userId} onNotificationChange={handleNotificationChange} />
+              ) : null}
+              {activeTab === 'privacy' ? (
+                <PrivacySection settings={draft} t={t} onPrivacyChange={handlePrivacyChange} />
+              ) : null}
+              {activeTab === 'security' ? (
+                <SecuritySection
+                  t={t}
+                  email={email}
+                  resetStatus={resetStatus}
+                  signingOut={signOutPending}
+                  accountLifecycle={accountLifecycle}
+                  accountActionPending={accountActionPending}
+                  onResetPassword={handlePasswordReset}
+                  onDeactivate={() => setConfirmAction('deactivate')}
+                  onReactivate={() => handleAccountAction('reactivate')}
+                  onScheduleDeletion={() => setConfirmAction('delete')}
+                  onCancelDeletion={() => handleAccountAction('cancel_deletion')}
+                  onSignOutAll={() => {
+                    setSignOutPending(true)
+                    setConfirmAction('signout')
+                  }}
+                />
+              ) : null}
+              {activeTab === 'data' ? (
+                <DataStorageSection
+                  t={t}
+                  storageUsage={storageUsage}
+                  cacheCleared={cacheCleared}
+                  clearingCache={clearingCache}
+                  resetPending={resetPending}
+                  onClearCache={handleClearCache}
+                  onDownloadSettings={handleDownloadSettings}
+                  onResetSettings={() => {
+                    setResetPending(true)
+                    setConfirmAction('reset')
+                  }}
+                />
+              ) : null}
+              {activeTab === 'legal' ? <LegalSection t={t} /> : null}
+
+              <div className="settings-save-bar sticky bottom-0 z-20">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="min-w-0 flex-1 text-xs font-semibold text-slate-500">
+                    {isDirty ? t('common.unsaved') : t('common.saved')}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={saveSettings}
+                    disabled={saving || loading || !userId}
+                    className="usr-section-primary"
+                  >
+                    <Check className="h-4 w-4" />
+                    {saving ? t('common.saving') : t('common.save')}
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </section>
+        )}
       </div>
 
       <ConfirmationModal

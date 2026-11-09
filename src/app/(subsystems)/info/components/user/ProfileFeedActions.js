@@ -12,7 +12,7 @@ function normalizeFavoriteItemType(value) {
   const type = String(value).trim().toLowerCase()
   if (type === 'forum_thread' || type === 'forum') return 'forum'
   if (type === 'user_post' || type === 'post') return 'user_post'
-  if (type === 'tourist_spot' || type === 'spot') return 'tourist_spot'
+  if (type === 'tourist_spot' || type === 'tourist spot' || type === 'spot') return 'tourist_spot'
   return type
 }
 
@@ -21,7 +21,7 @@ function getContentType(post) {
   return normalizeFavoriteItemType(post.type)
 }
 
-export default function ProfileFeedActions({ post, userId, onRepost }) {
+export default function ProfileFeedActions({ post, userId, onRepost, postActionMenuProps = {} }) {
   const router = useRouter()
   const contentType = getContentType(post)
   const contentId = post.original_content_id || (post.isRepost ? post.original_post?.id : post.id)
@@ -68,6 +68,9 @@ export default function ProfileFeedActions({ post, userId, onRepost }) {
       onToggleSave={handleSave}
       onRepost={onRepost}
       originalPost={{ ...post, id: contentId }}
+      shareUrl={post.href}
+      heartOnly
+      postActionMenuProps={postActionMenuProps}
     />
   )
 }

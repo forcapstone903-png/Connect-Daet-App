@@ -19,6 +19,16 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}))
     const shareType = String(body.shareType || '').trim().toLowerCase()
 
+    if (shareType === 'event') {
+      const role = String(session.role || '').trim().toLowerCase()
+      if (role !== 'admin' && role !== 'administrator') {
+        return NextResponse.json(
+          { success: false, message: 'Only an administrator can create events. Contact the admin to request an event listing.' },
+          { status: 403 }
+        )
+      }
+    }
+
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 
@@ -31,21 +41,55 @@ export async function POST(request) {
     if (shareType === 'forum') {
       const title = String(body.forumForm?.title || '').trim()
       const content = String(body.forumForm?.content || '').trim()
+      const tags = Array.isArray(body.forumForm?.tags) ? body.forumForm.tags.filter(Boolean) : []
+      const attachments = Array.isArray(body.forumForm?.attachments) ? body.forumForm.attachments.filter(Boolean) : []
+      const location = String(body.forumForm?.location || '').trim()
 
       if (!title || !content) {
         return NextResponse.json({ success: false, message: 'Please add a discussion title and message.' }, { status: 400 })
       }
 
-      const { data, error } = await adminSupabase
+      const extendedPayload = {
+        title,
+        content,
+        status: 'published',
+        created_by: userId,
+        tags,
+        image_urls: attachments,
+        location: location || null,
+      }
+      let warning
+      let { data, error } = await adminSupabase
         .from('forum_threads')
-        .insert({
-          title,
-          content,
-          status: 'published',
-          created_by: userId,
-        })
+        .insert(extendedPayload)
         .select('id')
         .single()
+
+      const optionalColumnMissing = error && (
+        error.code === '42703'
+        || error.code === 'PGRST204'
+        || /column .* does not exist|could not find the .* column/i.test(error.message || '')
+      )
+      if (optionalColumnMissing) {
+        warning = 'The discussion was saved, but some optional fields were added to its message because the database migration is missing.'
+        const footer = [
+          tags.length ? `Topics: ${tags.join(', ')}` : '',
+          location ? `Location: ${location}` : '',
+          attachments.length ? `Attachments: ${attachments.join('\n')}` : '',
+        ].filter(Boolean).join('\n')
+        const fallback = await adminSupabase
+          .from('forum_threads')
+          .insert({
+            title,
+            content: [content, footer].filter(Boolean).join('\n\n'),
+            status: 'published',
+            created_by: userId,
+          })
+          .select('id')
+          .single()
+        data = fallback.data
+        error = fallback.error
+      }
 
       if (error) {
         return NextResponse.json({ success: false, message: error.message || 'Unable to create forum discussion.' }, { status: 500 })
@@ -61,7 +105,7 @@ export async function POST(request) {
         subject: title,
       })
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/dashboard' })
+      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/dashboard', warning })
     }
 
     if (shareType === 'event') {
@@ -158,25 +202,60 @@ export async function POST(request) {
       const message = String(body.feedbackForm?.message || '').trim()
       const category = String(body.feedbackForm?.category || '').trim()
       const rating = Number(body.feedbackForm?.rating || 0)
+      const images = Array.isArray(body.feedbackForm?.images) ? body.feedbackForm.images.filter(Boolean) : []
+      const location = String(body.feedbackForm?.location || '').trim()
 
       if (!message) {
         return NextResponse.json({ success: false, message: 'Please add your feedback message.' }, { status: 400 })
       }
 
-      const { data, error } = await adminSupabase
+      const extendedPayload = {
+        user_id: userId,
+        title,
+        message,
+        category,
+        rating,
+        image_urls: images,
+        location: location || null,
+        status: 'open',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      let warning
+      let { data, error } = await adminSupabase
         .from('info_feedback')
-        .insert({
-          user_id: userId,
-          title,
-          message,
-          category,
-          rating,
-          status: 'open',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
+        .insert(extendedPayload)
         .select('id')
         .single()
+
+      const optionalColumnMissing = error && (
+        error.code === '42703'
+        || error.code === 'PGRST204'
+        || /column .* does not exist|could not find the .* column/i.test(error.message || '')
+      )
+      if (optionalColumnMissing) {
+        warning = 'Feedback was saved, but the photo or location was added to the message because the database migration is missing.'
+        const details = [
+          location ? `Location: ${location}` : '',
+          images.length ? `Photos: ${images.join(', ')}` : '',
+        ].filter(Boolean).join('\n')
+        const fallback = await adminSupabase
+          .from('info_feedback')
+          .insert({
+            user_id: userId,
+            title,
+            message: [message, details].filter(Boolean).join('\n\n'),
+            category,
+            rating,
+            status: 'open',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single()
+        data = fallback.data
+        error = fallback.error
+      }
 
       if (error) {
         return NextResponse.json({ success: false, message: error.message || 'Unable to submit feedback.' }, { status: 500 })
@@ -196,7 +275,7 @@ export async function POST(request) {
         console.error('Feedback notification insert failed:', notificationError)
       }
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback' })
+      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback', warning })
     }
 
     return NextResponse.json({ success: false, message: 'Unsupported post type.' }, { status: 400 })

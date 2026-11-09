@@ -1,9 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Globe2, Link2, Lock, Mail, MessageCircle, Repeat2, Send, Share2, Users, X } from 'lucide-react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Globe2, Lock, Repeat2, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { trackUserActivity } from '@/lib/trackActivity'
 
 const PRIVACY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe2 },
@@ -20,29 +20,90 @@ function isMissingRepostStatusColumnError(error) {
   )
 }
 
-export default function ShareRepost({ contentType, contentId, userId, onShared, onRepost, originalPost = null, fullWidth = false }) {
+export default function ShareRepost({ contentType, contentId, userId, onShared, onRepost, originalPost = null, fullWidth = false, compactFeed = false }) {
   const buttonRef = useRef(null)
+  const menuRef = useRef(null)
   const [showMenu, setShowMenu] = useState(false)
+  const [menuPosition, setMenuPosition] = useState(null)
   const [showRepostComposer, setShowRepostComposer] = useState(false)
-  const [showDMModal, setShowDMModal] = useState(false)
   const [quoteText, setQuoteText] = useState('')
-  const [dmUsers, setDmUsers] = useState([])
-  const [dmSearch, setDmSearch] = useState('')
-  const [dmBody, setDmBody] = useState('')
   const [shareCount, setShareCount] = useState(0)
   const [reposted, setReposted] = useState(false)
   const [repostLoading, setRepostLoading] = useState(false)
   const [shareVisibility, setShareVisibility] = useState('public')
 
-  const closeShareMenu = () => {
+  const closeShareMenu = useCallback(() => {
     setShowMenu(false)
     setShowRepostComposer(false)
-  }
+  }, [])
 
   const toggleShareMenu = () => {
-    setShowMenu((current) => !current)
-    if (showMenu) setShowRepostComposer(false)
+    if (showMenu) {
+      closeShareMenu()
+      return
+    }
+    setShowRepostComposer(false)
+    setShowMenu(true)
   }
+
+  useLayoutEffect(() => {
+    if (!showMenu) return undefined
+
+    const positionMenu = () => {
+      const trigger = buttonRef.current
+      const menu = menuRef.current
+      if (!trigger || !menu) return
+
+      const triggerRect = trigger.getBoundingClientRect()
+      if (triggerRect.bottom < 0 || triggerRect.top > window.innerHeight) {
+        closeShareMenu()
+        return
+      }
+
+      const viewportPadding = 12
+      const gap = 8
+      const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap
+      const availableAbove = triggerRect.top - viewportPadding - gap
+      const menuHeight = menu.getBoundingClientRect().height
+      const useBelow = availableBelow >= menuHeight || availableBelow >= availableAbove
+      const availableHeight = Math.max(180, useBelow ? availableBelow : availableAbove)
+      const top = useBelow
+        ? Math.min(triggerRect.bottom + gap, window.innerHeight - viewportPadding - Math.min(menuHeight, availableHeight))
+        : Math.max(viewportPadding, triggerRect.top - gap - Math.min(menuHeight, availableHeight))
+      const menuWidth = menu.getBoundingClientRect().width
+      const left = Math.min(
+        Math.max(viewportPadding, triggerRect.left),
+        window.innerWidth - menuWidth - viewportPadding,
+      )
+
+      const nextPosition = { top, left, maxHeight: `min(${availableHeight}px, calc(100dvh - ${viewportPadding * 2}px))` }
+      setMenuPosition((current) => (
+        current?.top === nextPosition.top
+          && current?.left === nextPosition.left
+          && current?.maxHeight === nextPosition.maxHeight
+          ? current
+          : nextPosition
+      ))
+    }
+
+    positionMenu()
+    window.addEventListener('resize', positionMenu)
+    window.addEventListener('scroll', positionMenu, true)
+    return () => {
+      window.removeEventListener('resize', positionMenu)
+      window.removeEventListener('scroll', positionMenu, true)
+    }
+  }, [closeShareMenu, showMenu, showRepostComposer])
+
+  useEffect(() => {
+    if (!showMenu) return undefined
+    const closeOnOutsideClick = (event) => {
+      if (menuRef.current?.contains(event.target) || buttonRef.current?.contains(event.target)) return
+      closeShareMenu()
+    }
+    document.addEventListener('pointerdown', closeOnOutsideClick)
+    return () => document.removeEventListener('pointerdown', closeOnOutsideClick)
+  }, [closeShareMenu, showMenu])
 
   useEffect(() => {
     if (!showMenu) return undefined
@@ -51,7 +112,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
     }
     document.addEventListener('keydown', closeOnEscape)
     return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [showMenu])
+  }, [closeShareMenu, showMenu])
 
   const loadShareCount = useCallback(async () => {
     if (!contentType || !contentId) return
@@ -196,240 +257,71 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
     }
   }
 
-  const handleExternalShare = async (platform) => {
-    const url = typeof window !== 'undefined' ? window.location.href : ''
-    const title = document.title || 'Check this out'
-
-    if (platform === 'copy') {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(url)
-      }
-      alert('Link copied to clipboard!')
-    } else if (platform === 'whatsapp') {
-      window.open(`https://wa.me/?text=${encodeURIComponent(`${title} ${url}`)}`, '_blank')
-    } else if (platform === 'facebook') {
-      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank')
-    } else if (platform === 'twitter') {
-      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(`${title} ${url}`)}`, '_blank')
-    } else if (platform === 'email') {
-      window.open(`mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(url)}`, '_blank')
-    }
-
-    await trackShare(platform)
-    setShowMenu(false)
-    if (onShared) onShared(platform)
-  }
-
-  const trackShare = async (platform) => {
-    try {
-      const { data } = await supabase
-        .from('share_analytics')
-        .select('share_count')
-        .eq('content_type', contentType)
-        .eq('content_id', contentId)
-        .eq('platform', platform)
-        .maybeSingle()
-
-      const nextCount = (data?.share_count || 0) + 1
-
-      await supabase.from('share_analytics').upsert({
-        content_type: contentType,
-        content_id: contentId,
-        platform,
-        share_count: nextCount,
-        last_shared_at: new Date().toISOString(),
-      }, { onConflict: 'content_type,content_id,platform' })
-
-      if (userId) {
-        await supabase.from('content_shares').insert({
-          user_id: userId,
-          content_type: contentType,
-          content_id: contentId,
-          share_type: platform === 'repost' ? 'repost' : 'external',
-          platform,
-        })
-
-        trackUserActivity({
-          userId,
-          activityType: 'share_content',
-          entityType: contentType,
-          entityId: contentId,
-          description: `Shared ${contentType}`,
-          metadata: { contentTitle: document.title || contentType, platform },
-        })
-      }
-
-      setShareCount(nextCount)
-    } catch (err) {
-      console.error('Share tracking failed:', err)
-    }
-  }
-
-  const handleSendDM = async () => {
-    if (!userId || dmUsers.length === 0) {
-      alert('Select a recipient and log in to send a direct message.')
-      return
-    }
-    try {
-      await Promise.all(dmUsers.map((recipient) =>
-        supabase.from('content_shares').insert({
-          user_id: userId,
-          content_type: contentType,
-          content_id: contentId,
-          share_type: 'dm',
-          caption: dmBody || null,
-          recipient_user_id: recipient.id,
-        })
-      ))
-      await trackShare('dm')
-      setShowDMModal(false)
-      setDmUsers([])
-      setDmBody('')
-      setShowMenu(false)
-      if (onShared) onShared('dm')
-    } catch (err) {
-      console.error('DM share failed:', err)
-      alert('Failed to send direct message share.')
-    }
-  }
-
-  const searchUsers = async (query) => {
-    if (!query.trim()) {
-      setDmUsers([])
-      return
-    }
-    const { data } = await supabase
-      .from('info_users')
-      .select('id, full_name, email')
-      .or(`full_name.ilike.%${query}%,email.ilike.%${query}%`)
-      .limit(5)
-    setDmUsers(data || [])
-  }
-
   return (
     <div className="relative z-30 inline-flex w-full max-w-full">
       <button
         ref={buttonRef}
         type="button"
         onClick={toggleShareMenu}
-        className={`inline-flex h-9 max-w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 ${fullWidth ? 'w-full' : ''}`}
+        aria-haspopup="dialog"
+        aria-expanded={showMenu}
+        className={`inline-flex h-9 max-w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 ${fullWidth ? 'w-full' : ''} ${compactFeed ? 'medium-home-share-button' : ''}`}
       >
-        <Share2 className="h-3.5 w-3.5" />
+        <Repeat2 className="h-4 w-4" />
         {shareCount > 0 && <span>{shareCount}</span>}
-        <span className="hidden sm:inline">Share</span>
+        {!compactFeed && <span className="hidden sm:inline">Repost</span>}
       </button>
 
-      {showMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-100"
-            onClick={closeShareMenu}
-            aria-hidden="true"
-          />
-          <div
-            className="fixed inset-x-0 bottom-0 z-110 mx-auto w-full max-w-[420px] rounded-t-[28px] border border-slate-700/80 bg-[#0f1c2d] p-4 text-slate-100 shadow-[0_-18px_52px_rgba(2,6,23,0.72)] sm:bottom-6 sm:rounded-[28px]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-600/80" />
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <button type="button" onClick={closeShareMenu} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-slate-200 transition hover:bg-slate-700" aria-label="Close share menu">
+      {showMenu && typeof document !== 'undefined' && createPortal(
+        <div
+          ref={menuRef}
+          role="dialog"
+          aria-label={showRepostComposer ? 'Quote repost settings' : 'Repost options'}
+          className="share-repost-popover fixed z-[110] w-[min(300px,calc(100vw-24px))] overflow-y-auto rounded-2xl border p-3.5"
+          style={{
+            top: menuPosition?.top ?? 12,
+            left: menuPosition?.left ?? 12,
+            maxHeight: menuPosition?.maxHeight ?? 'min(70dvh, 560px)',
+            visibility: menuPosition ? 'visible' : 'hidden',
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <button type="button" onClick={closeShareMenu} className="share-repost-close inline-flex h-8 w-8 items-center justify-center rounded-full transition" aria-label="Close share menu">
                 <X className="h-4 w-4" />
               </button>
-              <h3 className="flex-1 text-left text-lg font-black text-slate-50">{showRepostComposer ? 'Quote Repost' : 'Share'}</h3>
-              <button type="button" onClick={closeShareMenu} className="text-sm font-semibold text-slate-300 transition hover:text-white">
+              <h3 className="share-repost-title flex-1 text-left text-base font-bold">{showRepostComposer ? 'Quote Repost' : 'Repost'}</h3>
+              <button type="button" onClick={closeShareMenu} className="share-repost-close-label text-sm font-semibold transition">
                 Close
               </button>
             </div>
 
             {!showRepostComposer ? (
-              <>
-                <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
-                  <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Privacy</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {PRIVACY_OPTIONS.map(({ value, label, icon: Icon }) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setShareVisibility(value)}
-                        className={`flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-semibold transition ${shareVisibility === value ? 'border-sky-400 bg-sky-500/15 text-sky-200' : 'border-slate-600 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70 hover:text-white'}`}
-                      >
-                        <Icon className="h-3.5 w-3.5" /> {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (reposted) {
-                        void handleRepost()
-                      } else {
-                        setShowRepostComposer(true)
-                      }
-                    }}
-                    disabled={repostLoading}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <Repeat2 className={`h-4 w-4 ${reposted ? 'text-emerald-400' : 'text-slate-300'}`} /> {repostLoading ? 'Updating...' : reposted ? 'Reposted' : 'Repost'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShowDMModal(true); setShowMenu(false) }}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <Send className="h-4 w-4 text-sky-400" /> Share to DM
-                  </button>
-                  <div className="my-2 border-t border-slate-700" />
-                  <button
-                    type="button"
-                    onClick={() => handleExternalShare('whatsapp')}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <MessageCircle className="h-4 w-4 text-emerald-400" /> WhatsApp
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExternalShare('facebook')}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <span className="text-base leading-none">📘</span> Facebook
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExternalShare('twitter')}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <span className="text-base leading-none">🐦</span> Twitter / X
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExternalShare('email')}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <Mail className="h-4 w-4 text-amber-400" /> Email
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleExternalShare('copy')}
-                    className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left text-sm font-semibold text-slate-100 transition hover:bg-slate-800/80"
-                  >
-                    <Link2 className="h-4 w-4 text-slate-300" /> Copy Link
-                  </button>
-                </div>
-              </>
+              <button
+                type="button"
+                onClick={() => {
+                  if (reposted) {
+                    void handleRepost()
+                  } else {
+                    setShowRepostComposer(true)
+                  }
+                }}
+                disabled={repostLoading}
+                className="share-repost-action flex min-h-10 w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-semibold transition"
+              >
+                <Repeat2 className={`h-4 w-4 ${reposted ? 'text-emerald-500' : 'text-slate-500'}`} /> {repostLoading ? 'Updating...' : reposted ? 'Reposted' : 'Repost'}
+              </button>
             ) : (
               <div className="space-y-3">
-                <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
-                  <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Privacy</p>
+                <div className="share-repost-privacy rounded-xl border p-2.5">
+                  <p className="share-repost-muted mb-2 text-[10px] font-bold uppercase tracking-[0.12em]">Privacy</p>
                   <div className="grid grid-cols-3 gap-2">
                     {PRIVACY_OPTIONS.map(({ value, label, icon: Icon }) => (
                       <button
                         key={value}
                         type="button"
                         onClick={() => setShareVisibility(value)}
-                        className={`flex items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-semibold transition ${shareVisibility === value ? 'border-emerald-400 bg-emerald-500/15 text-emerald-200' : 'border-slate-600 bg-slate-800/70 text-slate-300 hover:bg-slate-700/70 hover:text-white'}`}
+                        className={`share-repost-privacy-option flex min-h-9 items-center justify-center gap-1 rounded-lg border px-1.5 py-1.5 text-[11px] font-semibold transition ${shareVisibility === value ? 'is-selected' : ''}`}
                       >
                         <Icon className="h-3.5 w-3.5" /> {label}
                       </button>
@@ -442,7 +334,7 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
                   onChange={(e) => setQuoteText(e.target.value)}
                   placeholder="Add a comment to your repost..."
                   rows={3}
-                  className="w-full rounded-[14px] border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 outline-none focus:border-sky-400"
+                  className="share-repost-textarea w-full rounded-xl border px-3 py-2 text-sm outline-none"
                 />
 
                 <div className="grid grid-cols-2 gap-2">
@@ -450,107 +342,24 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
                     type="button"
                     onClick={() => handleRepost(quoteText.trim() || null)}
                     disabled={!userId}
-                    className="rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+                    className="share-repost-primary rounded-full px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
                   >
                     {userId ? 'Repost' : 'Log in to Repost'}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleRepost(null)}
-                    className="rounded-full border border-slate-600 bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                    className="share-repost-secondary rounded-full border px-4 py-2.5 text-sm font-semibold"
                   >
                     Repost Only
                   </button>
                 </div>
               </div>
             )}
-          </div>
-        </>
+          </div>,
+        document.body,
       )}
 
-      {/* DM modal */}
-      {showDMModal && (
-        <div className="fixed inset-0 z-[120] bg-black/50" onClick={() => setShowDMModal(false)} aria-hidden="true">
-          <div
-            className="fixed inset-x-0 bottom-0 z-[121] mx-auto w-full max-w-[420px] rounded-t-[28px] border border-slate-700/80 bg-[#0f1c2d] p-4 text-slate-100 shadow-[0_-18px_52px_rgba(2,6,23,0.72)] sm:bottom-6 sm:rounded-[28px]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-slate-600/80" />
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <button type="button" onClick={() => setShowDMModal(false)} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-800 text-slate-200 transition hover:bg-slate-700" aria-label="Close DM share dialog">
-                <X className="h-4 w-4" />
-              </button>
-              <h3 className="flex-1 text-left text-lg font-black text-slate-50">Share to DM</h3>
-              <button type="button" onClick={() => setShowDMModal(false)} className="text-sm font-semibold text-slate-300 transition hover:text-white">
-                Close
-              </button>
-            </div>
-
-            <input
-              type="text"
-              value={dmSearch}
-              onChange={(e) => { setDmSearch(e.target.value); searchUsers(e.target.value) }}
-              placeholder="Search users to send to..."
-              className="w-full rounded-[14px] border border-slate-700 bg-slate-900/70 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-400 outline-none focus:border-sky-400"
-            />
-
-            {dmUsers.length > 0 && (
-              <div className="mt-2 max-h-40 overflow-y-auto rounded-[14px] border border-slate-700 bg-slate-900/70">
-                {dmUsers.map((user) => (
-                  <button
-                    key={user.id}
-                    type="button"
-                    onClick={() => {
-                      setDmUsers((prev) => {
-                        const exists = prev.some((u) => u.id === user.id)
-                        return exists ? prev.filter((u) => u.id !== user.id) : [...prev, user]
-                      })
-                      setDmSearch('')
-                    }}
-                    className="flex w-full items-center gap-3 px-3 py-2 text-left transition hover:bg-slate-800/80"
-                  >
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sky-500/15 text-xs font-bold text-sky-200">
-                      {(user.full_name || 'User')[0]?.toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-100">{user.full_name}</p>
-                      <p className="text-xs text-slate-400">{user.email}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="mt-2 flex flex-wrap gap-1">
-              {dmUsers.filter((u) => u && typeof u === 'object' && u.id).map((user) => (
-                <span key={user.id} className="inline-flex items-center gap-1 rounded-full bg-sky-500/15 px-2 py-1 text-xs font-semibold text-sky-200">
-                  {user.full_name || 'User'}
-                  <button type="button" onClick={() => setDmUsers((prev) => prev.filter((u) => u.id !== user.id))} className="inline-flex items-center justify-center">
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-
-            <textarea
-              value={dmBody}
-              onChange={(e) => setDmBody(e.target.value)}
-              placeholder="Add a message (optional)..."
-              rows={2}
-              className="mt-2 w-full rounded-[14px] border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 outline-none focus:border-sky-400"
-            />
-
-            <button
-              type="button"
-              onClick={handleSendDM}
-              disabled={!userId || dmUsers.length === 0}
-              className="mt-3 w-full rounded-full bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-            >
-              {userId ? 'Send' : 'Log in to Send'}
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

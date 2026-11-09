@@ -10,8 +10,32 @@ The shared implementation is in `src/lib/cache.js`:
 - Public tourist spot data uses a versioned `localStorage` cache with a one-day TTL and background revalidation.
 - Public visitor review previews use the shared in-memory cache with a five-minute TTL and stale-while-revalidate behavior.
 - Logout clears user-scoped memory entries.
-- Profile, follow, reaction, save, and notification writes invalidate related memory entries.
+- Profile, follow, reaction, save, notification writes, and user-settings saves invalidate related memory entries.
 - Persistent cache corruption, quota errors, and private browsing storage failures fall back to the network.
+
+## Public Tourist Spots
+
+The public tourist-spots list stores only public spot records and revalidates from
+Supabase on each page load. Successful admin changes clear the matching snapshot
+in the current browser; other browsers refresh their snapshot on their next page
+load.
+
+```text
+Feature: Public tourist-spots list
+Data fetched: Public tourist spot records
+Change frequency: Administrator controlled
+Visibility: Public
+Freshness: Background revalidation on every page load; one-day snapshot TTL
+Stale behavior: Show the saved snapshot while revalidating; a failed refresh currently clears the list
+Missing-cache behavior: Fetch from Supabase on first load
+Invalidation trigger: Successful admin create, edit, status change, archive, or delete in the current browser
+Cache layer: Persistent localStorage
+Cache key: places:public:all:daet-content-v1
+TTL: 1 day
+Offline behavior: Cached spots may render initially; failed revalidation clears them
+Security notes: Cache only public spot data; no authentication tokens or user-specific actions
+Manual clear method: invalidatePersistentCache('places:public:all:daet-content-v1')
+```
 
 ## Visitor Review Preview
 
@@ -34,11 +58,77 @@ Security notes: Only public review fields are selected; authenticated actions an
 Manual clear method: invalidateCache('visitor:public:reviews')
 ```
 
+## Tourist Spot Ratings and Reviews
+
+The tourist spot detail page reads its rating summary, current review page, public reviewer profiles, and viewer-specific helpful votes directly from Supabase. It does not reuse the short-lived visitor testimonial cache because edits, deletions, and helpful-vote changes must be reflected immediately.
+
+```text
+Feature: Tourist spot ratings and reviews
+Data fetched: Database-derived rating average/count/breakdown, one sorted review page, public reviewer fields, and the authenticated viewer's own review/helpful votes
+Change frequency: Visitor-submitted; may change at any time
+Visibility: Public ratings/reviews and public profiles; own review and helpful-vote state is user-specific
+Freshness: Fetch current data on page load and after every successful write
+Stale behavior: Do not present stale aggregates or viewer-specific state
+Missing-cache behavior: No cache; fetch directly from Supabase
+Invalidation trigger: No cache; successful writes reload the affected summary and current review page
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Show a retryable load error rather than placeholder ratings or reviews
+Security notes: RLS protects rating writes, helpful votes, and profile visibility; no authenticated state is persisted in shared storage
+Manual clear method: None; use the review section's retry action or reload the page
+```
+
+## Public Event Details
+
+The shared event detail page caches only the public event fields needed to render
+the editorial page, its organizer's public profile fields, and related-event
+previews. Event ticket pricing/capacity, authenticated reactions, bookmarks,
+repost state, and comments are not cached.
+
+```text
+Feature: Public event details
+Data fetched: Public event description, location, dates, status, participant count, cover media, public organizer name/avatar, and related event previews
+Change frequency: Administrator controlled; expected to be occasional
+Visibility: Public event and public profile fields; viewer-specific actions excluded
+Freshness: Two minutes
+Stale behavior: Keep the last valid event details visible while revalidating; show a refresh notice on failure
+Missing-cache behavior: Fetch on first load; show the existing retryable page error if offline
+Invalidation trigger: Two-minute TTL; invalidate the event key when explicitly clearing cached event details
+Cache layer: In-memory
+Cache key: event:public:detail:{eventId}
+TTL: 2 minutes
+Offline behavior: Use stale in-memory public details if available; otherwise surface the fetch error without placeholder data
+Security notes: Select only public detail fields; do not cache ticket, payment, authentication, bookmark, reaction, or comment data
+Manual clear method: invalidateCache(getCacheKey('event', 'public', 'detail', eventId))
+```
+
+## Public Tourist Spot Details
+
+The destination page caches only the public spot record and related destination previews. The rating summary, reviews, comments, profile identity, notifications, bookmarks, and reactions remain live and are never placed in the public cache.
+
+```text
+Feature: Public tourist spot details
+Data fetched: Public destination fields and related spot previews
+Change frequency: Administrator controlled; expected to be occasional
+Visibility: Public destination data; viewer-specific actions excluded
+Freshness: Two minutes
+Stale behavior: Keep the last valid destination details visible while revalidating; show a refresh notice on failure
+Missing-cache behavior: Fetch on first load; show a retryable page error if offline
+Invalidation trigger: Two-minute TTL; invalidate the destination key when explicitly clearing cached details
+Cache layer: In-memory
+Cache key: tourist-spot-detail:public:{spotId}
+TTL: 2 minutes
+Offline behavior: Use stale in-memory public details if available; otherwise surface the fetch error without placeholder destination data
+Security notes: Cache only public destination records and public related spot previews; never cache authentication, reactions, comments, bookmarks, or profile data
+Manual clear method: invalidateCache(getCacheKey('tourist-spot-detail', 'public', spotId))
+```
+
 Do not move authenticated data into persistent browser storage without an explicit security review.
 
 ## Admin Weather
 
-The admin dashboard requests current Daet weather and forecast data from the server endpoint. Current observations can affect visitor safety, so the endpoint bypasses caches and never substitutes estimated conditions when the provider is unavailable.
+The admin dashboard requests current Daet weather and forecast data from Open-Meteo. Current observations can affect visitor safety, so the admin endpoint bypasses caches and never substitutes estimated conditions when the provider is unavailable.
 
 ```text
 Feature: Admin dashboard weather
@@ -53,8 +143,103 @@ Cache layer: None; upstream requests use no-store and the endpoint response is p
 Cache key: None
 TTL: None
 Offline behavior: No forecast is shown; the retry action remains available
-Security notes: OpenWeather credentials must be stored only in the server-side OPENWEATHER_API_KEY environment variable
+Security notes: Weather data is public; no provider credential is required or exposed
 Manual clear method: None
+
+## Visitor Daet weather forecast
+
+The user dashboard shows current Daet conditions and the next five forecast
+days. The public endpoint keeps provider credentials server-side, uses a
+process-local cache to avoid repeated upstream requests, and falls back to
+recent weather only briefly if the provider is unavailable.
+
+```text
+Feature: Visitor Daet weather forecast
+Data fetched: Public current conditions and five-day forecast for Daet from Open-Meteo
+Change frequency: Provider updates; dashboard refreshes on load and every 30 minutes, with manual refresh
+Visibility: Public weather data; provider credential remains server-side
+Freshness: 15-minute process-local cache
+Stale behavior: On provider failure, show last successful forecast for at most 60 minutes and label it as recently saved
+Missing-cache behavior: Show loading, then an unavailable message with retry; never invent weather values
+Invalidation trigger: 15-minute TTL; clear the in-memory cache with clearDaetWeatherCache() when needed
+Cache layer: Server process memory
+Cache key: One fixed Daet forecast entry
+TTL: 15 minutes; stale fallback up to 60 minutes from last success
+Offline behavior: Use bounded stale forecast when available; otherwise show a retry action
+Security notes: Only public weather fields are returned; no provider credential is required or exposed. Attribute Open-Meteo in the UI.
+Manual clear method: clearDaetWeatherCache() or restart the application process
+```
+
+## Search typeahead people suggestions
+
+People suggestions are fetched only while a search field is focused and the
+query contains at least two characters. Requests are debounced and capped at
+five public profiles; a newer query cancels the previous request. Search
+history remains a separate, user-controlled local preference.
+
+```text
+Feature: Search typeahead people suggestions
+Data fetched: Up to five matching public profile names and avatar URLs
+Change frequency: Profile names and visibility may change at any time
+Visibility: Public profiles and follower-visible profiles for their followers; private profiles are excluded
+Freshness: Fetch current matches after a 200 ms debounce
+Stale behavior: Discard prior-query results; do not show results from a failed request
+Missing-cache behavior: No cache; issue a bounded request after the query reaches two characters
+Invalidation trigger: No cache; subsequent typing issues a fresh request
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Show the search action without placeholder people; report request failures in the console
+Security notes: The server enforces profile visibility; responses are not persisted or shared between users
+Manual clear method: None for people suggestions; clear recent query strings with the Reset history control
+```
+
+## Notification inbox preferences
+
+The notification API reads the signed-in user's notification preferences from
+their profile and applies supported category choices to inbox rows and unread
+counts. The inbox's short-lived user cache is invalidated after preference saves.
+
+```text
+Feature: Notification inbox and category preferences
+Data fetched: Current user's notification rows, unread count, and notification preference flags
+Change frequency: New notifications and preference changes
+Visibility: User-specific
+Freshness: Live API read; inbox cache TTL is 30 seconds
+Stale behavior: Realtime inserts re-fetch from the filtered API before display or sound
+Missing-cache behavior: Fetch from the authenticated API
+Invalidation trigger: Notification mutations and successful settings saves
+Cache layer: User-scoped in-memory cache for the inbox; preferences themselves are not cached by the API
+Cache key: notifications:user:{userId}
+TTL: 30 seconds for the inbox cache; none for API preference reads
+Offline behavior: Retain the current inbox view and show its retryable load error
+Security notes: API derives the user id from the signed session; never share or persist notification data across users
+Manual clear method: Reload the notification inbox or use Settings > Data & storage
+```
+
+## Saved dashboard items
+
+The dashboard loads saved-item rows for the signed-in user and uses them to
+render bookmark state and personalize feed ranking. Reads are uncached; save and
+remove mutations invalidate the dashboard feed cache after the server confirms
+the write.
+
+```text
+Feature: Dashboard saved items
+Data fetched: Current user's saved content type and content id pairs
+Change frequency: User-controlled save and remove actions
+Visibility: User-specific
+Freshness: Fetch on dashboard signal load; update UI only after a successful write
+Stale behavior: No server cache; in-memory dashboard state is replaced on a successful load
+Missing-cache behavior: Read from the signed-session API
+Invalidation trigger: Successful save/remove invalidates feed:user:{userId}:dashboard
+Cache layer: None for the API read; dashboard feed data remains in its existing user-scoped memory cache
+Cache key: None for favorites API; feed:user:{userId}:dashboard for dashboard content
+TTL: None for favorites API; 2 minutes for dashboard feed
+Offline behavior: Keep current view and report save/remove request failures
+Security notes: API derives ownership from the signed session; no favorite rows are shared or persisted in a browser cache
+Manual clear method: Reload the dashboard; use the existing dashboard cache clear behavior if needed
+```
 ```
 
 ## Feature Decision Template
@@ -254,3 +439,21 @@ A pull request adding or changing read-heavy data should answer:
 - Which tests cover fresh, stale, offline, write, logout, and corruption paths?
 
 Use shared cache helpers/hooks when available. Do not introduce one-off cache formats or permanent `localStorage` entries without documenting why.
+
+## Editorial article details
+
+Feature: Article author details, follow state, and story recommendations
+Data fetched: Public author bio visibility, the viewer's follow relationship and preferred blog categories, published stories by the author and category, and popular published stories
+Recommendation logic: Signed-in readers' existing preferred categories map to published blog categories; readers without saved preferences still see public author, category, and popular shelves
+Change frequency: Changes when a profile, follow relationship, or published story changes
+Visibility: Public story shelves; follow state and preferred categories are user-specific; author bio is shown only when the profile is public or the viewer follows the author
+Freshness: Read directly from Supabase on article load; no client or persistent cache
+Stale behavior: No stale recommendation snapshot is displayed
+Missing-cache behavior: No cache is used; recommendation failures show an explicit retry action
+Invalidation trigger: None; successful follow writes invalidate the existing profile and current-user feed caches
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Article interactions remain available where already loaded; author details and recommendations show unavailable with retry
+Security notes: Only published stories are queried; preferences and follow state are queried only for the signed-in viewer; private author bio is hidden unless the viewer follows the author; follow writes use the authenticated follow API
+Manual clear method: None

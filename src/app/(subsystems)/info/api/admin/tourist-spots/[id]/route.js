@@ -30,7 +30,16 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, spot: data })
+    return NextResponse.json({
+      success: true,
+      spot: {
+        ...data,
+        image_url: data.image_url || data.featured_image || null,
+        gallery_images: data.gallery_images?.length ? data.gallery_images : data.images || [],
+        entrance_fee: data.entrance_fee ?? data.entry_fee ?? null,
+        view_count: data.view_count ?? data.visit_count ?? 0,
+      },
+    })
   } catch (error) {
     console.error('Tourist spot detail error:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to load spot details' }, { status: 500 })
@@ -74,18 +83,19 @@ export async function PUT(request, { params }) {
       name: name.trim(),
       description: description || '',
       location: location.trim(),
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
+      latitude: latitude === '' || latitude == null ? null : Number(latitude),
+      longitude: longitude === '' || longitude == null ? null : Number(longitude),
       category,
       opening_hours: opening_hours || '',
-      entrance_fee: entrance_fee ? parseFloat(entrance_fee) : null,
+      entry_fee: entrance_fee === '' || entrance_fee == null ? null : Number(entrance_fee),
       contact_number: contact_number || '',
       image_url: image_url || null,
+      featured_image: image_url || null,
       gallery_images: gallery_images?.length ? gallery_images : null,
       rating: rating || 0,
-      status: status || 'published',
+      status: status || 'active',
       featured: !!featured,
-      view_count: view_count || 0,
+      visit_count: view_count || 0,
       updated_at: new Date().toISOString()
     }
 
@@ -97,10 +107,20 @@ export async function PUT(request, { params }) {
       .single()
 
     if (error) {
+      console.error('Tourist spot update error:', error)
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, spot: data })
+    return NextResponse.json({
+      success: true,
+      spot: {
+        ...data,
+        image_url: data.image_url || data.featured_image || null,
+        gallery_images: data.gallery_images?.length ? data.gallery_images : data.images || [],
+        entrance_fee: data.entrance_fee ?? data.entry_fee ?? null,
+        view_count: data.view_count ?? data.visit_count ?? 0,
+      },
+    })
   } catch (error) {
     console.error('Tourist spot update error:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to update spot' }, { status: 500 })

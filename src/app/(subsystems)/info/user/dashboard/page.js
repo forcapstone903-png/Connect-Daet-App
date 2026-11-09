@@ -17,12 +17,10 @@ import {
   ArrowUp,
   CalendarDays,
   Flame,
-  FilePenLine,
   FileText,
   Gift,
   ImagePlus,
   Loader,
-  LogOut,
   Mail,
   Megaphone,
   MessageSquare,
@@ -30,7 +28,6 @@ import {
   PenLine,
   RefreshCw,
   ShieldCheck,
-  Settings,
   Sparkles,
   Star,
   Clock3,
@@ -42,10 +39,9 @@ import {
 import { getDaetDestinationImage } from '@/lib/daetDestinationImages'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import { performLogout } from '@/lib/clientLogout'
 import { clearUserCache, getCache, getCacheKey, invalidateCache, invalidateCachePrefix, setCache } from '@/lib/cache'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
-import { getAuthorDisplayName, getAuthorRoleLabel } from '@/lib/userSocialDisplay'
+import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import { buildRepostFeedItem } from '@/lib/repostIdentity'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
@@ -55,11 +51,11 @@ import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import DailyFeedback from '@/app/(subsystems)/info/components/user/DailyFeedback'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import DaetWeatherCard from '@/app/(subsystems)/info/components/user/DaetWeatherCard'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
 import { prioritizePinnedFeedItems } from '@/lib/feedOrdering'
 import { trackUserActivity } from '@/lib/trackActivity'
-import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
 import { getPostImages } from '@/lib/postMedia'
 
 // Database table constants
@@ -78,24 +74,22 @@ const DASHBOARD_CACHE_TTL_MS = 120000
 const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
 const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
 
-// Feed sort modes shown in the segmented control (desktop toolbar + mobile rail).
-const FEED_SCOPES = [
-  { value: 'for-you', label: 'For you', icon: Sparkles },
-  { value: 'latest', label: 'Latest', icon: Clock3 },
-  { value: 'trending', label: 'Trending', icon: Flame },
+const FEED_TABS = [
+  { value: 'for-you', label: 'For You', scope: true },
+  { value: 'featured', label: 'Featured', scope: true },
+  { value: 'event', label: 'Events' },
+  { value: 'blog', label: 'Blogs' },
+  { value: 'forum', label: 'Forums' },
+  { value: 'tourist_spot', label: 'Travel' },
+  { value: 'other', label: 'Others' },
 ]
 
-// Visual identity per content type: emoji for the badge, icon for quick actions.
-const POST_TYPE_META = {
-  blog: { icon: FileText, label: 'Blog', tone: 'bg-violet-50 text-violet-700 border-violet-200' },
-  event: { icon: CalendarDays, label: 'Event', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-  forum: { icon: MessageSquare, label: 'Forum', tone: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
-  tourist_spot: { icon: MapPin, label: 'Tourist spot', tone: 'bg-sky-50 text-sky-700 border-sky-200' },
-  announcement: { icon: Megaphone, label: 'Announcement', tone: 'bg-amber-50 text-amber-700 border-amber-200' },
-  post: { icon: FilePenLine, label: 'Post', tone: 'bg-slate-100 text-slate-700 border-slate-200' },
+function favoriteTypeToFeedType(itemType) {
+  if (itemType === 'user_post') return 'post'
+  if (itemType === 'spot') return 'tourist_spot'
+  if (itemType === 'forum_thread') return 'forum'
+  return itemType
 }
-
-const getPostTypeMeta = (type) => POST_TYPE_META[type] || POST_TYPE_META.post
 
 function readStoredSet(key) {
   if (typeof window === 'undefined') return new Set()
@@ -201,6 +195,7 @@ export default function UserDashboardPage() {
   // UI state
   const [loading, setLoading] = useState(true)
   const [feedScope, setFeedScope] = useState('for-you')
+  const [feedCategory, setFeedCategory] = useState('all')
   const [error, setError] = useState(null)
 
   // Social engagement state (from feature spec: reactions, bookmarks, gamification)
@@ -224,12 +219,11 @@ export default function UserDashboardPage() {
   const [gamification, setGamification] = useState({ points: 0, level: 1, streak: 0 })
   const [toastMessage, setToastMessage] = useState('')
   const [showReactions, setShowReactions] = useState(null)
+  const bookmarkRequestsRef = useRef(new Set())
   const [commentCounts, setCommentCounts] = useState({})
   const [hiddenPosts, setHiddenPosts] = useState(() => new Set())
   const [notInterestedTopics, setNotInterestedTopics] = useState(() => new Set())
   const [openPostMenu, setOpenPostMenu] = useState(null)
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-  const [loggingOut, setLoggingOut] = useState(false)
   const [blogActionConfirm, setBlogActionConfirm] = useState(null)
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
@@ -239,7 +233,6 @@ export default function UserDashboardPage() {
   const [feedEndReached, setFeedEndReached] = useState(false)
   const [newRepostIds, setNewRepostIds] = useState(() => new Set())
   const [pendingRepostId, setPendingRepostId] = useState(null)
-  const [expandedPosts, setExpandedPosts] = useState(() => new Set())
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [sheetVisible, setSheetVisible] = useState(false)
   const [notificationCommentRequest, setNotificationCommentRequest] = useState(null)
@@ -324,8 +317,10 @@ export default function UserDashboardPage() {
           reposted_at: restored.created_at,
           published_at: restored.created_at,
           category: 'Repost',
-          type: restored.original_content_type === 'blog' ? 'blog' : 'post',
-          href: restored.original_content_type === 'blog' ? `/info/user/blogs/${restored.original_content_id}` : `/info/user/posts/${restored.original_content_id}`,
+          type: restored.original_content_type === 'blog' ? 'blog' : restored.original_content_type === 'event' ? 'event' : 'post',
+          href: restored.original_content_type === 'blog'
+            ? `/info/user/blogs/${restored.original_content_id}`
+            : restored.original_content_type === 'event' ? `/info/user/events/${restored.original_content_id}` : `/info/user/posts/${restored.original_content_id}`,
           is_repost: true,
           author: activeAuthor,
           original_author: restored.original_author || original.author || null,
@@ -395,8 +390,12 @@ export default function UserDashboardPage() {
   useEffect(() => {
     const authorIds = [...new Set(
       feed
-        .filter((item) => item.created_by && (!item.author || item.author.full_name === 'Administrator'))
-        .map((item) => item.created_by)
+      .filter((item) => item.created_by && (
+        !item.author
+        || item.author.user_type === 'admin'
+        || ['administrator', 'system administrator'].includes(String(item.author.full_name || '').trim().toLowerCase())
+      ))
+      .map((item) => item.created_by)
     )]
     if (!authorIds.length) return undefined
 
@@ -580,18 +579,31 @@ export default function UserDashboardPage() {
   }
 
   const handleBookmark = async (e, item) => {
-    e.preventDefault()
-    e.stopPropagation()
+    e?.preventDefault()
+    e?.stopPropagation()
     if (!userId) return
     const itemKey = `${item.type}-${item.id}`
-    const itemType = item.type === 'post' ? 'user_post' : item.type
+    const itemType = item.type === 'post'
+      ? 'user_post'
+      : item.type === 'tourist_spot'
+        ? 'spot'
+        : item.type
+    if (bookmarkRequestsRef.current.has(itemKey)) return
+    bookmarkRequestsRef.current.add(itemKey)
     const nextSaved = new Set(savedItems)
 
     try {
-      const result = nextSaved.has(itemKey)
-        ? await supabase.from('user_favorites').delete().eq('user_id', userId).eq('item_type', itemType).eq('item_id', item.id)
-        : await supabase.from('user_favorites').upsert({ user_id: userId, item_type: itemType, item_id: item.id }, { onConflict: 'user_id,item_type,item_id' })
-      if (result.error) throw result.error
+      const action = nextSaved.has(itemKey) ? 'remove' : 'save'
+      const response = await fetch('/info/api/user/favorites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ action, itemType, itemId: item.id }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || `Unable to update saved item (${response.status}).`)
+      }
 
       if (nextSaved.has(itemKey)) {
         nextSaved.delete(itemKey)
@@ -603,8 +615,10 @@ export default function UserDashboardPage() {
       setSavedItems(nextSaved)
       invalidateCache(getDashboardCacheKey(userId))
     } catch (error) {
-      console.error('Save update failed:', error)
-      setToastMessage('Unable to update saved items')
+      console.error('Save update failed:', error?.message || error)
+      setToastMessage(error?.message || 'Unable to update saved items')
+    } finally {
+      bookmarkRequestsRef.current.delete(itemKey)
     }
 
     setTimeout(() => setToastMessage(''), 2500)
@@ -922,36 +936,15 @@ export default function UserDashboardPage() {
 
         if (!activeSession?.user) {
           const cookieUserId = cookieSession?.user_id || cookieSession?.id || cookieSession?.sub || cookieSession?.userId
-          try {
-            const { data: userData, error: userError } = await supabase.auth.getUser()
-            if (!userError && userData?.user) {
-              activeSession = { user: userData.user }
-            } else if (userError && userError.name === 'AuthSessionMissingError' && cookieUserId) {
-              activeSession = {
-                user: {
-                  id: cookieUserId,
-                  email: cookieSession?.user_email || cookieSession?.email || '',
-                  user_metadata: {
-                    full_name: cookieSession?.user_name || cookieSession?.full_name || cookieSession?.name || '',
-                  },
+          if (cookieUserId) {
+            activeSession = {
+              user: {
+                id: cookieUserId,
+                email: cookieSession?.user_email || cookieSession?.email || '',
+                user_metadata: {
+                  full_name: cookieSession?.user_name || cookieSession?.full_name || cookieSession?.name || '',
                 },
-              }
-            } else if (userError) {
-              throw userError
-            }
-          } catch (recoveryError) {
-            if (recoveryError?.name === 'AuthSessionMissingError' && cookieUserId) {
-              activeSession = {
-                user: {
-                  id: cookieUserId,
-                  email: cookieSession?.user_email || cookieSession?.email || '',
-                  user_metadata: {
-                    full_name: cookieSession?.user_name || cookieSession?.full_name || cookieSession?.name || '',
-                  },
-                },
-              }
-            } else {
-              throw recoveryError
+              },
             }
           }
         }
@@ -1051,11 +1044,14 @@ export default function UserDashboardPage() {
               .select('content_type, content_id, reaction_type, created_at')
               .eq('user_id', currentUserId)
               .limit(100),
-            supabase
-              .from('user_favorites')
-              .select('item_type, item_id, created_at')
-              .eq('user_id', currentUserId)
-              .limit(100),
+            fetch('/info/api/user/favorites', { credentials: 'same-origin', cache: 'no-store' })
+              .then(async (response) => {
+                const result = await response.json().catch(() => ({}))
+                if (!response.ok || !result.success) {
+                  throw new Error(result.message || `Unable to load saved items (${response.status}).`)
+                }
+                return { data: result.favorites || [], error: null }
+              }),
             supabase
               .from(TABLES.FEED_PREFERENCES)
               .select('preferred_categories')
@@ -1064,15 +1060,19 @@ export default function UserDashboardPage() {
           ])
 
           if (!isMounted) return
+          const favorites = (favoriteResult.data || []).map((favorite) => ({
+            ...favorite,
+            item_type: favoriteTypeToFeedType(favorite.item_type),
+          }))
           setReactions(Object.fromEntries((reactionResult.data || []).map((reaction) => [
             `${reaction.content_type === 'forum_thread' ? 'forum' : reaction.content_type === 'user_post' ? 'post' : reaction.content_type}-${reaction.content_id}`,
             reaction.reaction_type,
           ])))
-          setSavedItems(new Set((favoriteResult.data || []).map((favorite) => `${favorite.item_type}-${favorite.item_id}`)))
+          setSavedItems(new Set(favorites.map((favorite) => `${favorite.item_type}-${favorite.item_id}`)))
           setUserSignals({
             activities: activityResult.data || [],
             reactions: reactionResult.data || [],
-            favorites: favoriteResult.data || [],
+            favorites,
             preferredCategories: Array.isArray(preferenceResult.data?.preferred_categories) ? preferenceResult.data.preferred_categories : [],
           })
         } catch (signalError) {
@@ -1146,13 +1146,13 @@ export default function UserDashboardPage() {
           Promise.all([
             supabase
               .from(TABLES.BLOGS)
-              .select('id, title, excerpt, category, tags, featured_image, images, videos, media_layout, published_at, updated_at, views, likes, comments_count, created_by')
+              .select('id, title, excerpt, category, tags, featured, featured_image, images, videos, media_layout, published_at, updated_at, views, likes, comments_count, created_by')
               .eq('status', 'published')
               .order('published_at', { ascending: false })
               .limit(20),
             supabase
               .from(TABLES.EVENTS)
-              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
+              .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
               .eq('status', 'published')
               .order('start_date', { ascending: true })
               .limit(20),
@@ -1164,7 +1164,7 @@ export default function UserDashboardPage() {
               .limit(20),
             supabase
               .from('info_tourist_spots')
-              .select('id, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured_image, images, videos, created_by, status, created_at')
+              .select('id, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_by, status, created_at')
               .eq('status', 'active')
               .order('created_at', { ascending: false })
               .limit(20),
@@ -1212,7 +1212,7 @@ export default function UserDashboardPage() {
             .from('reposts')
             .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
             .in('user_id', followedUserIdsArray)
-            .in('original_content_type', ['user_post', 'blog'])
+            .in('original_content_type', ['user_post', 'blog', 'event'])
             .eq('status', 'active')
             .order('created_at', { ascending: false })
             .limit(50)
@@ -1235,12 +1235,23 @@ export default function UserDashboardPage() {
             .eq('status', 'published')
           : { data: [] }
         const repostedBlogMap = new Map((repostedBlogs || []).map((blog) => [blog.id, blog]))
+        const repostedEventIds = [...new Set((followedReposts || []).filter((repost) => repost.original_content_type === 'event').map((repost) => repost.original_content_id).filter(Boolean))]
+        const { data: repostedEvents } = repostedEventIds.length
+          ? await supabase
+            .from('info_events')
+            .select('id, created_by, title, description, featured_image, images, start_date, start_time, category, location, venue, created_at, status')
+            .in('id', repostedEventIds)
+            .in('status', ['published', 'cancelled', 'completed'])
+          : { data: [] }
+        const repostedEventMap = new Map((repostedEvents || []).map((event) => [event.id, event]))
         const repostFeed = (followedReposts || [])
           .map((repost) => {
             if (repost.visibility === 'private' && repost.user_id !== userId) return null
             const originalPost = repost.original_content_type === 'blog'
               ? repostedBlogMap.get(repost.original_content_id)
-              : repostedPostMap.get(repost.original_content_id)
+              : repost.original_content_type === 'event'
+                ? repostedEventMap.get(repost.original_content_id)
+                : repostedPostMap.get(repost.original_content_id)
             if (!originalPost) return null
             const originalOwnerId = originalPost.user_id || originalPost.created_by
             if (originalPost.visibility === 'private' && originalOwnerId !== userId) return null
@@ -1261,8 +1272,10 @@ export default function UserDashboardPage() {
               published_at: repost.created_at,
               excerpt: originalPost.content,
               category: 'Repost',
-              type: repost.original_content_type === 'blog' ? 'blog' : 'post',
-              href: repost.original_content_type === 'blog' ? `/info/user/blogs/${originalPost.id}` : `/info/user/posts/${originalPost.id}`,
+              type: repost.original_content_type === 'blog' ? 'blog' : repost.original_content_type === 'event' ? 'event' : 'post',
+              href: repost.original_content_type === 'blog'
+                ? `/info/user/blogs/${originalPost.id}`
+                : repost.original_content_type === 'event' ? `/info/user/events/${originalPost.id}` : `/info/user/posts/${originalPost.id}`,
               is_repost: true,
               original_author_id: originalPost.user_id || originalPost.created_by,
               original_post: originalPost,
@@ -1299,20 +1312,72 @@ export default function UserDashboardPage() {
           ...repostFeed.map((item) => item.created_by),
           ...(repostedPosts || []).map((item) => item.user_id),
           ...(repostedBlogs || []).map((item) => item.created_by),
+          ...(repostedEvents || []).map((item) => item.created_by),
           ...(nextAnnouncements || []).map((item) => item.created_by),
         ].filter(Boolean)
-        const { data: authors } = authorIds.length
-          ? await supabase.from(TABLES.USERS).select('id, full_name, profile_image_url, user_type').in('id', [...new Set(authorIds)])
-          : { data: [] }
-        const authorMap = new Map((authors || []).map((author) => [author.id, author]))
-        const withAuthor = (item) => ({
+        const uniqueAuthorIds = [...new Set(authorIds)]
+        const [{ data: authors, error: authorsError }, { data: authorProfiles, error: authorProfilesError }] = uniqueAuthorIds.length
+          ? await Promise.all([
+            supabase.from(TABLES.USERS).select('id, full_name, profile_image_url, user_type').in('id', uniqueAuthorIds),
+            supabase.from('profiles').select('user_id, full_name, profile_image_url').in('user_id', uniqueAuthorIds),
+          ])
+          : [{ data: [], error: null }, { data: [], error: null }]
+        if (authorsError) throw authorsError
+        if (authorProfilesError) console.error('Dashboard author profile names could not be loaded:', authorProfilesError)
+        const authorProfileMap = new Map((authorProfiles || []).map((profile) => [profile.user_id, profile]))
+        const authorRows = (authors || []).map((author) => {
+          const profile = authorProfileMap.get(author.id)
+          return {
+            ...author,
+            full_name: profile?.full_name?.trim() || author.full_name,
+            profile_image_url: profile?.profile_image_url || author.profile_image_url,
+          }
+        })
+        const authorMap = new Map(authorRows.map((author) => [author.id, author]))
+        const hasUnattributedEditorialContent = (blogsFeed.data || []).some((blog) =>
+          !blog.created_by && blog.tags?.includes('admin-curated')
+        ) || (touristSpotsFeed.data || []).some((spot) => !spot.created_by)
+        let editorialAdmin = null
+        if (hasUnattributedEditorialContent) {
+          const { data: matchingProfiles, error: matchingProfilesError } = await supabase
+            .from('profiles')
+            .select('user_id, full_name, profile_image_url')
+            .ilike('full_name', 'marvin sarmiento')
+          if (matchingProfilesError) {
+            console.error('Editorial admin profile lookup failed:', matchingProfilesError)
+          } else if (matchingProfiles?.length) {
+            const { data: matchingUsers, error: matchingUsersError } = await supabase
+              .from(TABLES.USERS)
+              .select('id, full_name, profile_image_url, user_type, status')
+              .in('id', matchingProfiles.map((profile) => profile.user_id))
+            if (matchingUsersError) {
+              console.error('Editorial admin account lookup failed:', matchingUsersError)
+            } else {
+              const verifiedAdmins = (matchingUsers || [])
+                .filter((user) => user.user_type === 'admin' && user.status === 'active')
+                .map((user) => {
+                  const profile = matchingProfiles.find((item) => item.user_id === user.id)
+                  return {
+                    ...user,
+                    full_name: profile?.full_name?.trim() || user.full_name,
+                    profile_image_url: profile?.profile_image_url || user.profile_image_url,
+                  }
+                })
+              if (verifiedAdmins.length === 1) [editorialAdmin] = verifiedAdmins
+            }
+          }
+        }
+        const withAuthor = (item, contentType) => ({
           ...item,
-          author: authorMap.get(item.created_by) || null,
+          author: authorMap.get(item.created_by)
+            || ((!item.created_by && (contentType === 'tourist_spot' || (contentType === 'blog' && item.tags?.includes('admin-curated'))))
+              ? editorialAdmin
+              : null),
         })
 
         const mixedFeed = [
           ...(blogsFeed.data || []).map((blog) => ({
-            ...withAuthor(blog),
+            ...withAuthor(blog, 'blog'),
             type: 'blog',
             href: `/info/user/blogs/${blog.id}`,
           })),
@@ -1327,7 +1392,7 @@ export default function UserDashboardPage() {
             href: `/info/user/forums/${thread.id}`,
           })),
           ...(touristSpotPosts || []).map((spot) => ({
-            ...withAuthor(spot),
+            ...withAuthor(spot, 'tourist_spot'),
             type: 'tourist_spot',
             href: `/info/visitor/tourist-spots/${spot.id}`,
             title: spot.name,
@@ -1343,7 +1408,7 @@ export default function UserDashboardPage() {
           ...followedPosts.map((post) => ({
             ...withAuthor(post),
             type: 'post',
-            href: `/info/user/profile/${post.user_id}`,
+            href: `/info/user/posts/${post.id}`,
           })),
           ...repostFeed.map((repost) => ({
             ...withAuthor(repost),
@@ -1404,22 +1469,6 @@ export default function UserDashboardPage() {
     }
   }, [authenticated, userId, feedRefreshKey])
 
-  const handleLogout = () => {
-    setShowLogoutConfirm(true)
-  }
-
-  const confirmLogout = async () => {
-    setLoggingOut(true)
-    try {
-      clearUserCache(userId)
-      await performLogout()
-    } catch (err) {
-      console.error('User logout error:', err)
-    } finally {
-      window.location.assign('/info/login')
-    }
-  }
-
   const resetPullToRefresh = () => {
     pullStartY.current = null
     setPullDistance(0)
@@ -1454,15 +1503,13 @@ export default function UserDashboardPage() {
       if (hiddenPosts.has(`${item.type}-${item.id}`)) return false
       if (item.author?.id && notInterestedTopics.has(`author:${item.author.id}`)) return false
       if (item.category && notInterestedTopics.has(`category:${String(item.category).toLowerCase()}`)) return false
+      if (feedCategory === 'other' && ['event', 'blog', 'forum', 'tourist_spot'].includes(item.type)) return false
+      if (feedCategory !== 'all' && feedCategory !== 'other' && item.type !== feedCategory) return false
+      if (feedScope === 'featured' && !item.featured) return false
       return true
     })
 
     result = prioritizePinnedFeedItems(result, savedItems, newRepostIds)
-
-    if (feedScope === 'latest') {
-      const latestResult = [...result].sort((left, right) => new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0))
-      return prioritizePinnedFeedItems(latestResult, savedItems, newRepostIds)
-    }
 
     const categoryWeights = new Map()
     const typeWeights = new Map()
@@ -1514,11 +1561,14 @@ export default function UserDashboardPage() {
       },
     })
 
-    let rankedResult
-    if (feedScope === 'trending') {
-      rankedResult = result.sort((left, right) => (Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0)) - (Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0)))
-    } else {
-      rankedResult = rankFeedItems({
+    const rankedResult = feedScope === 'featured'
+      ? [...result].sort((left, right) => {
+        const leftScore = Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0) + Number(left.views || left.view_count || 0) + Number(left.current_attendees || 0)
+        const rightScore = Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0) + Number(right.views || right.view_count || 0) + Number(right.current_attendees || 0)
+        return rightScore - leftScore
+          || new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0)
+      })
+      : rankFeedItems({
         items: result,
         profile: recommendationProfile,
         userFollows: new Set(),
@@ -1529,13 +1579,12 @@ export default function UserDashboardPage() {
         const rhs = right.recommendationScore ?? 0
         return rhs - lhs
       }).map(({ recommendationScore, recommendationKey, contributionBreakdown, ...item }) => item)
-    }
 
     if (feedRefreshKey === 0 || rankedResult.length < 2) return rankedResult
 
     const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
     return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-  }, [feed, feedScope, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds, savedItems])
+  }, [feed, feedScope, feedCategory, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds, savedItems])
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -1585,18 +1634,6 @@ export default function UserDashboardPage() {
     return () => window.clearTimeout(timer)
   }, [feed, loading, notificationCommentRequest, router, userId])
 
-  const toggleExpandedPost = (itemKey) => {
-    setExpandedPosts((current) => {
-      const next = new Set(current)
-      if (next.has(itemKey)) {
-        next.delete(itemKey)
-      } else {
-        next.add(itemKey)
-      }
-      return next
-    })
-  }
-
   const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
 
@@ -1637,7 +1674,7 @@ export default function UserDashboardPage() {
 
   if (!authenticated) {
     return (
-      <main className="tourism-shell flex min-h-screen items-center justify-center px-4">
+      <main className="dashboard-auth-loading tourism-shell flex min-h-screen items-center justify-center px-4">
         <div className="usr-enter w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
           <span className="usr-ring-pulse mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
             <Loader className="h-5 w-5 animate-spin" aria-hidden="true" />
@@ -1670,8 +1707,8 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <main className="tourism-shell dashboard-shell relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
-      <UserTopHeader />
+    <main className="tourism-shell dashboard-shell medium-home relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
+      <UserTopHeader edgeToEdgeMobile />
       {toastMessage && (
         <div role="status" aria-live="polite" className="usr-toast fixed left-1/2 top-[76px] z-[60] max-w-[calc(100%-2rem)] -translate-x-1/2 truncate rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl lg:top-6">
           {toastMessage}
@@ -1688,17 +1725,6 @@ export default function UserDashboardPage() {
       )}
 
       <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
-        <ConfirmationModal
-          isOpen={showLogoutConfirm}
-          title="Confirm Logout"
-          message="Are you sure you want to logout?"
-          confirmText={loggingOut ? 'Logging out...' : 'OK'}
-          cancelText="Cancel"
-          isDangerous
-          onConfirm={confirmLogout}
-          onCancel={() => setShowLogoutConfirm(false)}
-        />
-
         <ConfirmationModal
           isOpen={Boolean(blogActionConfirm)}
           title={blogActionConfirm?.action === 'delete' ? 'Delete blog?' : 'Archive blog?'}
@@ -1721,9 +1747,9 @@ export default function UserDashboardPage() {
 
         <div className="dashboard-feed-layout">
           <div className="dashboard-feed-main min-w-0 lg:pr-3">
-        <section className="usr-hero usr-card usr-enter mb-3 rounded-[22px] p-3.5 sm:p-4">
+        <section className="medium-home-intro usr-hero usr-card usr-enter mb-3 rounded-[22px] p-3.5 sm:p-4">
           <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-sm font-black text-white">
+            <span className="dashboard-profile-avatar flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-sm font-black text-white">
               {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
             </span>
             <div className="min-w-0 flex-1">
@@ -1735,23 +1761,19 @@ export default function UserDashboardPage() {
                 Fresh stories, events, and places from the Daet community.
               </p>
             </div>
-            <Link href="/info/user/rewards" className="usr-press usr-lift hidden shrink-0 items-center gap-2 rounded-full bg-slate-900 px-3.5 py-2.5 text-xs font-bold text-white hover:bg-slate-800 sm:flex" title="Your rewards and streak">
-              <Flame className="usr-flame h-4 w-4 text-amber-300" aria-hidden="true" />
-              {gamification.streak}-day streak
-            </Link>
           </div>
 
         </section>
 
-        <section className="usr-card mb-3 rounded-[22px] p-3 sm:p-4">
+        <section className="medium-home-composer usr-card mb-3 rounded-[22px] p-3 sm:p-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-[11px] font-black text-white">
+            <span className="dashboard-profile-avatar flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-[11px] font-black text-white">
               {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
             </span>
             <Link href="/info/user/blogs/new" className="usr-press flex min-h-[50px] flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
               Share something with Daet...
             </Link>
-            <Link href="/info/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-2xl bg-[#16766f] text-white shadow-[0_8px_18px_rgba(22,118,111,0.22)] transition hover:bg-[#0e514d]">
+            <Link href="/info/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_8px_18px_rgba(37,99,235,0.22)] transition hover:bg-blue-700">
               <Zap className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>
@@ -1765,17 +1787,30 @@ export default function UserDashboardPage() {
           </div>
         </section>
 
-        <div className="usr-rail mb-3" role="tablist" aria-label="Sort your feed">
-          {FEED_SCOPES.map(({ value, label, icon: Icon }) => (
+        <div className="usr-rail medium-home-tabs mb-4" role="tablist" aria-label="Home feed">
+          {FEED_TABS.map(({ value, label, scope }) => (
             <button
               key={value}
               type="button"
               role="tab"
-              aria-selected={feedScope === value}
-              onClick={() => setFeedScope(value)}
-              className="usr-chip flex-1 justify-center"
+              aria-selected={value === 'for-you'
+                ? feedScope === value && feedCategory === 'all'
+                : scope
+                  ? feedScope === value
+                  : feedScope === 'for-you' && feedCategory === value}
+              onClick={() => {
+                if (scope) {
+                  setFeedScope(value)
+                  setFeedCategory('all')
+                } else {
+                  setFeedScope('for-you')
+                  setFeedCategory(value)
+                }
+                setFeedVisibleCount(10)
+              }}
+              className="medium-home-tab"
             >
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />{label}
+              {label}
             </button>
           ))}
         </div>
@@ -1783,10 +1818,10 @@ export default function UserDashboardPage() {
         <div>
           <section className="min-w-0 space-y-3">
 
-            <DailyFeedback userId={userId} />
+            <div className="medium-home-feedback"><DailyFeedback userId={userId} /></div>
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length > 0 || suggestions.suggestedContent.length > 0 || suggestions.suggestedLocations.length > 0) && (
-              <section className="usr-card usr-enter rounded-[22px] p-4 sm:p-5 lg:hidden">
+              <section className="medium-home-suggestions usr-card usr-enter rounded-[22px] p-4 sm:p-5 lg:hidden">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {suggestions.suggestedPost && (
@@ -1843,7 +1878,11 @@ export default function UserDashboardPage() {
               <div className="usr-card rounded-[22px] border-dashed p-8 text-center">
                 <MapPin className="mx-auto h-8 w-8 text-slate-400" aria-hidden="true" />
                 <p className="mt-3 text-sm font-bold text-slate-800">Nothing here yet</p>
-                <p className="mt-1 text-xs text-slate-500">Try another topic, clear the filters, or search the community.</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {feedScope === 'featured'
+                    ? 'There are no featured items in this category yet. Try another category or switch to For you.'
+                    : 'Try another topic, clear the filters, or search the community.'}
+                </p>
               </div>
             ) : (
               <div className="usr-stagger space-y-3">
@@ -1860,10 +1899,11 @@ export default function UserDashboardPage() {
                   const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
-                  const authorHref = author?.id ? `/info/user/profile/${author.id}` : item.href
                   const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
-                  const authorRoleLabel = getAuthorRoleLabel(author || {})
                   const itemDate = item.reposted_at || item.last_activity_at || item.published_at || item.created_at || item.start_date
+                  const compactDate = itemDate && !Number.isNaN(new Date(itemDate).getTime())
+                    ? new Date(itemDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    : ''
                   const eventMediaUrl = (item.type === 'event' || item.type === 'tourist_spot') ? getImageUrl(item.featured_image || item.images || item.gallery_images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
                   const postGallery = ['blog', 'post'].includes(item.type) ? getPostImages(item) : []
@@ -1875,19 +1915,11 @@ export default function UserDashboardPage() {
                         ? getImageUrl(item.featured_image || item.images || item.gallery_images, null)
                         : eventMediaUrl
                   const postVideoUrl = item.type === 'announcement' ? item.video_url : item.type === 'post' ? item.video_url : eventVideoUrl
+                  const postThumbnailUrl = typeof postImageUrl === 'string'
+                    ? postImageUrl
+                    : postImageUrl?.url || postImageUrl?.image_url || postImageUrl?.path || postGallery[0]?.url || null
+                  const postThumbnailVideoUrl = typeof postVideoUrl === 'string' ? postVideoUrl : postVideoUrl?.url
                   const contentText = String(item.excerpt || item.description || item.content || '').trim()
-                  const normalizedTags = Array.isArray(item.tags) ? item.tags.filter(Boolean) : []
-                  const isLongContent = contentText.length > 260
-                  const isExpanded = expandedPosts.has(itemKey)
-                  const renderedContent = isLongContent && !isExpanded ? `${contentText.slice(0, 260).trim()}...` : contentText
-                  const typeMeta = getPostTypeMeta(item.type)
-                  const announcementToneClass = item.announcement_type === 'urgent'
-                    ? 'bg-red-50 text-red-700 border-red-200'
-                    : item.announcement_type === 'important'
-                      ? 'bg-amber-50 text-amber-700 border-amber-200'
-                      : 'bg-sky-50 text-sky-700 border-sky-200'
-                  const isPhotoFirstContent = ['blog', 'event', 'tourist_spot'].includes(item.type)
-                  const readingMinutes = Math.max(1, Math.ceil((contentText.length || 0) / 180))
                   const ownsOriginalPost = isOwnOriginalPost(item, userId)
                   const canManageOriginalPost = ownsOriginalPost && ['post', 'user_post'].includes(item.type)
                   const canManageOwnBlog = ownsOriginalPost && item.type === 'blog'
@@ -1905,8 +1937,8 @@ export default function UserDashboardPage() {
 
                   if (item.is_repost) {
                     return (
-                      <article key={itemKey} data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} className="usr-card feed-card feed-card-quote usr-enter overflow-hidden rounded-[22px]">
-                        <div className="p-4 sm:p-5 lg:p-6">
+                      <article key={itemKey} data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
+                        <div className="medium-home-post-inner">
                           <QuoteRepostCard
                             item={item}
                             reposter={author}
@@ -1914,19 +1946,16 @@ export default function UserDashboardPage() {
                             userId={userId}
                             commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0}
                             isSaved={isSaved}
-                            onToggleComments={() => openCommentsSheet({
-                              contentType,
-                              contentId: actionContentId,
-                              userId,
-                              contentOwnerId: item.original_author?.id || item.original_author_id || userId,
-                              contentTitle: item.original_post?.title || item.title,
-                              itemType: item.type,
-                            })}
+                            onToggleComments={() => router.push(item.href)}
                             onToggleSave={(event) => handleBookmark(event, item)}
                             onEdit={(quoteText) => void editOwnRepost(item, quoteText)}
                             onPrivacyChange={(visibility) => updateOwnRepostPrivacy(item, visibility)}
                             onDelete={() => void updateOwnRepost(item, 'delete')}
                             onArchive={() => void updateOwnRepost(item, 'archive')}
+                            onHide={() => hidePost(itemKey)}
+                            onNotInterested={() => markNotInterested(item)}
+                            onCopyLink={() => void copyPostLink(item)}
+                            compactFeed
                           />
                         </div>
                       </article>
@@ -1934,172 +1963,78 @@ export default function UserDashboardPage() {
                   }
 
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card usr-enter overflow-hidden rounded-[22px]">
-                      <div className="p-4 sm:p-5 lg:p-6">
-                        <div className="flex items-start gap-3">
-                          <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-black uppercase text-sky-700 lg:h-12 lg:w-12" aria-label={`View ${authorName}'s profile`}>
-                            {author?.profile_image_url ? <img src={author.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(authorName)}
+                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
+                      <div className="medium-home-post-inner">
+                        <div className="medium-home-post-head">
+                          <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-post-avatar" aria-label={`View ${authorName}'s profile`}>
+                            {author?.profile_image_url ? <img src={author.profile_image_url} alt="" /> : getInitials(authorName)}
                           </Link>
-                          <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                              <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="font-bold text-slate-900 hover:text-sky-700 lg:text-sm">{authorName}</Link>
-                              {authorRoleLabel && <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-semibold text-emerald-700">{authorRoleLabel}</span>}
-                              {author?.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" aria-label="Verified organization" />}
-                              <span className="text-slate-400">·</span>
-                              <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined} className="text-slate-500">{formatRelativeTime(itemDate)}</time>
-                            </div>
-
-                            <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                              <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] ${typeMeta.tone}`}>
-                                <typeMeta.icon className="h-3.5 w-3.5" aria-hidden="true" />
-                                {typeMeta.label}
-                              </span>
-                              {item.type === 'blog' && (
-                                <span className="text-[10px] font-semibold text-slate-500">{readingMinutes} min read</span>
-                              )}
-                            </div>
-
-                            {item.is_repost && <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500"><span className="font-semibold text-slate-700">{authorName} reposted</span><span>·</span><span>Originally shared by</span><Link href={item.original_author?.id ? `/info/user/profile/${item.original_author.id}` : item.href} className="font-bold text-slate-800 hover:text-sky-700">{item.original_author?.full_name || 'Community member'}</Link></div>}
-                            {item.is_repost && item.repost_quote && <div className="mt-3 rounded-xl border-l-4 border-emerald-300 bg-emerald-50 px-3 py-2.5 text-[13px] leading-5 text-slate-700"><span className="font-bold text-emerald-800">{authorName}</span>{' '}{item.repost_quote}</div>}
-
-                            {item.type === 'event' && (
-                              <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-600">
-                                {item.start_date && <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-700"><Clock3 className="h-3 w-3" />{formatDate(item.start_date)}</span>}
-                                {item.location && <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600"><MapPin className="h-3 w-3" />{item.location}</span>}
-                              </div>
-                            )}
-
-                            {item.type === 'tourist_spot' && item.location && (
-                              <div className="mt-2 inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700">
-                                <MapPin className="h-3 w-3" />{item.location}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="relative z-30 shrink-0">
-                            {canManageOriginalPost ? (
-                              <PostActionMenu
-                                visibility={item.visibility}
-                                onEdit={() => void editOwnPost(item)}
-                                onPrivacyChange={(visibility) => updateOwnPostPrivacy(item, visibility)}
-                                onArchive={() => void updateOwnPost(item, 'archive')}
-                                onDelete={() => void updateOwnPost(item, 'delete')}
-                                onCopyLink={() => void copyPostLink(item)}
-                              />
-                            ) : canManageOwnBlog ? (
-                              <PostActionMenu
-                                visibility={item.visibility}
-                                onEdit={() => editOwnBlog(item)}
-                                onPrivacyChange={(visibility) => updateOwnBlogPrivacy(item, visibility)}
-                                onArchive={() => requestBlogAction(item, 'archive')}
-                                onDelete={() => requestBlogAction(item, 'delete')}
-                                onCopyLink={() => void copyPostLink(item)}
-                              />
-                            ) : !ownsOriginalPost ? (
-                              <PostActionMenu
-                                onHide={() => hidePost(itemKey)}
-                                onNotInterested={() => markNotInterested(item)}
-                                onCopyLink={() => void copyPostLink(item)}
-                              />
-                            ) : null}
+                          <div className="medium-home-post-byline">
+                            <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-author-name">{authorName}</Link>
+                            {author?.user_type === 'admin' && <ShieldCheck className="h-3 w-3 text-emerald-500" aria-label="Verified organization" />}
+                            <span aria-hidden="true">·</span>
+                            <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined}>
+                              {compactDate || formatRelativeTime(itemDate)}
+                            </time>
                           </div>
                         </div>
 
-                        <Link href={item.href} className="mt-2 block w-full pl-0 text-left"><h2 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-sky-700 sm:text-base lg:text-lg lg:leading-7">{item.title}</h2></Link>
-
-                        {item.type === 'announcement' && (
-                          <div className={`mt-3 rounded-2xl border px-3 py-2 text-[11px] font-semibold ${announcementToneClass}`}>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <ShieldCheck className="h-3.5 w-3.5" />
-                              <span>Official {item.announcement_type || 'info'} update</span>
-                              {item.audience && <span className="rounded-full bg-white/70 px-1.5 py-0.5">{item.audience}</span>}
-                              {item.expires_at && <span>Until {formatDate(item.expires_at)}</span>}
-                            </div>
+                        <div className={`medium-home-post-body${postThumbnailUrl || postThumbnailVideoUrl ? ' has-thumbnail' : ''}`}>
+                          <div className="medium-home-post-copy">
+                            <Link href={item.href} className="medium-home-post-title">
+                              <h2>{item.title}</h2>
+                            </Link>
+                            {contentText && <p className="medium-home-post-excerpt">{contentText}</p>}
                           </div>
-                        )}
+                          {(postThumbnailUrl || postThumbnailVideoUrl) && (
+                            <Link href={item.href} className="medium-home-post-thumbnail" aria-label={`Open ${item.title}`}>
+                              {postThumbnailUrl
+                                ? <img src={postThumbnailUrl} alt="" />
+                                : <video src={postThumbnailVideoUrl} muted playsInline preload="metadata" />}
+                            </Link>
+                          )}
+                        </div>
 
-                        {isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
-                          <div className="feed-media mt-4 w-full overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100 lg:mt-5 lg:rounded-[18px]">
-                            {postGallery.length > 0 && <PostMediaGallery images={postGallery} resolveUrl={(url) => getImageUrl(url, '') || url} detailHref={item.href} />}
-                            {postGallery.length > 0 && Array.isArray(item.videos) && item.videos.filter(Boolean).map((videoUrl, videoIndex) => (
-                              <video key={`post-video-${videoIndex}`} src={typeof videoUrl === 'string' ? videoUrl : videoUrl?.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />
-                            ))}
-                            {postGallery.length === 0 && (postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>)}
-                          </div>
-                        )}
-
-                        {item.type === 'tourist_spot' && (
-                          <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-                            {item.location && <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-1 font-semibold text-sky-700"><MapPin className="h-3 w-3" />{item.location}</span>}
-                            {item.rating && <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-1 font-bold text-amber-700">★ {Number(item.rating).toFixed(1)}</span>}
-                            {item.entrance_fee && <span className="rounded-full bg-emerald-100 px-2 py-1 font-semibold text-emerald-700">₱{Number(item.entrance_fee).toLocaleString()}</span>}
-                          </div>
-                        )}
-
-                        {item.type === 'event' && (
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            {item.start_date && (
-                              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
-                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-amber-700">When</p>
-                                <p className="mt-1 text-sm font-black text-slate-900">{formatDate(item.start_date)}</p>
-                                {item.start_time && <p className="text-[11px] font-semibold text-slate-600">{item.start_time}</p>}
-                              </div>
-                            )}
-                            {item.location && (
-                              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Where</p>
-                                <p className="mt-1 text-sm font-black text-slate-900">{item.location}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {contentText && (
-                          <div className="mt-3">
-                            <p className="break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{renderedContent}</p>
-                            {isLongContent && (
-                              <button type="button" onClick={() => toggleExpandedPost(itemKey)} className="mt-2 text-xs font-bold text-sky-700 hover:text-sky-800">
-                                {isExpanded ? 'Show less' : 'Read more'}
-                              </button>
-                            )}
-                          </div>
-                        )}
-
-                        {item.type === 'forum' && (
-                          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                            <span className="rounded-full bg-sky-100 px-2.5 py-1 font-bold uppercase tracking-wide text-sky-700">Discussion</span>
-                            {item.status === 'archived' && <span className="rounded-full bg-slate-100 px-2.5 py-1 font-bold uppercase tracking-wide text-slate-600">Archived</span>}
-                            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">Last active {formatRelativeTime(item.last_activity_at)}</span>
-                          </div>
-                        )}
-
-                        {item.type === 'event' && (
-                          <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-                            <span className="rounded-full bg-amber-100 px-2.5 py-1 font-bold uppercase tracking-wide text-amber-700">{item.is_free ? 'Free entry' : `₱${Number(item.ticket_price || 0).toLocaleString()}`}</span>
-                            {item.current_attendees > 0 && <span className="rounded-full bg-emerald-100 px-2.5 py-1 font-bold text-emerald-700">{item.current_attendees} attending</span>}
-                            <span className="rounded-full bg-slate-100 px-2.5 py-1 font-semibold text-slate-600">{item.location ? 'Physical' : 'Online / TBA'}</span>
-                          </div>
-                        )}
-
-                        {!isPhotoFirstContent && (postGallery.length > 0 || postImageUrl || postVideoUrl) && (
-                          <div className="feed-media mt-4 w-full overflow-hidden rounded-[16px] lg:mt-5 lg:rounded-[12px]">
-                            {postGallery.length > 0 && <PostMediaGallery images={postGallery} resolveUrl={(url) => getImageUrl(url, '') || url} detailHref={item.href} />}
-                            {postGallery.length > 0 && Array.isArray(item.videos) && item.videos.filter(Boolean).map((videoUrl, videoIndex) => (
-                              <video key={`post-video-${videoIndex}`} src={typeof videoUrl === 'string' ? videoUrl : videoUrl?.url} controls className="aspect-[16/9] w-full object-cover" preload="metadata" />
-                            ))}
-                            {postGallery.length === 0 && (postVideoUrl ? <video src={postVideoUrl} controls className="aspect-[16/9] w-full object-cover" preload="metadata" /> : <Link href={item.href} className="block w-full"><img src={postImageUrl} alt={item.title} className="aspect-[16/9] w-full object-cover transition hover:brightness-95 lg:aspect-[16/8.5]" /></Link>)}
-                          </div>
-                        )}
-
-                        <div className="feed-actions mt-4">
-                          <SocialActionBar contentType={actionContentType} contentId={actionContentId} userId={userId} originalPost={{ ...item, id: actionContentId, author: item.is_repost ? item.original_author : item.author }} commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0} onToggleComments={() => openCommentsSheet({
-                            contentType: actionContentType,
-                            contentId: actionContentId,
-                            userId,
-                            contentOwnerId: (item.is_repost ? item.original_author?.id : item.created_by) || author?.id || userId,
-                            contentTitle: item.title,
-                            itemType: item.type,
-                          })} isSaved={isSaved} onToggleSave={(event) => handleBookmark(event, item)} />
+                        <div className="feed-actions">
+                          <SocialActionBar
+                            contentType={actionContentType}
+                            contentId={actionContentId}
+                            userId={userId}
+                            heartOnly
+                            compactFeed
+                            onNotInterested={() => markNotInterested(item)}
+                            postOptions={
+                              <span className="medium-home-post-options">
+                                <PostActionMenu
+                                  visibility={item.visibility}
+                                  contentType={actionContentType}
+                                  contentId={actionContentId}
+                                  userId={userId}
+                                  contentTitle={item.title}
+                                  shareUrl={item.href}
+                                  onEdit={canManageOriginalPost ? () => void editOwnPost(item) : canManageOwnBlog ? () => editOwnBlog(item) : undefined}
+                                  onPrivacyChange={canManageOriginalPost
+                                    ? (visibility) => updateOwnPostPrivacy(item, visibility)
+                                    : canManageOwnBlog ? (visibility) => updateOwnBlogPrivacy(item, visibility) : undefined}
+                                  onArchive={canManageOriginalPost
+                                    ? () => void updateOwnPost(item, 'archive')
+                                    : canManageOwnBlog ? () => requestBlogAction(item, 'archive') : undefined}
+                                  onDelete={canManageOriginalPost
+                                    ? () => void updateOwnPost(item, 'delete')
+                                    : canManageOwnBlog ? () => requestBlogAction(item, 'delete') : undefined}
+                                  onHide={!ownsOriginalPost ? () => hidePost(itemKey) : undefined}
+                                  onCopyLink={() => void copyPostLink(item)}
+                                  isSaved={isSaved}
+                                  onToggleSave={() => handleBookmark(null, item)}
+                                />
+                              </span>
+                            }
+                            originalPost={{ ...item, id: actionContentId, author: item.is_repost ? item.original_author : item.author }}
+                            commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0}
+                            onToggleComments={() => router.push(item.href)}
+                            isSaved={isSaved}
+                            onToggleSave={(event) => handleBookmark(event, item)}
+                          />
                         </div>
                       </div>
                     </article>
@@ -2143,27 +2078,6 @@ export default function UserDashboardPage() {
 
           <aside className="dashboard-feed-sidebar hidden min-w-0 space-y-3 lg:block lg:pr-1">
             <section className="usr-card usr-enter rounded-[18px] p-4">
-              <div className="flex items-center gap-3">
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-sm font-black text-white">
-                  {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-black text-slate-900">{userName}</p>
-                  <p className="truncate text-[11px] font-semibold text-slate-500">{todayLabel}</p>
-                </div>
-                <Link href="/info/user/profile" className="usr-press usr-lift shrink-0 rounded-full border border-slate-200 px-3 py-1.5 text-[10px] font-bold text-slate-600 hover:border-sky-300 hover:text-sky-700">Profile</Link>
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-slate-200 pt-3">
-                <Link href="/info/user/settings" className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-slate-600 hover:bg-slate-100">
-                  <Settings className="h-3.5 w-3.5" aria-hidden="true" />Settings
-                </Link>
-                <button type="button" onClick={handleLogout} className="usr-press flex items-center justify-center gap-1.5 rounded-xl bg-slate-50 px-2 py-2.5 text-[11px] font-bold text-red-600 hover:bg-red-50">
-                  <LogOut className="h-3.5 w-3.5" aria-hidden="true" />Log out
-                </button>
-              </div>
-            </section>
-
-            <section className="usr-card usr-enter rounded-[18px] p-4">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-700">Your rhythm</p>
                 <Flame className="usr-flame h-4 w-4 text-amber-500" aria-hidden="true" />
@@ -2184,6 +2098,7 @@ export default function UserDashboardPage() {
                 <Star className="h-3.5 w-3.5 text-amber-300" aria-hidden="true" />View rewards
               </Link>
             </section>
+            <DaetWeatherCard />
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
               <section className="usr-card usr-enter rounded-[18px] p-4">
@@ -2202,7 +2117,7 @@ export default function UserDashboardPage() {
                         {suggestions.suggestedPeople.map((person) => (
                           <div key={person.id} className="flex items-center justify-between gap-2">
                             <UserProfileLink user={person} className="flex min-w-0 items-center gap-2">
-                              <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[9px] font-bold text-white">
+                              <span className="dashboard-profile-avatar flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[9px] font-bold text-white">
                                 {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}
                               </span>
                               <span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>

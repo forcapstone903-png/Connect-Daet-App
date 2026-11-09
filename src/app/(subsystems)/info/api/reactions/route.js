@@ -15,9 +15,10 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'user_post',
   'rating',
   'poll',
+  'tourist_spot',
 ])
 
-const ALLOWED_REACTION_TYPES = new Set(['like', 'love', 'laugh', 'wow', 'sad', 'angry'])
+const ALLOWED_REACTION_TYPES = new Set(['like', 'love', 'laugh', 'wow', 'sad', 'angry', 'dislike'])
 
 const POST_OWNER_TABLES = {
   blog: ['info_blogs', 'created_by'],
@@ -26,6 +27,7 @@ const POST_OWNER_TABLES = {
   announcement: ['info_announcements', 'created_by'],
   user_post: ['info_user_posts', 'user_id'],
   post: ['info_user_posts', 'user_id'],
+  tourist_spot: ['info_tourist_spots', 'created_by'],
 }
 
 function routeForEntity(entityType, entityId) {
@@ -38,6 +40,7 @@ function routeForEntity(entityType, entityId) {
     post: `/info/user/posts/${entityId}`,
     user_post: `/info/user/posts/${entityId}`,
     announcement: `/info/user/announcements/${entityId}`,
+    tourist_spot: `/info/visitor/tourist-spots/${entityId}`,
   }
   return routes[normalized] || null
 }
@@ -58,6 +61,8 @@ async function resolvePostOwner(adminSupabase, contentType, contentId) {
 }
 
 async function createReactionNotification(adminSupabase, { contentType, contentId, actorId, reactionType }) {
+  if (reactionType === 'dislike') return
+
   let postId = contentId
   let postType = contentType
   let commentId = null
@@ -170,7 +175,7 @@ async function writeReaction(request, method) {
     const contentId = String(body.contentId || '').trim()
     const reactionType = String(body.reactionType || '').trim()
 
-    if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !ALLOWED_REACTION_TYPES.has(reactionType)) {
+    if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !ALLOWED_REACTION_TYPES.has(reactionType) || (reactionType === 'dislike' && !['event', 'tourist_spot'].includes(contentType))) {
       return NextResponse.json({ success: false, message: 'Invalid reaction payload.' }, { status: 400 })
     }
 

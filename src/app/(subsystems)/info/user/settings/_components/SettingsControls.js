@@ -7,34 +7,35 @@
 
 import Link from 'next/link'
 
-export function SettingsCard({ icon: Icon, title, description, children, footer }) {
+export function SettingsCard({ icon: Icon, title, description, children, footer, headerAction }) {
   return (
-    <section className="usr-card usr-enter p-4 sm:p-6">
+    <section className="usr-card usr-enter settings-card">
       {(title || description) && (
-        <div className="mb-5 flex items-start gap-3">
+        <div className="settings-card-intro">
           {Icon ? (
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-700">
+            <span className="settings-card-icon">
               <Icon className="h-5 w-5" />
             </span>
           ) : null}
           <div className="min-w-0">
-            {title ? <h2 className="text-base font-black text-slate-900">{title}</h2> : null}
-            {description ? <p className="mt-0.5 text-sm leading-6 text-slate-500">{description}</p> : null}
+            {title ? <h2 className="settings-card-title">{title}</h2> : null}
+            {description ? <p className="settings-card-description">{description}</p> : null}
           </div>
+          {headerAction ? <div className="settings-card-header-action">{headerAction}</div> : null}
         </div>
       )}
-      <div className="space-y-3">{children}</div>
-      {footer ? <div className="mt-5 border-t border-slate-200 pt-4">{footer}</div> : null}
+      <div className="settings-card-content">{children}</div>
+      {footer ? <div className="settings-card-footer">{footer}</div> : null}
     </section>
   )
 }
 
 export function ToggleRow({ id, label, hint, checked, onChange, disabled = false }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+    <div className="settings-toggle-row">
       <div className="min-w-0">
-        <label htmlFor={id} className="block text-sm font-semibold text-slate-800">{label}</label>
-        {hint ? <p className="mt-0.5 text-xs leading-5 text-slate-500">{hint}</p> : null}
+        <label htmlFor={id} className="settings-control-label">{label}</label>
+        {hint ? <p className="settings-control-hint">{hint}</p> : null}
       </div>
       <button
         id={id}
@@ -44,9 +45,9 @@ export function ToggleRow({ id, label, hint, checked, onChange, disabled = false
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'border-teal-700 bg-teal-700' : 'border-slate-300 bg-slate-200'}`}
+        className={`settings-toggle relative inline-flex h-8 w-[55px] shrink-0 items-center border transition disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'border-blue-600 bg-blue-600' : 'border-blue-600 bg-white'}`}
       >
-        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+        <span className={`settings-toggle-knob inline-block h-6 w-6 transform transition ${checked ? 'translate-x-[25px]' : 'translate-x-0.5'}`} />
       </button>
     </div>
   )
@@ -56,7 +57,7 @@ export function ChoiceCards({ name, options, value, onChange, columns = 3 }) {
   const gridClass = columns === 2 ? 'sm:grid-cols-2' : 'sm:grid-cols-3'
 
   return (
-    <div className={`grid gap-2 ${gridClass}`} role="radiogroup" aria-label={name}>
+    <div className={`settings-choice-list ${gridClass}`} role="radiogroup" aria-label={name}>
       {options.map((option) => {
         const isActive = option.value === value
         return (
@@ -66,15 +67,17 @@ export function ChoiceCards({ name, options, value, onChange, columns = 3 }) {
             role="radio"
             aria-checked={isActive}
             onClick={() => onChange(option.value)}
-            className={`rounded-2xl border px-3 py-3 text-left transition ${isActive ? 'border-teal-600 bg-teal-50 shadow-sm' : 'border-slate-200 bg-slate-50 hover:border-teal-300'}`}
+            className={`settings-choice-option ${isActive ? 'is-selected' : ''}`}
           >
-            <span className="flex items-center gap-2">
-              <span className={`flex h-4 w-4 items-center justify-center rounded-full border ${isActive ? 'border-teal-700 bg-teal-700' : 'border-slate-300 bg-white'}`}>
-                {isActive ? <span className="h-1.5 w-1.5 rounded-full bg-white" /> : null}
+            <span className="settings-choice-radio-wrap">
+              <span className={`settings-choice-radio ${isActive ? 'is-selected' : ''}`}>
+                {isActive ? <span className="settings-choice-radio-mark" /> : null}
               </span>
-              <span className="text-sm font-bold text-slate-900">{option.label}</span>
+              <span className="settings-choice-copy">
+                <span className="settings-control-label">{option.label}</span>
+                {option.hint ? <span className="settings-control-hint">{option.hint}</span> : null}
+              </span>
             </span>
-            {option.hint ? <span className="mt-1 block text-xs leading-5 text-slate-500">{option.hint}</span> : null}
           </button>
         )
       })}
@@ -84,14 +87,14 @@ export function ChoiceCards({ name, options, value, onChange, columns = 3 }) {
 
 export function SelectField({ id, label, hint, value, onChange, options }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
-      <label htmlFor={id} className="block text-sm font-semibold text-slate-800">{label}</label>
-      {hint ? <p className="mt-0.5 text-xs leading-5 text-slate-500">{hint}</p> : null}
+    <div className="settings-control-panel">
+      <label htmlFor={id} className="settings-control-label">{label}</label>
+      {hint ? <p className="settings-control-hint">{hint}</p> : null}
       <select
         id={id}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none"
+        className="settings-select mt-2 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none"
       >
         {options.map((option) => (
           <option key={option.value} value={option.value}>{option.label}</option>
@@ -102,12 +105,12 @@ export function SelectField({ id, label, hint, value, onChange, options }) {
 }
 export function ActionRow({ icon: Icon, label, hint, children }) {
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="settings-control-panel settings-action-row">
       <div className="flex min-w-0 items-start gap-3">
-        {Icon ? <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-sm"><Icon className="h-4 w-4" /></span> : null}
+        {Icon ? <span className="settings-action-icon"><Icon className="h-4 w-4" /></span> : null}
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-800">{label}</p>
-          {hint ? <p className="mt-0.5 text-xs leading-5 text-slate-500">{hint}</p> : null}
+          <p className="settings-control-label">{label}</p>
+          {hint ? <p className="settings-control-hint">{hint}</p> : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">{children}</div>
@@ -124,7 +127,7 @@ export function StatusBanner({ tone = 'info', children }) {
   }
 
   return (
-    <p role="status" className={`usr-inline-note ${tones[tone] || tones.info}`}>{children}</p>
+    <p role="status" className={`usr-inline-note settings-status-banner ${tones[tone] || tones.info}`}>{children}</p>
   )
 }
 

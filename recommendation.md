@@ -12,12 +12,32 @@ Treat “real-time updates” as an unverified requirement until it is implement
 
 ### 1. Confirm the system’s real-time requirements
 
-- Identify which information must update live: for example, announcements, event changes, tourist-spot information, forum activity, or administrative dashboards.
-- Agree on what “real time” means for each item (immediate push updates or a defined refresh interval).
-- Choose and document the delivery approach, such as database change subscriptions or polling.
-- Handle disconnects, reconnects, duplicate/out-of-order updates, and visible stale/offline states.
-- Test updates across separate user sessions and confirm that users without permission cannot receive private/admin data.
-- Until these checks pass, describe the feature as planned or unverified rather than implemented.
+**Scope and freshness target agreed; implementation and end-to-end verification remain outstanding.** The agreed target is immediate push updates, with a 30-second reconciliation fallback:
+
+| Information | Intended audience | Agreed freshness | Planned delivery |
+|---|---|---|---|
+| Published announcements | Visitors and signed-in users; administrators may also see/manage restricted announcements | Push, reconcile within 30 seconds | Supabase Realtime change notifications, followed by an authorized query |
+| Event changes | Visitors and signed-in users; administrators may also see/manage restricted events | Push, reconcile within 30 seconds | Supabase Realtime change notifications, followed by an authorized query |
+| Tourist-spot changes | Visitors and signed-in users; administrators may also see/manage restricted spots | Push, reconcile within 30 seconds | Supabase Realtime change notifications, followed by an authorized query |
+| Forum activity | Users permitted to view the affected thread/activity; administrators may moderate | Push, reconcile within 30 seconds | Supabase Realtime change notifications, followed by an authorized query |
+| Admin dashboard data for these streams | Administrators only | Push, reconcile within 30 seconds | Admin-authorized queries after Supabase Realtime notifications |
+| Existing private notifications and messaging | Only the intended user or conversation participants | Push; reconcile within 30 seconds where applicable | Keep user/conversation-scoped subscriptions and authorized reloads |
+
+The 30-second target is a maximum reconciliation interval while a page is visible, not a guarantee of delivery during a network outage. “Push” means the client should refresh promptly after a database change notification; it does not make the browser’s local state authoritative. Admin dashboard scope here is limited to the agreed announcement, event, tourist-spot, and forum data, not unrelated health/weather measurements.
+
+**Current implementation evidence:**
+
+- Announcement administration currently refetches every 30 seconds. The visitor announcement flow and the dashboard’s initial feed load do not establish push delivery for announcement changes.
+- The dashboard has a user-filtered notification subscription, but its content feed is initially loaded rather than kept current by a content-change subscription.
+- Event detail currently subscribes to reactions, comments, and reposts, not event-record changes. Tourist-spot detail similarly subscribes to engagement changes, not spot-record changes.
+- Existing notification and messaging pages have some Realtime subscriptions; notifications also poll, and messaging contains reconnect handling. This is partial wiring, not proof of end-to-end delivery or authorization.
+- The migrations inspected enable RLS for the content tables and define public/admin/owner SELECT policies. The inspected Realtime migrations add other tables, but do not establish that announcements, events, tourist spots, or forum activity are in the deployed Realtime publication. The deployed database configuration and policies must be checked directly.
+
+**Implementation requirements:** Add the agreed content subscriptions and 30-second reconciliation; re-query through existing authorized reads rather than trusting broadcast row data; deduplicate events by record ID and ignore older versions; expose reconnecting/offline and last-successful-refresh state; retry subscriptions with bounded backoff; and refresh when a hidden tab becomes visible again. Do not send private/admin row contents through a public channel.
+
+**Verification still required:** In a configured test deployment, publish/update each stream from a second session and confirm prompt delivery plus the 30-second reconciliation bound; simulate duplicate and out-of-order notifications, disconnect/reconnect, offline/online transitions, and tab visibility changes; and test anonymous, regular-user, conversation-participant, and administrator accounts to confirm unauthorized users cannot receive private messages, restricted content, or admin data. Verify the deployed Realtime publication and RLS policies as part of this test.
+
+No configured two-account test session or deployed database inspection was available during this review, so those checks have not passed here. Until they do, describe real-time content updates as **planned/unverified**, not implemented.
 
 ### 2. Make engagement workflows persistent and real
 
@@ -51,7 +71,7 @@ Treat “real-time updates” as an unverified requirement until it is implement
 
 ## Suggested delivery sequence
 
-1. **Agree on scope and acceptance criteria** for “real-time updates” and engagement.
+1. **Real-time scope and freshness target are agreed** as recorded above; implement and pass the listed delivery and authorization checks before claiming the capability.
 2. **Close security and data-integrity risks** with authorization tests, secret rotation, and scheduled-post/error-handling fixes.
 3. **Implement persistent engagement workflows** for registrations, messaging, forum, and moderation.
 4. **Replace or clearly label mock admin features** and make media/settings/export behavior honest and reliable.

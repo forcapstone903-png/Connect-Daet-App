@@ -1,0 +1,15 @@
+BEGIN;
+
+ALTER TABLE public.info_blogs
+  ADD COLUMN IF NOT EXISTS location TEXT;
+
+ALTER TABLE public.forum_threads
+  ADD COLUMN IF NOT EXISTS tags TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS image_urls TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS location TEXT;
+
+ALTER TABLE public.info_feedback
+  ADD COLUMN IF NOT EXISTS image_urls TEXT[] NOT NULL DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS location TEXT;
+
+COMMIT;

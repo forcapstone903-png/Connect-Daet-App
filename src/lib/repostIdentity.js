@@ -43,6 +43,7 @@ function buildRepostFeedItem({ repost = null, original = null, reposter = null }
   if (!repost?.id || !original) return null
 
   const isBlog = repost.original_content_type === 'blog'
+  const isEvent = repost.original_content_type === 'event'
   const originalContentId = repost.original_content_id || original.id || null
   const originalAuthor = original.author || null
 
@@ -65,8 +66,10 @@ function buildRepostFeedItem({ repost = null, original = null, reposter = null }
     reposted_at: repost.created_at,
     published_at: repost.created_at,
     category: 'Repost',
-    type: isBlog ? 'blog' : 'post',
-    href: isBlog ? `/info/user/blogs/${originalContentId}` : `/info/user/posts/${originalContentId}`,
+    type: isBlog ? 'blog' : isEvent ? 'event' : 'post',
+    href: isBlog
+      ? `/info/user/blogs/${originalContentId}`
+      : isEvent ? `/info/user/events/${originalContentId}` : `/info/user/posts/${originalContentId}`,
     is_repost: true,
     author: reposter || { id: repost.user_id || null, full_name: null, profile_image_url: null, user_type: null },
     original_author_id: original.user_id || original.created_by || null,

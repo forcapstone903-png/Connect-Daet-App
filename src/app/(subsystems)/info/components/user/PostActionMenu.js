@@ -1,7 +1,10 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Archive, Globe2, Lock, MoreHorizontal, Pencil, Trash2, Users, X } from 'lucide-react'
+import { Archive, Bookmark, Globe2, Link2, Lock, MoreHorizontal, Pencil, Send, Trash2, Users, X } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+import { trackUserActivity } from '@/lib/trackActivity'
+import ShareToDMDialog from './ShareToDMDialog'
 
 const PRIVACY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe2 },
@@ -11,7 +14,7 @@ const PRIVACY_OPTIONS = [
 
 const privacyLabel = (value) => PRIVACY_OPTIONS.find((option) => option.value === value)?.label || 'Public'
 
-export default function PostActionMenu({ isRepost = false, visibility = 'public', onEdit, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink }) {
+export default function PostActionMenu({ isRepost = false, visibility = 'public', contentType, contentId, userId, contentTitle, shareUrl, onEdit, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink, isSaved = false, onToggleSave }) {
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -19,6 +22,7 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
   const [savingPrivacy, setSavingPrivacy] = useState(false)
   const [privacyError, setPrivacyError] = useState('')
   const [currentVisibility, setCurrentVisibility] = useState(visibility || 'public')
+  const [shareDMOpen, setShareDMOpen] = useState(false)
 
   useEffect(() => {
     if (!open && !privacyOpen) return undefined
@@ -45,6 +49,65 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
   const chooseAction = (action) => {
     setOpen(false)
     action?.()
+  }
+
+  const getContentUrl = () => {
+    if (typeof window === 'undefined') return ''
+    return new URL(shareUrl || window.location.href, window.location.origin).toString()
+  }
+
+  const trackExternalShare = async (platform) => {
+    if (!contentType || !contentId) return
+
+    try {
+      const { data, error: selectError } = await supabase
+        .from('share_analytics')
+        .select('share_count')
+        .eq('content_type', contentType)
+        .eq('content_id', contentId)
+        .eq('platform', platform)
+        .maybeSingle()
+      if (selectError) throw selectError
+
+      const { error: upsertError } = await supabase.from('share_analytics').upsert({
+        content_type: contentType,
+        content_id: contentId,
+        platform,
+        share_count: (data?.share_count || 0) + 1,
+        last_shared_at: new Date().toISOString(),
+      }, { onConflict: 'content_type,content_id,platform' })
+      if (upsertError) throw upsertError
+
+      if (userId) {
+        const { error: insertError } = await supabase.from('content_shares').insert({
+          user_id: userId,
+          content_type: contentType,
+          content_id: contentId,
+          share_type: 'external',
+          platform,
+        })
+        if (insertError) throw insertError
+
+        trackUserActivity({
+          userId,
+          activityType: 'share_content',
+          entityType: contentType,
+          entityId: contentId,
+          description: `Shared ${contentType}`,
+          metadata: { contentTitle: contentTitle || contentType, platform },
+        })
+      }
+    } catch (error) {
+      console.error('Content share tracking failed:', error)
+    }
+  }
+
+  const shareOnFacebook = () => {
+    const url = getContentUrl()
+    if (!url) return
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank', 'noopener,noreferrer')
+    setOpen(false)
+    void trackExternalShare('facebook')
   }
 
   const savePrivacy = async (nextVisibility) => {
@@ -84,8 +147,21 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
           {onDelete && <button type="button" onClick={() => chooseAction(onDelete)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50" role="menuitem"><Trash2 className="h-4 w-4" />{isRepost ? 'Delete Repost' : 'Delete'}</button>}
           {onHide && <button type="button" onClick={() => chooseAction(onHide)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Archive className="h-4 w-4" />Hide post</button>}
           {onNotInterested && <button type="button" onClick={() => chooseAction(onNotInterested)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><X className="h-4 w-4" />Not interested</button>}
-          {onCopyLink && <button type="button" onClick={() => chooseAction(onCopyLink)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Globe2 className="h-4 w-4" />Copy link</button>}
+          {onToggleSave && <button type="button" onClick={() => chooseAction(onToggleSave)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Bookmark className={`h-4 w-4 ${isSaved ? 'fill-current' : ''}`} />{isSaved ? 'Remove from saved' : 'Save post'}</button>}
+          {contentType && contentId && <button type="button" onClick={() => { setOpen(false); setShareDMOpen(true) }} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Send className="h-4 w-4 text-blue-600" />Share to DM</button>}
+          {contentType && contentId && <button type="button" onClick={shareOnFacebook} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Globe2 className="h-4 w-4 text-blue-600" />Share on Facebook</button>}
+          {onCopyLink && <button type="button" onClick={() => chooseAction(onCopyLink)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Link2 className="h-4 w-4" />Copy link</button>}
         </div>
+      )}
+
+      {shareDMOpen && contentType && contentId && (
+        <ShareToDMDialog
+          contentType={contentType}
+          contentId={contentId}
+          userId={userId}
+          onClose={() => setShareDMOpen(false)}
+          onShared={() => void trackExternalShare('dm')}
+        />
       )}
 
       {privacyOpen && (

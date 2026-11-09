@@ -39,7 +39,7 @@ export async function GET(request, { params }) {
         .maybeSingle(),
       adminSupabase
         .from('profiles')
-        .select('user_id, full_name, profile_image_url, cover_photo_url, bio, city, country, is_public')
+        .select('user_id, full_name, profile_image_url, cover_photo_url, bio, city, country, privacy_level, is_public')
         .eq('user_id', profileId)
         .maybeSingle(),
       viewerId && viewerId !== profileId
@@ -69,8 +69,13 @@ export async function GET(request, { params }) {
     }
 
     const isOwnProfile = viewerId === profileId
-    const privacyLevel = profileData?.is_public === false ? 'private' : 'public'
-    if (privacyLevel !== 'public' && !isOwnProfile && !followRow) {
+    const privacyLevel = profileData?.is_public === false
+      ? (['followers', 'private'].includes(profileData.privacy_level) ? profileData.privacy_level : 'followers')
+      : profileData?.privacy_level || 'public'
+    if (privacyLevel === 'private' && !isOwnProfile) {
+      return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
+    }
+    if (privacyLevel === 'followers' && !isOwnProfile && !followRow) {
       return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
     }
     const followedProfileIds = new Set(followRow ? [profileId] : [])
@@ -160,6 +165,23 @@ export async function GET(request, { params }) {
     if (followersCountError) throw followersCountError
     if (followingCountError) throw followingCountError
     if (blockedError && blockedError.code !== '42P01') throw blockedError
+
+    const [{ data: touristSpots, error: touristSpotsError }, { data: earnedBadges, error: earnedBadgesError }] = await Promise.all([
+      adminSupabase
+        .from('info_tourist_spots')
+        .select('id, name, description, category, location, latitude, longitude, featured_image, images, created_at')
+        .eq('created_by', profileId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(20),
+      adminSupabase
+        .from('user_badges')
+        .select('id, badge_name, badge_icon, description, earned_at')
+        .eq('user_id', profileId)
+        .order('earned_at', { ascending: false }),
+    ])
+    if (touristSpotsError) throw touristSpotsError
+    if (earnedBadgesError) throw earnedBadgesError
 
     const visibleUserPosts = (userPosts || []).filter((post) =>
       canViewVisibility(post.visibility, profileId, viewerId, followedProfileIds)
@@ -291,6 +313,7 @@ export async function GET(request, { params }) {
         bio: profileData?.bio || userData.bio,
         city: profileData?.city || userData.city,
         country: profileData?.country || userData.country,
+        earned_badges: earnedBadges || [],
       },
       content: {
         user_posts: archivedOnly && viewerId === profileId ? [] : attachEngagement(visibleUserPosts, 'user_post'),
@@ -298,6 +321,7 @@ export async function GET(request, { params }) {
         blogs: attachEngagement(blogs, 'blog'),
         threads: attachEngagement(threads, 'forum_thread'),
         events: attachEngagement(events, 'event'),
+        tourist_spots: touristSpots || [],
         reposts: archivedOnly && viewerId === profileId ? [] : repostContent,
         archived_reposts: archivedOnly && viewerId === profileId ? repostContent : [],
       },

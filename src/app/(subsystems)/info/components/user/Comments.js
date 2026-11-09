@@ -42,8 +42,9 @@ function countCommentLikes(comment) {
 }
 
 const INITIAL_VISIBLE_COMMENTS = 3
+const EVENT_COMMENT_SORT_LABELS = { relevant: 'Most Relevant', newest: 'Newest', oldest: 'Oldest' }
 
-export default function Comments({ contentType, contentId, userId, contentOwnerId, contentTitle, onPinChange, sortBy = 'relevant', compact = false, sheetMode = false, focusCommentId = null, articleStyle = false }) {
+export default function Comments({ contentType, contentId, userId, contentOwnerId, contentTitle, onPinChange, sortBy = 'relevant', compact = false, sheetMode = false, focusCommentId = null, articleStyle = false, eventStyle = false }) {
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -534,7 +535,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                   <button
                     type="button"
                     onClick={() => {
-                      if (replyCount > 0) {
+                      if (replyCount > 0 && !eventStyle) {
                         setExpandedReplyIds((prev) => ({
                           ...prev,
                           [comment.id]: !prev[comment.id],
@@ -557,8 +558,17 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                     className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
                   >
                     <CornerDownRight className="h-3.5 w-3.5" />
-                    {replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
+                    {eventStyle ? 'Reply' : replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
                   </button>
+                  {eventStyle && replyCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandedReplyIds((previous) => ({ ...previous, [comment.id]: !previous[comment.id] }))}
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200"
+                    >
+                      {isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -616,32 +626,36 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   }
 
   return (
-    <div className={sheetMode ? 'flex h-full min-h-0 flex-col overflow-hidden' : compact ? 'mt-3 border-t border-slate-100 pt-3' : articleStyle ? 'flex flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4' : 'flex max-h-[80vh] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
-      {!sheetMode && <div className={`${articleStyle ? 'order-2 mb-3 mt-3 border-t border-slate-200 pt-3' : compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
-        <div>
-          <h3 className={`flex items-center gap-2 font-bold text-slate-900 ${compact ? 'text-xs' : articleStyle ? 'text-lg' : 'text-base'}`}>
-            <MessageSquare className="h-4 w-4 text-sky-600" />
-            {compact ? `${totalCommentCount} ${totalCommentCount === 1 ? 'comment' : 'comments'}` : 'Comments'}
-          </h3>
-          {!compact && <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>}
-        </div>
+    <div className={eventStyle ? 'event-detail-comment-panel flex flex-col' : sheetMode ? 'flex h-full min-h-0 flex-col overflow-hidden' : compact ? 'mt-3 border-t border-slate-100 pt-3' : articleStyle ? 'flex flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4' : 'flex max-h-[80vh] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
+      {!sheetMode && (
+        <div className={`${articleStyle ? 'order-2 mb-3 mt-3 border-t border-slate-200 pt-3' : compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
+          <div>
+            <h3 className={`flex items-center gap-2 font-bold text-slate-900 ${compact ? 'text-xs' : articleStyle ? 'text-lg' : 'text-base'}`}>
+              <MessageSquare className="h-4 w-4 text-sky-600" />
+              {compact ? `${totalCommentCount} ${totalCommentCount === 1 ? 'comment' : 'comments'}` : 'Comments'}
+            </h3>
+            {!compact && <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>}
+          </div>
 
-        {!compact && <div className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5 sm:w-auto sm:justify-end">
-          <SortDesc className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-          {['relevant', 'newest', 'oldest', 'most_liked'].map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setSortMode(mode)}
-              className={`shrink-0 rounded-full px-2.5 py-2 text-[10px] font-semibold capitalize transition sm:py-1 ${
-                sortMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              {mode.replace('_', ' ')}
-            </button>
-          ))}
-        </div>}
-      </div>}
+          {!compact && (
+            <div className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5 sm:w-auto sm:justify-end">
+              <SortDesc className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              {(eventStyle ? ['relevant', 'newest', 'oldest'] : ['relevant', 'newest', 'oldest', 'most_liked']).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setSortMode(mode)}
+                  className={`shrink-0 rounded-full px-2.5 py-2 text-[10px] font-semibold capitalize transition sm:py-1 ${
+                    sortMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {eventStyle ? EVENT_COMMENT_SORT_LABELS[mode] : mode.replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {threads.length > 0 ? (
         <div className={`${articleStyle ? 'order-3' : ''} min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1`}>
@@ -669,8 +683,8 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         </div>
       )}
 
-      <div className={`${articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
-        {articleStyle && <p className="mb-2 text-sm font-bold text-slate-900">Share Your Thoughts</p>}
+      {(!eventStyle || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
+        {(articleStyle || eventStyle) && <p className="mb-2 text-sm font-bold text-slate-900">{eventStyle ? 'Write a comment' : 'Share Your Thoughts'}</p>}
         <div className="flex items-start gap-3">
           <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
             {currentUser?.profile_image_url ? (
@@ -684,7 +698,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             <MentionsAutoSuggest
               value={body}
               onChange={setBody}
-              placeholder="Write a comment…"
+              placeholder={eventStyle ? 'Write a comment...' : 'Write a comment…'}
               rows={compact ? 1 : 2}
               userId={userId}
               onMentionAdded={(user) => setMentionRefs((previous) => previous.some((item) => item.id === user.id)
@@ -705,7 +719,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                 >
                   <X className="h-4 w-4" />
                 </button>
-              </div>
+            </div>
             )}
 
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -794,7 +808,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             )}
           </div>
         </div>
-      </div>
+      </div>}
 
       {reactionDetails && (
         <div

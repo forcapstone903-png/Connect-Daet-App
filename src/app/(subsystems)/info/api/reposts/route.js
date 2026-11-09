@@ -82,6 +82,7 @@ async function insertRepost(adminSupabase, payload) {
       original_content_type: payload.original_content_type,
       original_content_id: payload.original_content_id,
       quote_text: payload.quote_text,
+      visibility: payload.visibility,
     })
     .select('id, user_id, original_content_type, original_content_id, quote_text, created_at')
     .single()
@@ -95,7 +96,8 @@ async function getOriginalContent(adminSupabase, contentType, contentId) {
 
   let query = adminSupabase.from(definition.table).select(definition.select).eq('id', contentId)
   if (contentType === 'user_post' || contentType === 'forum_thread') query = query.in('status', ['active', 'published'])
-  else if (contentType === 'blog' || contentType === 'event' || contentType === 'announcement') query = query.eq('status', 'published')
+  else if (contentType === 'event') query = query.in('status', ['published', 'cancelled', 'completed'])
+  else if (contentType === 'blog' || contentType === 'announcement') query = query.eq('status', 'published')
 
   const { data, error } = await query.maybeSingle()
   const authorId = data?.[definition.authorColumn] || null
@@ -136,8 +138,9 @@ export async function POST(request) {
   const contentType = normalizeContentType(body.contentType)
   const contentId = String(body.contentId || '').trim()
   const quoteText = String(body.quoteText || '').trim() || null
+  const visibility = String(body.visibility || 'public').trim()
 
-  if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId) {
+  if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !['public', 'followers', 'private'].includes(visibility)) {
     return NextResponse.json({ success: false, message: 'Invalid repost content.' }, { status: 400 })
   }
 
@@ -181,6 +184,7 @@ export async function POST(request) {
     original_content_type: contentType,
     original_content_id: contentId,
     quote_text: quoteText,
+    visibility,
     status: 'active',
   })
 

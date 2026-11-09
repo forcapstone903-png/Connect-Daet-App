@@ -9,52 +9,25 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 const adminSupabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
-function levenshteinDistance(left, right) {
-  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
-
-  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
-    let diagonal = previous[0]
-    previous[0] = leftIndex
-
-    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
-      const saved = previous[rightIndex]
-      previous[rightIndex] = left[leftIndex - 1] === right[rightIndex - 1]
-        ? diagonal
-        : Math.min(previous[rightIndex] + 1, previous[rightIndex - 1] + 1, diagonal + 1)
-      diagonal = saved
-    }
-  }
-
-  return previous[right.length]
-}
-
 function tokenize(value) {
-  return String(value || '').toLowerCase().trim().split(/\s+/).filter(Boolean)
+  return String(value || '').toLowerCase().trim().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
 }
 
 function scoreUser(user, queryTokens) {
-  const name = String(user.full_name || '').toLowerCase()
-  const username = String(user.email || '').split('@')[0].toLowerCase()
-  const bio = String(user.bio || '').toLowerCase()
-  const location = `${user.city || ''} ${user.country || ''}`.toLowerCase()
-  const nameTokens = tokenize(name)
+  const nameTokens = tokenize(user.full_name)
   let score = 0
 
-  queryTokens.forEach((token) => {
-    if (name === token) score += 100
-    else if (name.startsWith(token)) score += 80
-    else if (nameTokens.some((nameToken) => nameToken === token)) score += 65
-    else if (nameTokens.some((nameToken) => levenshteinDistance(nameToken, token) <= 1)) score += 45
-    else if (name.includes(token)) score += 35
+  for (const queryToken of queryTokens) {
+    const match = nameTokens.find((token) => token === queryToken || token.startsWith(queryToken) || token.includes(queryToken))
+    if (!match) return 0
+    score += match === queryToken ? 100 : match.startsWith(queryToken) ? 75 : 50
+  }
 
-    if (bio.includes(token)) score += 20
-    if (location.includes(token)) score += 15
-    if (username === token) score += 100
-    else if (username.startsWith(token)) score += 80
-    else if (username.includes(token)) score += 35
-  })
+  const normalizedName = nameTokens.join(' ')
+  const normalizedQuery = queryTokens.join(' ')
+  if (normalizedName === normalizedQuery) score += 50
 
-  return score
+  return nameTokens.length ? score : 0
 }
 
 function matchesConnectionUser(user, query) {
@@ -81,8 +54,11 @@ export async function GET(request) {
 
   const { searchParams } = new URL(request.url)
   const query = String(searchParams.get('q') || '').trim()
-  const limit = Math.min(Math.max(Number(searchParams.get('limit') || 10), 1), 5000)
   const connectionsOnly = searchParams.get('connectionsOnly') === 'true'
+  const requestedLimit = Number(searchParams.get('limit') || 10)
+  const limit = Math.min(Math.max(requestedLimit, 1), connectionsOnly ? 5000 : 50)
+  const includeSocial = searchParams.get('includeSocial') !== 'false'
+  const suggestionsOnly = searchParams.get('suggestionsOnly') === 'true'
   if (!query && !connectionsOnly) return NextResponse.json({ success: true, users: [] })
 
   try {
@@ -92,6 +68,9 @@ export async function GET(request) {
       : { data: [] }
     const viewerFollowing = new Set((viewerFollowingResult.data || []).map((row) => row.following_id))
     const queryTokens = tokenize(query)
+    if (query && !queryTokens.length && !connectionsOnly) {
+      return NextResponse.json({ success: true, query, users: [] })
+    }
 
     let allowedConnectionIds = null
     if (connectionsOnly) {
@@ -112,33 +91,53 @@ export async function GET(request) {
       if (!allowedConnectionIds.size) return NextResponse.json({ success: true, query, users: [] })
     }
 
-    const userQuery = adminSupabase
+    let userQuery = adminSupabase
       .from('info_users')
-      .select('id, full_name, email, profile_image_url, bio, city, country, user_type, status')
+      .select(suggestionsOnly
+        ? 'id, full_name, profile_image_url, user_type, status'
+        : 'id, full_name, email, profile_image_url, bio, city, country, user_type, status')
       .eq('status', 'active')
       .neq('user_type', 'admin')
-      .limit(5000)
+    if (query && !connectionsOnly) {
+      queryTokens.forEach((token) => {
+        userQuery = userQuery.ilike('full_name', `%${token}%`)
+      })
+    }
+    const candidateLimit = query && !connectionsOnly
+      ? Math.min(Math.max(limit * 10, 100), 500)
+      : connectionsOnly && !query
+        ? limit
+        : Math.min(limit, 50)
+    userQuery = userQuery.order('full_name', { ascending: true }).limit(candidateLimit)
     const scopedUserQuery = connectionsOnly ? userQuery.in('id', [...allowedConnectionIds]) : userQuery
 
-    const [{ data: users, error: usersError }, { data: profiles, error: profilesError }] = await Promise.all([
-      scopedUserQuery,
-      connectionsOnly
-        ? Promise.resolve({ data: [], error: null })
-        : adminSupabase
-          .from('profiles')
-          .select('user_id, is_public, privacy_level')
-          .limit(5000),
-    ])
+    const { data: users, error: usersError } = await scopedUserQuery
 
     if (usersError) throw usersError
+
+    const candidateIds = (users || []).map((user) => user.id)
+    const { data: profiles, error: profilesError } = candidateIds.length
+      ? await adminSupabase
+        .from('profiles')
+        .select('user_id, is_public, privacy_level, privacy_preferences')
+        .in('user_id', candidateIds)
+      : { data: [], error: null }
     if (profilesError) throw profilesError
 
-    const privacyById = new Map((profiles || []).map((profile) => [profile.user_id, profile.privacy_level || (profile.is_public === false ? 'private' : 'public')]))
+    const profilesById = new Map((profiles || []).map((profile) => [profile.user_id, profile]))
 
-    const resultLimit = connectionsOnly && !query ? allowedConnectionIds.size : limit
+    const resultLimit = limit
     const candidates = (users || [])
       .filter((user) => user.id !== viewerId)
-      .filter((user) => connectionsOnly || privacyById.get(user.id) === 'public' || viewerFollowing.has(user.id))
+      .filter((user) => profilesById.get(user.id)?.privacy_preferences?.searchable !== false)
+      .filter((user) => {
+        const profile = profilesById.get(user.id)
+        const privacyLevel = profile?.is_public === false
+          ? (['followers', 'private'].includes(profile.privacy_level) ? profile.privacy_level : 'followers')
+          : profile?.privacy_level || 'public'
+        if (privacyLevel === 'private') return false
+        return privacyLevel === 'public' || viewerFollowing.has(user.id)
+      })
       .filter((user) => !connectionsOnly || matchesConnectionUser(user, query))
       .map((user) => ({
         ...user,
@@ -150,9 +149,9 @@ export async function GET(request) {
       .sort((left, right) => right.relevance_score - left.relevance_score || String(left.full_name || '').localeCompare(String(right.full_name || '')))
       .slice(0, resultLimit)
 
-    const candidateIds = candidates.map((user) => user.id)
-    const followerRows = candidateIds.length
-      ? (await adminSupabase.from('user_follows').select('follower_id, following_id').in('following_id', candidateIds)).data || []
+    const visibleCandidateIds = candidates.map((user) => user.id)
+    const followerRows = includeSocial && visibleCandidateIds.length
+      ? (await adminSupabase.from('user_follows').select('follower_id, following_id').in('following_id', visibleCandidateIds)).data || []
       : []
     const mutualIdsByUser = new Map()
     followerRows.forEach((row) => {
@@ -162,7 +161,7 @@ export async function GET(request) {
       mutualIdsByUser.set(row.following_id, mutualIds)
     })
     const mutualIds = [...new Set(followerRows.map((row) => row.follower_id).filter((id) => viewerFollowing.has(id)))]
-    const mutualUsers = mutualIds.length
+    const mutualUsers = includeSocial && mutualIds.length
       ? (await adminSupabase.from('info_users').select('id, full_name, profile_image_url').in('id', mutualIds)).data || []
       : []
     const mutualById = new Map(mutualUsers.map((user) => [user.id, user]))
@@ -170,18 +169,24 @@ export async function GET(request) {
     return NextResponse.json({
       success: true,
       query,
-      users: candidates.map((user) => ({
-        id: user.id,
-        full_name: user.full_name,
-        username: String(user.email || '').split('@')[0] || null,
-        profile_image_url: user.profile_image_url,
-        bio: user.bio,
-        city: user.city,
-        country: user.country,
-        user_type: user.user_type,
-        relevance_score: user.relevance_score,
-        mutual_friends: (mutualIdsByUser.get(user.id) || []).map((id) => mutualById.get(id)).filter(Boolean),
-      })),
+      users: candidates.map((user) => suggestionsOnly
+        ? {
+          id: user.id,
+          full_name: user.full_name,
+          profile_image_url: user.profile_image_url,
+        }
+        : {
+          id: user.id,
+          full_name: user.full_name,
+          username: String(user.email || '').split('@')[0] || null,
+          profile_image_url: user.profile_image_url,
+          bio: user.bio,
+          city: user.city,
+          country: user.country,
+          user_type: user.user_type,
+          relevance_score: user.relevance_score,
+          mutual_friends: (mutualIdsByUser.get(user.id) || []).map((id) => mutualById.get(id)).filter(Boolean),
+        }),
     })
   } catch (error) {
     console.error('User search failed:', error)

@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import {
   Bookmark,
-  ArrowLeft,
   ChevronDown,
   FileText,
   MessageSquare,
@@ -18,15 +18,19 @@ import {
   Pencil,
   Star,
   Trash2,
+  UserCheck,
+  UserPlus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import { invalidateCachePrefix } from '@/lib/cache'
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
 import MentionsAutoSuggest from '@/app/(subsystems)/info/components/user/MentionsAutoSuggest'
 import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
 import PostMediaCarousel from '@/app/(subsystems)/info/components/user/PostMediaCarousel'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import { getPostImages } from '@/lib/postMedia'
 
 const STORAGE_KEYS = {
@@ -111,15 +115,46 @@ const categories = {
   announcement: 'Announcements',
 }
 
+function getInterestCategoryValues(interests = []) {
+  const values = new Set()
+  interests.forEach((interest) => {
+    const value = String(interest || '').trim().toLowerCase()
+    if (/beach|nature|travel|outdoor/.test(value)) values.add('travel_guides')
+    if (/culture|heritage|art/.test(value)) values.add('cultural_insights')
+    if (/food|cuisine/.test(value)) values.add('food')
+    if (/history/.test(value)) values.add('history')
+    if (/event/.test(value)) values.add('events')
+  })
+  return [...values]
+}
+
+function canOptimizeImage(src) {
+  if (!src) return false
+  if (src.startsWith('/')) return true
+  try {
+    const imageUrl = new URL(src)
+    const hostname = imageUrl.hostname
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseHostname = supabaseUrl ? new URL(supabaseUrl).hostname : ''
+    return hostname === 'images.unsplash.com'
+      || (hostname === supabaseHostname && imageUrl.pathname.startsWith('/storage/v1/object/public/'))
+  } catch {
+    return false
+  }
+}
+
 export default function BlogDetailPage() {
   const params = useParams()
   const router = useRouter()
   const blogId = params?.id
   const [blog, setBlog] = useState(null)
   const [comments, setComments] = useState([])
+  const [commentLoadError, setCommentLoadError] = useState('')
+  const [commentReloadKey, setCommentReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState(null)
   const [userName, setUserName] = useState('Guest')
+  const [userProfileImage, setUserProfileImage] = useState('')
   const [isSaved, setIsSaved] = useState(false)
   const [commentContent, setCommentContent] = useState('')
   const [replyMap, setReplyMap] = useState({})
@@ -127,6 +162,17 @@ export default function BlogDetailPage() {
   const [submittingComment, setSubmittingComment] = useState(false)
   const [userBadges, setUserBadges] = useState([])
   const [shareCount, setShareCount] = useState(0)
+  const [authorBio, setAuthorBio] = useState('')
+  const [authorBlogs, setAuthorBlogs] = useState([])
+  const [relatedBlogs, setRelatedBlogs] = useState([])
+  const [interestBlogs, setInterestBlogs] = useState([])
+  const [popularBlogs, setPopularBlogs] = useState([])
+  const [isFollowingAuthor, setIsFollowingAuthor] = useState(false)
+  const [followBusy, setFollowBusy] = useState(false)
+  const [followError, setFollowError] = useState('')
+  const [editorialLoading, setEditorialLoading] = useState(false)
+  const [editorialError, setEditorialError] = useState('')
+  const [editorialReloadKey, setEditorialReloadKey] = useState(0)
   const [moderationPending, setModerationPending] = useState(0)
   const [editingCommentId, setEditingCommentId] = useState(null)
   const [editingContent, setEditingContent] = useState('')
@@ -136,11 +182,15 @@ export default function BlogDetailPage() {
   const [visibleComments, setVisibleComments] = useState(INITIAL_COMMENTS)
   const [visibleReplies, setVisibleReplies] = useState({})
   const [expandedReplies, setExpandedReplies] = useState({})
+  const commentRefreshSequenceRef = useRef(0)
   const commentsSectionRef = useRef(null)
 
   // All photos attached to this article (images[] + featured_image), normalized
   // and filtered; the shared gallery/lightbox render the complete list.
   const detailGallery = useMemo(() => getPostImages(blog), [blog])
+  const articleId = blog?.id || ''
+  const articleAuthorId = blog?.created_by || blog?.info_users?.id || ''
+  const articleCategory = blog?.category || ''
 
   useEffect(() => {
     let ignore = false
@@ -153,8 +203,20 @@ export default function BlogDetailPage() {
         const currentUserId = session?.user?.id || cookieSession?.user_id || null
         if (currentUserId) {
           const fullName = session?.user?.user_metadata?.full_name || cookieSession?.user_name || session?.user?.email || cookieSession?.user_email || 'Guest'
-          setUserName(fullName.split(' ')[0] || fullName)
+          setUserName(fullName)
           setUserId(currentUserId)
+
+          const { data: currentProfile, error: profileError } = await supabase
+            .from('info_users')
+            .select('full_name, profile_image_url')
+            .eq('id', currentUserId)
+            .maybeSingle()
+          if (profileError) {
+            console.error('Unable to load current user profile for blog responses:', profileError)
+          } else if (currentProfile && !ignore) {
+            setUserName(currentProfile.full_name?.trim() || fullName)
+            setUserProfileImage(currentProfile.profile_image_url || '')
+          }
 
           const { data: badgeData } = await supabase
             .from('user_badges')
@@ -179,12 +241,13 @@ export default function BlogDetailPage() {
           setBlog(blogData)
           setShareCount(readLocalStorage(`${STORAGE_KEYS.shareCounts}_${blogId}`, 0))
 
-          const { data: reactionRows } = await supabase
+          const { data: reactionRows, error: reactionError } = await supabase
             .from('content_reactions')
             .select('user_id, reaction_type')
             .eq('content_type', 'blog')
             .eq('content_id', blogId)
-
+            .eq('reaction_type', 'like')
+          if (reactionError) throw reactionError
           setBlog((previous) => ({ ...previous, likes: reactionRows?.length || 0 }))
 
           const viewKey = `daet_blog_viewed_${blogId}`
@@ -261,6 +324,210 @@ export default function BlogDetailPage() {
       ignore = true
     }
   }, [blogId])
+
+  useEffect(() => {
+    if (!blogId) return undefined
+
+    let active = true
+    const refreshComments = async () => {
+      const requestSequence = ++commentRefreshSequenceRef.current
+      try {
+        const response = await fetch(`/info/api/blog-comments?blogId=${encodeURIComponent(blogId)}`, {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok || !payload.success) {
+          throw new Error(payload.message || 'Unable to refresh comments.')
+        }
+
+        const commentRows = Array.isArray(payload.comments) ? payload.comments : []
+        const commentsById = new Map(commentRows.map((comment) => [String(comment.id), { ...comment, replies: [] }]))
+        const roots = []
+        commentRows.forEach((comment) => {
+          const current = commentsById.get(String(comment.id))
+          const parent = comment.parent_id ? commentsById.get(String(comment.parent_id)) : null
+          if (parent) parent.replies.push(current)
+          else roots.push(current)
+        })
+
+        if (active && requestSequence === commentRefreshSequenceRef.current) {
+          setComments(roots)
+          setModerationPending(commentRows.filter((comment) => comment.status !== 'approved').length)
+          setCommentLoadError('')
+        }
+      } catch (error) {
+        if (!active || requestSequence !== commentRefreshSequenceRef.current) return
+        console.error('Live article comment refresh failed:', error)
+        setCommentLoadError('Comments may be out of date. Retry to refresh them.')
+      }
+    }
+
+    void refreshComments()
+    const channel = supabase
+      .channel(`blog-comments-${blogId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'content_comments',
+        filter: `content_id=eq.${blogId}`,
+      }, () => {
+        void refreshComments()
+      })
+      .subscribe((status) => {
+        if (active && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+          console.error(`Blog comment realtime channel status: ${status}`)
+          setCommentLoadError('Live comment updates are unavailable. Retry to refresh comments.')
+        }
+      })
+
+    return () => {
+      active = false
+      void supabase.removeChannel(channel)
+    }
+  }, [blogId, commentReloadKey])
+
+  useEffect(() => {
+    if (!articleId || !articleAuthorId) return undefined
+
+    let ignore = false
+
+    const loadEditorialContext = async () => {
+      setEditorialLoading(true)
+      setEditorialError('')
+      try {
+        const [profileResult, followResult, authorResult, relatedResult, popularResult, preferenceResult] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('bio, is_public')
+            .eq('user_id', articleAuthorId)
+            .maybeSingle(),
+          userId && userId !== articleAuthorId
+            ? supabase
+                .from('user_follows')
+                .select('id')
+                .eq('follower_id', userId)
+                .eq('following_id', articleAuthorId)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+          supabase
+            .from('info_blogs')
+            .select('id, title, excerpt, featured_image, published_at, category')
+            .eq('status', 'published')
+            .eq('created_by', articleAuthorId)
+            .neq('id', articleId)
+            .order('published_at', { ascending: false })
+            .limit(4),
+          articleCategory
+            ? supabase
+                .from('info_blogs')
+                .select('id, title, excerpt, featured_image, published_at, category')
+                .eq('status', 'published')
+                .eq('category', articleCategory)
+                .neq('id', articleId)
+                .neq('created_by', articleAuthorId)
+                .order('published_at', { ascending: false })
+                .limit(4)
+            : Promise.resolve({ data: [], error: null }),
+          supabase
+            .from('info_blogs')
+            .select('id, title, excerpt, featured_image, published_at, category')
+            .eq('status', 'published')
+            .neq('id', articleId)
+            .order('views', { ascending: false, nullsFirst: false })
+            .limit(4),
+          userId
+            ? supabase
+                .from('user_feed_preferences')
+                .select('preferred_categories')
+                .eq('user_id', userId)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ])
+
+        const failedResult = [profileResult, followResult, authorResult, relatedResult, popularResult, preferenceResult]
+          .find((result) => result.error)
+        if (failedResult) throw failedResult.error
+        if (ignore) return
+
+        const interestCategories = getInterestCategoryValues(preferenceResult.data?.preferred_categories || [])
+        const interestResult = interestCategories.length
+          ? await supabase
+              .from('info_blogs')
+              .select('id, title, excerpt, featured_image, published_at, category')
+              .eq('status', 'published')
+              .in('category', interestCategories)
+              .neq('id', articleId)
+              .neq('created_by', articleAuthorId)
+              .order('published_at', { ascending: false })
+              .limit(8)
+          : { data: [], error: null }
+        if (interestResult.error) throw interestResult.error
+        if (ignore) return
+
+        const alreadyRecommended = new Set([
+          articleId,
+          ...(authorResult.data || []).map((item) => item.id),
+          ...(relatedResult.data || []).map((item) => item.id),
+        ].map(String))
+        const uniqueInterestBlogs = (interestResult.data || []).filter((item) => !alreadyRecommended.has(String(item.id)))
+        uniqueInterestBlogs.forEach((item) => alreadyRecommended.add(String(item.id)))
+
+        setAuthorBio(
+          profileResult.data?.is_public !== false || followResult.data
+            ? profileResult.data?.bio || ''
+            : '',
+        )
+        setIsFollowingAuthor(Boolean(followResult.data))
+        setAuthorBlogs(authorResult.data || [])
+        setRelatedBlogs(relatedResult.data || [])
+        setInterestBlogs(uniqueInterestBlogs)
+        setPopularBlogs((popularResult.data || []).filter((item) => !alreadyRecommended.has(String(item.id))))
+      } catch (error) {
+        console.error('Article recommendations failed:', error)
+        if (!ignore) setEditorialError('Author details and recommendations could not be loaded.')
+      } finally {
+        if (!ignore) setEditorialLoading(false)
+      }
+    }
+
+    void loadEditorialContext()
+    return () => {
+      ignore = true
+    }
+  }, [articleId, articleAuthorId, articleCategory, userId, editorialReloadKey])
+
+  const handleToggleAuthorFollow = async () => {
+    const authorId = blog?.created_by || blog?.info_users?.id
+    if (!authorId || followBusy) return
+    if (!userId) {
+      router.push('/info/login?message=Please+sign+in+to+follow+this+author.')
+      return
+    }
+
+    setFollowBusy(true)
+    setFollowError('')
+    try {
+      const response = await fetch(`/info/api/users/${encodeURIComponent(authorId)}/follow`, {
+        method: isFollowingAuthor ? 'DELETE' : 'POST',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to update your follow status.')
+      }
+
+      setIsFollowingAuthor(Boolean(result.is_following))
+      invalidateCachePrefix('profile:user:')
+      invalidateCachePrefix(`feed:user:${userId}`)
+      window.dispatchEvent(new Event('daet-notifications-updated'))
+    } catch (error) {
+      console.error('Author follow update failed:', error)
+      setFollowError(error.message || 'Unable to update your follow status.')
+    } finally {
+      setFollowBusy(false)
+    }
+  }
 
   const handleSave = async () => {
     if (!userId) {
@@ -549,9 +816,7 @@ export default function BlogDetailPage() {
   const renderComment = (comment, showReplies = true) => (
     <div
       key={comment.id}
-      className={`rounded-[20px] border p-4 ${
-        'border-slate-200 bg-white'
-      }`}
+      className="medium-response-item"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
@@ -564,7 +829,7 @@ export default function BlogDetailPage() {
             </p>
           </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-            <span>{formatDate(comment.created_at)}</span>
+            <span>{comment.created_at ? new Date(comment.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recently'}</span>
             {comment.status && comment.status !== 'approved' && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 border border-amber-200">
                 {comment.status}
@@ -798,7 +1063,8 @@ export default function BlogDetailPage() {
 
   if (loading) {
     return (
-      <main className="tourism-shell usr-section-page usr-detail min-h-screen text-slate-900">
+      <main className="tourism-shell usr-section-page usr-detail medium-article-page min-h-screen text-slate-900">
+        <UserTopHeader detailMode spacer={false} />
         <div className="usr-section-container mx-auto max-w-3xl px-3 pb-24 pt-3 sm:px-4 lg:px-6">
           <div className="usr-section-loading">
             {[0, 1].map((item) => (
@@ -816,7 +1082,8 @@ export default function BlogDetailPage() {
 
   if (!blog) {
     return (
-      <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6 text-slate-900">
+      <main className="tourism-shell usr-section-page usr-detail medium-article-page flex min-h-screen items-center justify-center p-6 text-slate-900">
+        <UserTopHeader detailMode spacer={false} />
         <div className="usr-empty-state max-w-xl">
           <FileText className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
           <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
@@ -829,31 +1096,43 @@ export default function BlogDetailPage() {
     )
   }
 
+  const authorName = blog.info_users?.full_name || blog.info_users?.email || 'Daet community member'
+  const renderArticleCards = (items) => (
+    <div className="medium-article-recommendation-grid">
+      {items.map((item) => (
+        <Link key={item.id} href={`/info/user/blogs/${item.id}`} className="medium-article-recommendation-card">
+          {item.featured_image
+            ? <Image src={item.featured_image} alt="" width={480} height={270} sizes="(max-width: 640px) 100vw, 50vw" unoptimized={!canOptimizeImage(item.featured_image)} />
+            : <span className="medium-article-recommendation-placeholder" aria-hidden="true" />}
+          <span className="medium-article-recommendation-copy">
+            <span className="medium-article-recommendation-category">{categories[item.category] || item.category || 'Daet story'}</span>
+            <strong>{item.title}</strong>
+            {item.excerpt && <span>{item.excerpt}</span>}
+            <time dateTime={item.published_at || undefined}>{formatDate(item.published_at)}</time>
+          </span>
+        </Link>
+      ))}
+    </div>
+  )
+
   return (
-    <main className="tourism-shell usr-section-page usr-detail usr-stories min-h-screen text-slate-900">
+    <main className="tourism-shell usr-section-page usr-detail usr-stories medium-article-page min-h-screen text-slate-900">
+      <UserTopHeader detailMode spacer={false} />
       <div className="usr-section-container mx-auto max-w-6xl px-3 py-3 sm:px-4 sm:py-5 lg:px-6">
-        <div className="mb-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            aria-label="Go back"
-            title="Go back"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
-        <article className="mb-5 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:mb-0">
-          {detailGallery.length > 0 && (
-            <div className="-mx-4 -mt-4 mb-5 overflow-hidden rounded-t-[14px] sm:-mx-6 sm:-mt-6">
-              <PostMediaCarousel images={detailGallery} />
-            </div>
-          )}
+        <div className="medium-article-layout">
+        <article className="medium-article-card mb-5 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:mb-0">
 
-          <h1 className="mt-4 break-words text-2xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl">{blog.title}</h1>
+          <div className="medium-article-topic-list">
+            <span className="medium-article-category">{categories[blog.category] || blog.category || 'Daet story'}</span>
+            {Array.isArray(blog.tags) && blog.tags.map((tag, index) => (
+              <span key={`${tag}-${index}`} className="medium-article-topic">{tag}</span>
+            ))}
+          </div>
+          <h1 className="medium-article-title mt-4 break-words text-2xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl">{blog.title}</h1>
+          {blog.excerpt && <p className="medium-article-deck">{blog.excerpt}</p>}
+          {blog.location && <p className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500"><span aria-hidden="true">📍</span>{blog.location}</p>}
 
-          <div className="mt-5 flex items-start gap-3 border-t border-b border-slate-200 py-3.5">
+          <div className="medium-article-byline mt-5 flex items-start gap-3 border-t border-b border-slate-200 py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
               <Link href={blog.created_by ? `/info/user/profile/${blog.created_by}` : '/info/user/profile'} aria-label="View author's profile" className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-400 to-blue-600 text-sm font-bold text-white">
                 {blog.info_users?.profile_image_url ? <img src={blog.info_users.profile_image_url} alt={blog.info_users.full_name || 'Author'} className="h-full w-full object-cover" /> : (blog.info_users?.full_name || blog.info_users?.email || 'A')[0].toUpperCase()}
@@ -861,8 +1140,6 @@ export default function BlogDetailPage() {
               <div className="min-w-0">
                 <Link href={blog.created_by ? `/info/user/profile/${blog.created_by}` : '/info/user/profile'} className="font-semibold text-slate-900 hover:text-sky-700">{blog.info_users?.full_name || blog.info_users?.email || 'Anonymous'}</Link>
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-                  <span>{categories[blog.category] || blog.category}</span>
-                  <span>•</span>
                   <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{calculateReadTime(blog.content)} min read</span>
                   <span>•</span>
                   <span>{formatDate(blog.published_at)}</span>
@@ -880,6 +1157,25 @@ export default function BlogDetailPage() {
             </div>
           </div>
 
+          <div className="medium-article-top-actions medium-article-top-social">
+            <SocialActionBar
+              contentType="blog"
+              contentId={blog.id}
+              userId={userId}
+              commentCount={comments.length}
+              onToggleComments={handleOpenComments}
+              isSaved={isSaved}
+              onToggleSave={handleSave}
+              originalPost={{ ...blog, author: blog.info_users || blog.author || { id: blog.created_by, full_name: blog.author_name, profile_image_url: blog.author_avatar_url } }}
+            />
+          </div>
+
+          {detailGallery.length > 0 && (
+            <div className="medium-article-gallery">
+              <PostMediaCarousel images={detailGallery} />
+            </div>
+          )}
+
           <div className="mt-5 flex flex-wrap gap-3">
             {userBadges.length > 0 && userBadges.map((badge) => (
               <span key={badge} className="inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 border border-amber-200">
@@ -889,51 +1185,70 @@ export default function BlogDetailPage() {
             ))}
           </div>
 
-          <div className="mt-6 space-y-5 leading-relaxed text-slate-700">
-            {blog.excerpt && <p className="text-lg italic text-slate-600">{blog.excerpt}</p>}
-
+          <div className="medium-article-reading mt-6 space-y-5 leading-relaxed text-slate-700">
             {blog.content && (
               <div
-                className="prose prose-sm max-w-none"
+                className="medium-article-content prose prose-sm max-w-none"
                 dangerouslySetInnerHTML={{ __html: blog.content.replace(/\n/g, '<br />') }}
               />
             )}
           </div>
 
-          {blog.tags && blog.tags.length > 0 && (
-            <div className="mt-6 border-t border-slate-200 pt-5">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">Tags</p>
-              <div className="flex flex-wrap gap-2">
-                {blog.tags.map((tag, idx) => (
-                  <span key={idx} className="text-sm font-semibold text-slate-600">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <SocialActionBar
-            contentType="blog"
-            contentId={blog.id}
-            userId={userId}
-            commentCount={comments.length}
-            onToggleComments={handleOpenComments}
-            isSaved={isSaved}
-            onToggleSave={handleSave}
-            originalPost={{ ...blog, author: blog.info_users || blog.author || { id: blog.created_by, full_name: blog.author_name, profile_image_url: blog.author_avatar_url } }}
-          />
         </article>
 
-        <section ref={commentsSectionRef} className="mb-5 lg:sticky lg:top-5 lg:max-h-[calc(100vh-2.5rem)] lg:overflow-y-auto lg:pr-1">
-          <div className="mb-5 rounded-[20px] border border-slate-200 bg-white p-4">
-            <h3 className="mb-3 text-sm font-bold text-slate-900">Share Your Thoughts</h3>
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">
+        <section className="medium-article-author" aria-labelledby="article-author-heading">
+          <Link
+            href={articleAuthorId ? `/info/user/profile/${articleAuthorId}` : '/info/user/profile'}
+            className="medium-article-author-avatar"
+            aria-label={`View ${authorName}'s profile`}
+          >
+            {blog.info_users?.profile_image_url
+              ? <Image src={blog.info_users.profile_image_url} alt="" width={56} height={56} unoptimized={!canOptimizeImage(blog.info_users.profile_image_url)} />
+              : authorName.slice(0, 1).toUpperCase()}
+          </Link>
+          <div className="medium-article-author-copy">
+            <p className="medium-article-author-label">Written by</p>
+            <h2 id="article-author-heading">
+              <Link href={articleAuthorId ? `/info/user/profile/${articleAuthorId}` : '/info/user/profile'}>{authorName}</Link>
+            </h2>
+            {authorBio && <p>{authorBio}</p>}
+            {followError && <p role="alert" className="medium-article-follow-error">{followError}</p>}
+          </div>
+          {userId !== articleAuthorId && (
+            <button
+              type="button"
+              onClick={handleToggleAuthorFollow}
+              disabled={followBusy}
+              aria-pressed={isFollowingAuthor}
+              className={`medium-article-follow-button ${isFollowingAuthor ? 'is-following' : ''}`}
+            >
+              {isFollowingAuthor ? <UserCheck aria-hidden="true" /> : <UserPlus aria-hidden="true" />}
+              {followBusy ? 'Updating…' : isFollowingAuthor ? 'Following' : 'Follow'}
+            </button>
+          )}
+        </section>
+
+        <section ref={commentsSectionRef} className="medium-article-comments mb-5">
+          {commentLoadError && (
+            <div className="medium-article-editorial-error mb-4" role="status">
+              <p>{commentLoadError}</p>
+              <button type="button" onClick={() => setCommentReloadKey((key) => key + 1)}>Refresh comments</button>
+            </div>
+          )}
+          <h2 className="medium-response-heading">Responses ({comments.length})</h2>
+          {userId ? (
+            <div className="medium-response-composer">
+              <span className="medium-response-avatar" aria-hidden="true">
+                {userProfileImage
+                  ? <img src={userProfileImage} alt="" />
+                  : getInitials(userName)}
+              </span>
+              <span className="medium-response-composer-name">{userName}</span>
+              <div className="medium-response-input">
                 <MentionsAutoSuggest
                   value={commentContent}
                   onChange={setCommentContent}
-                  placeholder="Write a comment..."
+                  placeholder="What are your thoughts?"
                   rows={1}
                   userId={userId}
                   onMentionAdded={(mention) => setReplyMentionRefs((previous) => ({
@@ -941,31 +1256,34 @@ export default function BlogDetailPage() {
                     root: [...(previous.root || []).filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }],
                   }))}
                 />
+                <button
+                  type="button"
+                  onClick={() => handleCommentSubmit()}
+                  disabled={submittingComment || !commentContent.trim()}
+                  aria-label="Post response"
+                  title={submittingComment ? 'Posting response' : 'Post response'}
+                  className="medium-response-submit"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => handleCommentSubmit()}
-                disabled={submittingComment || !commentContent.trim()}
-                aria-label="Post comment"
-                title={submittingComment ? 'Posting comment' : 'Post comment'}
-                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Send className="h-4 w-4" />
-              </button>
             </div>
-          </div>
-
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <h2 className="text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{comments.length} Comments</h2>
-            {moderationPending > 0 && (
+          ) : (
+            <div className="medium-response-composer medium-response-signin">
+              <span className="medium-response-avatar" aria-hidden="true">?</span>
+              <Link href="/info/login" className="medium-response-input">Sign in to share your thoughts</Link>
+            </div>
+          )}
+          {moderationPending > 0 && (
+            <div className="mb-3 flex justify-end">
               <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
                 {moderationPending} pending moderation
               </span>
-            )}
-          </div>
+            </div>
+          )}
 
           {comments.length > 0 ? (
-            <div className="space-y-0">
+            <div className="medium-response-list">
               {comments.slice(0, visibleComments).map((comment) => renderComment(comment))}
               {comments.length > visibleComments && (
                 <div className="text-center">
@@ -987,6 +1305,44 @@ export default function BlogDetailPage() {
             </div>
           )}
 
+        </section>
+
+        <section className="medium-article-recommendations" aria-label="More stories">
+          {editorialError ? (
+            <div className="medium-article-editorial-error" role="status">
+              <p>{editorialError}</p>
+              <button type="button" onClick={() => setEditorialReloadKey((key) => key + 1)}>Try again</button>
+            </div>
+          ) : editorialLoading ? (
+            <p className="medium-article-editorial-status" role="status">Finding more stories…</p>
+          ) : (
+            <>
+              {authorBlogs.length > 0 && (
+                <section className="medium-article-recommendation-section">
+                  <h2>More from {authorName}</h2>
+                  {renderArticleCards(authorBlogs)}
+                </section>
+              )}
+              {relatedBlogs.length > 0 && (
+                <section className="medium-article-recommendation-section">
+                  <h2>More in {categories[blog.category] || blog.category}</h2>
+                  {renderArticleCards(relatedBlogs)}
+                </section>
+              )}
+              {interestBlogs.length > 0 && (
+                <section className="medium-article-recommendation-section">
+                  <h2>Picked for your interests</h2>
+                  {renderArticleCards(interestBlogs)}
+                </section>
+              )}
+              {popularBlogs.length > 0 && (
+                <section className="medium-article-recommendation-section">
+                  <h2>Popular on Daet Connect</h2>
+                  {renderArticleCards(popularBlogs)}
+                </section>
+              )}
+            </>
+          )}
         </section>
         </div>
 

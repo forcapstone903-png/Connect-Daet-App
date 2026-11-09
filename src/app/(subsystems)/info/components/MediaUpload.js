@@ -3,12 +3,14 @@
 
 import { useState, useRef } from 'react';
 import { trimLetterboxBars } from '@/lib/imageTrim';
+import { compressImage } from '@/lib/compressImage';
 
 export default function MediaUpload({ 
   bucket, 
   folder, 
   onUploadComplete, 
   onUploadError,
+  onUploadStateChange,
   existingMediaUrl,
   mediaType = 'both',
   className = "",
@@ -65,7 +67,7 @@ export default function MediaUpload({
     }
 
     if (file.size > maxSizeMB * 1024 * 1024) {
-      onUploadError?.(`File size exceeds ${maxSizeMB}MB limit.`);
+      onUploadError?.(`This image is over the ${maxSizeMB}MB limit. Choose a smaller image and try again.`);
       return;
     }
 
@@ -83,6 +85,14 @@ export default function MediaUpload({
     // Covers are re-encoded locally so baked-in pillarbox / letterbox bars are
     // gone before the bytes reach storage. Oversize files were already rejected.
     let uploadFile = file;
+    if (isImage && window.matchMedia('(pointer: coarse), (max-width: 767px)').matches) {
+      try {
+        uploadFile = await compressImage(uploadFile);
+      } catch (error) {
+        onUploadError?.(error.message || 'Unable to prepare image for upload.');
+        return;
+      }
+    }
     if (trimLetterbox && isImage) {
       try {
         const trimResult = await trimLetterboxBars(file);
@@ -97,6 +107,7 @@ export default function MediaUpload({
     }
 
     setUploading(true);
+    onUploadStateChange?.(true);
     setUploadProgress(0);
 
     try {
@@ -148,6 +159,7 @@ export default function MediaUpload({
       onUploadError?.(`Upload failed: ${error.message}`);
     } finally {
       setUploading(false);
+      onUploadStateChange?.(false);
     }
   };
 

@@ -7,6 +7,7 @@ import { Search, ArrowRight, MapPin, Home, Sparkles, Plane, Newspaper, Menu, X, 
 import { supabase } from '@/lib/supabase'
 import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import { getStoredSessionObject } from '@/lib/authCookies'
+import { decodeReviewText } from '@/lib/reviewText'
 import VisitorScrollEffects from './VisitorScrollEffects'
 import bagasbasImage from '@/app/(subsystems)/info/assets/images/bagasbasbeach.webp'
 import morgaImage from '@/app/(subsystems)/info/assets/images/morga.jpg'
@@ -400,7 +401,7 @@ export default function VisitorPage() {
   }
 
   return (
-    <VisitorScrollEffects className="visitor-page-shell min-h-screen overflow-x-clip bg-[radial-gradient(circle_at_top,_#ecfeff_0%,_#f8fafc_30%,_#f1f5f9_100%)] pb-[calc(5rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
+    <VisitorScrollEffects className="visitor-page-shell min-h-screen overflow-x-clip bg-slate-100 pb-[calc(5rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
 
       {/* Auth Required Modal */}
       {showAuthModal && (
@@ -530,13 +531,13 @@ export default function VisitorPage() {
             }}
           />
         ))}
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(8,24,39,0.78)_0%,rgba(8,35,53,0.52)_52%,rgba(5,35,32,0.30)_100%),linear-gradient(0deg,rgba(8,24,39,0.4)_0%,transparent_38%)]" />
+        <div className="absolute inset-0 bg-slate-950/50" />
 
         <div className="relative mx-auto max-w-[1440px] px-3 pb-10 pt-2 sm:px-6 sm:pb-16 sm:pt-3 lg:px-8 xl:px-10">
           {/* Header */}
-          <header className={`relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5 ${mobileMenuOpen ? 'bg-slate-950' : 'bg-white/10 backdrop-blur-xl'}`}>
+          <header className={`visitor-landing-header relative sticky top-2 z-40 mb-5 rounded-[22px] border border-white/20 px-3 py-2 shadow-[0_20px_50px_rgba(15,23,42,0.15)] sm:mb-10 sm:rounded-full sm:px-6 sm:py-2.5 ${mobileMenuOpen ? 'bg-slate-950' : 'bg-white/10 backdrop-blur-xl'}`}>
             <div className="grid items-center gap-2 sm:gap-4 md:grid-cols-[auto_1fr_auto]">
-              <div className="flex w-full items-center gap-2 sm:gap-3">
+              <div className="visitor-landing-brand flex w-full items-center gap-2 sm:gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-white/10 p-1 shadow-lg shadow-sky-900/20 ring-1 ring-white/20 sm:h-11 sm:w-11">
                   <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-xl object-cover" />
                 </div>
@@ -576,7 +577,7 @@ export default function VisitorPage() {
                 ))}
               </nav>
 
-              <div className="flex items-center justify-end gap-1.5 sm:gap-3">
+              <div className="visitor-landing-actions flex items-center justify-end gap-1.5 sm:gap-3">
                 {user ? (
                   <Link href="/info/user/dashboard" className="hidden rounded-full bg-white px-3 py-1.5 text-[10px] font-semibold text-slate-900 transition hover:bg-slate-100 sm:inline-flex sm:px-4 sm:py-2 sm:text-sm">
                     Dashboard
@@ -1296,6 +1297,7 @@ export default function VisitorPage() {
             <div className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto overscroll-x-contain px-4 pb-2 scrollbar-hide sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-3">
               {visitorReviews.map((review) => {
                 const reviewerName = String(review.info_users?.full_name || '').trim() || 'Visitor'
+                const reviewContent = decodeReviewText(review.review_text)
                 return (
                   <article key={review.id} className="w-[min(84vw,24rem)] flex-shrink-0 snap-start rounded-3xl border border-slate-200 bg-slate-50 p-5 shadow-sm sm:w-auto">
                     <div className="flex items-center justify-between gap-3">
@@ -1314,7 +1316,8 @@ export default function VisitorPage() {
                         <Star aria-hidden="true" className="h-3.5 w-3.5 fill-current" /> {review.rating}/5
                       </span>
                     </div>
-                    <p className="mt-4 line-clamp-5 text-sm leading-6 text-slate-700">{review.review_text}</p>
+                    {reviewContent.title && <h3 className="mt-4 line-clamp-1 text-sm font-semibold text-slate-900">{reviewContent.title}</h3>}
+                    <p className={`${reviewContent.title ? 'mt-1' : 'mt-4'} line-clamp-5 text-sm leading-6 text-slate-700`}>{reviewContent.body}</p>
                     <Link href={`/info/visitor/tourist-spots/${review.attraction_id}`} className="mt-4 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-sky-800 hover:text-sky-950">
                       View destination <ArrowRight className="h-4 w-4" />
                     </Link>
@@ -1327,9 +1330,9 @@ export default function VisitorPage() {
       )}
 
       <section id="map" className="mx-auto max-w-7xl scroll-mt-20 px-4 py-10 sm:px-6 sm:py-14 lg:px-8 lg:py-16">
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-[linear-gradient(135deg,#f5fbff_0%,#edf7ff_28%,#ffffff_100%)] shadow-[0_25px_70px_rgba(14,116,144,0.12)] sm:rounded-3xl lg:rounded-[2.5rem]">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_25px_70px_rgba(14,116,144,0.12)] sm:rounded-3xl lg:rounded-[2.5rem]">
           <div className="grid gap-0 lg:min-h-[520px] lg:grid-cols-[0.74fr_1.26fr] lg:items-stretch">
-            <div className="flex flex-col justify-between border-b border-slate-200 bg-[linear-gradient(180deg,#f8fcff_0%,#eef8ff_100%)] p-4 sm:p-6 lg:border-b-0 lg:border-r lg:p-8">
+            <div className="flex flex-col justify-between border-b border-slate-200 bg-sky-50 p-4 sm:p-6 lg:border-b-0 lg:border-r lg:p-8">
               <div>
                 <div className="inline-flex items-center rounded-full border border-sky-200 bg-white px-3 py-1.5 text-[9px] font-bold uppercase tracking-[0.25em] text-sky-700 shadow-sm sm:px-4 sm:py-2 sm:text-[10px]">
                   Daet Map

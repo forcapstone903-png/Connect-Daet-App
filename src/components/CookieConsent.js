@@ -13,13 +13,26 @@ function getStoredConsent() {
   }
 }
 
+function syncConsentMarker() {
+  const consent = getStoredConsent()
+  if (consent === 'accepted' || consent === 'essential-only') {
+    document.documentElement.dataset.cookieConsent = 'saved'
+  } else {
+    delete document.documentElement.dataset.cookieConsent
+  }
+}
+
 function subscribeToConsent(callback) {
-  window.addEventListener('daet-cookie-consent', callback)
-  window.addEventListener('storage', callback)
+  const handleChange = () => {
+    syncConsentMarker()
+    callback()
+  }
+  window.addEventListener('daet-cookie-consent', handleChange)
+  window.addEventListener('storage', handleChange)
 
   return () => {
-    window.removeEventListener('daet-cookie-consent', callback)
-    window.removeEventListener('storage', callback)
+    window.removeEventListener('daet-cookie-consent', handleChange)
+    window.removeEventListener('storage', handleChange)
   }
 }
 
@@ -31,7 +44,10 @@ export default function CookieConsent() {
   const visible = editing || !(storedConsent || sessionConsent)
 
   useEffect(() => {
-    const openSettings = () => setEditing(true)
+    const openSettings = () => {
+      delete document.documentElement.dataset.cookieConsent
+      setEditing(true)
+    }
     window.addEventListener('daet-open-cookie-settings', openSettings)
     return () => window.removeEventListener('daet-open-cookie-settings', openSettings)
   }, [])
@@ -47,8 +63,10 @@ export default function CookieConsent() {
       if (choice === 'accepted') {
         window.localStorage.setItem('daet-analytics-consent', 'granted')
       }
+      document.documentElement.dataset.cookieConsent = 'saved'
     } catch (error) {
       console.error('Cookie consent could not be saved:', error)
+      delete document.documentElement.dataset.cookieConsent
       setStorageError('Your choice applies for this session, but could not be saved on this device.')
     }
 
@@ -67,7 +85,7 @@ export default function CookieConsent() {
   }
 
   return (
-    <div role="region" aria-label="Cookie consent" className="pointer-events-auto fixed inset-x-0 bottom-0 z-[1000] max-h-[85vh] overflow-y-auto border-t border-slate-200 bg-slate-950/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm">
+    <div role="region" aria-label="Cookie consent" className="cookie-consent-notice pointer-events-auto fixed inset-x-0 bottom-0 z-[1000] max-h-[85vh] overflow-y-auto border-t border-slate-200 bg-slate-950/95 p-4 text-slate-100 shadow-2xl backdrop-blur-sm">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl">
           <p className="text-sm font-black uppercase tracking-[0.18em] text-sky-300">Cookie notice</p>

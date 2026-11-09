@@ -6,10 +6,11 @@ import {
   Briefcase,
   FilePenLine,
   FileText,
-  Globe,
+  Mail,
   MapPin,
   MessageSquareText,
   MoreHorizontal,
+  ShieldCheck,
   Star,
   Trophy,
   Users,
@@ -24,13 +25,18 @@ import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import { filterValidUuidValues } from '@/lib/uuid'
+import { getLevelFromPoints } from '@/lib/gamification'
 import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
 import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
 import { getPostImages } from '@/lib/postMedia'
-
-const STORAGE_KEYS = {
-  profilePreferences: 'daet_user_profile_preferences',
-}
+import { useUserSettings } from '@/components/UserSettingsProvider'
+import {
+  createDefaultSettings,
+  invalidateSettingsCaches,
+  mergeSettings,
+  saveSettingsToProfile,
+  settingsFromProfileRow,
+} from '@/lib/userSettings'
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -43,27 +49,6 @@ function readStoredSession() {
   }
 }
 
-function readLocalState(key, fallback) {
-  if (typeof window === 'undefined') return fallback
-
-  try {
-    const value = window.localStorage.getItem(key)
-    return value ? JSON.parse(value) : fallback
-  } catch {
-    return fallback
-  }
-}
-
-function writeLocalState(key, value) {
-  if (typeof window === 'undefined') return
-
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value))
-  } catch {
-    // ignore local storage failures
-  }
-}
-
 function formatDate(value) {
   if (!value) return 'Recently'
 
@@ -73,7 +58,6 @@ function formatDate(value) {
   return date.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
-    year: 'numeric',
   })
 }
 
@@ -99,7 +83,29 @@ function getBadgeTone(name) {
   return palette[name] || palette.default
 }
 
+function filterProfilePosts(posts, tab) {
+  if (tab === 'Overview') return posts.slice(0, 3)
+  if (tab === 'All') return posts
+  if (tab === 'Posts') return posts.filter((post) => post.type === 'Post' && !post.isRepost)
+  if (tab === 'Blogs') return posts.filter((post) => post.type === 'Blog')
+  if (tab === 'Forums') return posts.filter((post) => post.type === 'Forum')
+  if (tab === 'Travel') return posts.filter((post) => post.type === 'Tourist Spot')
+  if (tab === 'Reposts') return posts.filter((post) => post.isRepost)
+  if (tab === 'Photos') return posts.filter((post) => getPostImages(post).length > 0)
+  if (tab === 'Videos') {
+    return posts.filter((post) => (
+      post.videos?.length > 0
+      || Boolean(post.video_url)
+      || (Array.isArray(post.media) && post.media.some((item) => (
+        typeof item === 'object' && String(item.type || item.kind || '').toLowerCase() === 'video'
+      )))
+    ))
+  }
+  return posts
+}
+
 export default function UserProfilePage() {
+  const { updateSettings } = useUserSettings()
   const [session] = useState(readStoredSession)
   const [loading, setLoading] = useState(true)
   const [profileLoadError, setProfileLoadError] = useState('')
@@ -123,7 +129,6 @@ export default function UserProfilePage() {
     newFollowers: true,
     forumMentions: true,
     announcementAlerts: false,
-    ...(readLocalState(STORAGE_KEYS.profilePreferences, null)?.notificationPrefs || {}),
   }))
   const [profile, setProfile] = useState({
     full_name: 'Traveler',
@@ -138,12 +143,16 @@ export default function UserProfilePage() {
     created_at: new Date().toISOString(),
   })
   const [profileActionsOpen, setProfileActionsOpen] = useState(false)
-  const [openPostMenu, setOpenPostMenu] = useState(null)
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
   const [badges, setBadges] = useState([])
+  const [pointHistory, setPointHistory] = useState([])
   const [activityLog, setActivityLog] = useState([])
+  const [favoriteDestinations, setFavoriteDestinations] = useState([])
+  const [eventsJoined, setEventsJoined] = useState(0)
   const [userPosts, setUserPosts] = useState([])
+  const [profileTab, setProfileTab] = useState('Overview')
+  const [profileCompletion, setProfileCompletion] = useState({ percent: 0, items: [] })
   const [stats, setStats] = useState({
     followers: 0,
     following: 0,
@@ -152,6 +161,35 @@ export default function UserProfilePage() {
   })
   const [saving, setSaving] = useState(false)
   const levelName = `Level ${profile.level || 1}`
+  const contributionStats = useMemo(() => [
+    { label: 'Posts', value: userPosts.filter((post) => post.type === 'Post' && !post.isRepost).length, icon: FileText },
+    { label: 'Blogs', value: userPosts.filter((post) => post.type === 'Blog' && !post.isRepost).length, icon: Briefcase },
+    { label: 'Forums', value: userPosts.filter((post) => post.type === 'Forum' && !post.isRepost).length, icon: MessageSquareText },
+    { label: 'Places shared', value: userPosts.filter((post) => post.type === 'Tourist Spot').length, icon: MapPin },
+    { label: 'Events joined', value: eventsJoined, icon: Star },
+  ], [eventsJoined, userPosts])
+  const travelDestinations = useMemo(() => {
+    const destinations = new Map()
+    userPosts.filter((post) => post.type === 'Tourist Spot').forEach((post) => destinations.set(post.id, post))
+    favoriteDestinations.forEach((spot) => destinations.set(spot.id, spot))
+    return [...destinations.values()]
+  }, [favoriteDestinations, userPosts])
+  const rewardProgress = useMemo(() => {
+    const points = Math.max(0, Number(profile.points) || 0)
+    const level = getLevelFromPoints(points)
+    const thresholds = [0, 120, 350, 800, 1500, 2500]
+    const currentThreshold = thresholds[level - 1] || 0
+    const nextThreshold = thresholds[level]
+    if (nextThreshold === undefined) {
+      return { level, nextThreshold: null, pointsNeeded: 0, percent: 100 }
+    }
+    return {
+      level,
+      nextThreshold,
+      pointsNeeded: Math.max(0, nextThreshold - points),
+      percent: Math.min(100, Math.max(0, Math.round(((points - currentThreshold) / (nextThreshold - currentThreshold)) * 100))),
+    }
+  }, [profile.points])
 
   useEffect(() => {
     const currentSession = readStoredSession()
@@ -194,7 +232,14 @@ export default function UserProfilePage() {
 
     const loadProfile = async () => {
       try {
-        const [{ data: userData }, { data: profileData }, { data: badgeRows }, { data: activityRows }, { data: blogsData }, { data: threadsData }, { data: eventsData }, profileResult] = await Promise.all([
+        const settingsResponse = await fetch('/info/api/user/settings', { cache: 'no-store' })
+        const settingsResult = await settingsResponse.json().catch(() => ({}))
+        if (!settingsResponse.ok || !settingsResult.success) {
+          throw new Error(settingsResult.message || 'Unable to load your settings.')
+        }
+        const savedSettings = settingsFromProfileRow(settingsResult.profile)
+
+        const [{ data: userData }, { data: profileData }, { data: badgeRows }, { data: pointRows }, { data: activityRows }, { data: favoriteRows, error: favoriteError }, { data: registrationRows, error: registrationError }, { data: blogsData }, { data: threadsData }, { data: eventsData }, profileResult] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
@@ -211,11 +256,27 @@ export default function UserProfilePage() {
             .eq('user_id', fallbackUserId)
             .order('earned_at', { ascending: false }),
           supabase
+            .from('user_points')
+            .select('id, points, reason, source, created_at')
+            .eq('user_id', fallbackUserId)
+            .order('created_at', { ascending: false })
+            .limit(6),
+          supabase
             .from('user_activity_log')
             .select('*')
             .eq('user_id', fallbackUserId)
             .order('created_at', { ascending: false })
             .limit(6),
+          supabase
+            .from('user_favorites')
+            .select('item_id')
+            .eq('user_id', fallbackUserId)
+            .in('item_type', ['spot', 'tourist_spot']),
+          supabase
+            .from('event_registrations')
+            .select('event_id')
+            .eq('user_id', fallbackUserId)
+            .eq('status', 'confirmed'),
           supabase
             .from('info_blogs')
             .select('*')
@@ -245,9 +306,35 @@ export default function UserProfilePage() {
 
         const followSummary = profileResult
         const profileContent = profileResult.content || {}
+        if (favoriteError) throw favoriteError
+        if (registrationError) throw registrationError
+        const favoriteSpotIds = filterValidUuidValues([...new Set((favoriteRows || []).map((favorite) => favorite.item_id))])
+        const favoriteSpotResult = favoriteSpotIds.length
+          ? await supabase
+            .from('info_tourist_spots')
+            .select('id, name, description, category, location, latitude, longitude, featured_image, images')
+            .in('id', favoriteSpotIds)
+            .eq('status', 'active')
+          : { data: [], error: null }
+        if (favoriteSpotResult.error) throw favoriteSpotResult.error
+        setFavoriteDestinations((favoriteSpotResult.data || []).map((spot) => ({
+          id: spot.id,
+          type: 'Tourist Spot',
+          title: spot.name || 'Favorite destination',
+          content: spot.description || '',
+          category: spot.category || 'Destination',
+          location: spot.location || '',
+          latitude: spot.latitude,
+          longitude: spot.longitude,
+          media: spot.featured_image || (Array.isArray(spot.images) ? spot.images[0] : '') || '',
+          href: `/info/visitor/tourist-spots/${spot.id}`,
+          isFavorite: true,
+        })))
+        setEventsJoined((registrationRows || []).length)
         const mergedLocation = profileData?.location || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte'
         const nextProfile = {
           full_name: profileData?.full_name || userData?.full_name || fallbackName,
+          user_type: userData?.user_type || '',
           email: userData?.email || fallbackEmail,
           bio: profileData?.bio || userData?.bio || 'Tell the community what kind of experiences you love most.',
           avatar_url: userData?.profile_image_url || profileData?.profile_image_url || '',
@@ -272,6 +359,22 @@ export default function UserProfilePage() {
             media: post.featured_image || (post.images || [])[0] || '',
             pinned: false,
             accent: 'bg-amber-100 text-amber-700',
+          }))),
+          ...((profileContent?.tourist_spots || []).map((spot) => ({
+            id: spot.id,
+            user_id: spot.created_by,
+            type: 'Tourist Spot',
+            title: spot.name || 'Shared destination',
+            content: spot.description || 'A destination shared with the community.',
+            created_at: spot.created_at,
+            category: spot.category || 'Destination',
+            location: spot.location || '',
+            latitude: spot.latitude,
+            longitude: spot.longitude,
+            href: `/info/visitor/tourist-spots/${spot.id}`,
+            media: spot.featured_image || (Array.isArray(spot.images) ? spot.images[0] : '') || '',
+            pinned: false,
+            accent: 'bg-emerald-100 text-emerald-700',
           }))),
           ...(blogsData || []).map((blog) => ({
             id: blog.id,
@@ -358,25 +461,41 @@ export default function UserProfilePage() {
           avatar_url: nextProfile.avatar_url,
           cover_photo_url: nextProfile.cover_photo_url,
         })
-        setPrivacyLevel(profileData?.privacy_level || 'public')
-        setLanguagePreference(profileData?.language_preference || 'en')
+        setPrivacyLevel(savedSettings.privacy?.privacyLevel || 'public')
+        setLanguagePreference(savedSettings.language || 'en')
         setNotificationPrefs({
           emailAlerts: true,
           activityDigest: true,
           newFollowers: true,
           forumMentions: true,
           announcementAlerts: false,
-          ...(profileData?.notification_preferences || {}),
+          ...savedSettings.notifications,
         })
         setFollowers(followSummary?.followers || [])
         setFollowing(followSummary?.following || [])
         setBadges((badgeRows || []).map((badge) => ({ ...badge, badge_name: badge.badge_name || badge.name || 'Badge' })))
+        setPointHistory((pointRows || []).map((entry) => ({
+          id: entry.id,
+          description: entry.reason || entry.source || 'Points activity',
+          points: Number(entry.points || 0),
+          created_at: entry.created_at,
+        })))
         setActivityLog((activityRows || []).map((item) => ({
           id: item.id,
           type: item.activity_type || 'activity',
           description: item.description || 'Updated profile activity',
           created_at: item.created_at,
         })))
+        const completionFields = [
+          { label: 'Profile photo', complete: Boolean(userData?.profile_image_url || profileData?.profile_image_url) },
+          { label: 'Cover photo', complete: Boolean(profileData?.cover_photo_url) },
+          { label: 'Biography', complete: Boolean((profileData?.bio || userData?.bio || '').trim()) },
+          { label: 'Location', complete: Boolean(profileData?.location || profileData?.city || userData?.city) },
+        ]
+        setProfileCompletion({
+          percent: Math.round((completionFields.filter((item) => item.complete).length / completionFields.length) * 100),
+          items: completionFields,
+        })
         const engagementRefs = createdPosts.map((post) => ({
           type: post.type === 'Blog' ? 'blog' : post.type === 'Forum' ? 'forum_thread' : post.type === 'Event' ? 'event' : 'user_post',
           id: post.id,
@@ -402,7 +521,7 @@ export default function UserProfilePage() {
           engagementCounts.set(key, current)
         })
         const enrichedPosts = createdPosts.map((post) => {
-          const type = post.type === 'Blog' ? 'blog' : post.type === 'Forum' ? 'forum_thread' : post.type === 'Event' ? 'event' : 'user_post'
+          const type = post.type === 'Blog' ? 'blog' : post.type === 'Forum' ? 'forum_thread' : post.type === 'Event' ? 'event' : post.type === 'Tourist Spot' ? 'tourist_spot' : 'user_post'
           return { ...post, ...(engagementCounts.get(`${type}:${post.id}`) || { reactionsCount: 0, commentsCount: 0 }) }
         })
         setUserPosts(enrichedPosts)
@@ -497,7 +616,7 @@ export default function UserProfilePage() {
     return () => window.removeEventListener('daet-repost-visibility-changed', handleRepostVisibilityChange)
   }, [userId])
 
-  const visiblePosts = userPosts
+  const visiblePosts = useMemo(() => filterProfilePosts(userPosts, profileTab), [userPosts, profileTab])
   const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
 
   const updateProfilePost = async (post, action) => {
@@ -576,37 +695,45 @@ export default function UserProfilePage() {
 
     setSaving(true)
     setSaveNotice('')
+    let profileDetailsSaved = false
 
     try {
       const nextLocation = profileForm.location || [profileForm.city, profileForm.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte'
-      const baseProfile = {
-        user_id: userId,
-        full_name: profileForm.full_name,
-        cover_photo_url: profileForm.cover_photo_url,
-        bio: profileForm.bio,
-        profile_image_url: profileForm.avatar_url || null,
-        location: nextLocation,
-        privacy_level: privacyLevel,
-        language_preference: languagePreference,
-        notification_preferences: notificationPrefs,
-        is_public: privacyLevel !== 'private',
-        updated_at: new Date().toISOString(),
+      const profileResponse = await fetch('/info/api/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fullName: profileForm.full_name,
+          bio: profileForm.bio,
+          location: nextLocation,
+          avatarUrl: profileForm.avatar_url,
+          coverPhotoUrl: profileForm.cover_photo_url,
+        }),
+      })
+      const profileResult = await profileResponse.json().catch(() => ({}))
+      if (!profileResponse.ok || !profileResult.success) {
+        throw new Error(profileResult.message || 'Unable to save profile details.')
       }
+      profileDetailsSaved = true
 
-      const userUpdate = {
-        full_name: profileForm.full_name,
-        bio: profileForm.bio,
-        city: profileForm.city,
-        country: profileForm.country,
-        profile_image_url: profileForm.avatar_url,
-        updated_at: new Date().toISOString(),
+      const settingsResponse = await fetch('/info/api/user/settings', { cache: 'no-store' })
+      const settingsResult = await settingsResponse.json().catch(() => ({}))
+      if (!settingsResponse.ok || !settingsResult.success) {
+        throw new Error(settingsResult.message || 'Unable to load your settings for saving.')
       }
-
-      const userResult = await supabase.from('info_users').update(userUpdate).eq('id', userId)
-      const profileResult = await supabase.from('profiles').upsert(baseProfile, { onConflict: 'user_id' })
-
-      if (userResult.error) throw userResult.error
-      if (profileResult.error) throw profileResult.error
+      const currentSettings = mergeSettings(
+        createDefaultSettings(),
+        settingsFromProfileRow(settingsResult.profile)
+      )
+      const settingsSave = await saveSettingsToProfile({
+        settings: mergeSettings(currentSettings, {
+          language: languagePreference,
+          notifications: notificationPrefs,
+          privacy: { privacyLevel },
+        }),
+      })
+      if (!settingsSave.ok) throw settingsSave.error || new Error('Unable to save your settings.')
+      updateSettings({ language: languagePreference })
 
       const updatedProfile = {
         ...profile,
@@ -619,19 +746,29 @@ export default function UserProfilePage() {
       }
 
       setProfile(updatedProfile)
+      const completionFields = [
+        { label: 'Profile photo', complete: Boolean(profileForm.avatar_url) },
+        { label: 'Cover photo', complete: Boolean(profileForm.cover_photo_url) },
+        { label: 'Biography', complete: Boolean(profileForm.bio.trim() && profileForm.bio.trim() !== 'Tell the community what kind of experiences you love most.') },
+        { label: 'Location', complete: Boolean(profileForm.city || profileForm.country || (profileForm.location && profileForm.location !== 'Daet, Camarines Norte')) },
+      ]
+      setProfileCompletion({
+        percent: Math.round((completionFields.filter((item) => item.complete).length / completionFields.length) * 100),
+        items: completionFields,
+      })
       updateStoredSession({
         full_name: updatedProfile.full_name,
         avatar_url: updatedProfile.avatar_url,
         profile_image_url: updatedProfile.avatar_url,
       })
-      writeLocalState(STORAGE_KEYS.profilePreferences, {
-        notificationPrefs,
-      })
       invalidateCachePrefix('profile:user:')
+      invalidateSettingsCaches(userId)
       setSaveNotice('Profile updated successfully.')
     } catch (error) {
       console.error('Profile update failed:', error)
-      setSaveNotice(error?.message || 'Unable to save changes right now.')
+      setSaveNotice(profileDetailsSaved
+        ? `Profile details were saved, but preferences were not: ${error?.message || 'Unable to save settings.'}`
+        : error?.message || 'Unable to save changes right now.')
     } finally {
       setSaving(false)
     }
@@ -640,31 +777,35 @@ export default function UserProfilePage() {
   return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
       <UserTopHeader />
-      <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-2 sm:px-4 lg:px-6 lg:pb-10">
-        <div className="usr-surface usr-enter mb-5 overflow-hidden">
-          <div className="profile-cover-frame h-40 bg-gradient-to-r from-teal-700 via-cyan-700 to-emerald-600 sm:h-56">
+      <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-0 sm:px-4 lg:px-6 lg:pb-10">
+        <div className="usr-enter mb-5">
+          <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-800 via-cyan-800 to-slate-900 sm:h-56">
             {profile.cover_photo_url ? (
               <img src={profile.cover_photo_url} alt="Cover photo" className="profile-cover-image" />
             ) : null}
-            <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
+            <div className="absolute inset-0 z-10 bg-gradient-to-t from-slate-950/45 via-slate-950/10 to-transparent" />
           </div>
 
-          <div className="border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
+          <div className="profile-identity-strip border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
             <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 items-end gap-3">
                 <div className="usr-profile-avatar -mt-14 flex shrink-0 items-center justify-center overflow-hidden sm:-mt-16">
                   {profile.avatar_url ? <img src={profile.avatar_url} alt={profile.full_name} className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                 </div>
                 <div className="min-w-0 pb-1">
-                  <h1 className="break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">{profile.full_name}</h1>
-                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-teal-700" />{profile.location}</p>
+                  <h1 className="flex flex-wrap items-center gap-1.5 break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                    {profile.full_name}
+                    {profile.user_type === 'admin' && <ShieldCheck aria-label="Verified account" className="h-4 w-4 shrink-0 text-emerald-500" />}
+                  </h1>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</p>
+                  {profile.bio && <p className="profile-header-bio">{profile.bio}</p>}
                 </div>
               </div>
-              <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
-                <Link href="/info/user/blogs/new" className="usr-section-secondary">Create post</Link>
-                <Link href="/info/user/profile/edit" className="usr-section-primary">Edit profile</Link>
+              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                <Link href="/info/user/blogs/new" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />Create Post</Link>
+                <Link href="/info/user/profile/edit" className="usr-section-primary"><Wand2 className="h-4 w-4" />Edit Profile</Link>
                 <div className="relative">
-                  <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="usr-press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
+                  <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="usr-press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
                     <MoreHorizontal className="h-5 w-5" />
                   </button>
                   {profileActionsOpen && (
@@ -679,13 +820,14 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-center">
-            <div className="border-r border-slate-200 px-2 py-3"><p className="text-lg font-black text-slate-900">{stats.posts}</p><p className="usr-stat-label mt-0.5">Posts</p></div>
-            <Link href="/info/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
-            <Link href="/info/user/profile/connections?tab=following" className="px-2 py-3 transition hover:bg-teal-50"><p className="text-lg font-black text-slate-900">{stats.following}</p><p className="usr-stat-label mt-0.5">Following</p></Link>
+          <div className="profile-stat-strip grid grid-cols-3 border-b border-slate-200 text-center">
+            <div className="border-r border-slate-200 px-2 py-3"><p className="text-xl font-black text-slate-900">{stats.posts}</p><p className="usr-stat-label mt-0.5">Posts</p></div>
+            <Link href="/info/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
+            <Link href="/info/user/profile/connections?tab=following" className="px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.following}</p><p className="usr-stat-label mt-0.5">Following</p></Link>
           </div>
 
-          <div className="px-3 py-4 sm:px-5 sm:py-5">
+          <div className="profile-content-layout px-3 py-4 sm:px-5 sm:py-5">
+            <aside className="profile-content-sidebar">
             <section className="usr-card mb-5 p-4 sm:p-5">
               <div className="mb-3 flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">About</p>
@@ -699,7 +841,7 @@ export default function UserProfilePage() {
                     <span>{profile.location}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-slate-400" />
+                    <Mail className="h-4 w-4 text-slate-400" />
                     <span>{profile.email || 'No email available'}</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -710,12 +852,15 @@ export default function UserProfilePage() {
 
             </section>
 
-          {pinnedPosts.length > 0 && <section className="usr-card mb-5 !border-amber-200 !bg-amber-50 p-4 sm:p-5"><div className="mb-3 flex items-center justify-between"><h2 className="text-base font-black text-slate-900">Pinned content</h2><Star className="h-4 w-4 text-amber-500" /></div><div className="grid gap-2 sm:grid-cols-2">{pinnedPosts.slice(0, 4).map((post) => <Link key={`${post.type}-${post.id}`} href={post.href} className="usr-press rounded-2xl bg-white/80 p-3 transition hover:bg-white"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-amber-700">{post.type}</span><p className="mt-1 text-[13px] font-bold text-slate-800">{post.title}</p></Link>)}</div></section>}
+            </aside>
 
-            <section className="space-y-4">
+            <section className="profile-content-main min-w-0 space-y-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
-                  <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                  <div className="profile-create-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                    <Link href="/info/user/blogs/new" className="usr-section-primary min-w-0 flex-1 sm:flex-none">
+                      <FilePenLine className="h-4 w-4" /> Create Post
+                    </Link>
                     <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
@@ -724,6 +869,224 @@ export default function UserProfilePage() {
                     </Link>
                   </div>
                 </div>
+
+                <div className="profile-tabs" role="tablist" aria-label="Profile content">
+                  {['Overview', 'All', 'Posts', 'Blogs', 'Forums', 'Travel', 'Photos', 'Videos', 'Reposts'].map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      role="tab"
+                      aria-selected={profileTab === tab}
+                      onClick={() => setProfileTab(tab)}
+                      className="profile-tab"
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {profileTab === 'Overview' && (
+                  <div className="profile-overview">
+                    <section className="profile-overview-card profile-rewards-card">
+                      <div className="profile-overview-heading">
+                        <div>
+                          <p className="profile-overview-eyebrow">Your progress</p>
+                          <h3>Rewards & achievements</h3>
+                        </div>
+                        <Trophy aria-hidden="true" />
+                      </div>
+                      <div className="profile-reward-stats">
+                        <div><strong>{Number(profile.points) || 0}</strong><span>Points</span></div>
+                        <div><strong>Level {rewardProgress.level}</strong><span>Current level</span></div>
+                        <div><strong>{badges.length}</strong><span>Badges earned</span></div>
+                      </div>
+                      <div className="profile-level-progress">
+                        <div className="profile-level-progress-copy">
+                          <span>{rewardProgress.nextThreshold === null ? 'Maximum level reached' : `${rewardProgress.pointsNeeded} points to Level ${rewardProgress.level + 1}`}</span>
+                          <span>{rewardProgress.percent}%</span>
+                        </div>
+                        <div className="profile-level-progress-track" role="progressbar" aria-label="Progress toward next level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={rewardProgress.percent}>
+                          <span style={{ width: `${rewardProgress.percent}%` }} />
+                        </div>
+                      </div>
+                      {badges.length > 0 ? (
+                        <div className="profile-badge-list">
+                          {badges.slice(0, 4).map((badge) => (
+                            <span key={badge.id || badge.badge_name} className="profile-badge-chip" title={badge.description || badge.badge_description || badge.badge_name}>
+                              <Star aria-hidden="true" />
+                              {badge.badge_name}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="profile-overview-empty">No earned badges yet. Keep contributing to unlock achievements.</p>
+                      )}
+                      <div className="profile-overview-footer">
+                        {pointHistory.length > 0 && <span>Latest: {pointHistory[0].description} ({pointHistory[0].points > 0 ? '+' : ''}{pointHistory[0].points})</span>}
+                        <Link href="/info/user/rewards">View rewards <span aria-hidden="true">→</span></Link>
+                      </div>
+                    </section>
+
+                    <section className="profile-overview-card">
+                      <div className="profile-overview-heading">
+                        <div>
+                          <p className="profile-overview-eyebrow">Your profile</p>
+                          <h3>Profile completion</h3>
+                        </div>
+                        <strong className="profile-completion-value">{profileCompletion.percent}%</strong>
+                      </div>
+                      <div className="profile-level-progress-track" role="progressbar" aria-label="Profile completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileCompletion.percent}>
+                        <span style={{ width: `${profileCompletion.percent}%` }} />
+                      </div>
+                      <ul className="profile-completion-list">
+                        {profileCompletion.items.map((item) => (
+                          <li key={item.label} data-complete={item.complete}>
+                            <span aria-hidden="true">{item.complete ? '✓' : '○'}</span>
+                            {item.label}
+                          </li>
+                        ))}
+                      </ul>
+                      <Link className="profile-overview-link" href="/info/user/profile/edit">Complete your profile <span aria-hidden="true">→</span></Link>
+                    </section>
+
+                    <section className="profile-overview-card profile-contribution-card">
+                      <div className="profile-overview-heading">
+                        <div>
+                          <p className="profile-overview-eyebrow">Community</p>
+                          <h3>Recent contributions</h3>
+                        </div>
+                        <Users aria-hidden="true" />
+                      </div>
+                      <div className="profile-contribution-grid">
+                        {contributionStats.map(({ label, value, icon: Icon }) => (
+                          <div key={label} className="profile-contribution-stat">
+                            <Icon aria-hidden="true" />
+                            <strong>{value}</strong>
+                            <span>{label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="profile-overview-caption">Counts reflect content currently available on this profile.</p>
+                    </section>
+
+                    {pinnedPosts.length > 0 && (
+                      <section className="profile-overview-card">
+                        <div className="profile-overview-heading">
+                          <div>
+                            <p className="profile-overview-eyebrow">Showcase</p>
+                            <h3>Featured content</h3>
+                          </div>
+                          <Star aria-hidden="true" />
+                        </div>
+                        <div className="profile-featured-list">
+                          {pinnedPosts.slice(0, 3).map((post) => (
+                            <Link key={`${post.type}-${post.id}`} href={post.href}>
+                              <span>{post.type}</span>
+                              <strong>{post.title}</strong>
+                              <span aria-hidden="true">→</span>
+                            </Link>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    <section className="profile-overview-card">
+                      <div className="profile-overview-heading">
+                        <div>
+                          <p className="profile-overview-eyebrow">Explore</p>
+                          <h3>My travel journey</h3>
+                        </div>
+                        <MapPin aria-hidden="true" />
+                      </div>
+                      {travelDestinations.length > 0 ? (
+                        <div className="profile-travel-preview">
+                          {travelDestinations.slice(0, 3).map((spot) => (
+                            <Link key={spot.id} href={spot.href} className="profile-travel-item">
+                              {spot.media ? <img src={spot.media} alt="" /> : <span className="profile-travel-placeholder"><MapPin aria-hidden="true" /></span>}
+                              <span><strong>{spot.title}</strong><small>{spot.isFavorite ? 'Favorite destination' : spot.location || 'Shared destination'}</small></span>
+                            </Link>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="profile-overview-empty">No shared or favorite destinations saved yet. This profile does not track visits automatically.</p>
+                      )}
+                      <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab('Travel')}>Explore shared destinations <span aria-hidden="true">→</span></button>
+                    </section>
+
+                    {pointHistory.length > 0 && (
+                      <section className="profile-overview-card">
+                        <div className="profile-overview-heading">
+                          <div>
+                            <p className="profile-overview-eyebrow">Points</p>
+                            <h3>Recent rewards history</h3>
+                          </div>
+                          <Briefcase aria-hidden="true" />
+                        </div>
+                        <ul className="profile-point-history">
+                          {pointHistory.slice(0, 4).map((entry) => (
+                            <li key={entry.id}>
+                              <span><strong>{entry.description}</strong><small>{formatDate(entry.created_at)}</small></span>
+                              <b data-positive={entry.points >= 0}>{entry.points > 0 ? '+' : ''}{entry.points}</b>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+
+                    {activityLog.length > 0 && (
+                      <section className="profile-overview-card">
+                        <div className="profile-overview-heading">
+                          <div>
+                            <p className="profile-overview-eyebrow">Activity</p>
+                            <h3>Recent community activity</h3>
+                          </div>
+                          <MessageSquareText aria-hidden="true" />
+                        </div>
+                        <ul className="profile-point-history">
+                          {activityLog.slice(0, 4).map((item) => (
+                            <li key={item.id}>
+                              <span><strong>{item.description}</strong><small>{formatDate(item.created_at)}</small></span>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </div>
+                )}
+
+                {profileTab === 'Travel' && (
+                  <section className="profile-travel-section">
+                    <div className="profile-overview-heading">
+                      <div>
+                        <p className="profile-overview-eyebrow">Tourism contributions</p>
+                        <h3>Destinations shared</h3>
+                      </div>
+                      <MapPin aria-hidden="true" />
+                    </div>
+                    {travelDestinations.length > 0 ? (
+                      <div className="profile-travel-grid">
+                        {travelDestinations.map((spot) => (
+                          <Link key={spot.id} href={spot.href} className="profile-travel-card">
+                            {spot.media ? <img src={spot.media} alt="" /> : <span className="profile-travel-placeholder"><MapPin aria-hidden="true" /></span>}
+                            <span className="profile-travel-card-copy">
+                              <small>{spot.isFavorite ? 'Favorite destination' : spot.category || 'Destination'}</small>
+                              <strong>{spot.title}</strong>
+                              <span>{spot.location || 'Daet, Camarines Norte'}</span>
+                            </span>
+                            {spot.latitude != null && spot.longitude != null && (
+                              <span className="profile-travel-coordinates">
+                                {Number(spot.latitude).toFixed(3)}, {Number(spot.longitude).toFixed(3)}
+                                <a href={`https://www.google.com/maps/search/?api=1&query=${spot.latitude},${spot.longitude}`} target="_blank" rel="noreferrer">Map</a>
+                              </span>
+                            )}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="profile-overview-empty">No shared or favorite destinations saved yet. Visit tracking is not available, so places are never marked visited by viewing them.</p>
+                    )}
+                  </section>
+                )}
 
                 <div className="space-y-1.5">
                     {visiblePosts.length ? visiblePosts.map((post) => post.isRepost ? (
@@ -742,41 +1105,48 @@ export default function UserProfilePage() {
                         />
                       </div>
                     ) : (
-                      <article key={`${post.type}-${post.id}`} className={`usr-card usr-content-card feed-card overflow-hidden ${post.type === 'Blog' ? 'border-l-4 border-l-violet-300 bg-violet-50/30' : post.type === 'Forum' ? 'border-l-4 border-l-emerald-300 bg-emerald-50/40' : post.type === 'Event' ? 'border-l-4 border-l-amber-200 bg-amber-50/30' : 'border-l-4 border-l-slate-200'}`}>
-                        <div className="p-4 sm:p-5 lg:p-6">
-                        <div className="flex items-start gap-3">
-                          <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black uppercase text-teal-700 lg:h-12 lg:w-12">
+                      <article key={`${post.type}-${post.id}`} className="usr-card usr-content-card feed-card profile-post-card overflow-hidden">
+                        <div className="profile-post-card-inner">
+                        <div className="profile-post-header">
+                          <span className="profile-post-avatar flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-50 text-xs font-black uppercase text-sky-700">
                             {profile.avatar_url ? <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" /> : getInitials(profile.full_name)}
                           </span>
-                          <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600"><p className="truncate font-bold text-slate-900 lg:text-sm">{profile.full_name}</p><span className="text-slate-400">·</span><time className="text-slate-500">{formatDate(post.created_at)}</time></div><div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-teal-700"><span>{post.type}</span>{post.type === 'Blog' && <span className="text-[10px] font-medium normal-case tracking-normal text-slate-500">Travel story</span>}</div></div>
-                          <div className="relative shrink-0">
-                            <button type="button" aria-label="Post options" aria-expanded={openPostMenu === `${post.type}-${post.id}`} onClick={() => setOpenPostMenu(openPostMenu === `${post.type}-${post.id}` ? null : `${post.type}-${post.id}`)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500"><MoreHorizontal className="h-4 w-4" /></button>
-                            {openPostMenu === `${post.type}-${post.id}` && <div className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
-                              {isOwnOriginalPost(post, userId) && post.type === 'Post' ? <>
-                                <button type="button" onClick={() => void editProfilePost(post)} className="block w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-teal-700 hover:bg-sky-50">Edit post</button>
-                                <button type="button" onClick={() => void updateProfilePostPrivacy(post, 'public')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">Edit Privacy</button>
-                                <button type="button" onClick={() => void updateProfilePost(post, 'archive')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50">Archive post</button>
-                                <button type="button" onClick={() => void updateProfilePost(post, 'delete')} className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50">Delete post</button>
-                              </> : null}
-                              <button type="button" onClick={() => { void navigator.clipboard?.writeText(`${window.location.origin}${post.href}`); setOpenPostMenu(null) }} className="block w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50">Copy link</button>
-                            </div>}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+                              <p className="truncate font-bold text-slate-900">{profile.full_name}</p>
+                              {profile.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Verified organization" />}
+                              <span aria-hidden="true">·</span>
+                              <time dateTime={post.created_at || undefined}>{formatDate(post.created_at)}</time>
+                            </div>
                           </div>
                         </div>
 
-                        <Link href={post.href} className="mt-2 block w-full pl-0 text-left"><h3 className="m-0 break-words text-left text-[15px] font-extrabold leading-5 text-slate-950 hover:text-teal-700 sm:text-base lg:text-lg lg:leading-7">{post.title}</h3></Link>
-                        <p className="mt-3 break-words text-[13px] leading-5 text-slate-600 lg:text-[15px] lg:leading-7">{post.content}</p>
-                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 lg:mt-5">
+                        <Link href={post.href} className="profile-post-title mt-4 block"><h3>{post.title}</h3></Link>
+                        <p className="profile-post-description">{post.content}</p>
+                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
                           {getPostImages(post).length > 0 && <PostMediaGallery images={getPostImages(post)} detailHref={post.href} />}
                           {(post.videos?.length ? post.videos : (post.video_url ? [post.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
                         </div>}
 
-                        <ProfileFeedActions post={post} userId={userId} />
+                        <div className="profile-post-actions">
+                          <ProfileFeedActions
+                            post={post}
+                            userId={userId}
+                            postActionMenuProps={{
+                              visibility: post.visibility || 'public',
+                              onEdit: isOwnOriginalPost(post, userId) && post.type === 'Post' ? () => void editProfilePost(post) : undefined,
+                              onPrivacyChange: isOwnOriginalPost(post, userId) && post.type === 'Post' ? (visibility) => updateProfilePostPrivacy(post, visibility) : undefined,
+                              onArchive: isOwnOriginalPost(post, userId) && post.type === 'Post' ? () => void updateProfilePost(post, 'archive') : undefined,
+                              onDelete: isOwnOriginalPost(post, userId) && post.type === 'Post' ? () => void updateProfilePost(post, 'delete') : undefined,
+                            }}
+                          />
+                        </div>
                         </div>
                       </article>
                     )) : (
                       <div className="usr-empty-state !border-dashed text-sm text-slate-500">
-                        <p className="font-semibold text-slate-700">Nothing on your wall yet</p>
-                        <p className="mt-1">Share a story or start a forum discussion to fill it with your latest community updates.</p>
+                        <p className="font-semibold text-slate-700">{profileTab === 'Overview' ? 'No recent posts yet' : `No ${profileTab.toLowerCase()} to show`}</p>
+                        <p className="mt-1">{profileTab === 'Overview' ? 'Share a story or start a forum discussion to add your first community update.' : `Your ${profileTab.toLowerCase()} will appear here when you share them.`}</p>
                         <Link href="/info/user/blogs/new" className="usr-section-primary mt-5 inline-flex">Create a post</Link>
                       </div>
                     )}
@@ -906,7 +1276,7 @@ export default function UserProfilePage() {
                       {[
                         { code: 'en', label: 'English' },
                         { code: 'fil', label: 'Filipino' },
-                        { code: 'es', label: 'Español' },
+                        { code: 'bik', label: 'Bikol' },
                       ].map((option) => (
                         <button
                           key={option.code}

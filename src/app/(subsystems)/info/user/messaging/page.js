@@ -6,6 +6,7 @@ import { Archive, Mail, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from '
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 
@@ -15,7 +16,7 @@ function getInitials(name = '') {
 
 function ProfileAvatar({ user, size = 'h-10 w-10' }) {
   return (
-    <span className={`flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700`}>
+    <span className={`usr-inbox-avatar flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700`}>
       {user?.profile_image_url ? <img src={user.profile_image_url} alt={user.full_name || 'Profile'} className="h-full w-full object-cover" /> : getInitials(user?.full_name)}
     </span>
   )
@@ -233,8 +234,9 @@ export default function UserMessagingPage() {
 
   return (
     <main className="tourism-shell usr-section-page usr-inbox min-h-screen">
+      <UserTopHeader spacer={false} />
       <div className="usr-section-container mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
-        <UserSectionHeader eyebrow="Your community, closer" title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
+        <UserSectionHeader title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
           <Link href="/info/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
         </UserSectionHeader>
 
@@ -330,8 +332,8 @@ export default function UserMessagingPage() {
                               <time className={`text-[11px] ${hasUnread ? 'font-bold text-slate-700' : 'text-slate-400'}`}>{conversation.created_at ? new Date(conversation.created_at).toLocaleDateString() : 'Recently'}</time>
                               {hasUnread && (
                                 <span className="flex items-center gap-1">
-                                  <span className="h-2 w-2 rounded-full bg-red-500" aria-label="Unread message" title="Unread message" />
-                                  <span className="rounded-full bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                                  <span className="usr-inbox-unread-dot h-2 w-2 rounded-full bg-red-500" aria-label="Unread message" title="Unread message" />
+                                  <span className="bg-red-500 px-2 py-0.5 text-[10px] font-bold text-white">{unreadCount > 9 ? '9+' : unreadCount}</span>
                                 </span>
                               )}
                             </div>

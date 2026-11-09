@@ -35,4 +35,12 @@ export const THEME_BOOTSTRAP_SCRIPT = `(function () {
     document.documentElement.dataset.theme = 'light';
     document.documentElement.dataset.themeMode = 'system';
   }
+  try {
+    var consent = window.localStorage.getItem('daet-cookie-consent');
+    if (consent === 'accepted' || consent === 'essential-only') {
+      document.documentElement.dataset.cookieConsent = 'saved';
+    }
+  } catch (error) {
+    // Keep the cookie notice visible when browser storage is unavailable.
+  }
 })();`

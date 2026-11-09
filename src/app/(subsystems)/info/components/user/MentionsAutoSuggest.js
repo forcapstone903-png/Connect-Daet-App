@@ -291,6 +291,9 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
       <div
         ref={editorRef}
         contentEditable
+        role="textbox"
+        aria-label={placeholder}
+        aria-multiline="true"
         suppressContentEditableWarning
         onInput={handleEditorChange}
         onFocus={handleEditorFocus}

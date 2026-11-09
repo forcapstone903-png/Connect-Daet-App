@@ -23,7 +23,7 @@ function formatRelativeTime(value) {
   return `${Math.floor(seconds / 86400)}d`
 }
 
-export default function QuoteRepostCard({ item, reposter, reposterName, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink }) {
+export default function QuoteRepostCard({ item, reposter, reposterName, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink, compactFeed = false }) {
   const original = item.original_post || {}
   const originalAuthor = original.author || item.original_author || {}
   const originalAuthorName = originalAuthor.full_name || 'Community member'
@@ -40,10 +40,13 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
   const images = Array.isArray(original.images) ? original.images : []
   const videos = Array.isArray(original.videos) ? original.videos : []
   const imageItems = images.length ? images : (original.featured_image ? [original.featured_image] : [])
+  const getMediaUrl = (value) => typeof value === 'string'
+    ? value
+    : value?.url || value?.image_url || value?.path || ''
   const mediaItems = [
-    ...imageItems.map((url) => ({ type: 'image', url, label: `${original.title || 'Original post'} image` })),
-    ...((videos.length ? videos : (original.video_url ? [original.video_url] : [])).map((url) => ({ type: 'video', url, label: `${original.title || 'Original post'} video` }))),
-  ]
+    ...imageItems.map((value) => ({ type: 'image', url: getMediaUrl(value), label: `${original.title || 'Original post'} image` })),
+    ...((videos.length ? videos : (original.video_url ? [original.video_url] : [])).map((value) => ({ type: 'video', url: getMediaUrl(value), label: `${original.title || 'Original post'} video` }))),
+  ].filter((media) => media.url)
   const previewMedia = mediaItems.slice(0, 4)
   const hiddenMediaCount = Math.max(0, mediaItems.length - previewMedia.length)
   const previewGrid = previewMedia.length === 1 ? 'grid-cols-1' : 'grid-cols-2'
@@ -76,6 +79,126 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
     onEdit?.(editText.trim() || null)
   }
 
+  if (compactFeed) {
+    const repostDate = item.reposted_at || item.created_at
+    const compactRepostDate = repostDate && !Number.isNaN(new Date(repostDate).getTime())
+      ? new Date(repostDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      : ''
+    const thumbnail = previewMedia[0]
+
+    return (
+      <>
+        <ConfirmationModal
+          isOpen={Boolean(confirmAction)}
+          title={confirmAction === 'delete' ? 'Delete repost?' : 'Archive repost?'}
+          message={confirmAction === 'delete'
+            ? 'This will permanently remove your repost.'
+            : 'This will hide the repost from your profile and feed.'}
+          confirmText={confirmAction === 'delete' ? 'Delete post' : 'Archive post'}
+          cancelText="Cancel"
+          isDangerous={confirmAction === 'delete'}
+          onConfirm={handleConfirmAction}
+          onCancel={() => setConfirmAction(null)}
+        />
+        {editOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-repost-title">
+            <form onSubmit={handleEditSubmit} className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
+              <h2 id="edit-repost-title" className="text-lg font-semibold text-slate-900">Edit repost comment</h2>
+              <textarea
+                autoFocus
+                value={editText}
+                onChange={(event) => setEditText(event.target.value)}
+                rows={4}
+                className="mt-4 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
+                aria-label="Repost comment"
+              />
+              <div className="mt-4 flex justify-end gap-3">
+                <button type="button" onClick={() => setEditOpen(false)} className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+                <button type="submit" className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-700">Save changes</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="medium-home-repost">
+          <div className="medium-home-post-head">
+            <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-post-avatar" aria-label={`View ${reposterDisplayName}'s profile`}>
+              {reposter?.profile_image_url ? <img src={reposter.profile_image_url} alt="" /> : getInitials(reposterDisplayName)}
+            </Link>
+            <div className="medium-home-post-byline">
+              <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-author-name">{reposterDisplayName}</Link>
+              <span>reposted</span>
+              <span aria-hidden="true">·</span>
+              <time dateTime={repostDate || undefined}>{compactRepostDate || formatRelativeTime(repostDate)}</time>
+            </div>
+          </div>
+
+          {item.repost_quote && <p className="medium-home-repost-quote">{item.repost_quote}</p>}
+
+          <div className={`medium-home-post-body${thumbnail ? ' has-thumbnail' : ''}`}>
+            <div className="medium-home-post-copy">
+              <div className="medium-home-original-byline">
+                Originally by <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref}>{originalAuthorName}</Link>
+              </div>
+              {original.title && <Link href={originalHref} className="medium-home-post-title"><h2>{original.title}</h2></Link>}
+              {originalText && <p className="medium-home-post-excerpt">{originalText}</p>}
+            </div>
+            {thumbnail && (
+              <Link href={originalHref} className="medium-home-post-thumbnail" aria-label={`Open ${original.title || 'original post'}`}>
+                {thumbnail.type === 'video'
+                  ? <video src={thumbnail.url} muted playsInline preload="metadata" />
+                  : <img src={thumbnail.url} alt="" />}
+              </Link>
+            )}
+          </div>
+
+          {originalId && (
+            <div className="feed-actions">
+              <SocialActionBar
+                contentType={originalType}
+                contentId={originalId}
+                repostContentType={repostTarget.contentType}
+                repostContentId={repostTarget.contentId}
+                userId={userId}
+                heartOnly
+                compactFeed
+                onNotInterested={safeOnNotInterested}
+                originalPost={{ ...original, id: originalId, author: originalAuthor }}
+                commentCount={commentCount}
+                onToggleComments={onToggleComments}
+                isSaved={isSaved}
+                onToggleSave={onToggleSave}
+                postOptions={
+                  <span className="medium-home-post-options">
+                    <PostActionMenu
+                      isRepost
+                      visibility={item.visibility}
+                      contentType={originalType}
+                      contentId={originalId}
+                      userId={userId}
+                      contentTitle={original.title}
+                      shareUrl={originalHref}
+                      onEdit={isOwnRepost && onEdit ? () => { setEditText(item.repost_quote || ''); setEditOpen(true) } : undefined}
+                      onPrivacyChange={isOwnRepost ? onPrivacyChange : undefined}
+                      onRestore={isOwnRepost ? onRestore : undefined}
+                      onArchive={isOwnRepost && onArchive ? () => setConfirmAction('archive') : undefined}
+                      onDelete={isOwnRepost && onDelete ? () => setConfirmAction('delete') : undefined}
+                      onHide={isOwnRepost ? undefined : safeOnHide}
+                      onNotInterested={isOwnRepost ? undefined : safeOnNotInterested}
+                      onCopyLink={safeOnCopyLink}
+                      isSaved={isSaved}
+                      onToggleSave={onToggleSave}
+                    />
+                  </span>
+                }
+              />
+            </div>
+          )}
+        </div>
+      </>
+    )
+  }
+
   return (
     <>
       <div className="flex items-center gap-2 text-[11px] text-slate-600">
@@ -91,6 +214,11 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
           <PostActionMenu
             isRepost
             visibility={item.visibility}
+            contentType={originalType}
+            contentId={originalId}
+            userId={userId}
+            contentTitle={original.title}
+            shareUrl={originalHref}
             onEdit={isOwnRepost && onEdit ? () => { setEditText(item.repost_quote || ''); setEditOpen(true) } : undefined}
             onPrivacyChange={isOwnRepost ? onPrivacyChange : undefined}
             onRestore={isOwnRepost ? onRestore : undefined}
@@ -202,7 +330,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
             </div>
           )}
 
-          {originalId && <div className="mt-3 px-3 pb-3"><SocialActionBar contentType={originalType} contentId={originalId} repostContentType={repostTarget.contentType} repostContentId={repostTarget.contentId} userId={userId} originalPost={{ ...original, id: originalId, author: originalAuthor }} commentCount={commentCount} onToggleComments={onToggleComments} isSaved={isSaved} onToggleSave={onToggleSave} /></div>}
+          {originalId && <div className="mt-3 px-3 pb-3"><SocialActionBar contentType={originalType} contentId={originalId} repostContentType={repostTarget.contentType} repostContentId={repostTarget.contentId} userId={userId} originalPost={{ ...original, id: originalId, author: originalAuthor }} commentCount={commentCount} onToggleComments={onToggleComments} isSaved={isSaved} onToggleSave={onToggleSave} showOverflowMenu={false} /></div>}
         </div>
       </div>
     </>

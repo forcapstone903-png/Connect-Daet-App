@@ -22,6 +22,14 @@ async function attachActorProfiles(adminSupabase, notifications) {
   }))
 }
 
+function applyNotificationPreferences(query, preferences = {}) {
+  const suppressedTypes = []
+  if (preferences.newFollowers === false) suppressedTypes.push('follow')
+  if (preferences.forumMentions === false) suppressedTypes.push('comment')
+  if (preferences.announcementAlerts === false) suppressedTypes.push('announcement')
+  return suppressedTypes.length ? query.not('type', 'in', `(${suppressedTypes.join(',')})`) : query
+}
+
 export async function GET(request) {
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json({ success: false, message: 'Notification service is not configured.' }, { status: 500 })
@@ -35,18 +43,25 @@ export async function GET(request) {
 
   try {
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const { data: profile, error: profileError } = await adminSupabase
+      .from('profiles')
+      .select('notification_preferences')
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (profileError) throw profileError
+    const preferences = profile?.notification_preferences || {}
     const [{ data, error }, { count: unreadCount, error: unreadError }] = await Promise.all([
-      adminSupabase
+      applyNotificationPreferences(adminSupabase
         .from('info_notifications')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(50),
-      adminSupabase
+        .limit(50), preferences),
+      applyNotificationPreferences(adminSupabase
         .from('info_notifications')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId)
-        .eq('is_read', false),
+        .or('is_read.eq.false,is_read.is.null'), preferences),
     ])
 
     if (error) throw error

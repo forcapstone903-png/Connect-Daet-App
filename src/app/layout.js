@@ -26,9 +26,9 @@ export default function RootLayout({ children }) {
     <html lang="en" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className={inter.className}>
         {/* Inline (not next/script) so the browser runs it synchronously while
-            parsing the HTML, before the first paint, so the saved theme and
-            language never flash. See InlineScript for why the tag is inert on
-            the client copy. */}
+            parsing the HTML, before the first paint, so saved preferences
+            never flash. See InlineScript for why the tag is inert on the
+            client copy. */}
         <InlineScript html={THEME_BOOTSTRAP_SCRIPT} />
         <UserSettingsProvider>
           <main>{children}</main>

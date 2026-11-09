@@ -130,7 +130,7 @@ export default function TouristSpotsPage() {
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         {/* Header */}
-        <header className="sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5">
+        <header className="visitor-local-header sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5 lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <Link href="/info/visitor" className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
@@ -177,10 +177,28 @@ export default function TouristSpotsPage() {
           </div>
         </header>
 
+        <div className="mb-6 hidden items-center justify-between gap-4 lg:flex">
+          <Link
+            href="/info/visitor"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            ← Back
+          </Link>
+          <label className="flex w-full max-w-xl items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-500 shadow-sm">
+            <Search className="h-4 w-4" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search destinations..."
+              className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+            />
+          </label>
+        </div>
+
         {/* Hero */}
         <div className="mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white">
-          <div className="relative h-40 bg-gradient-to-r from-emerald-600 via-teal-500 to-sky-600 sm:h-48">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_30%),linear-gradient(135deg,_rgba(2,6,23,0.1),_rgba(15,23,42,0.45))]" />
+          <div className="relative h-40 bg-emerald-600 sm:h-48">
+            <div className="absolute inset-0 bg-slate-950/25" />
             <div className="relative flex h-full flex-col justify-between p-5 sm:p-6">
               <div>
                 <h1 className="text-2xl font-bold text-white sm:text-4xl">Explore Daet</h1>

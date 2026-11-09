@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, Bookmark, CalendarDays, FileText, Home, LogOut, Menu, MessageCircle, PlusCircle, Search, Settings, UserRound } from 'lucide-react'
+import { Bell, Bookmark, Home, LogOut, Menu, MessageCircle, PlusCircle, Settings, UserRound, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -40,40 +40,138 @@ function getNavInitials(name = '') {
 }
 
 const navItems = [
-  { href: '/info/user/dashboard', labelKey: 'common.feed', icon: Home },
-  { href: '/info/user/forums', labelKey: 'common.forums', icon: MessageCircle },
-  { href: '/info/user/blogs/new', labelKey: 'common.create', icon: PlusCircle, highlight: true },
-  { href: '/info/user/blogs', labelKey: 'common.blogs', icon: FileText },
-  { href: '/info/user/events', labelKey: 'common.events', icon: CalendarDays },
-]
-
-const desktopNavItems = [
-  { href: '/info/user/dashboard', labelKey: 'common.feed', icon: Home },
-  { href: '/info/user/forums', labelKey: 'common.forums', icon: MessageCircle },
-  { href: '/info/user/blogs', labelKey: 'common.blogs', icon: FileText },
-  { href: '/info/user/events', labelKey: 'common.events', icon: CalendarDays },
+  { href: '/info/user/blogs/new', labelKey: 'common.createPost', icon: PlusCircle, highlight: true },
+  { href: '/info/user/dashboard', labelKey: 'common.home', icon: Home },
+  { href: '/info/user/profile', labelKey: 'common.profile', icon: UserRound },
+  { href: '/info/user/messaging', labelKey: 'common.messages', icon: MessageCircle },
   { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
-  { href: '/info/user/settings', labelKey: 'common.settings', icon: Settings },
 ]
 
-export default function MobileNav() {
+export default function MobileNav({ mobileOnly = false }) {
   const { t } = useUserSettings()
   const pathname = usePathname()
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+  const [followingUsers, setFollowingUsers] = useState([])
+  const [followingLoading, setFollowingLoading] = useState(false)
+  const [followingError, setFollowingError] = useState(false)
+  const [followingReloadToken, setFollowingReloadToken] = useState(0)
   const [userName, setUserName] = useState('')
   const [userAvatarUrl, setUserAvatarUrl] = useState('')
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const profileMenuRef = useRef(null)
+  const mobileDrawerRef = useRef(null)
 
   useEffect(() => {
     const handleCommentsSheetState = (event) => setCommentsSheetOpen(Boolean(event.detail?.open))
     window.addEventListener('daet-comments-sheet-state', handleCommentsSheetState)
     return () => window.removeEventListener('daet-comments-sheet-state', handleCommentsSheetState)
   }, [])
+
+  useEffect(() => {
+    const openNavigation = () => setMobileDrawerOpen(true)
+    const toggleDesktopNavigation = () => setMobileDrawerOpen((open) => !open)
+    window.addEventListener('daet-open-mobile-navigation', openNavigation)
+    window.addEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
+    return () => {
+      window.removeEventListener('daet-open-mobile-navigation', openNavigation)
+      window.removeEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (mobileOnly) return undefined
+
+    const desktopViewport = window.matchMedia('(min-width: 1024px)')
+    const syncDesktopNavigation = () => setMobileDrawerOpen(desktopViewport.matches)
+
+    syncDesktopNavigation()
+    desktopViewport.addEventListener('change', syncDesktopNavigation)
+    return () => desktopViewport.removeEventListener('change', syncDesktopNavigation)
+  }, [mobileOnly])
+
+  useEffect(() => {
+    if (mobileOnly) return undefined
+
+    const desktopViewport = window.matchMedia('(min-width: 1024px)')
+    if (desktopViewport.matches && !mobileDrawerOpen) {
+      document.documentElement.dataset.userNavigationCollapsed = 'true'
+    } else {
+      delete document.documentElement.dataset.userNavigationCollapsed
+    }
+
+    return () => {
+      delete document.documentElement.dataset.userNavigationCollapsed
+    }
+  }, [mobileDrawerOpen, mobileOnly])
+
+  useEffect(() => {
+    if (!mobileDrawerOpen) return undefined
+
+    const mobileViewport = window.matchMedia('(max-width: 1023px)')
+    const previousOverflow = document.body.style.overflow
+    const syncBodyOverflow = () => {
+      document.body.style.overflow = mobileViewport.matches ? 'hidden' : previousOverflow
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMobileDrawerOpen(false)
+    }
+
+    syncBodyOverflow()
+    mobileViewport.addEventListener('change', syncBodyOverflow)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      mobileViewport.removeEventListener('change', syncBodyOverflow)
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [mobileDrawerOpen])
+
+  useEffect(() => {
+    if (!mobileDrawerOpen || !mobileDrawerRef.current) return undefined
+    if (
+      window.matchMedia('(min-width: 1024px)').matches
+      || window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    ) return undefined
+
+    const animation = mobileDrawerRef.current.animate(
+      [{ transform: 'translateX(-100%)' }, { transform: 'translateX(0)' }],
+      { duration: 280, easing: 'cubic-bezier(0.22, 0.8, 0.32, 1)', fill: 'both' },
+    )
+    return () => animation.cancel()
+  }, [mobileDrawerOpen])
+
+  useEffect(() => {
+    if (!mobileDrawerOpen) return undefined
+
+    let active = true
+    const loadFollowing = async () => {
+      setFollowingLoading(true)
+      setFollowingError(false)
+      try {
+        const response = await fetch('/info/api/users/following', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        const result = await response.json()
+        if (!response.ok || !result?.success) throw new Error('Unable to load followed users.')
+        if (active) setFollowingUsers(result.following_users || [])
+      } catch {
+        if (active) setFollowingError(true)
+      } finally {
+        if (active) setFollowingLoading(false)
+      }
+    }
+
+    void loadFollowing()
+    return () => {
+      active = false
+    }
+  }, [mobileDrawerOpen, followingReloadToken])
 
   useEffect(() => {
     // Deferred so the effect body does not trigger synchronous state updates
@@ -86,6 +184,12 @@ export default function MobileNav() {
 
     return () => window.clearTimeout(timer)
   }, [])
+
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('daet-user-identity', {
+      detail: { name: userName, avatarUrl: userAvatarUrl },
+    }))
+  }, [userName, userAvatarUrl])
 
   useEffect(() => {
     const userId = readStoredUserId()
@@ -123,9 +227,12 @@ export default function MobileNav() {
         const notificationsResult = notificationsResponse.ok ? await notificationsResponse.json() : null
         const messagesResult = messagesResponse.ok ? await messagesResponse.json() : null
         if (active && notificationsResult?.success) {
-          const unreadCount = Number.isFinite(Number(notificationsResult.unread_count))
-            ? Number(notificationsResult.unread_count)
-            : (notificationsResult.notifications || []).filter((notification) => !notification.is_read).length
+          const notifications = Array.isArray(notificationsResult.notifications) ? notificationsResult.notifications : []
+          const visibleUnreadCount = notifications.filter((notification) => !notification.is_read).length
+          const reportedUnreadCount = Number(notificationsResult.unread_count)
+          const unreadCount = notificationsResult.unread_count != null && Number.isFinite(reportedUnreadCount)
+            ? Math.max(reportedUnreadCount, visibleUnreadCount)
+            : visibleUnreadCount
           setUnreadAlerts(unreadCount)
         }
         if (active && messagesResult?.success) setUnreadMessages(messagesResult.unread_messages || 0)
@@ -192,7 +299,14 @@ export default function MobileNav() {
 
   const getInitials = (name = '') => getNavInitials(name)
 
+  const closeNavigationAfterSelection = () => {
+    if (mobileOnly || !window.matchMedia('(min-width: 1024px)').matches) {
+      setMobileDrawerOpen(false)
+    }
+  }
+
   const openLogoutConfirm = () => {
+    setMobileDrawerOpen(false)
     setShowProfileMenu(false)
     setShowLogoutConfirm(true)
   }
@@ -210,59 +324,70 @@ export default function MobileNav() {
 
   return (
     <>
-      <nav className="sticky top-0 z-40 hidden border-b border-slate-700 bg-[#111d2e] text-white shadow-[0_6px_20px_rgba(15,23,42,0.18)] lg:block">
-        <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-4 px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
-            <Link href="/info/user/dashboard" className="flex shrink-0 items-center gap-2 whitespace-nowrap">
-              <img src="/logo.png" alt="Daet tourism logo" className="h-9 w-9 object-contain" />
-              <span className="flex flex-col leading-none">
-                <span className="text-sm font-black tracking-tight text-slate-100">Connect-Daet.ai</span>
-                <span className="mt-1 text-[9px] font-medium leading-tight text-slate-300">Subsystem 1: Daet Information, Engagement, &amp; Management System</span>
+      {!mobileOnly && <aside aria-label="Primary navigation" className="usr-desktop-sidebar fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-[6px_0_24px_rgba(15,23,42,0.12)]">
+        <Link href="/info/user/dashboard" className="flex min-h-20 items-center gap-3 border-b border-slate-700 px-5">
+          <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain" />
+          <span className="min-w-0">
+            <span className="block truncate text-base font-black tracking-tight text-slate-100">Connect-Daet.ai</span>
+            <span className="mt-1 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
+          </span>
+        </Link>
+        <nav aria-label="Main" className="flex-1 space-y-1 px-3 py-5">
+          {navItems.map(({ href, labelKey, icon: Icon, highlight }) => {
+            const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={isActive ? 'page' : undefined}
+                className={`usr-press flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition ${highlight ? 'usr-create-post-nav' : ''} ${
+                  highlight
+                    ? 'my-2 bg-sky-600 text-white shadow-md shadow-sky-950/20 hover:bg-sky-500'
+                    : isActive
+                      ? 'bg-white/10 text-sky-300'
+                      : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                <Icon className="h-5 w-5 shrink-0" />
+                <span className="flex-1">{t(labelKey)}</span>
+                {labelKey === 'common.messages' && unreadMessages > 0 && (
+                  <span className="usr-badge flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                    {unreadMessages > 9 ? '9+' : unreadMessages}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </nav>
+        <div className="border-t border-slate-700 p-3">
+          <Link href="/info/user/notifications" className="usr-press mb-2 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white">
+            <Bell className="h-5 w-5 shrink-0" />
+            <span className="flex-1">{t('common.notifications')}</span>
+            {unreadAlerts > 0 && (
+              <span className="usr-badge flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                {unreadAlerts > 9 ? '9+' : unreadAlerts}
               </span>
-            </Link>
-          </div>
-          <div className="flex items-center justify-center gap-1 whitespace-nowrap">
-            {desktopNavItems.map(({ href, labelKey, icon: Icon }) => {
-              const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
-              return <Link key={href} href={href} aria-current={isActive ? 'page' : undefined} className={`usr-press relative inline-flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-semibold transition ${isActive ? 'bg-white/10 text-sky-300' : 'text-slate-300 hover:bg-white/10 hover:text-white'}`}><Icon className="h-4 w-4" />{t(labelKey)}{isActive && <span aria-hidden="true" className="usr-pop-in absolute inset-x-2 -bottom-[1px] h-0.5 rounded-full bg-sky-400" />}</Link>
-            })}
-          </div>
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
-            <Link href="/info/visitor/search" aria-label={t('common.search')} title={t('common.search')} className="usr-press rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
-              <Search className="h-5 w-5" />
-            </Link>
-            <Link href="/info/user/notifications" aria-label={t('common.notifications')} title={t('common.notifications')} className="usr-press relative rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
-              <Bell className="h-5 w-5" />
-              {unreadAlerts > 0 && (
-                <span className="usr-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#111d2e]">{unreadAlerts > 9 ? '9+' : unreadAlerts}</span>
-              )}
-            </Link>
-            <Link href="/info/user/messaging" aria-label={t('common.messages')} title={t('common.messages')} className="usr-press relative rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white">
-              <MessageCircle className="h-5 w-5" />
-              {unreadMessages > 0 && (
-                <span className="usr-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold leading-none text-white ring-2 ring-[#111d2e]">{unreadMessages > 9 ? '9+' : unreadMessages}</span>
-              )}
-            </Link>
-            <div className="relative" ref={profileMenuRef}>
-              <button type="button" onClick={() => setShowProfileMenu((open) => !open)} aria-haspopup="menu" aria-expanded={showProfileMenu} aria-label="Account menu" title="Account" className="usr-press flex h-9 items-center gap-1.5 rounded-full border border-slate-600 bg-white/5 pl-0.5 pr-2 text-slate-200 transition hover:border-sky-400 hover:text-white">
-                <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700">
-                  {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : (userName ? getInitials(userName) : <UserRound className="h-4 w-4" aria-hidden="true" />)}
-                </span>
-                <Menu className="h-4 w-4" aria-hidden="true" />
-              </button>
-              {showProfileMenu && (
-                <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.5rem)] z-50 w-56 origin-top-right overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                  <Link role="menuitem" href="/info/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" aria-hidden="true" />{t('common.profile')}</Link>
-                  <Link role="menuitem" href="/info/user/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" aria-hidden="true" />{t('common.settings')}</Link>
-                  <Link role="menuitem" href="/info/user/messaging" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><MessageCircle className="h-4 w-4" aria-hidden="true" />{t('common.messages')}</Link>
-                  <div className="my-1 border-t border-slate-100" role="separator" />
-                  <button role="menuitem" type="button" onClick={openLogoutConfirm} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" aria-hidden="true" />{t('common.logOut')}</button>
-                </div>
-              )}
-            </div>
+            )}
+          </Link>
+          <div className="relative" ref={profileMenuRef}>
+            <button type="button" onClick={() => setShowProfileMenu((open) => !open)} aria-haspopup="menu" aria-expanded={showProfileMenu} aria-label="Account menu" className="usr-press flex min-h-12 w-full items-center gap-3 rounded-xl px-2 text-left text-slate-200 transition hover:bg-white/10 hover:text-white">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700">
+                {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : (userName ? getInitials(userName) : <UserRound className="h-4 w-4" aria-hidden="true" />)}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold">{userName || t('common.profile')}</span>
+              <Settings className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+            </button>
+            {showProfileMenu && (
+              <div role="menu" className="usr-pop-in absolute bottom-[calc(100%+0.5rem)] left-0 z-50 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
+                <Link role="menuitem" href="/info/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" aria-hidden="true" />{t('common.profile')}</Link>
+                <Link role="menuitem" href="/info/user/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" aria-hidden="true" />{t('common.settings')}</Link>
+                <div className="my-1 border-t border-slate-100" role="separator" />
+                <button role="menuitem" type="button" onClick={openLogoutConfirm} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" aria-hidden="true" />{t('common.logOut')}</button>
+              </div>
+            )}
           </div>
         </div>
-      </nav>
+      </aside>}
       <ConfirmationModal
         isOpen={showLogoutConfirm}
         title={t('common.confirmLogout')}
@@ -273,37 +398,81 @@ export default function MobileNav() {
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutConfirm(false)}
       />
-      {!commentsSheetOpen && <nav className="fixed inset-x-0 top-16 z-40 border-b border-[#dfe7e1] bg-[#fffefa]/96 shadow-[0_8px_24px_rgba(29,42,39,0.08)] backdrop-blur-sm lg:hidden">
-        <div className="mx-auto grid max-w-[520px] grid-cols-5 items-center gap-1 px-2 py-1.5">
-          {navItems.map(({ href, labelKey, icon: Icon, highlight }) => {
-            const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-current={isActive ? 'page' : undefined}
-                className={`usr-press flex h-14 min-w-0 flex-col items-center justify-center rounded-lg px-1 text-center transition ${
-                    highlight ? 'text-white' : isActive ? 'text-[#16766f]' : 'text-[#72807a] hover:bg-[#edf4f0] hover:text-[#0e514d]'
-                }`}
-              >
-                {highlight ? (
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#16766f] shadow-[0_6px_14px_rgba(22,118,111,0.25)]">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                ) : (
-                  <span className="relative flex items-center justify-center">
-                    {isActive && <span aria-hidden="true" className="usr-pop-in absolute -top-2.5 h-1 w-5 rounded-full bg-[#16766f]" />}
-                    <Icon className={`h-5 w-5 ${isActive ? 'fill-sky-100' : ''}`} />
-                  </span>
-                )}
-                <span className={`mt-1 block text-[10px] font-semibold leading-none ${!highlight && isActive ? 'text-sky-700' : highlight ? 'text-sky-600' : ''}`}>
-                  {t(labelKey)}
-                </span>
+      {!commentsSheetOpen && mobileDrawerOpen && (
+        <div className="usr-navigation-drawer-overlay fixed inset-0 z-[60]">
+          <button type="button" aria-label="Close navigation" onClick={() => setMobileDrawerOpen(false)} className="usr-navigation-drawer-backdrop absolute inset-0 h-full w-full bg-black/55" />
+          <aside ref={mobileDrawerRef} aria-label="Primary navigation" className="usr-navigation-drawer absolute inset-y-0 left-0 flex w-[min(82vw,280px)] flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-2xl">
+            <div className="usr-navigation-drawer-header flex min-h-16 items-center justify-between border-b border-white/10 px-4">
+              <Link href="/info/user/dashboard" onClick={() => setMobileDrawerOpen(false)} className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-lg font-black tracking-tight">Connect-Daet.ai</span>
               </Link>
-            )
-          })}
+              <button type="button" onClick={() => setMobileDrawerOpen(false)} aria-label="Close navigation" className="usr-press ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <nav aria-label="Main" className="usr-navigation-drawer-nav flex-1 space-y-1 overflow-y-auto px-3 py-4">
+              {navItems.map(({ href, labelKey, icon: Icon, highlight }) => {
+                const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    onClick={closeNavigationAfterSelection}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`usr-press usr-navigation-drawer-link flex min-h-12 items-center gap-3 rounded-xl px-3 text-left transition ${
+                      highlight ? 'usr-create-post-nav my-2 font-semibold text-white' : isActive ? 'bg-white/10 font-semibold text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                    }`}
+                  >
+                    <Icon className="h-5 w-5 shrink-0" />
+                    <span className="flex-1 text-sm">{t(labelKey)}</span>
+                    {labelKey === 'common.messages' && unreadMessages > 0 && (
+                      <span className="usr-badge flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                        {unreadMessages > 9 ? '9+' : unreadMessages}
+                      </span>
+                    )}
+                  </Link>
+                )
+              })}
+              <section aria-labelledby="mobile-following-heading" className="mt-4 border-t border-white/10 pt-4">
+                <h2 id="mobile-following-heading" className="px-3 pb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+                  {t('common.following')}
+                </h2>
+                {followingLoading && <p className="px-3 py-2 text-sm text-slate-400">{t('navigation.following.loading')}</p>}
+                {followingError && (
+                  <div className="px-3 py-2">
+                    <p role="alert" className="text-sm text-red-300">{t('navigation.following.error')}</p>
+                    <button
+                      type="button"
+                      onClick={() => setFollowingReloadToken((token) => token + 1)}
+                      className="mt-2 text-sm font-semibold text-sky-300 underline underline-offset-2"
+                    >
+                      {t('navigation.following.retry')}
+                    </button>
+                  </div>
+                )}
+                {!followingLoading && !followingError && followingUsers.length === 0 && (
+                  <p className="px-3 py-2 text-sm text-slate-400">{t('navigation.following.empty')}</p>
+                )}
+                {!followingLoading && !followingError && followingUsers.map((person) => (
+                  <Link
+                    key={person.id}
+                    href={`/info/user/profile/${encodeURIComponent(person.id)}`}
+                    onClick={closeNavigationAfterSelection}
+                    className="usr-press flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-xs font-bold text-slate-100">
+                      {person.profile_image_url
+                        ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" />
+                        : (person.full_name || 'U').trim().charAt(0).toUpperCase()}
+                    </span>
+                    <span className="truncate">{person.full_name || 'Community member'}</span>
+                  </Link>
+                ))}
+              </section>
+            </nav>
+          </aside>
         </div>
-      </nav>}
+      )}
     </>
   )
 }

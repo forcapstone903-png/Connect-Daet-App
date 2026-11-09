@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
+  BadgeCheck,
   Briefcase,
-  CalendarDays,
   Check,
   Copy,
   FileText,
@@ -14,6 +14,7 @@ import {
   MessageSquareText,
   MapPin,
   MoreHorizontal,
+  ShieldCheck,
   Share2,
   ShieldOff,
   Sparkles,
@@ -39,32 +40,6 @@ import {
 
 const PROFILE_CACHE_TTL_MS = 10 * 60 * 1000;
 
-// Visual identity per content type, matched to the dashboard feed badges.
-const TYPE_META = {
-  Post: {
-    icon: MessageCircle,
-    chip: "border-amber-200 bg-amber-50 text-amber-700",
-    label: "Community post",
-  },
-  Blog: {
-    icon: FileText,
-    chip: "border-sky-200 bg-sky-50 text-sky-700",
-    label: "Travel story",
-  },
-  Forum: {
-    icon: MessageCircle,
-    chip: "border-cyan-200 bg-cyan-50 text-cyan-700",
-    label: "Discussion",
-  },
-  Event: {
-    icon: CalendarDays,
-    chip: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    label: "Event",
-  },
-};
-
-const getTypeMeta = (type) => TYPE_META[type] || TYPE_META.Post;
-
 function getInitials(name = "") {
   return (
     name
@@ -85,7 +60,6 @@ function formatPostDate(value) {
   return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: "numeric",
   });
 }
 
@@ -170,6 +144,22 @@ function buildPostList(content) {
       commentsCount: post.comments_count || 0,
       href: `/info/user/events/${post.id}`,
     })),
+    ...(content.tourist_spots || []).map((spot) => ({
+      id: spot.id,
+      type: "Tourist Spot",
+      title: spot.name || "Shared destination",
+      text: spot.description || "A destination shared with the community.",
+      date: spot.created_at,
+      location: spot.location || "",
+      latitude: spot.latitude,
+      longitude: spot.longitude,
+      category: spot.category || "Destination",
+      media: spot.featured_image || (spot.images || [])[0] || "",
+      images: Array.isArray(spot.images) ? spot.images : [],
+      reactionsCount: 0,
+      commentsCount: 0,
+      href: `/info/visitor/tourist-spots/${spot.id}`,
+    })),
     ...(content.reposts || []).map((post) => {
       const meta =
         repostTypeMeta[post.original_content_type] || repostTypeMeta.user_post;
@@ -198,6 +188,27 @@ function buildPostList(content) {
   ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 }
 
+function filterProfilePosts(posts, tab) {
+  if (tab === "Overview") return posts.slice(0, 3);
+  if (tab === "All") return posts;
+  if (tab === "Posts") return posts.filter((post) => post.type === "Post" && !post.isRepost);
+  if (tab === "Blogs") return posts.filter((post) => post.type === "Blog");
+  if (tab === "Forums") return posts.filter((post) => post.type === "Forum");
+  if (tab === "Travel") return posts.filter((post) => post.type === "Tourist Spot");
+  if (tab === "Reposts") return posts.filter((post) => post.isRepost);
+  if (tab === "Photos") return posts.filter((post) => getPostImages(post).length > 0);
+  if (tab === "Videos") {
+    return posts.filter((post) => (
+      post.videos?.length > 0
+      || Boolean(post.video_url)
+      || (Array.isArray(post.media) && post.media.some((item) => (
+        typeof item === "object" && String(item.type || item.kind || "").toLowerCase() === "video"
+      )))
+    ));
+  }
+  return posts;
+}
+
 export default function PublicProfilePage() {
   const params = useParams();
   const router = useRouter();
@@ -208,6 +219,7 @@ export default function PublicProfilePage() {
 
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
+  const [profileTab, setProfileTab] = useState("Overview");
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [viewerId, setViewerId] = useState(null);
@@ -498,7 +510,7 @@ export default function PublicProfilePage() {
     return (
       <main className="tourism-shell usr-section-page usr-profile min-h-screen text-slate-900">
         <UserTopHeader />
-        <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-2 sm:px-4 lg:px-6 lg:pb-10">
+        <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-0 sm:px-4 lg:px-6 lg:pb-10">
           <SectionLoading label="Loading this community profile" />
         </div>
       </main>
@@ -535,6 +547,7 @@ export default function PublicProfilePage() {
   const isOwnProfile = viewerId === profile.id;
   const displayName = profile.full_name || "Community member";
   const firstName = displayName.split(" ")[0];
+  const visiblePosts = filterProfilePosts(posts, profileTab);
 
   return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
@@ -553,8 +566,8 @@ export default function PublicProfilePage() {
           </button>
         )}
 
-        <section className="usr-surface usr-enter mb-5 overflow-hidden">
-          <div className="profile-cover-frame h-40 bg-gradient-to-r from-teal-700 via-cyan-700 to-emerald-600 sm:h-56">
+        <section className="usr-enter mb-5">
+          <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-800 via-cyan-800 to-slate-900 sm:h-56">
             {profile.cover_photo_url ? (
               <img
                 src={profile.cover_photo_url}
@@ -562,10 +575,10 @@ export default function PublicProfilePage() {
                 className="profile-cover-image"
               />
             ) : null}
-            <div className="absolute inset-0 z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.35),_transparent_28%),linear-gradient(135deg,_rgba(2,6,23,0.12),_rgba(15,23,42,0.35))]" />
+            <div className="absolute inset-0 z-10 bg-gradient-to-t from-slate-950/45 via-slate-950/10 to-transparent" />
           </div>
 
-          <div className="border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
+          <div className="profile-identity-strip border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
             <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-end sm:justify-between">
               <div className="flex min-w-0 items-end gap-3">
                 <div className="usr-profile-avatar -mt-14 flex shrink-0 items-center justify-center overflow-hidden sm:-mt-16">
@@ -580,8 +593,9 @@ export default function PublicProfilePage() {
                   )}
                 </div>
                 <div className="min-w-0 pb-1">
-                  <h1 className="break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
+                  <h1 className="flex flex-wrap items-center gap-1.5 break-words text-xl font-black tracking-tight text-slate-950 sm:text-2xl">
                     {displayName}
+                    {profile.is_verified && <BadgeCheck aria-label="Verified account" className="h-5 w-5 shrink-0 fill-sky-600 text-white" />}
                   </h1>
                   <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                     <span className="flex items-center gap-1.5">
@@ -701,28 +715,29 @@ export default function PublicProfilePage() {
             ) : null}
           </div>
 
-          <div className="grid grid-cols-3 border-b border-slate-200 bg-slate-50 text-center">
+          <div className="profile-stat-strip grid grid-cols-3 border-b border-slate-200 text-center">
             <div className="border-r border-slate-200 px-2 py-3">
-              <p className="text-lg font-black text-slate-900">{posts.length}</p>
+              <p className="text-xl font-black text-slate-900">{posts.length}</p>
               <p className="usr-stat-label mt-0.5">Posts</p>
             </div>
             <Link
               href={`/info/user/profile/connections?user=${profile.id}&tab=followers`}
-              className="border-r border-slate-200 px-2 py-3 transition hover:bg-teal-50"
+              className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"
             >
-              <p className="text-lg font-black text-slate-900">{followerCount}</p>
+              <p className="text-xl font-black text-slate-900">{followerCount}</p>
               <p className="usr-stat-label mt-0.5">Followers</p>
             </Link>
             <Link
               href={`/info/user/profile/connections?user=${profile.id}&tab=following`}
-              className="px-2 py-3 transition hover:bg-teal-50"
+              className="px-2 py-3 transition hover:bg-sky-50"
             >
-              <p className="text-lg font-black text-slate-900">{followingCount}</p>
+              <p className="text-xl font-black text-slate-900">{followingCount}</p>
               <p className="usr-stat-label mt-0.5">Following</p>
             </Link>
           </div>
 
-          <div className="px-3 py-4 sm:px-5 sm:py-5">
+          <div className="profile-content-layout px-3 py-4 sm:px-5 sm:py-5">
+            <aside className="profile-content-sidebar">
 
         {isBlocked ? (
           <div className="usr-card usr-enter mb-5 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -779,14 +794,19 @@ export default function PublicProfilePage() {
               </div>
             </section>
 
-            <section className="space-y-4">
+            </aside>
+
+            <section className="profile-content-main min-w-0 space-y-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p>
                   <h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2>
                 </div>
                 {isOwnProfile ? (
-                  <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto">
+                  <div className="profile-create-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                    <Link href="/info/user/blogs/new" className="usr-section-primary min-w-0 flex-1 sm:flex-none">
+                      <FileText className="h-4 w-4" /> Create Post
+                    </Link>
                     <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
@@ -804,19 +824,147 @@ export default function PublicProfilePage() {
                 )}
               </div>
 
-          {posts.length > 0 && !isBlocked ? (
+              <div className="profile-tabs" role="tablist" aria-label="Profile content">
+                {["Overview", "All", "Posts", "Blogs", "Forums", "Travel", "Photos", "Videos", "Reposts"].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    role="tab"
+                    aria-selected={profileTab === tab}
+                    onClick={() => setProfileTab(tab)}
+                    className="profile-tab"
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+          {profileTab === "Overview" ? (
+            <div className="profile-overview">
+              <section className="profile-overview-card profile-rewards-card">
+                <div className="profile-overview-heading">
+                  <div>
+                    <p className="profile-overview-eyebrow">Community rewards</p>
+                    <h3>Achievements</h3>
+                  </div>
+                  <Star aria-hidden="true" />
+                </div>
+                <div className="profile-reward-stats">
+                  <div><strong>{Number(profile.points) || 0}</strong><span>Points</span></div>
+                  <div><strong>Level {profile.level || 1}</strong><span>Current level</span></div>
+                  <div><strong>{profile.earned_badges?.length || 0}</strong><span>Badges earned</span></div>
+                </div>
+                {profile.earned_badges?.length ? (
+                  <div className="profile-badge-list">
+                    {profile.earned_badges.slice(0, 4).map((badge) => (
+                      <span key={badge.id} className="profile-badge-chip" title={badge.description || badge.badge_name}>
+                        <Star aria-hidden="true" />
+                        {badge.badge_name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="profile-overview-empty">No earned badges to display yet.</p>
+                )}
+              </section>
+
+              <section className="profile-overview-card">
+                <div className="profile-overview-heading">
+                  <div>
+                    <p className="profile-overview-eyebrow">Recent activity</p>
+                    <h3>Community contributions</h3>
+                  </div>
+                  <Users aria-hidden="true" />
+                </div>
+                <div className="profile-contribution-grid">
+                  {[
+                    ["Posts", posts.filter((post) => post.type === "Post" && !post.isRepost).length, FileText],
+                    ["Blogs", posts.filter((post) => post.type === "Blog" && !post.isRepost).length, Briefcase],
+                    ["Forums", posts.filter((post) => post.type === "Forum" && !post.isRepost).length, MessageSquareText],
+                    ["Places shared", posts.filter((post) => post.type === "Tourist Spot").length, MapPin],
+                  ].map(([label, count, Icon]) => (
+                    <div key={label} className="profile-contribution-stat">
+                      <Icon aria-hidden="true" />
+                      <strong>{count}</strong>
+                      <span>{label}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="profile-overview-caption">Counts reflect content currently available on this profile.</p>
+              </section>
+
+              <section className="profile-overview-card">
+                <div className="profile-overview-heading">
+                  <div>
+                    <p className="profile-overview-eyebrow">Travel portfolio</p>
+                    <h3>Destinations shared</h3>
+                  </div>
+                  <MapPin aria-hidden="true" />
+                </div>
+                {posts.some((post) => post.type === "Tourist Spot") ? (
+                  <div className="profile-travel-preview">
+                    {posts.filter((post) => post.type === "Tourist Spot").slice(0, 3).map((spot) => (
+                      <Link key={spot.id} href={spot.href} className="profile-travel-item">
+                        {spot.media ? <img src={spot.media} alt="" /> : <span className="profile-travel-placeholder"><MapPin aria-hidden="true" /></span>}
+                        <span><strong>{spot.title}</strong><small>{spot.location || "Shared destination"}</small></span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="profile-overview-empty">No destination contributions to show. Visit tracking is not available on this profile.</p>
+                )}
+                <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab("Travel")}>View travel contributions <span aria-hidden="true">→</span></button>
+              </section>
+            </div>
+          ) : null}
+
+          {profileTab === "Travel" && !isBlocked ? (
+            <section className="profile-travel-section">
+              <div className="profile-overview-heading">
+                <div>
+                  <p className="profile-overview-eyebrow">Tourism contributions</p>
+                  <h3>Destinations shared</h3>
+                </div>
+                <MapPin aria-hidden="true" />
+              </div>
+              {posts.filter((post) => post.type === "Tourist Spot").length ? (
+                <div className="profile-travel-grid">
+                  {posts.filter((post) => post.type === "Tourist Spot").map((spot) => (
+                    <Link key={spot.id} href={spot.href} className="profile-travel-card">
+                      {spot.media ? <img src={spot.media} alt="" /> : <span className="profile-travel-placeholder"><MapPin aria-hidden="true" /></span>}
+                      <span className="profile-travel-card-copy">
+                        <small>{spot.category}</small>
+                        <strong>{spot.title}</strong>
+                        <span>{spot.location || "Daet, Camarines Norte"}</span>
+                      </span>
+                      {spot.latitude != null && spot.longitude != null ? (
+                        <span className="profile-travel-coordinates">
+                          {Number(spot.latitude).toFixed(3)}, {Number(spot.longitude).toFixed(3)}
+                          <a href={`https://www.google.com/maps/search/?api=1&query=${spot.latitude},${spot.longitude}`} target="_blank" rel="noreferrer">Map</a>
+                        </span>
+                      ) : null}
+                    </Link>
+                  ))}
+                </div>
+              ) : (
+                <p className="profile-overview-empty">No destinations shared yet. This profile does not infer visits from views.</p>
+              )}
+            </section>
+          ) : null}
+
+          {visiblePosts.length > 0 && !isBlocked ? (
             <div className="space-y-1.5">
-              {posts.map((post) => {
-                const typeMeta = getTypeMeta(post.type);
+              {visiblePosts.map((post) => {
                 const mediaList = getPostImages(post);
 
                 return (
                   <article
                     key={`${post.type}-${post.id}`}
-                    className={`usr-card usr-content-card overflow-hidden p-4 sm:p-5 ${post.type === "Blog" ? "border-l-4 border-l-violet-300 bg-violet-50/30" : post.type === "Forum" ? "border-l-4 border-l-emerald-300 bg-emerald-50/40" : post.type === "Event" ? "border-l-4 border-l-amber-200 bg-amber-50/30" : "border-l-4 border-l-slate-200"}`}
+                    className="usr-card usr-content-card profile-post-card overflow-hidden"
                   >
-                    <div className="flex items-start gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-xs font-black uppercase text-teal-700 lg:h-12 lg:w-12">
+                    <div className="profile-post-card-inner">
+                    <div className="profile-post-header">
+                      <span className="profile-post-avatar flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-50 text-xs font-black uppercase text-sky-700">
                         {profile.profile_image_url ? (
                           <img
                             src={profile.profile_image_url}
@@ -828,17 +976,15 @@ export default function PublicProfilePage() {
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] text-slate-600">
-                          <p className="truncate font-bold text-slate-900 lg:text-sm">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
+                          <p className="truncate font-bold text-slate-900">
                             {post.isRepost ? `${displayName} 🔄 reposted` : displayName}
                           </p>
-                          <span className="text-slate-400">·</span>
+                          {profile.user_type === "admin" && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Verified organization" />}
+                          <span aria-hidden="true">·</span>
                           <time className="text-slate-500" dateTime={post.date || undefined}>
                             {formatPostDate(post.date)}
                           </time>
-                        </div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.14em] text-teal-700">
-                          <span>{post.isRepost ? "Repost" : typeMeta.label}</span>
                         </div>
                       </div>
                     </div>
@@ -859,15 +1005,15 @@ export default function PublicProfilePage() {
                     ) : null}
 
                     {post.title ? (
-                      <Link href={post.href} className="mt-3 block">
-                        <h3 className="text-base font-bold leading-6 text-slate-900 transition hover:text-teal-700">
+                      <Link href={post.href} className="profile-post-title mt-4 block">
+                        <h3>
                           {post.title}
                         </h3>
                       </Link>
                     ) : null}
 
                     {post.text ? (
-                      <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-600">
+                      <p className="profile-post-description line-clamp-3">
                         {post.text}
                       </p>
                     ) : null}
@@ -887,8 +1033,9 @@ export default function PublicProfilePage() {
                       />
                     ) : null}
 
-                    <div className="mt-4 border-t border-slate-100 pt-3">
+                    <div className="profile-post-actions">
                       <ProfileFeedActions post={post} userId={viewerId} />
+                    </div>
                     </div>
                   </article>
                 );
@@ -900,12 +1047,12 @@ export default function PublicProfilePage() {
               <p className="mt-3 text-sm font-bold text-slate-800">
                 {isBlocked
                   ? "Content hidden while blocked"
-                  : "No published content yet"}
+                  : posts.length ? `No ${profileTab.toLowerCase()} to show` : "No published content yet"}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 {isBlocked
                   ? `Unblock ${firstName} to see their stories, events, and discussions again.`
-                  : `${firstName} has not shared a story, event, or discussion yet. Check back soon.`}
+                  : posts.length ? `${firstName} has no ${profileTab.toLowerCase()} to show right now.` : `${firstName} has not shared a story, event, or discussion yet. Check back soon.`}
               </p>
             </div>
           )}

@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowRight, Eye, EyeOff, MapPin, ShieldCheck, Sparkles } from 'lucide-react'
 import { setAuthCookie } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
+import '../auth.css'
 
 function LoginContent() {
   const router = useRouter()
@@ -172,20 +173,7 @@ function LoginContent() {
 
   return (
     <>
-      <style>{`
-        @keyframes authFadeSlide {
-          0% {
-            opacity: 0;
-            transform: translateY(14px) scale(0.98);
-          }
-          100% {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-      `}</style>
-
-      <div className="min-h-screen w-full bg-slate-100">
+      <div className="auth-page min-h-screen w-full bg-[#eef3fb]">
         <div className="grid min-h-dvh w-full lg:grid-cols-[1.2fr_0.8fr] xl:grid-cols-[1.15fr_0.85fr]">
           <div className="relative hidden overflow-hidden lg:block">
             <div
@@ -195,7 +183,7 @@ function LoginContent() {
                   "url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80')",
               }}
             />
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-900/80 via-sky-900/75 to-emerald-900/70" />
+            <div className="absolute inset-0 bg-gradient-to-br from-slate-950/85 via-blue-950/75 to-slate-900/80" />
 
             <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14 text-white">
               <div className="flex items-center gap-3">
@@ -224,7 +212,7 @@ function LoginContent() {
                     'Manage your travel community engagement',
                   ].map((item) => (
                     <div key={item} className="flex items-center gap-3 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 backdrop-blur-sm xl:px-5 xl:py-4">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400/20 text-emerald-200">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-400/20 text-blue-200">
                         <MapPin size={14} />
                       </span>
                       <span className="text-sm font-medium text-slate-100 xl:text-base">{item}</span>
@@ -237,22 +225,21 @@ function LoginContent() {
             </div>
           </div>
 
-          <div className="flex min-h-dvh items-center justify-center px-3 py-5 sm:px-5 sm:py-8 lg:px-8 xl:px-12">
+          <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-[#edf2f9] via-[#f7f9fc] to-[#e7effb] px-3 py-5 sm:px-5 sm:py-8 lg:px-8 xl:px-12">
             <div
-              className="w-full max-w-[540px] animate-[authFadeSlide_0.55s_ease-out] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_25px_80px_rgba(15,23,42,0.12)] sm:rounded-[1.75rem] sm:p-8 xl:p-10"
-              style={{ animationFillMode: 'forwards' }}
+              className="w-full max-w-[540px] p-4 sm:p-8 xl:p-10"
             >
               <div className="mb-8 text-center">
-                <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-sky-50 ring-4 ring-sky-100">
+                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-4 ring-blue-100">
                   <img src="/logo.png" alt="Daet logo" className="h-12 w-12 object-contain" />
                 </div>
-                <p className="text-xs font-bold uppercase tracking-[0.28em] text-sky-700">Daet Connect</p>
+                <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700">Daet Connect</p>
                 <h2 className="mt-3 text-2xl font-black text-slate-900 sm:text-3xl">Welcome back</h2>
                 <p className="mt-2 text-sm text-slate-600">Sign in to continue your local travel journey.</p>
               </div>
 
               {message && (
-                <div suppressHydrationWarning className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <div suppressHydrationWarning className="mb-4 rounded-xl border border-blue-100 bg-white/80 px-3 py-2.5 text-sm text-blue-800 shadow-sm">
                   <div className="flex items-start gap-2">
                     <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span suppressHydrationWarning>{message}</span>
@@ -261,7 +248,7 @@ function LoginContent() {
               )}
 
               {error && (
-                <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
                   <div className="flex items-start gap-2">
                     <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>{error}</span>
@@ -281,14 +268,14 @@ function LoginContent() {
               )}
 
               {verificationSent && !message && (
-                <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                <div role="status" className="mb-4 rounded-xl border border-blue-100 bg-white/80 px-3 py-2.5 text-sm text-blue-800 shadow-sm">
                   A new verification email has been sent.
                 </div>
               )}
 
-              <div className="mb-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+              <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm leading-5 text-blue-900">
                 <div className="flex items-start gap-2">
-                  <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-sky-600" />
+                  <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" />
                   <span>For security, your account must be verified before you can sign in.</span>
                 </div>
               </div>
@@ -305,7 +292,7 @@ function LoginContent() {
                     autoComplete="email"
                     value={formData.email}
                     onChange={handleChange}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                    className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563EB] focus:outline-none focus:ring-4 focus:ring-blue-100"
                     placeholder="you@example.com"
                   />
                 </div>
@@ -321,13 +308,13 @@ function LoginContent() {
                       autoComplete="current-password"
                       value={formData.password}
                       onChange={handleChange}
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pr-11 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+                      className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pr-11 text-slate-900 placeholder:text-slate-400 transition focus:border-[#2563EB] focus:outline-none focus:ring-4 focus:ring-blue-100"
                       placeholder="Enter your password"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-3 flex items-center text-slate-500 transition hover:text-slate-700"
+                      className="absolute inset-y-0 right-3 flex items-center text-slate-500 transition hover:text-[#2563EB] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2563EB]"
                       aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -337,11 +324,11 @@ function LoginContent() {
 
                 <div className="flex items-center justify-between gap-3 pt-1">
                   <label htmlFor="remember" className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                    <input type="checkbox" id="remember" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
+                    <input type="checkbox" id="remember" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="h-4 w-4 rounded border-slate-300 accent-[#2563EB] focus:ring-[#2563EB]" />
                     Remember me
                   </label>
 
-                  <Link href="/info/forgot-password" className="text-sm font-medium text-sky-700 transition hover:text-sky-800">
+                  <Link href="/info/forgot-password" className="text-sm font-semibold text-[#2563EB] transition hover:text-blue-800 hover:underline">
                     Forgot password?
                   </Link>
                 </div>
@@ -349,7 +336,7 @@ function LoginContent() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-sky-600 via-sky-600 to-emerald-500 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-sky-500/25 transition duration-200 hover:-translate-y-0.5 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-70"
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#2563EB] px-4 py-3 text-sm font-bold text-white shadow-md shadow-blue-600/20 transition duration-200 hover:bg-blue-700 hover:shadow-lg active:translate-y-px active:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {loading ? 'Signing in...' : 'Sign in'}
                   <ArrowRight size={16} />
@@ -359,7 +346,7 @@ function LoginContent() {
               <div className="mt-6 space-y-2 text-center text-sm text-slate-600">
                 <div>
                   Don&apos;t have an account?{' '}
-                  <Link href="/info/register" className="font-semibold text-sky-700 transition hover:text-sky-800">
+                  <Link href="/info/register" className="font-semibold text-[#2563EB] transition hover:text-blue-800 hover:underline">
                     Sign up here
                   </Link>
                 </div>

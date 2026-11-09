@@ -9,8 +9,8 @@
 //   (`daet:user-settings:v1`), plus the existing user-scoped memory cache for
 //   profile reads (`lib/cache.js`).
 // Visibility: user-specific, not sensitive. No tokens, emails, or profile PII.
-// Stale behavior: cached values render immediately, then revalidate from the
-//   user's `profiles` row when the settings page loads.
+// Stale behavior: a valid saved device theme remains authoritative; profile
+//   settings are a fallback for appearance and revalidate account preferences.
 // Invalidation: after a successful save; logout/account switch clears the
 //   user-scoped memory cache. Manual clear: resetUserSettings() and
 //   clearLocalAppData() below, both exposed in Settings > Data & storage.
@@ -33,10 +33,11 @@ export const THEME_OPTIONS = [
   { value: 'system', labelKey: 'settings.appearance.system', hintKey: 'settings.appearance.systemHint' },
 ]
 
-export const PRIVACY_LEVELS = ['public', 'private']
+export const PRIVACY_LEVELS = ['public', 'followers', 'private']
 
 export const PRIVACY_LEVEL_OPTIONS = [
   { value: 'public', labelKey: 'settings.privacy.public', hintKey: 'settings.privacy.publicHint' },
+  { value: 'followers', labelKey: 'settings.privacy.followers', hintKey: 'settings.privacy.followersHint' },
   { value: 'private', labelKey: 'settings.privacy.private', hintKey: 'settings.privacy.privateHint' },
 ]
 
@@ -196,6 +197,24 @@ export function readStoredSettings(storage) {
   }
 }
 
+export function hasStoredThemePreference(storage) {
+  const store = resolveStorage(storage)
+  if (!store) return false
+
+  try {
+    const raw = store.getItem(SETTINGS_STORAGE_KEY)
+    if (!raw) return false
+
+    const parsed = JSON.parse(raw)
+    return isPlainObject(parsed)
+      && parsed.version === SETTINGS_VERSION
+      && isPlainObject(parsed.data)
+      && THEME_MODES.includes(parsed.data.theme)
+  } catch {
+    return false
+  }
+}
+
 /**
  * Persists settings as a versioned envelope. Returns false when the browser
  * blocks storage (quota, private mode) so callers can keep the in-memory state.
@@ -253,29 +272,6 @@ export function writeLegacyNotificationPreferences(notifications, storage) {
     return false
   }
 }
-/**
- * Maps the canonical settings into the `profiles` row written on save. The
- * `privacy_preferences` / `ui_preferences` columns are added by migration
- * 050_user_settings_preferences.sql.
- */
-export function buildProfileSettingsPayload(userId, settings) {
-  const normalized = normalizeSettings(settings)
-
-  return {
-    user_id: userId,
-    privacy_level: normalized.privacy.privacyLevel,
-    is_public: normalized.privacy.privacyLevel !== 'private',
-    language_preference: normalized.language,
-    notification_preferences: normalized.notifications,
-    privacy_preferences: normalized.privacy,
-    ui_preferences: {
-      theme: normalized.theme,
-      reduceMotion: normalized.reduceMotion,
-    },
-    updated_at: new Date().toISOString(),
-  }
-}
-
 /** Reads a `profiles` row (including partial/legacy columns) into a settings patch. */
 export function settingsFromProfileRow(row) {
   const profile = isPlainObject(row) ? row : {}
@@ -293,8 +289,9 @@ export function settingsFromProfileRow(row) {
   }
 
   const privacy = isPlainObject(profile.privacy_preferences) ? { ...profile.privacy_preferences } : {}
-  if (PRIVACY_LEVELS.includes(profile.privacy_level)) privacy.privacyLevel = profile.privacy_level
-  else if (profile.is_public === false) privacy.privacyLevel = 'private'
+  if (profile.is_public === false && profile.privacy_level === 'public') privacy.privacyLevel = 'followers'
+  else if (PRIVACY_LEVELS.includes(profile.privacy_level)) privacy.privacyLevel = profile.privacy_level
+  else if (profile.is_public === false) privacy.privacyLevel = 'followers'
   else if (profile.is_public === true) privacy.privacyLevel = 'public'
   if (Object.keys(privacy).length) patch.privacy = privacy
 
@@ -323,35 +320,29 @@ export function createSettingsTranslator(settings) {
   return createTranslator(normalizeSettings(settings).language)
 }
 /**
- * Saves settings to the signed-in user's profile row.
- *
- * Returns `{ ok, partial, error }`. `partial` means the base profile columns were
- * saved but the settings JSONB columns are missing on this database (migration
- * 050 not applied yet); the device copy is still authoritative.
+ * Saves settings through the signed-session API so the signed HTTP-only
+ * application session, rather than a possibly empty browser Supabase session,
+ * determines which profile row may be updated.
  */
-export async function saveSettingsToProfile({ client, userId, settings }) {
-  if (!client || !userId) {
-    return { ok: false, partial: false, error: new Error('Missing Supabase client or user id') }
+export async function saveSettingsToProfile({ settings }) {
+  try {
+    const response = await fetch('/info/api/user/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ settings }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) {
+      return {
+        ok: false,
+        error: new Error(result.message || `Unable to save settings (${response.status}).`),
+      }
+    }
+    return { ok: true, error: null }
+  } catch (error) {
+    return { ok: false, error }
   }
-
-  const payload = buildProfileSettingsPayload(userId, settings)
-  const fullSave = await client.from('profiles').upsert(payload, { onConflict: 'user_id' })
-  if (!fullSave.error) return { ok: true, partial: false, error: null }
-  if (!['42703', 'PGRST204'].includes(fullSave.error.code)) {
-    return { ok: false, partial: false, error: fullSave.error }
-  }
-
-  const legacySave = await client.from('profiles').upsert({
-    user_id: payload.user_id,
-    privacy_level: payload.privacy_level,
-    is_public: payload.is_public,
-    language_preference: payload.language_preference,
-    notification_preferences: payload.notification_preferences,
-    updated_at: payload.updated_at,
-  }, { onConflict: 'user_id' })
-
-  if (legacySave.error) return { ok: false, partial: false, error: legacySave.error }
-  return { ok: true, partial: true, error: fullSave.error }
 }
 
 /** Profile, feed, and notification caches must drop stale privacy/identity data. */
@@ -359,6 +350,7 @@ export function invalidateSettingsCaches(userId) {
   if (!userId) return
   invalidateCachePrefix(`profile:user:${userId}`)
   invalidateCachePrefix(`feed:user:${userId}`)
+  invalidateCachePrefix(`notifications:user:${userId}`)
 }
 
 /**

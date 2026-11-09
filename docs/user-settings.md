@@ -5,21 +5,21 @@ per concern:
 
 | Tab | What it controls | Where it is stored |
 | --- | --- | --- |
-| Appearance | Light / dark / system theme, reduce motion | Device (`localStorage`) + `profiles.ui_preferences` |
+| Appearance | Light / dark / system theme, reduce motion | Device (`localStorage`) + `profiles.ui_preferences` mirror; saved device preferences take precedence |
 | Language | English, Filipino, Bikol | Device (`localStorage`) + `profiles.language_preference` |
-| Notifications | Device push permission and notification category preferences | Existing push subscriptions + `profiles.notification_preferences` |
-| Privacy | Public/private profile visibility and account privacy preferences | `profiles.privacy_level`, `profiles.is_public`, `profiles.privacy_preferences` |
+| Notifications | Device push permission and in-app new-follower, comment/reply, and announcement visibility preferences | Existing push subscriptions + `profiles.notification_preferences` |
+| Privacy | Public/followers-only/private profile visibility, search visibility, and who can start a message conversation | `profiles.privacy_level`, `profiles.is_public`, `profiles.privacy_preferences` |
 | Account | Sign-in email, password reset link, profile edit, sign out everywhere, deactivation, and 30-day deletion requests | Supabase auth + `info_users` lifecycle fields |
-| Data & storage | Storage usage, clear cached data, export settings, reset, install app | Device |
+| Data & storage | Storage usage, clear cached data, export settings, reset preferences, install app | Device; reset also persists account defaults |
 | About & legal | Privacy policy, terms, cookie policy, accessibility, developer information, feedback | Static routes |
 
 ## Deployment and limitations
 
-Apply `supabase/migrations/050_user_settings_preferences.sql` for account appearance sync and `supabase/migrations/051_account_lifecycle.sql` for deactivation and deletion requests. The migrations have not been applied here. Older schemas receive a partial-save warning, and lifecycle actions require the new columns.
+Apply `supabase/migrations/050_user_settings_preferences.sql` for account appearance and privacy sync and `supabase/migrations/051_account_lifecycle.sql` for deactivation and deletion requests. The migrations have not been applied here. The settings page requires the complete preference schema before it reports a save or reset as successful.
 
-Language support covers settings and selected navigation labels, not the entire application or user-generated content; missing labels fall back to English. Notification category preferences are saved to the profile and are available to delivery paths as they are added. Privacy preferences are saved to the profile and are available to enforcement paths as they are added. Profile visibility uses existing rules and does not hide previously published posts. No 2FA enrollment is provided.
+Language support covers settings and selected navigation labels, not the entire application or user-generated content; missing labels fall back to English. The notification inbox applies the new-follower, comment/reply, and announcement preferences when listing notifications and calculating unread counts; this does not disable email or browser push delivery. Email alerts and activity digests do not have delivery implementations. Search visibility is enforced by people search, and the message-conversation preference is enforced when starting a new conversation; existing conversations remain available. The saved online-status, activity, and mention preferences do not currently have corresponding enforcement paths. Profile visibility uses existing rules and does not hide previously published posts. No 2FA enrollment is provided.
 
-Display changes apply immediately. Reset restores device defaults and a draft; Save is required to update the account. Authenticated writes, email delivery, push prompts, and global sign-out still require testing with a signed-in account. Global dark utility remapping warrants visual review across routes.
+Display changes apply immediately. A valid device-saved theme takes precedence over the profile mirror, which is used only when no device theme is saved. This prevents a stale profile value from changing the theme during Settings-page revalidation. Reset writes the default account preferences before clearing and restoring the device preferences; failures leave the current settings intact and show an error. Preference reads and writes use the signed HTTP-only application session and are scoped to that session's user id. Authenticated writes and push prompts still require testing with a signed-in account. Global sign-out revokes the Supabase auth session and clears the current device, but the app's stateless signed cookies on other devices are not revoked; server-side session revocation is still needed for a true all-device guarantee. Global dark utility remapping warrants visual review across routes.
 
 Deactivation sets the `info_users` status to `suspended` and signs the user out; signing in again exposes a reactivation action. Deletion requests also suspend the account and store a deadline 30 days later. A trusted scheduled cleanup job must delete accounts whose `deletion_scheduled_for` has passed; the settings route only creates, cancels, and reports the request.
 
@@ -35,6 +35,9 @@ Deactivation sets the `info_users` status to `suspended` and signs the user out;
 ## Implementation
 
 - Model and storage: [`src/lib/userSettings.js`](../src/lib/userSettings.js)
+- Signed-session preference API: [`src/app/(subsystems)/info/api/user/settings/route.js`](../src/app/(subsystems)/info/api/user/settings/route.js)
+- Search visibility enforcement: [`src/app/(subsystems)/info/api/search/users/route.js`](../src/app/(subsystems)/info/api/search/users/route.js)
+- Message privacy enforcement: [`src/app/(subsystems)/info/api/messages/route.js`](../src/app/(subsystems)/info/api/messages/route.js)
 - Pre-paint theme script: [`src/lib/themeBootstrap.js`](../src/lib/themeBootstrap.js)
 - Global provider: [`src/components/UserSettingsProvider.js`](../src/components/UserSettingsProvider.js)
 - Translations: [`src/lib/i18n.js`](../src/lib/i18n.js)
@@ -61,15 +64,15 @@ Data fetched: profiles(privacy_level, is_public, language_preference, notificati
 Change frequency: only when the user saves, plus once per Settings visit (revalidation)
 Visibility: Account preferences are user-specific; display preferences are non-sensitive and device-wide.
 Freshness: Fresh profile read on every settings visit; account save requires successful load.
-Stale behavior: Only display preferences render from device storage; failed account reads disable saving.
-Missing-cache behavior: System theme and English until the profile loads.
-Invalidation trigger: Successful save invalidates profile:user:{userId} and feed:user:{userId}.
+Stale behavior: A valid saved device theme remains authoritative over its profile mirror; other account preferences revalidate from the profile.
+Missing-cache behavior: Use the profile theme when no valid device theme exists; otherwise keep the saved device theme. English remains the default until settings load.
+Invalidation trigger: Successful save/reset invalidates profile:user:{userId}, feed:user:{userId}, and notifications:user:{userId}.
 Cache layer: Display-only localStorage; account preferences in component memory (no reusable read cache).
 Cache key: daet:user-settings:v1 contains only theme, language, reduceMotion.
 TTL: Display preferences persist until reset or version mismatch; account preferences fetched fresh on each visit.
 Offline behavior: Display preferences work locally. Account writes are NOT queued; reconnect and press Save again.
 Security notes: No tokens, passwords, email, privacy flags, or notification flags in the device envelope. Legacy mirror helpers remain for compatibility but are not read/written by the new settings page.
-Manual clear method: Settings > Data & storage ("Clear cached data" -> clearLocalAppData, "Reset to defaults" -> resetUserSettings)
+Manual clear method: Settings > Data & storage ("Clear cached data" -> clearLocalAppData, "Reset to defaults" -> resetUserSettings after the account reset succeeds)
 ```
 
 ## Manual clear

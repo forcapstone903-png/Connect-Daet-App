@@ -48,8 +48,10 @@ export async function GET(request) {
 
     const formattedSpots = (data || []).map((spot) => ({
       ...spot,
-      gallery_images: spot.gallery_images || [],
-      view_count: spot.view_count || 0,
+      image_url: spot.image_url || spot.featured_image || null,
+      gallery_images: spot.gallery_images?.length ? spot.gallery_images : spot.images || [],
+      entrance_fee: spot.entrance_fee ?? spot.entry_fee ?? null,
+      view_count: spot.view_count ?? spot.visit_count ?? 0,
       featured: !!spot.featured,
       rating: spot.rating || 0,
     }))
@@ -62,7 +64,7 @@ export async function GET(request) {
 }
 
 export async function POST(request) {
-  const { response: authError } = authorizeAdminApi(request)
+  const { session, response: authError } = authorizeAdminApi(request)
   if (authError) return authError
   if (!adminSupabase) return missingConfig()
 
@@ -83,8 +85,7 @@ export async function POST(request) {
       rating,
       status,
       featured,
-      view_count,
-      created_by
+      view_count
     } = body
 
     if (!name?.trim() || !location?.trim() || !category) {
@@ -98,19 +99,20 @@ export async function POST(request) {
       name: name.trim(),
       description: description || '',
       location: location.trim(),
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
+      latitude: latitude === '' || latitude == null ? null : Number(latitude),
+      longitude: longitude === '' || longitude == null ? null : Number(longitude),
       category,
       opening_hours: opening_hours || '',
-      entrance_fee: entrance_fee ? parseFloat(entrance_fee) : null,
+      entry_fee: entrance_fee === '' || entrance_fee == null ? null : Number(entrance_fee),
       contact_number: contact_number || '',
       image_url: image_url || null,
+      featured_image: image_url || null,
       gallery_images: gallery_images?.length ? gallery_images : null,
       rating: rating || 0,
-      status: status || 'published',
+      status: status || 'active',
       featured: !!featured,
-      view_count: view_count || 0,
-      created_by: created_by || null,
+      visit_count: view_count || 0,
+      created_by: session.user_id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     }
@@ -122,6 +124,7 @@ export async function POST(request) {
       .single()
 
     if (error) {
+      console.error('Tourist spot create error:', error)
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 

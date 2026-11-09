@@ -31,11 +31,12 @@ export async function GET(request) {
 
   const followingIds = [...new Set((data || []).map((row) => row.following_id).filter(Boolean))]
   const { data: users, error: usersError } = followingIds.length
-    ? await adminSupabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', followingIds)
+    ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url').in('id', followingIds)
     : { data: [], error: null }
 
   if (usersError) {
     console.error('Followed user profiles lookup failed:', usersError)
+    return NextResponse.json({ success: false, message: 'Unable to load followed users.' }, { status: 500 })
   }
 
   return NextResponse.json({

@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, BellRing, CheckCheck, MessageCircle, Search, ShieldAlert, Sparkles, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { Bell, BellRing, CheckCheck, MessageCircle, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
 
@@ -242,7 +243,7 @@ export default function UserNotificationsPage() {
     return () => window.clearTimeout(timer)
   }, [actionNotice])
 
-  const syncUnreadBadge = (nextNotifications = notifications, explicitUnreadCount = null) => {
+  const syncUnreadBadge = useCallback((nextNotifications = [], explicitUnreadCount = null) => {
     if (typeof window === 'undefined') return
 
     const normalizedCount = Number(explicitUnreadCount)
@@ -256,7 +257,7 @@ export default function UserNotificationsPage() {
         }),
       )
     })
-  }
+  }, [])
 
   const notifyUrgent = () => {
     if (typeof window === 'undefined' || !soundEnabledRef.current) return
@@ -293,7 +294,7 @@ export default function UserNotificationsPage() {
 
     const userIdForRealtime = userId || session?.user_id || session?.id || session?.userId || session?.sub || ''
 
-    const loadNotifications = async (silent = false) => {
+    const loadNotifications = async (silent = false, incomingNotificationId = null) => {
       if (!silent) setLoadError('')
       let lastError = null
 
@@ -335,7 +336,9 @@ export default function UserNotificationsPage() {
           }
           if (!silent) setLoading(false)
           window.clearTimeout(timeout)
-          return
+          return incomingNotificationId
+            ? nextNotifications.some((notification) => notification.id === incomingNotificationId)
+            : true
         } catch (error) {
           lastError = error
         } finally {
@@ -345,6 +348,7 @@ export default function UserNotificationsPage() {
 
       if (!silent && lastError) setLoadError('We could not load your notifications right now. Please try again.')
       if (!silent) setLoading(false)
+      return false
     }
 
     loadNotifications()
@@ -370,30 +374,9 @@ export default function UserNotificationsPage() {
           const incoming = payload?.new || null
           if (!incoming || !incoming.id) return
 
-          const actorId = getNotificationActorId(incoming)
-          const addNotification = (actor) => setNotifications((previous) => {
-            if (previous.some((item) => item.id === incoming.id)) {
-              syncUnreadBadge(previous)
-              return previous
-            }
-
-            const next = [{ ...incoming, actor_id: actor?.id || incoming.actor_id || null, actor: actor || null }, ...previous]
-            syncUnreadBadge(next)
-            return next
+          void loadNotifications(true, incoming.id).then((isVisible) => {
+            if (isVisible && !incoming.is_read) notifyUrgent()
           })
-
-          if (!incoming.is_read) notifyUrgent()
-
-          if (actorId && supabase) {
-            void supabase
-              .from('info_users')
-              .select('id, full_name, profile_image_url')
-              .eq('id', actorId)
-              .maybeSingle()
-              .then(({ data: actor }) => addNotification(actor))
-          } else {
-            addNotification(null)
-          }
         },
       )
       realtimeChannel.on('postgres_changes', {
@@ -451,7 +434,7 @@ export default function UserNotificationsPage() {
       }
       window.clearInterval(refreshTimer)
     }
-  }, [session, userId, retryKey])
+  }, [notificationsCacheKey, session, syncUnreadBadge, userId, retryKey])
 
   const unreadCount = notifications.filter((item) => !item.is_read).length
 
@@ -699,7 +682,7 @@ export default function UserNotificationsPage() {
 
       setActionNotice(actionType === 'wave' ? 'Wave sent.' : 'Hi sent.')
       invalidateCache(notificationsCacheKey)
-      syncUnreadBadge()
+      syncUnreadBadge(notifications)
     } catch (error) {
       console.error('Send follow action failed:', error)
       setActionNotice(error.message || 'Unable to send the follow-back action.')
@@ -851,38 +834,23 @@ export default function UserNotificationsPage() {
   }
 
   return (
-    <main className="tourism-shell usr-section-page usr-notifications min-h-screen">
-      <div className="usr-section-container mx-auto max-w-300 px-3 pb-28 pt-3 sm:px-4 sm:pb-10 lg:px-6">
-        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white/90 shadow-[0_12px_30px_rgba(15,23,42,0.04)]">
-          <div className="border-b border-slate-200 bg-slate-50/80 px-4 py-5 sm:px-6 sm:py-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <main className="tourism-shell usr-section-page usr-notifications">
+      <UserTopHeader spacer={false} />
+      <div className="usr-section-container notifications-container mx-auto w-full max-w-none px-0 pb-6 pt-0">
+        <div className="notifications-panel overflow-hidden border border-slate-200 bg-white/90">
+          <div className="notifications-hub border-b border-slate-200 bg-slate-50/80 px-2 py-3 sm:px-5 sm:py-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-500">Your activity hub</p>
-                <div className="mt-2 flex items-center gap-3">
-                  <h1 className="text-3xl font-black leading-none tracking-[-0.04em] text-slate-900 sm:text-4xl">Notifications</h1>
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-lg shadow-sm">🔔</span>
-                </div>
-                <p className="mt-3 max-w-xl text-base leading-7 text-slate-600">Reactions, conversations, and community updates—all in one place.</p>
+                <h1 className="mt-1 text-[28px] font-black leading-none tracking-[-0.04em] text-slate-900 sm:text-4xl">Notifications</h1>
+                <p className="mt-2 max-w-xl text-[13px] leading-[18px] text-slate-600">Reactions, conversations, and community updates—all in one place.</p>
               </div>
-              <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-3 py-1.5 text-sm font-bold text-slate-700" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
+              <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold text-slate-700" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
             </div>
           </div>
 
-          <header className="px-4 py-4 sm:px-6 sm:py-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-bold text-slate-900">Activity controls</h2>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={toggleSound} aria-pressed={soundEnabled} aria-label={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} title={soundEnabled ? 'Mute notification sound' : 'Unmute notification sound'} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                  {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-                </button>
-                <button type="button" onClick={toggleSearch} aria-expanded={searchOpen} aria-label="Search notifications" title="Search notifications" className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100">
-                  <Search className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-
+          <header className="notifications-controls px-2 py-3 sm:px-5 sm:py-4">
             {searchOpen && (
-              <div className="mt-3 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="mt-2 flex items-center gap-2 border border-slate-200 bg-slate-50 px-3 py-2">
                 <Search className="h-4 w-4 shrink-0 text-slate-400" />
                 <input
                   ref={searchInputRef}
@@ -901,17 +869,13 @@ export default function UserNotificationsPage() {
               </div>
             )}
 
-            <div className="mt-3 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.2em] text-slate-400">
-                <BellRing className="h-3.5 w-3.5" />
-                Alerts
-              </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex items-center gap-1 text-xs font-semibold text-sky-700 disabled:opacity-40">
+            <div className="notifications-alert-actions mt-3 flex min-w-0 flex-nowrap items-center justify-end gap-2">
+              <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-sky-700 disabled:opacity-40">
                   <CheckCheck className="h-3.5 w-3.5" />
                   Mark all read
                 </button>
-                <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="text-xs font-semibold text-red-600 disabled:opacity-40">
+                <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="whitespace-nowrap text-[11px] font-semibold text-red-600 disabled:opacity-40">
                   Clear all
                 </button>
               </div>
@@ -919,10 +883,10 @@ export default function UserNotificationsPage() {
           </header>
         </div>
 
-        {actionNotice && <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-medium text-sky-800">{actionNotice}</div>}
+        {actionNotice && <div className="mb-3 border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800">{actionNotice}</div>}
 
         {showDeleteConfirm && (
-          <div className="mb-6 rounded-[22px] border border-red-200 bg-red-50 p-4 shadow-sm sm:flex sm:items-center sm:justify-between sm:gap-4">
+          <div className="mb-3 border border-red-200 bg-red-50 p-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
             <div>
               <h2 className="text-sm font-bold text-red-900">Delete notification history?</h2>
               <p className="mt-1 text-sm text-red-700">This permanently removes all of your notifications and cannot be undone.</p>
@@ -934,30 +898,30 @@ export default function UserNotificationsPage() {
           </div>
         )}
 
-        <div className="space-y-6">
+        <div>
           {loading ? (
             <SectionLoading label="Loading notifications" />
           ) : loadError ? (
-            <div role="alert" className="rounded-[18px] border border-red-200 bg-red-50 p-6 text-center">
+            <div role="alert" className="border border-red-200 bg-red-50 p-4 text-center">
               <p className="text-sm font-semibold text-red-700">{loadError}</p>
               <button
                 type="button"
                 onClick={() => setRetryKey((value) => value + 1)}
-                className="mt-4 inline-flex items-center gap-2 rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+                className="mt-3 inline-flex items-center gap-2 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
               >
                 <Bell className="h-4 w-4" />
                 Try again
               </button>
             </div>
           ) : notifications.length ? (
-            <div className="space-y-6">
+            <div className="space-y-3">
               {groupedNotifications.length ? groupedNotifications.map(([groupLabel, groupItems]) => (
-                <section key={groupLabel} className="tourism-panel rounded-3xl p-3 sm:p-4">
-                  <div className="mb-3 flex items-center justify-between px-1">
+                <section key={groupLabel} className="notifications-group">
+                  <div className="mb-2 flex items-center justify-between px-1">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">{groupLabel}</h2>
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{groupItems.length}</span>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-1">
                   {groupItems.map((notification) => {
                     const NotificationIcon = getNotificationIcon(notification)
                     const actor = notification.actor || null
@@ -972,7 +936,7 @@ export default function UserNotificationsPage() {
                     const relativeTime = formatRelativeTime(notification.created_at)
 
                     return (
-                      <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`block w-full rounded-[20px] border p-3 text-left transition ${notification.is_read ? 'border-[#dfe7e1] bg-[#fffefa]' : 'border-[#b9dcd5] bg-[#edf7f3] shadow-sm'}`}>
+                      <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`block w-full border border-[#dfe7e1] bg-white p-2.5 text-left transition ${notification.is_read ? '' : 'border-[#b9dcd5]'}`}>
                         <div className="flex items-start gap-3">
                           <NotificationAvatar notification={notification} actor={actor} actorName={actorName} actorProfileHref={actorProfileHref} />
 
@@ -1035,13 +999,13 @@ export default function UserNotificationsPage() {
                   </div>
                 </section>
               )) : (
-                <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+                <div className="border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
                   No notifications match your search.
                 </div>
               )}
             </div>
           ) : (
-            <div className="rounded-[18px] border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+            <div className="border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
               No notifications yet.
             </div>
           )}

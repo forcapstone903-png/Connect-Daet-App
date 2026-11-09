@@ -13,6 +13,7 @@ import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 import Comments from '@/app/(subsystems)/info/components/user/Comments';
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions';
+import { getCacheKey, invalidatePersistentCache } from '@/lib/cache';
 
 const DEFAULT_SPOT_CATEGORIES = [
   { value: 'beach', label: 'Beach', color: 'bg-cyan-100 text-cyan-700' },
@@ -25,11 +26,15 @@ const DEFAULT_SPOT_CATEGORIES = [
 ];
 
 const DEFAULT_STATUS_OPTIONS = [
-  { value: 'published', label: 'Published' },
-  { value: 'draft', label: 'Draft' },
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
   { value: 'maintenance', label: 'Under Maintenance' },
   { value: 'closed', label: 'Closed' },
 ];
+
+const PUBLIC_SPOTS_CACHE_KEY = getCacheKey('places', 'public', 'all', 'daet-content-v1');
+
+const invalidatePublicSpotsCache = () => invalidatePersistentCache(PUBLIC_SPOTS_CACHE_KEY);
 
 export default function TouristSpotsManagement() {
   const router = useRouter();
@@ -72,7 +77,7 @@ export default function TouristSpotsManagement() {
     image_url: '',
     gallery_images: [],
     rating: 0,
-    status: 'published',
+    status: 'active',
     featured: false,
     view_count: 0
   });
@@ -165,10 +170,12 @@ export default function TouristSpotsManagement() {
         });
       }
 
-      if (!response.ok) throw new Error('Failed to save spot');
       const result = await response.json();
-      if (!result.success) throw new Error(result.message || 'Failed to save spot');
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || `Request failed (${response.status})`);
+      }
 
+      invalidatePublicSpotsCache();
       showToast(editingSpot ? 'Spot updated successfully!' : 'Spot created successfully!');
       fetchSpots();
       closeModal();
@@ -193,13 +200,14 @@ export default function TouristSpotsManagement() {
       const response = await fetch(`/info/api/admin/tourist-spots/${confirmingSpot.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...confirmingSpot, status: 'draft' })
+        body: JSON.stringify({ ...confirmingSpot, status: 'inactive' })
       });
 
       if (!response.ok) throw new Error('Failed to archive spot');
       const result = await response.json();
       if (!result.success) throw new Error(result.message || 'Failed to archive spot');
 
+      invalidatePublicSpotsCache();
       showToast(`"${confirmingSpot.name}" archived`);
       fetchSpots();
       setConfirmingSpot(null)
@@ -228,6 +236,7 @@ export default function TouristSpotsManagement() {
       const result = await response.json();
       if (!result.success) throw new Error(result.message || 'Failed to delete spot');
 
+      invalidatePublicSpotsCache();
       showToast(`"${confirmingSpot.name}" deleted`);
       fetchSpots();
       setConfirmingSpot(null)
@@ -248,6 +257,7 @@ export default function TouristSpotsManagement() {
         .in('id', Array.from(selectedSpotIds));
 
       if (error) throw error;
+      invalidatePublicSpotsCache();
       showToast(`${selectedSpotIds.size} spots updated`, false);
       setSelectedSpotIds(new Set());
       setBulkAction('');
@@ -270,6 +280,7 @@ export default function TouristSpotsManagement() {
         .in('id', ids);
 
       if (error) throw error;
+      invalidatePublicSpotsCache();
       showToast(`${ids.length} spots deleted`, false);
       setSelectedSpotIds(new Set());
       setShowBulkModal(false);
@@ -296,7 +307,7 @@ export default function TouristSpotsManagement() {
       image_url: '',
       gallery_images: [],
       rating: 0,
-      status: 'published',
+      status: 'active',
       featured: false,
       view_count: 0
     });
@@ -319,7 +330,7 @@ export default function TouristSpotsManagement() {
       image_url: spot.image_url || '',
       gallery_images: spot.gallery_images || [],
       rating: spot.rating || 0,
-      status: spot.status || 'published',
+      status: spot.status || 'active',
       featured: spot.featured || false,
       view_count: spot.view_count || 0
     });
@@ -390,8 +401,8 @@ export default function TouristSpotsManagement() {
 
   const getStatusBadge = (status) => {
     const badges = {
-      'published': 'bg-green-100 text-green-700',
-      'draft': 'bg-yellow-100 text-yellow-700',
+      'active': 'bg-green-100 text-green-700',
+      'inactive': 'bg-yellow-100 text-yellow-700',
       'maintenance': 'bg-orange-100 text-orange-700',
       'closed': 'bg-red-100 text-red-700'
     };
@@ -542,8 +553,8 @@ export default function TouristSpotsManagement() {
                 className="px-3 py-2 border border-gray-200 rounded-full bg-white text-sm"
               >
                 <option value="">Bulk Actions</option>
-                <option value="published">Publish</option>
-                <option value="draft">Archive</option>
+                <option value="active">Activate</option>
+                <option value="inactive">Deactivate</option>
                 <option value="maintenance">Maintenance</option>
                 <option value="delete">Delete</option>
               </select>
@@ -1035,7 +1046,7 @@ export default function TouristSpotsManagement() {
       <ConfirmationModal
         isOpen={showArchiveConfirm}
         title="Archive Tourist Spot"
-        message={`Are you sure you want to archive "${confirmingSpot?.name}"? You can restore it later from drafts.`}
+        message={`Are you sure you want to archive "${confirmingSpot?.name}"? You can activate it again later.`}
         confirmText="Archive"
         cancelText="Cancel"
         isDangerous={false}

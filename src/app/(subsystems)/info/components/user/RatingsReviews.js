@@ -1,498 +1,551 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Award, Star, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Pencil, Star, ThumbsUp, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCacheKey, invalidateCache } from '@/lib/cache'
+import { decodeReviewText, encodeReviewText } from '@/lib/reviewText'
 
-function StarRating({ value, onChange, readOnly = false }) {
+const PAGE_SIZE = 3
+
+const EMPTY_SUMMARY = {
+  total_count: 0,
+  average_rating: null,
+  five_star_count: 0,
+  four_star_count: 0,
+  three_star_count: 0,
+  two_star_count: 0,
+  one_star_count: 0,
+}
+
+function StarRating({ value, onChange, readOnly = false, compact = false }) {
   return (
-    <div className="flex items-center gap-0.5">
+    <div
+      className="flex items-center gap-0.5"
+      role={readOnly ? 'img' : 'group'}
+      aria-label={readOnly ? `${value} out of 5 stars` : 'Rate this place'}
+    >
       {[1, 2, 3, 4, 5].map((star) => (
         <button
           key={star}
           type="button"
           disabled={readOnly}
-          onClick={() => !readOnly && onChange(star)}
-          className={`flex min-h-11 min-w-11 items-center justify-center ${readOnly ? 'cursor-default' : 'cursor-pointer'} transition hover:scale-110`}
+          onClick={() => onChange(star)}
+          aria-label={`${star} star${star === 1 ? '' : 's'}`}
+          aria-pressed={!readOnly && value === star}
+          className={`flex items-center justify-center transition ${
+            readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
+          } ${compact ? 'h-5 w-5' : 'h-9 w-9'}`}
         >
-          <Star
-            className={`h-5 w-5 ${
-              star <= value ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
-            }`}
-          />
+          <Star className={`${compact ? 'h-4 w-4' : 'h-6 w-6'} ${
+            star <= value ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
+          }`} />
         </button>
       ))}
     </div>
   )
 }
 
-export default function RatingsReviews({ attractionType, attractionId, userId }) {
+export default function RatingsReviews({ attractionId, userId, onRatingSummaryChange }) {
   const [reviews, setReviews] = useState([])
-  const [userRating, setUserRating] = useState(5)
+  const [summary, setSummary] = useState(EMPTY_SUMMARY)
+  const [myReview, setMyReview] = useState(null)
+  const [userRating, setUserRating] = useState(0)
+  const [reviewTitle, setReviewTitle] = useState('')
   const [reviewText, setReviewText] = useState('')
-  const [pros, setPros] = useState('')
-  const [cons, setCons] = useState('')
+  const [sortBy, setSortBy] = useState('recent')
+  const [showAllReviews, setShowAllReviews] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
+  const [loadingReviews, setLoadingReviews] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  const [userHasRated, setUserHasRated] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [helpfulVotes, setHelpfulVotes] = useState({})
-  const [showUserPolls, setShowUserPolls] = useState(false)
-  const [userPolls, setUserPolls] = useState([])
+  const [helpfulCounts, setHelpfulCounts] = useState({})
+  const requestId = useRef(0)
+  const loadedCount = useRef(0)
 
-  const loadReviews = useCallback(async () => {
+  const loadReviews = useCallback(async (append = false) => {
     if (!attractionId) return
+
+    const request = ++requestId.current
+    const offset = append ? loadedCount.current : 0
+    if (append) setLoadingMore(true)
+    else {
+      loadedCount.current = 0
+      setLoadingReviews(true)
+      setLoadError('')
+    }
+
     try {
-      const { data, error } = await supabase
+      const baseQuery = supabase
         .from('attraction_ratings')
-        .select('*, info_users!attraction_ratings_user_id_fkey(full_name, email, profile_image_url)')
-        .eq('attraction_type', attractionType)
+        .select('id, user_id, rating, review_text, pros, cons, created_at')
+        .eq('attraction_type', 'tourist_spot')
         .eq('attraction_id', attractionId)
-        .order('created_at', { ascending: false })
-      if (error) throw error
+      const sortedQuery = sortBy === 'recent'
+        ? baseQuery.order('created_at', { ascending: false })
+        : baseQuery
+          .order('rating', { ascending: sortBy === 'lowest' })
+          .order('created_at', { ascending: false })
 
-      setReviews(data || [])
+      const [summaryResult, reviewsResult] = await Promise.all([
+        supabase.rpc('get_tourist_spot_rating_summary', { p_attraction_id: attractionId }),
+        sortedQuery
+          .order('id', { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1),
+      ])
+      if (summaryResult.error) throw summaryResult.error
+      if (reviewsResult.error) throw reviewsResult.error
 
-      if (userId) {
-        const myRating = (data || []).find((r) => r.user_id === userId)
-        if (myRating) {
-          setUserHasRated(true)
-          setUserRating(myRating.rating)
-          setReviewText(myRating.review_text || '')
-          setPros((myRating.pros || []).join(', '))
-          setCons((myRating.cons || []).join(', '))
-        }
+      const rows = reviewsResult.data || []
+      const reviewIds = rows.map((review) => review.id)
+      const userIds = [...new Set(rows.map((review) => review.user_id))]
 
-        const reviewIds = (data || []).map((r) => r.id)
-        if (reviewIds.length > 0) {
-          const { data: helpfulRows } = await supabase
+      const [profilesResult, helpfulResult, votesResult] = await Promise.all([
+        userIds.length
+          ? supabase.from('profiles').select('user_id, full_name, profile_image_url').in('user_id', userIds)
+          : Promise.resolve({ data: [], error: null }),
+        reviewIds.length
+          ? supabase
+            .from('review_helpfulness')
+            .select('review_id')
+            .eq('review_type', 'attraction_rating')
+            .eq('is_helpful', true)
+            .in('review_id', reviewIds)
+          : Promise.resolve({ data: [], error: null }),
+        userId && reviewIds.length
+          ? supabase
             .from('review_helpfulness')
             .select('review_id, is_helpful')
-            .in('review_id', reviewIds)
+            .eq('review_type', 'attraction_rating')
             .eq('user_id', userId)
+            .in('review_id', reviewIds)
+          : Promise.resolve({ data: [], error: null }),
+      ])
+      if (profilesResult.error) throw profilesResult.error
+      if (helpfulResult.error) throw helpfulResult.error
+      if (votesResult.error) throw votesResult.error
 
-          const helpfulMap = {}
-          ;(helpfulRows || []).forEach((h) => {
-            helpfulMap[h.review_id] = h.is_helpful
-          })
-          setHelpfulVotes(helpfulMap)
-        }
+      const nextSummary = summaryResult.data?.[0] || EMPTY_SUMMARY
+      const profileById = Object.fromEntries(
+        (profilesResult.data || []).map((profile) => [profile.user_id, profile]),
+      )
+      const nextReviews = rows.map((review) => ({
+        ...review,
+        profile: profileById[review.user_id] || null,
+      }))
+      const nextHelpfulCounts = {}
+      ;(helpfulResult.data || []).forEach(({ review_id }) => {
+        nextHelpfulCounts[review_id] = (nextHelpfulCounts[review_id] || 0) + 1
+      })
+      const nextHelpfulVotes = {}
+      ;(votesResult.data || []).forEach(({ review_id, is_helpful }) => {
+        nextHelpfulVotes[review_id] = is_helpful
+      })
+
+      if (request !== requestId.current) return
+
+      setSummary(nextSummary)
+      setReviews((current) => append ? [...current, ...nextReviews] : nextReviews)
+      loadedCount.current = offset + rows.length
+      setHelpfulCounts((current) => append ? { ...current, ...nextHelpfulCounts } : nextHelpfulCounts)
+      setHelpfulVotes((current) => append ? { ...current, ...nextHelpfulVotes } : nextHelpfulVotes)
+      setHasMore(loadedCount.current < Number(nextSummary.total_count || 0))
+      onRatingSummaryChange?.({
+        average_rating: nextSummary.average_rating,
+        total_count: Number(nextSummary.total_count || 0),
+      })
+    } catch (error) {
+      console.error('Failed to load tourist spot reviews:', error)
+      if (request === requestId.current) setLoadError('Reviews could not be loaded. Please try again.')
+    } finally {
+      if (request === requestId.current) {
+        setLoadingReviews(false)
+        setLoadingMore(false)
       }
-    } catch (err) {
-      console.error('Failed to load ratings:', err)
     }
-  }, [attractionId, attractionType, userId])
-
-  const loadUserPolls = useCallback(async () => {
-    try {
-      const { data, error } = await supabase
-        .from('user_polls')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(3)
-      if (error) throw error
-      setUserPolls(data || [])
-    } catch (err) {
-      console.error('Failed to load user polls:', err)
-    }
-  }, [])
+  }, [attractionId, onRatingSummaryChange, sortBy, userId])
 
   useEffect(() => {
-    // Both loaders wait on Supabase requests before updating React state.
+    // Load the current rating page and summary from Supabase.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadReviews()
-    loadUserPolls()
-  }, [loadReviews, loadUserPolls])
+    return () => {
+      requestId.current += 1
+    }
+  }, [loadReviews])
+
+  useEffect(() => {
+    let active = true
+
+    const loadMyReview = async () => {
+      if (!userId || !attractionId) {
+        setMyReview(null)
+        setUserRating(0)
+        setReviewTitle('')
+        setReviewText('')
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('attraction_ratings')
+        .select('id, rating, review_text, pros, cons')
+        .eq('attraction_type', 'tourist_spot')
+        .eq('attraction_id', attractionId)
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (!active) return
+      if (error) {
+        console.error('Failed to load your tourist spot review:', error)
+        setActionError('Your review could not be loaded. Please refresh and try again.')
+        return
+      }
+
+      const text = decodeReviewText(data?.review_text || '')
+      setMyReview(data || null)
+      setUserRating(data?.rating || 0)
+      setReviewTitle(text.title)
+      setReviewText(text.body)
+    }
+
+    loadMyReview()
+    return () => {
+      active = false
+    }
+  }, [attractionId, userId])
 
   const handleSubmitRating = async () => {
+    setActionError('')
+
     if (!userId) {
-      alert('Please log in to rate this attraction.')
+      setActionError('Please sign in to submit a review.')
       return
     }
-    if (userHasRated) {
-      alert('You have already rated this attraction.')
+    if (!Number.isInteger(userRating) || userRating < 1 || userRating > 5) {
+      setActionError('Choose a rating from 1 to 5 stars.')
+      return
+    }
+    if (!reviewText.trim()) {
+      setActionError('Write a review before submitting.')
       return
     }
 
     setSubmitting(true)
     try {
-      const prosArray = pros.split(',').map((s) => s.trim()).filter(Boolean)
-      const consArray = cons.split(',').map((s) => s.trim()).filter(Boolean)
-
-      const { error } = await supabase.from('attraction_ratings').upsert({
-        user_id: userId,
-        attraction_type: attractionType,
-        attraction_id: attractionId,
-        rating: userRating,
-        pros: prosArray,
-        cons: consArray,
-        review_text: reviewText.trim() || null,
-      }, { onConflict: 'user_id,attraction_type,attraction_id' })
+      const { data, error } = await supabase
+        .from('attraction_ratings')
+        .upsert({
+          user_id: userId,
+          attraction_type: 'tourist_spot',
+          attraction_id: attractionId,
+          rating: userRating,
+          review_text: encodeReviewText(reviewTitle, reviewText),
+          pros: myReview?.pros || [],
+          cons: myReview?.cons || [],
+        }, { onConflict: 'user_id,attraction_type,attraction_id' })
+        .select('id, rating, review_text, pros, cons')
+        .single()
       if (error) throw error
 
+      setMyReview(data)
       invalidateCache(getCacheKey('visitor', 'public', 'reviews'))
-
-      // Update aggregate rating on parent table
-      const tableMap = {
-        tourist_spot: 'info_tourist_spots',
-        event: 'info_events',
-      }
-      const table = tableMap[attractionType]
-      if (table) {
-        const { data: allRatings } = await supabase
-          .from('attraction_ratings')
-          .select('rating')
-          .eq('attraction_type', attractionType)
-          .eq('attraction_id', attractionId)
-
-        const avg = (allRatings || []).reduce((sum, r) => sum + r.rating, 0) / (allRatings?.length || 1)
-        await supabase
-          .from(table)
-          .update({ rating: Number(avg.toFixed(2)), review_count: (allRatings || []).length })
-          .eq('id', attractionId)
-      }
-
-      setUserHasRated(true)
       await loadReviews()
-    } catch (err) {
-      console.error('Rating failed:', err)
-      alert('Failed to submit rating. Please try again.')
+    } catch (error) {
+      console.error('Tourist spot review submission failed:', error)
+      setActionError('Your review could not be saved. Please try again.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  const handleHelpfulness = async (reviewId, isHelpful) => {
-    if (!userId) {
-      alert('Please log in to vote.')
-      return
-    }
+  const handleDeleteRating = async () => {
+    if (!userId || !myReview) return
+    if (!window.confirm('Delete your rating and review for this destination?')) return
+
+    setActionError('')
+    setDeleting(true)
     try {
-      if (helpfulVotes[reviewId] !== undefined) {
-        // Remove vote
-        await supabase
+      const { error } = await supabase
+        .from('attraction_ratings')
+        .delete()
+        .eq('id', myReview.id)
+        .eq('user_id', userId)
+        .eq('attraction_type', 'tourist_spot')
+        .eq('attraction_id', attractionId)
+      if (error) throw error
+
+      invalidateCache(getCacheKey('visitor', 'public', 'reviews'))
+      setMyReview(null)
+      setUserRating(0)
+      setReviewTitle('')
+      setReviewText('')
+      await loadReviews()
+    } catch (error) {
+      console.error('Tourist spot review deletion failed:', error)
+      setActionError('Your review could not be deleted. Please try again.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const handleHelpful = async (reviewId) => {
+    if (!userId) return
+
+    setActionError('')
+    try {
+      if (helpfulVotes[reviewId] === true) {
+        const { error } = await supabase
           .from('review_helpfulness')
           .delete()
           .eq('review_type', 'attraction_rating')
           .eq('review_id', reviewId)
           .eq('user_id', userId)
-        setHelpfulVotes((prev) => {
-          const next = { ...prev }
+        if (error) throw error
+        setHelpfulVotes((current) => {
+          const next = { ...current }
           delete next[reviewId]
           return next
         })
-      } else {
-        await supabase.from('review_helpfulness').insert({
+        setHelpfulCounts((current) => ({
+          ...current,
+          [reviewId]: Math.max(0, (current[reviewId] || 0) - 1),
+        }))
+        return
+      }
+
+      const { error } = await supabase
+        .from('review_helpfulness')
+        .upsert({
           review_type: 'attraction_rating',
           review_id: reviewId,
           user_id: userId,
-          is_helpful: isHelpful,
-        })
-        setHelpfulVotes((prev) => ({ ...prev, [reviewId]: isHelpful }))
-      }
-    } catch (err) {
-      console.error('Helpfulness vote failed:', err)
+          is_helpful: true,
+        }, { onConflict: 'review_type,review_id,user_id' })
+      if (error) throw error
+
+      setHelpfulVotes((current) => ({ ...current, [reviewId]: true }))
+      setHelpfulCounts((current) => ({
+        ...current,
+        [reviewId]: (current[reviewId] || 0) + (helpfulVotes[reviewId] === true ? 0 : 1),
+      }))
+    } catch (error) {
+      console.error('Review helpfulness vote failed:', error)
+      setActionError('Your helpful vote could not be saved. Please try again.')
     }
   }
 
-  const averageRating = reviews.length > 0
-    ? (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(1)
-    : '0.0'
+  const totalCount = Number(summary.total_count || 0)
+  const averageRating = totalCount > 0 ? Number(summary.average_rating) : null
+  const distribution = [
+    { stars: 5, count: Number(summary.five_star_count || 0) },
+    { stars: 4, count: Number(summary.four_star_count || 0) },
+    { stars: 3, count: Number(summary.three_star_count || 0) },
+    { stars: 2, count: Number(summary.two_star_count || 0) },
+    { stars: 1, count: Number(summary.one_star_count || 0) },
+  ]
 
   return (
-    <div className="rounded-[20px] border border-slate-200 bg-white p-4 sm:p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-slate-900">
-          <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
-          Ratings & Reviews
-        </h3>
-        <div className="flex items-center gap-2">
-          <span className="text-2xl font-black text-slate-900">{averageRating}</span>
-          <div>
-            <StarRating value={Math.round(Number(averageRating))} readOnly />
-            <p className="text-[10px] text-slate-500">{reviews.length} reviews</p>
+    <section id="ratings-reviews" className="scroll-mt-24 border-t border-slate-200 pt-5" aria-labelledby="ratings-reviews-title">
+      <h2 id="ratings-reviews-title" className="text-lg font-bold text-slate-900">Ratings &amp; reviews</h2>
+
+      {averageRating === null ? (
+        <p className="mt-2 text-sm text-slate-500">No ratings yet</p>
+      ) : (
+        <div className="mt-3 grid gap-4 sm:grid-cols-[auto_minmax(12rem,20rem)] sm:items-center">
+          <div className="flex items-center gap-3">
+            <span className="text-3xl font-bold leading-none text-slate-900">{averageRating.toFixed(1)}</span>
+            <div>
+              <StarRating value={Math.round(averageRating)} readOnly compact />
+              <p className="mt-1 text-xs text-slate-500">
+                out of 5 · {totalCount} {totalCount === 1 ? 'review' : 'reviews'}
+              </p>
+            </div>
+          </div>
+          <div className="space-y-1" aria-label="Rating distribution">
+            {distribution.map(({ stars, count }) => (
+              <div key={stars} className="grid grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center gap-2 text-xs">
+                <span className="flex items-center gap-0.5 text-slate-600">
+                  {stars}<Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                </span>
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${(count / totalCount) * 100}%` }} />
+                </div>
+                <span className="text-right text-slate-500">{count}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Rating submission */}
-      {!userHasRated && userId && (
-        <div className="mb-4 rounded-[16px] border border-slate-200 bg-slate-50 p-4">
-          <p className="mb-2 text-sm font-bold text-slate-900">Share your experience</p>
-          <div className="mb-3">
-            <p className="mb-1 text-xs font-semibold text-slate-600">Your rating</p>
+      {userId ? (
+        <div className="mt-4 rounded-xl bg-slate-50 p-3 sm:p-4">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-slate-900">
+              {myReview ? 'Edit your review' : 'Rate this place'}
+            </h3>
+            {myReview && (
+              <button
+                type="button"
+                onClick={handleDeleteRating}
+                disabled={deleting || submitting}
+                className="inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />{deleting ? 'Deleting…' : 'Delete'}
+              </button>
+            )}
+          </div>
+
+          <div className="mb-2 flex items-center gap-2">
             <StarRating value={userRating} onChange={setUserRating} />
+            <span className="text-xs text-slate-500">{userRating ? `${userRating} / 5` : 'Select stars'}</span>
           </div>
 
-          <div className="mb-3 grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Pros (comma-separated)</label>
-              <input
-                type="text"
-                value={pros}
-                onChange={(e) => setPros(e.target.value)}
-                placeholder="e.g. Friendly locals, Beautiful views"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-semibold text-slate-600">Cons (comma-separated)</label>
-              <input
-                type="text"
-                value={cons}
-                onChange={(e) => setCons(e.target.value)}
-                placeholder="e.g. Crowded on weekends"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300"
-              />
-            </div>
-          </div>
+          <label className="mb-2 block text-xs font-medium text-slate-600">
+            Review title <span className="font-normal text-slate-400">(optional)</span>
+            <input
+              type="text"
+              value={reviewTitle}
+              onChange={(event) => setReviewTitle(event.target.value)}
+              placeholder="Sum up your visit"
+              maxLength={120}
+              className="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-sky-400"
+            />
+          </label>
 
-          <div className="mb-3">
-            <label className="mb-1 block text-xs font-semibold text-slate-600">Review</label>
+          <label className="mb-3 block text-xs font-medium text-slate-600">
+            Your review
             <textarea
               value={reviewText}
-              onChange={(e) => setReviewText(e.target.value)}
-              placeholder="What did you like or dislike?"
-              rows={2}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-sky-300"
+              onChange={(event) => setReviewText(event.target.value)}
+              placeholder="What should other visitors know?"
+              rows={3}
+              maxLength={2000}
+              required
+              className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-400"
             />
-          </div>
+          </label>
 
           <button
             type="button"
             onClick={handleSubmitRating}
-            disabled={submitting}
-            className="rounded-full bg-amber-500 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+            disabled={submitting || deleting}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {submitting ? 'Submitting...' : 'Submit Rating'}
+            {myReview && <Pencil className="h-3.5 w-3.5" />}
+            {submitting ? 'Saving…' : myReview ? 'Save review' : 'Submit review'}
           </button>
         </div>
-      )}
-      {!userId && (
-        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-sky-100 bg-sky-50 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-700">Reviews and ratings are public. Sign up to rate this destination or mark a review helpful.</p>
-          <Link href="/info/register" className="inline-flex min-h-11 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800">
-            Create free account
-          </Link>
-        </div>
+      ) : (
+        <p className="mt-3 text-sm text-slate-600">
+          <Link href="/info/login" className="font-semibold text-sky-700 hover:underline">Sign in</Link>
+          {' '}to rate this place.
+        </p>
       )}
 
-      {userHasRated && (
-        <div className="mb-4 rounded-[16px] border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
-          ✓ You rated this {userRating}-star{reviewText ? ': "' + reviewText + '"' : ''}
-        </div>
+      {(loadError || actionError) && (
+        <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {loadError || actionError}
+          {loadError && (
+            <button type="button" onClick={() => loadReviews()} className="ml-2 font-semibold underline">
+              Try again
+            </button>
+          )}
+        </p>
       )}
 
-      {/* Reviews list */}
-      {reviews.length > 0 ? (
-        <div className="space-y-3">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-semibold text-slate-900">
+          Visitor reviews{totalCount > 0 ? ` (${totalCount})` : ''}
+        </h3>
+        {totalCount > 0 && (
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            Sort
+            <select
+              value={sortBy}
+              onChange={(event) => {
+                setShowAllReviews(false)
+                setSortBy(event.target.value)
+              }}
+              className="min-h-8 rounded-md border border-slate-200 bg-white px-2 text-xs text-slate-700"
+            >
+              <option value="recent">Most recent</option>
+              <option value="highest">Highest rated</option>
+              <option value="lowest">Lowest rated</option>
+            </select>
+          </label>
+        )}
+      </div>
+
+      {loadingReviews ? (
+        <p className="py-5 text-center text-sm text-slate-500">Loading reviews…</p>
+      ) : reviews.length > 0 ? (
+        <div className="mt-3 divide-y divide-slate-100">
           {reviews.map((review) => {
-            const reviewerName = review.info_users?.full_name || review.info_users?.email?.split('@')[0] || 'Community member'
+            const reviewerName = review.profile?.full_name?.trim() || 'Community member'
+            const profileHref = `/info/user/profile/${review.user_id}`
+            const reviewContent = decodeReviewText(review.review_text)
             return (
-              <div key={review.id} className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Link href={`/info/user/profile/${review.user_id}`} aria-label={`View ${reviewerName}'s profile`} className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-[10px] font-bold text-white">
-                      {review.info_users?.profile_image_url ? (
-                        <img src={review.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        reviewerName[0]?.toUpperCase()
-                      )}
-                    </Link>
-                    <div>
-                      <Link href={`/info/user/profile/${review.user_id}`} className="text-sm font-bold text-slate-900 hover:text-sky-700">{reviewerName}</Link>
-                      <div className="flex items-center gap-2">
-                        <StarRating value={review.rating} readOnly />
-                        <span className="text-[10px] text-slate-500">
-                          {new Date(review.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                        </span>
-                      </div>
+              <article key={review.id} className="py-3 first:pt-0">
+                <div className="flex items-start gap-3">
+                  <Link href={profileHref} aria-label={`View ${reviewerName}'s profile`} className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-amber-100 text-sm font-semibold text-amber-800">
+                    {review.profile?.profile_image_url ? (
+                      <img src={review.profile.profile_image_url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    ) : reviewerName[0]?.toUpperCase()}
+                  </Link>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <Link href={profileHref} className="text-sm font-semibold text-slate-900 hover:text-sky-700">{reviewerName}</Link>
+                      <time dateTime={review.created_at} className="text-xs text-slate-500">
+                        {new Date(review.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      </time>
                     </div>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <StarRating value={review.rating} readOnly compact />
+                      <span className="text-xs font-medium text-slate-600">{review.rating}.0</span>
+                    </div>
+                    {reviewContent.title && <h4 className="mt-2 text-sm font-semibold text-slate-900">{reviewContent.title}</h4>}
+                    {reviewContent.body && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{reviewContent.body}</p>}
+                    <button
+                      type="button"
+                      onClick={() => handleHelpful(review.id)}
+                      disabled={!userId || review.user_id === userId}
+                      aria-pressed={helpfulVotes[review.id] === true}
+                      title={!userId ? 'Sign in to mark this review helpful' : review.user_id === userId ? 'You cannot vote on your own review' : undefined}
+                      className={`mt-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        helpfulVotes[review.id] === true ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      <ThumbsUp className="h-3.5 w-3.5" />
+                      Helpful{helpfulCounts[review.id] ? ` · ${helpfulCounts[review.id]}` : ''}
+                    </button>
                   </div>
-                  {review.rating === 5 && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700">
-                      <Award className="h-3 w-3" /> Top Reviewer
-                    </span>
-                  )}
                 </div>
-
-                {(review.pros || []).length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {review.pros.map((pro, i) => (
-                      <span key={i} className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                        + {pro}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {(review.cons || []).length > 0 && (
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {review.cons.map((con, i) => (
-                      <span key={i} className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
-                        - {con}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                {review.review_text && (
-                  <p className="mt-2 text-sm leading-relaxed text-slate-700">{review.review_text}</p>
-                )}
-
-                <div className="mt-3 flex items-center gap-3 border-t border-slate-200 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => handleHelpfulness(review.id, true)}
-                    disabled={!userId}
-                    title={!userId ? 'Sign in to mark this review helpful' : undefined}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition ${
-                      helpfulVotes[review.id] === true
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    <ThumbsUp className="h-3 w-3" /> Helpful
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleHelpfulness(review.id, false)}
-                    disabled={!userId}
-                    title={!userId ? 'Sign in to vote on this review' : undefined}
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-semibold transition ${
-                      helpfulVotes[review.id] === false
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
-                    } disabled:cursor-not-allowed disabled:opacity-60`}
-                  >
-                    <ThumbsDown className="h-3 w-3" /> Not helpful
-                  </button>
-                </div>
-              </div>
+              </article>
             )
           })}
         </div>
       ) : (
-        <div className="rounded-[16px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-          <Star className="mx-auto mb-2 h-7 w-7 text-slate-400" />
-          <p className="text-sm text-slate-500">No reviews yet. Be the first to rate this attraction!</p>
-        </div>
+        <p className="py-4 text-sm text-slate-500">No reviews yet. Be the first to share your experience.</p>
       )}
 
-      {/* Community Polls */}
-      {userPolls.length > 0 && (
-        <div className="mt-5">
-          <button
-            type="button"
-            onClick={() => setShowUserPolls(!showUserPolls)}
-            className="mb-3 inline-flex items-center gap-1 text-xs font-bold text-slate-700"
-          >
-            <Award className="h-4 w-4 text-amber-500" />
-            Community Polls
-            <span className="text-slate-400">{showUserPolls ? '▲' : '▼'}</span>
-          </button>
-
-          {showUserPolls && (
-            <div className="space-y-2">
-              {userPolls.map((poll) => (
-                <CommunityPoll key={poll.id} poll={poll} userId={userId} />
-              ))}
-            </div>
-          )}
-        </div>
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => {
+            setShowAllReviews(true)
+            loadReviews(true)
+          }}
+          disabled={loadingMore || loadingReviews}
+          className="mt-2 inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+        >
+          {loadingMore ? 'Loading…' : showAllReviews ? 'Load more reviews' : `View all reviews (${totalCount})`}
+        </button>
       )}
-    </div>
-  )
-}
-
-function CommunityPoll({ poll, userId }) {
-  const [userVote, setUserVote] = useState(null)
-  const [votes, setVotes] = useState({})
-
-  const loadVotes = useCallback(async () => {
-    try {
-      const [{ data: voteRows }, { data: myVote }] = await Promise.all([
-        supabase.from('user_poll_votes').select('selected_option_index').eq('poll_id', poll.id),
-        userId
-          ? supabase.from('user_poll_votes').select('selected_option_index').eq('poll_id', poll.id).eq('user_id', userId).maybeSingle()
-          : Promise.resolve({ data: null }),
-      ])
-
-      const counts = {}
-      ;(voteRows || []).forEach((v) => {
-        counts[v.selected_option_index] = (counts[v.selected_option_index] || 0) + 1
-      })
-      setVotes(counts)
-      setUserVote(myVote?.selected_option_index ?? null)
-    } catch (err) {
-      console.error('Failed to load poll votes:', err)
-    }
-  }, [poll.id, userId])
-
-  useEffect(() => {
-    // Vote state is populated asynchronously from Supabase.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadVotes()
-  }, [loadVotes])
-
-  const handleVote = async (optionIndex) => {
-    if (!userId) {
-      alert('Please log in to vote.')
-      return
-    }
-    if (userVote !== null || poll.is_closed) return
-
-    const { error } = await supabase.from('user_poll_votes').insert({
-      poll_id: poll.id,
-      user_id: userId,
-      selected_option_index: optionIndex,
-    })
-    if (error) {
-      console.error('Poll vote failed:', error)
-      return
-    }
-    await supabase.from('user_polls').update({ total_votes: (poll.total_votes || 0) + 1 }).eq('id', poll.id)
-    await loadVotes()
-  }
-
-  const total = Object.values(votes).reduce((sum, n) => sum + n, 0) || poll.total_votes || 0
-
-  return (
-    <div className="rounded-[16px] border border-slate-200 bg-slate-50 p-3">
-      <p className="mb-2 text-sm font-bold text-slate-900">{poll.question}</p>
-      <div className="space-y-1.5">
-        {(poll.options || []).map((option, idx) => {
-          const count = votes[idx] || 0
-          const pct = total > 0 ? Math.round((count / total) * 100) : 0
-          return (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => handleVote(idx)}
-              disabled={userVote !== null || poll.is_closed || !userId}
-              className={`relative block w-full overflow-hidden rounded-[10px] border px-3 py-2 text-left text-sm transition ${
-                userVote === idx
-                  ? 'border-amber-400 bg-amber-50'
-                  : 'border-slate-200 bg-white hover:border-amber-300'
-              }`}
-            >
-              <span className="relative z-10 flex items-center justify-between">
-                <span className="font-medium text-slate-700">{option}</span>
-                {userVote === idx && <span className="text-[10px] font-bold text-amber-600">✓ You</span>}
-              </span>
-              <span className="relative z-10 flex items-center justify-between text-[10px] text-slate-500">
-                <span>{count} votes</span>
-                <span className="font-bold">{pct}%</span>
-              </span>
-              <span
-                className="absolute inset-y-0 left-0 bg-amber-100/60 transition-all"
-                style={{ width: `${pct}%` }}
-              />
-            </button>
-          )
-        })}
-      </div>
-      <p className="mt-2 text-[10px] text-slate-500">{total} total votes</p>
-    </div>
+    </section>
   )
 }

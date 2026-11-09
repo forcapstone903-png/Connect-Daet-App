@@ -135,8 +135,50 @@ export async function POST(request) {
     return NextResponse.json({ success: false, message: 'A valid recipient and message are required.' }, { status: 400 })
   }
 
-  const { data: recipient } = await adminSupabase.from('info_users').select('id').eq('id', recipientId).eq('status', 'active').maybeSingle()
+  const { data: recipient, error: recipientError } = await adminSupabase
+    .from('info_users')
+    .select('id')
+    .eq('id', recipientId)
+    .eq('status', 'active')
+    .maybeSingle()
+  if (recipientError) return NextResponse.json({ success: false, message: recipientError.message }, { status: 500 })
   if (!recipient) return NextResponse.json({ success: false, message: 'Recipient not found.' }, { status: 404 })
+
+  const { data: recipientProfile, error: recipientProfileError } = await adminSupabase
+    .from('profiles')
+    .select('privacy_preferences')
+    .eq('user_id', recipientId)
+    .maybeSingle()
+  if (recipientProfileError) return NextResponse.json({ success: false, message: recipientProfileError.message }, { status: 500 })
+
+  if (recipientProfile?.privacy_preferences?.allowMessagesFrom === 'connections') {
+    const [{ data: existingMessage, error: existingMessageError }, { data: senderFollowsRecipient, error: senderFollowError }, { data: recipientFollowsSender, error: recipientFollowError }] = await Promise.all([
+      adminSupabase
+        .from('direct_messages')
+        .select('id')
+        .or(`and(sender_id.eq.${senderId},recipient_id.eq.${recipientId}),and(sender_id.eq.${recipientId},recipient_id.eq.${senderId})`)
+        .limit(1)
+        .maybeSingle(),
+      adminSupabase
+        .from('user_follows')
+        .select('id')
+        .eq('follower_id', senderId)
+        .eq('following_id', recipientId)
+        .maybeSingle(),
+      adminSupabase
+        .from('user_follows')
+        .select('id')
+        .eq('follower_id', recipientId)
+        .eq('following_id', senderId)
+        .maybeSingle(),
+    ])
+
+    const relationshipError = existingMessageError || senderFollowError || recipientFollowError
+    if (relationshipError) return NextResponse.json({ success: false, message: relationshipError.message }, { status: 500 })
+    if (!existingMessage && (!senderFollowsRecipient || !recipientFollowsSender)) {
+      return NextResponse.json({ success: false, message: 'This user only accepts messages from connections.' }, { status: 403 })
+    }
+  }
 
   if (replyToMessageId) {
     const { data: originalMessage } = await adminSupabase
