@@ -654,7 +654,7 @@ export default function PublicBlogDetailPage() {
   if (loading) {
     return (
       <main className="medium-article-page visitor-blog-detail min-h-screen px-3 py-6 sm:px-4 lg:px-6">
-        <UserTopHeader detailMode spacer homeHref="/info/visitor" />
+        <UserTopHeader spacer homeHref="/info/visitor" />
         <div className="mx-auto max-w-3xl">
           <div className="mb-6 h-16 animate-pulse rounded-[20px] bg-slate-200" />
           <div className="mb-6 h-96 animate-pulse rounded-[20px] bg-slate-200" />
@@ -666,7 +666,7 @@ export default function PublicBlogDetailPage() {
   if (!blog) {
     return (
       <main className="medium-article-page visitor-blog-detail min-h-screen px-3 py-6 sm:px-4 lg:px-6">
-        <UserTopHeader detailMode spacer homeHref="/info/visitor" />
+        <UserTopHeader spacer homeHref="/info/visitor" />
         <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <p className="text-sm text-slate-500">Article not found.</p>
           <Link href="/info/visitor" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
@@ -701,7 +701,7 @@ export default function PublicBlogDetailPage() {
 
   return (
     <main className="medium-article-page visitor-blog-detail min-h-screen text-slate-900">
-      <UserTopHeader detailMode spacer homeHref="/info/visitor" />
+      <UserTopHeader spacer homeHref="/info/visitor" />
       <style>{`@media print { body { background: white !important; } .print-hidden { display: none !important; } .print-article { border: 0 !important; box-shadow: none !important; } }`}</style>
       {showAuthModal && !userId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">

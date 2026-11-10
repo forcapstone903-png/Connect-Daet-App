@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import bcrypt from 'bcryptjs'
-import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
+import { getAppUrl, getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 import { buildInfoUserRecord } from '@/lib/infoUserData'
 import { isDuplicateEmailError } from '@/lib/authFlow'
 import { isPasswordValid } from '@/lib/passwordPolicy'
@@ -35,7 +35,7 @@ export async function POST(request) {
 
     // Get environment variables
     const { url: supabaseUrl, key: supabaseAuthKey } = getSupabaseAuthConfig()
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://connect-daet-app.vercel.app'
+    const appUrl = getAppUrl(request)
     
     if (!supabaseUrl || !supabaseAuthKey) {
       console.error('❌ Missing environment variables')

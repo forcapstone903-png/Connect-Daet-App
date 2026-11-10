@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase'
+import { getAppUrl } from '@/lib/supabaseConfig'
 import { maskEmail } from '@/lib/safeLogging'
 
 export const dynamic = 'force-dynamic'
@@ -26,9 +27,9 @@ export async function POST(request) {
     }
 
     const body = await request.json()
-    const email = typeof body?.email === 'string' ? body.email.trim() : ''
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
 
-    if (!email) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json(
         { error: 'Valid email is required' },
         { status: 400 }
@@ -38,6 +39,9 @@ export async function POST(request) {
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
+      options: {
+        emailRedirectTo: `${getAppUrl(request)}/info/confirm`,
+      },
     })
 
     if (error) {

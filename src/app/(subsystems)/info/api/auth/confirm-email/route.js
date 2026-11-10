@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -9,23 +8,26 @@ export async function POST(request) {
   try {
     const { token_hash, type } = await request.json()
 
-    if (!token_hash || !type) {
+    if (typeof token_hash !== 'string' || !token_hash || type !== 'email') {
       return NextResponse.json(
-        { success: false, message: 'Missing verification token or type.' },
+        { success: false, message: 'Missing or invalid email verification token.' },
         { status: 400 }
       )
     }
 
-    const { url, key } = getSupabaseAuthConfig()
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
 
-    if (!url || !key) {
+    if (!url || !anonKey) {
       return NextResponse.json(
         { success: false, message: 'Supabase authentication is not configured.' },
         { status: 500 }
       )
     }
 
-    const supabase = createClient(url, key)
+    const supabase = createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
     const { data: verificationData, error } = await supabase.auth.verifyOtp({
       token_hash,
       type,
@@ -40,8 +42,12 @@ export async function POST(request) {
     }
 
     const verifiedUserId = verificationData?.user?.id
-    if (verifiedUserId) {
-      const { error: profileError } = await supabase
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+    if (verifiedUserId && serviceRoleKey) {
+      const adminSupabase = createClient(url, serviceRoleKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      })
+      const { error: profileError } = await adminSupabase
         .from('info_users')
         .update({ email_verified: true, updated_at: new Date().toISOString() })
         .eq('id', verifiedUserId)

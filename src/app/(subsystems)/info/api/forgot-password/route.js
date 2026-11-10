@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
+import { getAppUrl } from '@/lib/supabaseConfig'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -70,13 +71,8 @@ export async function POST(request) {
     }
     if (allowed !== true) return genericSuccess()
 
-    const configuredAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim()
-      || (process.env.NODE_ENV === 'production'
-        ? 'https://connect-daet-app.vercel.app'
-        : new URL(request.url).origin)
-    const appUrl = configuredAppUrl.replace(/\/+$/, '')
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${appUrl}/info/reset-password`,
+      redirectTo: `${getAppUrl(request)}/info/reset-password`,
     })
 
     if (error) {
