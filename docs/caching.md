@@ -133,7 +133,7 @@ The account deletion state used by Settings and the request proxy is deliberatel
 ```text
 Feature: Account lifecycle status and deletion eligibility
 Data fetched: Authenticated user's status and deletion timestamps
-Change frequency: Security-sensitive lifecycle writes and hourly deletion processing
+Change frequency: Security-sensitive lifecycle writes and daily deletion processing
 Visibility: Private account data
 Freshness: Read from the database for each applicable request; no cache
 Stale behavior: Never use stale lifecycle state
