@@ -293,6 +293,10 @@ export async function GET(request, { params }) {
     const relatedUsersById = new Map((relatedUsers || []).map((user) => [user.id, user]))
     const followers = (followRows || []).filter((row) => row.following_id === profileId).map((row) => relatedUsersById.get(row.follower_id) || { id: row.follower_id, full_name: 'Community member' })
     const following = (followRows || []).filter((row) => row.follower_id === profileId).map((row) => relatedUsersById.get(row.following_id) || { id: row.following_id, full_name: 'Community member' })
+    const followerIds = new Set((followRows || []).filter((row) => row.following_id === profileId).map((row) => row.follower_id))
+    const friends = (followRows || [])
+      .filter((row) => row.follower_id === profileId && followerIds.has(row.following_id))
+      .map((row) => relatedUsersById.get(row.following_id) || { id: row.following_id, full_name: 'Community member' })
 
     return NextResponse.json({
       success: true,
@@ -302,6 +306,8 @@ export async function GET(request, { params }) {
       is_mutual: Boolean(followRow && reverseFollowRow),
       followers,
       following,
+      friends,
+      friends_count: friends.length,
       followers_count: followersCount || 0,
       following_count: followingCount || 0,
       blocked_ids: (blockedRows || []).map((row) => row.blocked_id),

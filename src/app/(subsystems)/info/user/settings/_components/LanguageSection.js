@@ -42,6 +42,11 @@ export default function LanguageSection({ settings, t, onLanguageChange }) {
           <li className="flex items-center gap-2"><Check className="h-3.5 w-3.5 text-emerald-600" />{preview('settings.notifications.newFollowers')}</li>
         </ul>
       </div>
+
+      <div className="rounded-xl border border-slate-200 px-4 py-3">
+        <p className="text-sm font-semibold text-slate-800">Time zone and date format</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">Dates follow your device locale and time zone. Custom regional formats are not currently available in the app.</p>
+      </div>
     </SettingsCard>
   )
 }

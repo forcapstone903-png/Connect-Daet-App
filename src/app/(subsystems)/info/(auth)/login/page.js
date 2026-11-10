@@ -92,6 +92,7 @@ function LoginContent() {
     try {
       const response = await fetch('/info/api/login', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: formData.email,
@@ -332,6 +333,12 @@ function LoginContent() {
                     Forgot password?
                   </Link>
                 </div>
+                <p className="text-center text-xs text-slate-600">
+                  Account deletion scheduled?{' '}
+                  <Link href="/info/account-recovery" className="font-semibold text-[#2563EB] hover:text-blue-700">
+                    Restore your account
+                  </Link>
+                </p>
 
                 <button
                   type="submit"

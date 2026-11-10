@@ -45,7 +45,6 @@ export default function DaetWeatherCard() {
       setWeather(result.weather)
     } catch (loadError) {
       if (loadError.name === 'AbortError') return
-      console.error('Daet forecast load failed:', loadError)
       setError(loadError.message || 'Daet weather is temporarily unavailable.')
     } finally {
       if (!signal?.aborted) setLoading(false)
@@ -126,6 +125,11 @@ export default function DaetWeatherCard() {
             <a href="https://open-meteo.com/" target="_blank" rel="noreferrer" className="hover:text-sky-700 hover:underline">Weather by Open-Meteo</a>
             <span>{weather.stale ? 'Showing recently saved forecast' : `Updated ${new Date(weather.lastUpdated).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}</span>
           </div>
+          {error ? (
+            <p className="mt-2 text-[10px] leading-4 text-amber-700" role="status">
+              Could not refresh the latest forecast. Showing the last available weather.
+            </p>
+          ) : null}
         </>
       ) : null}
     </section>

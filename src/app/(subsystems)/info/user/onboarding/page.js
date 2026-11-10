@@ -272,10 +272,10 @@ export default function OnboardingPage() {
   }
 
   const accentStyles = {
-    sky: 'border-sky-200 bg-sky-50 text-sky-700',
-    emerald: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-    amber: 'border-amber-200 bg-amber-50 text-amber-700',
-    violet: 'border-violet-200 bg-violet-50 text-violet-700',
+    sky: 'border-blue-200 bg-blue-50 text-blue-700',
+    emerald: 'border-blue-200 bg-blue-50 text-blue-700',
+    amber: 'border-blue-200 bg-blue-50 text-blue-700',
+    violet: 'border-blue-200 bg-blue-50 text-blue-700',
   }
 
   const stepAccent = accentStyles[stepMeta.accent] || accentStyles.sky
@@ -302,6 +302,22 @@ export default function OnboardingPage() {
             Skip setup
           </button>
         </UserSectionHeader>
+
+        <ol className="usr-onboarding-stepper" aria-label="Setup progress">
+          {['Interests', 'Places', 'People', 'Profile'].map((label, index) => {
+            const stepNumber = index + 1
+            const isComplete = stepNumber < step
+            const isCurrent = stepNumber === step
+            return (
+              <li key={label} className={`usr-onboarding-step ${isCurrent ? 'is-current' : ''} ${isComplete ? 'is-complete' : ''}`}>
+                <span className="usr-onboarding-step-marker" aria-hidden="true">
+                  {isComplete ? <Check className="h-3.5 w-3.5" /> : stepNumber}
+                </span>
+                <span className="usr-onboarding-step-label">{label}</span>
+              </li>
+            )
+          })}
+        </ol>
 
         <section className="usr-surface usr-enter overflow-hidden">
           <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-8">
@@ -374,7 +390,7 @@ export default function OnboardingPage() {
                         key={place.id}
                         type="button"
                         onClick={() => toggleSelection(place.name, selectedPlaces, setSelectedPlaces, requiredPlaces)}
-                        className={`overflow-hidden rounded-[1.5rem] border text-left transition ${selectedPlaces.includes(place.name) ? 'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100' : 'border-slate-200 bg-slate-50 hover:border-emerald-300 hover:bg-emerald-50/50'}`}
+                        className={`overflow-hidden rounded-[1.5rem] border text-left transition ${selectedPlaces.includes(place.name) ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/50'}`}
                       >
                         <div className="relative h-28 w-full overflow-hidden">
                           <img src={backgroundImage} alt="" className="h-full w-full object-cover" />
@@ -383,14 +399,14 @@ export default function OnboardingPage() {
                             {highlight}
                           </div>
                           {selectedPlaces.includes(place.name) && (
-                            <div className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white shadow-md">
+                            <div className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-white shadow-md">
                               <Check className="h-4 w-4" />
                             </div>
                           )}
                         </div>
 
                         <div className="flex items-start gap-3 p-3">
-                          <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
+                          <span className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
                             <MapPin className="h-4 w-4" />
                           </span>
 
@@ -418,9 +434,9 @@ export default function OnboardingPage() {
                       key={person.id}
                       type="button"
                       onClick={() => setFollowedPeople((current) => current.includes(person.id) ? current.filter((id) => id !== person.id) : [...current, person.id])}
-                      className={`flex w-full items-center gap-3 rounded-[1.5rem] border p-3 text-left transition ${followedPeople.includes(person.id) ? 'border-amber-400 bg-amber-50 ring-2 ring-amber-100' : 'border-slate-200 bg-slate-50 hover:border-amber-300 hover:bg-amber-50/50'}`}
+                      className={`flex w-full items-center gap-3 rounded-[1.5rem] border p-3 text-left transition ${followedPeople.includes(person.id) ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-100' : 'border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50/50'}`}
                     >
-                      <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-amber-400 to-orange-500 text-xs font-bold text-white">
+                      <span className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-blue-700 text-xs font-bold text-white">
                         {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : person.full_name?.slice(0, 2).toUpperCase()}
                       </span>
 
@@ -429,7 +445,7 @@ export default function OnboardingPage() {
                         <span className="block text-xs text-slate-500">Local travel insider</span>
                       </span>
 
-                      {followedPeople.includes(person.id) ? <Check className="h-4 w-4 text-amber-700" /> : <UserPlus className="h-4 w-4 text-slate-400" />}
+                      {followedPeople.includes(person.id) ? <Check className="h-4 w-4 text-blue-700" /> : <UserPlus className="h-4 w-4 text-slate-400" />}
                     </button>
                   ))}
                 </div>
@@ -484,14 +500,14 @@ export default function OnboardingPage() {
 
                   <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
                     <div className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700">
-                      <ImagePlus className="h-4 w-4 text-violet-600" />
+                      <ImagePlus className="h-4 w-4 text-blue-600" />
                       Cover photo
                     </div>
                     <MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" trimLetterbox existingMediaUrl={coverUrl} previewClassName="h-32 w-full aspect-[3/1]" onUploadComplete={setCoverUrl} onUploadError={setError} buttonText="Add cover" maxSizeMB={8} />
                   </div>
                 </div>
 
-                <div className="mt-5 flex items-center gap-3 rounded-[1.25rem] border border-emerald-200 bg-emerald-50/80 p-3 text-sm text-emerald-800">
+                <div className="mt-5 flex items-center gap-3 rounded-[1.25rem] border border-blue-200 bg-blue-50/80 p-3 text-sm text-blue-800">
                   <ShieldCheck className="h-4 w-4" />
                   Your profile is private by default until you choose to share more.
                 </div>

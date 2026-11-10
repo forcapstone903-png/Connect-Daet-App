@@ -126,6 +126,27 @@ Manual clear method: invalidateCache(getCacheKey('tourist-spot-detail', 'public'
 
 Do not move authenticated data into persistent browser storage without an explicit security review.
 
+## Account lifecycle status
+
+The account deletion state used by Settings and the request proxy is deliberately uncached. A stale active status could let a user keep using the application after requesting deletion; a stale deletion deadline could also show an incorrect recovery window.
+
+```text
+Feature: Account lifecycle status and deletion eligibility
+Data fetched: Authenticated user's status and deletion timestamps
+Change frequency: Security-sensitive lifecycle writes and hourly deletion processing
+Visibility: Private account data
+Freshness: Read from the database for each applicable request; no cache
+Stale behavior: Never use stale lifecycle state
+Missing-cache behavior: Query the database; surface an error rather than assuming active status
+Invalidation trigger: Not applicable; no cache
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Lifecycle actions fail explicitly; protected requests must not use a cached active state
+Security notes: Never store lifecycle state in shared/public cache or rely on client timers for eligibility
+Manual clear method: None
+```
+
 ## Admin Weather
 
 The admin dashboard requests current Daet weather and forecast data from Open-Meteo. Current observations can affect visitor safety, so the admin endpoint bypasses caches and never substitutes estimated conditions when the provider is unavailable.
@@ -159,13 +180,13 @@ Data fetched: Public current conditions and five-day forecast for Daet from Open
 Change frequency: Provider updates; dashboard refreshes on load and every 30 minutes, with manual refresh
 Visibility: Public weather data; provider credential remains server-side
 Freshness: 15-minute process-local cache
-Stale behavior: On provider failure, show last successful forecast for at most 60 minutes and label it as recently saved
+Stale behavior: Retry transient provider/network failures once after 300 ms; if still unavailable, show last successful forecast for at most 60 minutes and label it as recently saved. If a client refresh fails while it already has a forecast, retain it and show a refresh warning.
 Missing-cache behavior: Show loading, then an unavailable message with retry; never invent weather values
 Invalidation trigger: 15-minute TTL; clear the in-memory cache with clearDaetWeatherCache() when needed
 Cache layer: Server process memory
 Cache key: One fixed Daet forecast entry
 TTL: 15 minutes; stale fallback up to 60 minutes from last success
-Offline behavior: Use bounded stale forecast when available; otherwise show a retry action
+Offline behavior: Use bounded stale forecast when available; otherwise show an unavailable message with retry. Each provider attempt times out after 8 seconds.
 Security notes: Only public weather fields are returned; no provider credential is required or exposed. Attribute Open-Meteo in the UI.
 Manual clear method: clearDaetWeatherCache() or restart the application process
 ```

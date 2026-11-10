@@ -1,7 +1,7 @@
 'use client'
 
 import { Download, HardDrive, RotateCcw, Smartphone, Trash2 } from 'lucide-react'
-import { ActionRow, PrimaryButton, SettingsCard, StatusBanner } from './SettingsControls'
+import { ActionRow, LinkButton, PrimaryButton, SettingsCard, StatusBanner } from './SettingsControls'
 import PwaInstaller from '@/components/PwaInstaller'
 
 function formatBytes(bytes) {
@@ -15,11 +15,12 @@ export default function DataStorageSection({
   t,
   storageUsage,
   onClearCache,
-  onDownloadSettings,
+  onDownloadData,
   onResetSettings,
   cacheCleared,
   resetPending,
   clearingCache,
+  exportPending,
 }) {
   return (
     <SettingsCard
@@ -43,10 +44,16 @@ export default function DataStorageSection({
 
       <ActionRow
         icon={Download}
-        label={t('settings.data.download')}
-        hint={t('settings.data.downloadHint')}
+        label="Download my personal data"
+        hint="Download a private JSON export of your account, profile settings, activity, and supported community content."
       >
-        <PrimaryButton onClick={onDownloadSettings} tone="neutral">{t('settings.data.download')}</PrimaryButton>
+        <PrimaryButton onClick={onDownloadData} disabled={exportPending} tone="neutral">
+          {exportPending ? t('common.saving') : 'Download data'}
+        </PrimaryButton>
+      </ActionRow>
+
+      <ActionRow label={t('settings.legal.privacy')} hint="Read how DAET CONNECT handles personal information.">
+        <LinkButton href="/info/legal/privacy-policy">{t('settings.legal.privacy')}</LinkButton>
       </ActionRow>
 
       <ActionRow

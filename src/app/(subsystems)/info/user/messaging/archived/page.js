@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Archive, ArrowLeft, RotateCcw } from 'lucide-react'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 
 function getInitials(name = '') {
@@ -33,6 +34,7 @@ export default function ArchivedMessagesPage() {
 
   return (
     <main className="usr-section-page usr-inbox min-h-screen text-slate-900">
+      <UserTopHeader spacer={false} homeHref="/info/user/messaging" />
       <div className="usr-section-container mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
         <UserSectionHeader eyebrow="A quieter inbox" title="Archived messages" description="Conversations you have put away. Restore one whenever you are ready to reconnect." emoji="📬">
           <Link href="/info/user/messaging" className="usr-section-secondary"><ArrowLeft className="h-4 w-4" />Back to messages</Link>
@@ -41,7 +43,7 @@ export default function ArchivedMessagesPage() {
           {loading ? <div className="p-6 text-sm text-slate-500">Loading archived conversations...</div> : conversations.length ? conversations.map((conversation) => {
             const userId = conversation.other_user?.id || conversation.id
             return <div key={userId} className="flex items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-0 sm:px-5"><UserProfileLink user={conversation.other_user} href={`/info/user/messaging/${userId}`} className="flex min-w-0 flex-1 items-center gap-3"><ProfileAvatar user={conversation.other_user} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-bold text-slate-900">{conversation.other_user?.full_name || 'Community member'}</p><p className="truncate text-sm text-slate-600">{conversation.body}</p></div></UserProfileLink><button type="button" onClick={() => unarchive(userId)} aria-label="Unarchive conversation" title="Unarchive" className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><RotateCcw className="h-4 w-4" /></button></div>
-          }) : <div className="p-10 text-center"><Archive className="mx-auto h-8 w-8 text-slate-300" /><p className="mt-3 text-sm font-semibold text-slate-600">No archived conversations</p></div>}
+          }) : <div className="usr-inbox-empty p-8 text-center sm:p-10"><span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600"><Archive className="h-6 w-6" aria-hidden="true" /></span><p className="mt-3 text-sm font-bold text-slate-800">No archived conversations</p><p className="mt-1 text-xs text-slate-500">Conversations you archive will appear here.</p></div>}
         </section>
       </div>
     </main>

@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 import { maskEmail, sanitizeUserProfileForLog } from '@/lib/safeLogging'
 import { setSecureSessionCookie } from '@/lib/serverAuth'
+import { createSessionAdminClient, getUserSessionVersion } from '@/lib/sessionVersions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -67,6 +68,33 @@ export async function POST(request) {
       return NextResponse.json(
         { success: false, message: 'Failed to get user data' },
         { status: 500 }
+      )
+    }
+
+    const sessionAdmin = createSessionAdminClient()
+    if (!sessionAdmin) {
+      return NextResponse.json(
+        { success: false, message: 'Unable to establish a secure session. Please try again.' },
+        { status: 503 }
+      )
+    }
+
+    const { data: accountState, error: accountStateError } = await sessionAdmin
+      .from('info_users')
+      .select('status, deletion_requested_at')
+      .eq('id', authData.user.id)
+      .maybeSingle()
+    if (accountStateError) {
+      console.error('Account state lookup failed during login:', { code: accountStateError.code || null })
+      return NextResponse.json(
+        { success: false, message: 'Unable to load your account profile. Please try again.' },
+        { status: 503 }
+      )
+    }
+    if (accountState?.status === 'pending_deletion' || accountState?.deletion_requested_at) {
+      return NextResponse.json(
+        { success: false, message: 'This account is scheduled for deletion. Use Account recovery to cancel the request during the 30-day grace period.' },
+        { status: 403 }
       )
     }
 
@@ -147,11 +175,43 @@ export async function POST(request) {
         console.log('✅ Profile found:', sanitizeUserProfileForLog(userProfile))
       }
 
+      if (userProfile?.status === 'pending_deletion' || userProfile?.deletion_requested_at) {
+        return NextResponse.json(
+          { success: false, message: 'This account is scheduled for deletion. Use Account recovery to cancel the request during the 30-day grace period.' },
+          { status: 403 }
+        )
+      }
+
       if (!userProfile || userProfile.status !== 'active') {
         return NextResponse.json(
           { success: false, message: 'This account is not active. Please contact support.' },
           { status: 403 }
         )
+      }
+
+      const signedInAt = new Date().toISOString()
+      const [lastLoginUpdate, loginActivityInsert] = await Promise.all([
+        sessionAdmin
+          .from('info_users')
+          .update({ last_login: signedInAt })
+          .eq('id', authData.user.id),
+        sessionAdmin
+          .from('user_activity_log')
+          .insert({
+            user_id: authData.user.id,
+            activity_type: 'login',
+            description: 'Successful sign-in',
+            metadata: {
+              userAgent: (request.headers.get('user-agent') || '').slice(0, 200) || null,
+            },
+            created_at: signedInAt,
+          }),
+      ])
+      if (lastLoginUpdate.error) {
+        console.error('Successful login timestamp update failed:', { code: lastLoginUpdate.error.code || null })
+      }
+      if (loginActivityInsert.error) {
+        console.error('Successful login activity record failed:', { code: loginActivityInsert.error.code || null })
       }
     } catch (error) {
       console.error('🔴 Profile fetch exception:', error)
@@ -162,7 +222,18 @@ export async function POST(request) {
     }
 
     // Return success with user data
-    const response = NextResponse.json({ 
+    let sessionVersion
+    try {
+      sessionVersion = await getUserSessionVersion(sessionAdmin, authData.user.id)
+    } catch (sessionVersionError) {
+      console.error('Login session version lookup failed:', { code: sessionVersionError.code || null })
+      return NextResponse.json(
+        { success: false, message: 'Unable to establish a secure session. Please try again.' },
+        { status: 503 }
+      )
+    }
+
+    const response = NextResponse.json({
       success: true,
       message: 'Login successful',
       user: {
@@ -181,7 +252,7 @@ export async function POST(request) {
       }
     })
 
-    setSecureSessionCookie(response, userProfile, rememberMe === true)
+    setSecureSessionCookie(response, userProfile, rememberMe === true, sessionVersion)
     return response
     
   } catch (error) {

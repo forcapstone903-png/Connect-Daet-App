@@ -1,5 +1,6 @@
 // lib/supabaseUtils.js
 import { supabase } from './supabase';
+import { isPasswordValid } from './passwordPolicy'
 
 /**
  * ============================================================================
@@ -9,20 +10,34 @@ import { supabase } from './supabase';
 
 export async function registerUser(userData) {
   try {
-    const { data, error } = await supabase
-      .from('info_users')
-      .insert([{
-        email: userData.email,
-        password: userData.password,
-        full_name: userData.full_name,
-        user_type: userData.user_type || 'tourist',
-        status: 'active'
-      }])
-      .select()
-      .single();
+    if (!isPasswordValid(userData.password)) {
+      throw new Error('Password does not meet the account security requirements.')
+    }
 
-    if (error) throw error;
-    return { success: true, data };
+    const email = String(userData.email || '').trim().toLowerCase()
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password: userData.password,
+      options: {
+        data: {
+          full_name: String(userData.full_name || '').trim(),
+          user_type: userData.user_type || 'tourist',
+        },
+      },
+    })
+    if (authError) throw authError
+    if (!authData.user) throw new Error('Unable to create the account.')
+
+    const profile = {
+      id: authData.user.id,
+      email,
+      full_name: String(userData.full_name || '').trim(),
+      user_type: userData.user_type || 'tourist',
+      status: 'active',
+    }
+    const { data, error } = await supabase.from('info_users').upsert(profile, { onConflict: 'id' }).select().single()
+    if (error) throw error
+    return { success: true, data }
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -30,22 +45,26 @@ export async function registerUser(userData) {
 
 export async function loginUser(email, password) {
   try {
-    const { data: user, error } = await supabase
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: String(email || '').trim().toLowerCase(),
+      password,
+    })
+    if (authError) throw authError
+    if (!authData.user) throw new Error('Invalid credentials')
+
+    const { data: profile, error } = await supabase
       .from('info_users')
-      .select('id, email, full_name, password, user_type, status')
-      .eq('email', email)
-      .single();
+      .select('id, email, full_name, user_type, status')
+      .eq('id', authData.user.id)
+      .maybeSingle()
 
     if (error) throw error;
-    if (user.status !== 'active') {
-      throw new Error(`Account is ${user.status}`);
+    if (profile?.status && profile.status !== 'active') {
+      await supabase.auth.signOut({ scope: 'local' })
+      throw new Error(`Account is ${profile.status}`)
     }
-    if (user.password !== password) {
-      throw new Error('Invalid credentials');
-    }
-
-    await updateUserLastLogin(user.id);
-    return { success: true, user };
+    await updateUserLastLogin(authData.user.id)
+    return { success: true, user: { ...authData.user, ...profile } }
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -122,19 +141,14 @@ export async function searchUsers(query) {
 
 export async function requestPasswordReset(email) {
   try {
-    const { data: user, error: userError } = await supabase
-      .from('info_users')
-      .select('id, email')
-      .eq('email', email)
-      .single();
-
-    if (userError) throw new Error('User not found');
-
-    const { data, error } = await supabase
-      .rpc('generate_password_reset_token', { p_user_id: user.id });
-
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL
+      || (typeof window !== 'undefined' ? window.location.origin : 'https://connect-daet-app.vercel.app')
+    const { data, error } = await supabase.auth.resetPasswordForEmail(
+      String(email || '').trim().toLowerCase(),
+      { redirectTo: `${appUrl.replace(/\/+$/, '')}/info/reset-password` }
+    )
     if (error) throw error;
-    return { success: true, resetId: data };
+    return { success: true, data }
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -142,13 +156,10 @@ export async function requestPasswordReset(email) {
 
 export async function verifyResetToken(token) {
   try {
-    const { data, error } = await supabase
-      .rpc('verify_and_use_reset_token', { p_token: token });
-
+    const { data, error } = await supabase.auth.verifyOtp({ token_hash: token, type: 'recovery' })
     if (error) throw error;
-    if (!data.valid) throw new Error('Invalid or expired token');
-
-    return { success: true, userId: data.user_id };
+    if (!data.user) throw new Error('Invalid or expired recovery link')
+    return { success: true, userId: data.user.id }
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -156,13 +167,12 @@ export async function verifyResetToken(token) {
 
 export async function resetPassword(userId, newPassword) {
   try {
-    const { data, error } = await supabase
-      .from('info_users')
-      .update({ password: newPassword })
-      .eq('id', userId)
-      .select()
-      .single();
-
+    if (!isPasswordValid(newPassword)) {
+      throw new Error('Password does not meet the account security requirements.')
+    }
+    const { data: currentUser, error: sessionError } = await supabase.auth.getUser()
+    if (sessionError || currentUser.user?.id !== userId) throw new Error('A valid recovery session is required.')
+    const { data, error } = await supabase.auth.updateUser({ password: newPassword })
     if (error) throw error;
     return { success: true, data };
   } catch (error) {

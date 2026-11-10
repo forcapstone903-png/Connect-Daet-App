@@ -69,3 +69,15 @@ export function isSupabaseConfigured() {
 // IMPORTANT: Export supabase for backward compatibility
 // This creates a singleton instance that all files can import
 export const supabase = getSupabase()
+
+if (typeof window !== 'undefined' && supabase) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      try {
+        window.sessionStorage.setItem('daet:password-recovery-pending', '1')
+      } catch (error) {
+        console.warn('Could not retain password recovery state:', error)
+      }
+    }
+  })
+}

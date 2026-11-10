@@ -9,14 +9,20 @@ import { supabase } from './supabase'
  * (`daet_secure_session`) is invalidated — not just the display-only client
  * cookie. Only best-effort cleanup is performed after that.
  */
-export async function performLogout() {
+export async function performLogout({ serverAlreadyRevoked = false } = {}) {
   const userId = getStoredSessionObject()?.user_id
   clearUserCache(userId)
+  let sessionsRevoked = serverAlreadyRevoked
 
-  try {
-    await fetch('/info/api/logout', { method: 'POST', credentials: 'same-origin' })
-  } catch (error) {
-    console.error('Logout API call failed:', error)
+  if (!serverAlreadyRevoked) {
+    try {
+      const response = await fetch('/info/api/logout', { method: 'POST', credentials: 'same-origin' })
+      const result = await response.json().catch(() => ({}))
+      sessionsRevoked = response.ok && result.sessionsRevoked === true
+      if (!sessionsRevoked) console.error('Server-side app sessions could not all be revoked.')
+    } catch (error) {
+      console.error('Logout API call failed:', error)
+    }
   }
 
   clearAuthCookie()
@@ -38,4 +44,6 @@ export async function performLogout() {
   } catch (error) {
     console.error('Supabase sign-out failed:', error)
   }
+
+  return { sessionsRevoked }
 }

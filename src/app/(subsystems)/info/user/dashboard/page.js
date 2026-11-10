@@ -1645,15 +1645,15 @@ export default function UserDashboardPage() {
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 
   const statTiles = [
-    { key: 'blogs', label: 'Blogs', value: stats.blogs, icon: PenLine, href: '/info/user/blogs' },
-    { key: 'events', label: 'Events', value: stats.events, icon: CalendarDays, href: '/info/user/events' },
+    { key: 'blogs', label: 'Blogs', value: stats.blogs, icon: PenLine, href: '/info/visitor' },
+    { key: 'events', label: 'Events', value: stats.events, icon: CalendarDays, href: '/info/visitor/events' },
     { key: 'announcements', label: 'Notices', value: stats.announcements, icon: Megaphone, href: '/info/user/announcements' },
   ]
 
   const quickActions = [
     { href: '/info/user/blogs/new', label: 'Write a story', icon: PenLine, tone: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
     { href: '/info/user/blogs/new?share=media', label: 'Photo or video', icon: ImagePlus, tone: 'bg-sky-50 text-sky-700 hover:bg-sky-100' },
-    { href: '/info/user/events', label: 'Events', icon: CalendarDays, tone: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+    { href: '/info/visitor/events', label: 'Events', icon: CalendarDays, tone: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
     { href: '/info/user/rewards', label: 'Rewards', icon: Gift, tone: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
   ]
 
@@ -1766,14 +1766,14 @@ export default function UserDashboardPage() {
         </section>
 
         <section className="medium-home-composer usr-card mb-3 rounded-[22px] p-3 sm:p-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4 px-1">
             <span className="dashboard-profile-avatar flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-[11px] font-black text-white">
               {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
             </span>
-            <Link href="/info/user/blogs/new" className="usr-press flex min-h-[50px] flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-4 text-sm font-medium text-slate-500 transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
+            <Link href="/info/user/blogs/new" className="usr-press flex min-h-[54px] flex-1 items-center rounded-full border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-medium text-slate-500 transition hover:border-sky-300 hover:bg-white hover:text-slate-700">
               Share something with Daet...
             </Link>
-            <Link href="/info/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[50px] w-[50px] shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_8px_18px_rgba(37,99,235,0.22)] transition hover:bg-blue-700">
+            <Link href="/info/user/blogs/new" aria-label="Create a post" title="Create a post" className="usr-press flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-[0_8px_18px_rgba(37,99,235,0.22)] transition hover:bg-blue-700">
               <Zap className="h-4 w-4" aria-hidden="true" />
             </Link>
           </div>

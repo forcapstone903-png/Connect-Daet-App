@@ -43,7 +43,7 @@ export default function EventDetailPage() {
 
   if (authChecking) {
     return (
-      <main className="event-detail-page -mt-16 min-h-screen lg:mt-0">
+      <main className="event-detail-page min-h-screen">
         <div className="event-detail-loading" role="status" aria-live="polite">
           <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
           <span>Verifying your session…</span>
@@ -53,8 +53,8 @@ export default function EventDetailPage() {
   }
 
   return (
-    <div className="-mt-16 lg:mt-0">
-      <EventDetailsView key={String(eventId)} eventId={eventId} userId={userId} backHref="/info/user/events" />
+    <div>
+      <EventDetailsView key={String(eventId)} eventId={eventId} userId={userId} backHref="/info/user/dashboard" />
     </div>
   )
 }

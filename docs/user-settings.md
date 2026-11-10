@@ -1,27 +1,40 @@
-# User Settings (appearance, language, privacy)
+# User Settings
 
-The user-facing Settings surface lives at `/info/user/settings` and is made of one tab
-per concern:
+The user-facing Settings surface lives at `/info/user/settings`. Desktop uses a
+category sidebar; smaller screens use a compact category selector.
 
-| Tab | What it controls | Where it is stored |
+| Category | What it controls | Where it is stored |
 | --- | --- | --- |
+| Profile Information | Full name, username, email and phone status, profile photo; links to profile editing | `info_users` and `profiles` |
+| Security & Authentication | Password change/recovery, recent sign-ins, global sign-out | Supabase Auth and `user_activity_log` |
+| Notifications | Supported in-app notification filters and browser push | `profiles.notification_preferences` and push subscriptions |
+| Privacy & Data | Profile/search/message privacy, private personal-data export, local storage controls | `profiles` and authenticated API export |
 | Appearance | Light / dark / system theme, reduce motion | Device (`localStorage`) + `profiles.ui_preferences` mirror; saved device preferences take precedence |
-| Language | English, Filipino, Bikol | Device (`localStorage`) + `profiles.language_preference` |
-| Notifications | Device push permission and in-app new-follower, comment/reply, and announcement visibility preferences | Existing push subscriptions + `profiles.notification_preferences` |
-| Privacy | Public/followers-only/private profile visibility, search visibility, and who can start a message conversation | `profiles.privacy_level`, `profiles.is_public`, `profiles.privacy_preferences` |
-| Account | Sign-in email, password reset link, profile edit, sign out everywhere, deactivation, and 30-day deletion requests | Supabase auth + `info_users` lifecycle fields |
-| Data & storage | Storage usage, clear cached data, export settings, reset preferences, install app | Device; reset also persists account defaults |
-| About & legal | Privacy policy, terms, cookie policy, accessibility, developer information, feedback | Static routes |
+| Language & Region | English, Filipino, Bikol; regional date formatting follows the device | Device (`localStorage`) + `profiles.language_preference` |
+| Help & Support | Legal and support information | Static routes |
+| Account Management | Temporary deactivation, 30-day deletion request and recovery | `info_users` lifecycle fields |
 
 ## Deployment and limitations
 
-Apply `supabase/migrations/050_user_settings_preferences.sql` for account appearance and privacy sync and `supabase/migrations/051_account_lifecycle.sql` for deactivation and deletion requests. The migrations have not been applied here. The settings page requires the complete preference schema before it reports a save or reset as successful.
+Apply `supabase/migrations/050_user_settings_preferences.sql` for account appearance and privacy sync, `supabase/migrations/051_account_lifecycle.sql` for lifecycle timestamps, and `supabase/migrations/073_usernames.sql` for username support. Apply `supabase/migrations/071_password_reset_rate_limit.sql` before `supabase/migrations/072_secure_account_deletion_grace_period.sql`; both password-session revocation and account deletion depend on migration 071. The migrations have not been applied here. The settings page requires the complete preference schema before it reports a save or reset as successful.
+
+The profile summary and editor use authenticated, own-account endpoints. Usernames are optional, normalized to lowercase, and unique case-insensitively; they must be 3–30 characters using letters, numbers, dots, and underscores, with alphanumeric first and last characters. Phone numbers are display-only and are not verified because member Twilio verification is not implemented. Profile summary and personal-data export responses are uncached. The export is a private JSON download containing account/profile fields, authored posts and community content, follows, favorites, notifications, and recorded activity; password values and credentials are excluded.
+
+Successful application logins update `info_users.last_login` and record a sign-in event in `user_activity_log`. The Security category displays recent recorded events. Existing historical events remain available only to the extent they were recorded before this change.
+
+Password changes verify the current password against Supabase Auth before updating the Auth account. Recovery uses Supabase Auth's expiring, single-use recovery link; the reset page accepts a recovery session only, and the server validates its access token and atomically consumes a keyed token fingerprint before updating the password and revoking sessions. Reset requests are limited to five per IP per 15 minutes by `supabase/migrations/071_password_reset_rate_limit.sql`; apply that migration to enable password-reset throttling, single-use fingerprints, and app-session revocation. Login remains available before migration using signed version-0 cookies, but recovery throttling and app-session revocation are unavailable until it is applied. Responses do not disclose whether an email is registered. Password-change and password-reset notifications use the existing SendGrid sender configuration. Recovery links are delivered by Supabase Auth, so configure its SMTP sender (recommended: the existing verified SendGrid sender) and allow `NEXT_PUBLIC_APP_URL/info/reset-password` in the Supabase Auth redirect URL list. The DAET CONNECT recovery template is in `supabase/templates/password-recovery.html`; upload the template to the hosted Supabase Auth email-template settings as well as applying local config. Recovery links expire according to the Supabase Auth email OTP expiry; the local Supabase config is set to one hour.
+
+Password forms require at least eight characters with lowercase, uppercase, numeric, and special characters. Supabase Auth hashes and stores passwords; the application does not put passwords in logs or responses. `SUPABASE_SERVICE_ROLE_KEY` is required server-side for privileged updates and the rate-limit RPC. `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` enable security notifications; if they are missing or delivery fails, the password operation still succeeds and the UI explicitly reports that the notification was not delivered.
 
 Language support covers settings and selected navigation labels, not the entire application or user-generated content; missing labels fall back to English. The notification inbox applies the new-follower, comment/reply, and announcement preferences when listing notifications and calculating unread counts; this does not disable email or browser push delivery. Email alerts and activity digests do not have delivery implementations. Search visibility is enforced by people search, and the message-conversation preference is enforced when starting a new conversation; existing conversations remain available. The saved online-status, activity, and mention preferences do not currently have corresponding enforcement paths. Profile visibility uses existing rules and does not hide previously published posts. No 2FA enrollment is provided.
 
 Display changes apply immediately. A valid device-saved theme takes precedence over the profile mirror, which is used only when no device theme is saved. This prevents a stale profile value from changing the theme during Settings-page revalidation. Reset writes the default account preferences before clearing and restoring the device preferences; failures leave the current settings intact and show an error. Preference reads and writes use the signed HTTP-only application session and are scoped to that session's user id. Authenticated writes and push prompts still require testing with a signed-in account. Global sign-out revokes the Supabase auth session and clears the current device, but the app's stateless signed cookies on other devices are not revoked; server-side session revocation is still needed for a true all-device guarantee. Global dark utility remapping warrants visual review across routes.
 
-Deactivation sets the `info_users` status to `suspended` and signs the user out; signing in again exposes a reactivation action. Deletion requests also suspend the account and store a deadline 30 days later. A trusted scheduled cleanup job must delete accounts whose `deletion_scheduled_for` has passed; the settings route only creates, cancels, and reports the request.
+Deactivation sets the `info_users` status to `suspended` and signs the user out; signing in again exposes a reactivation action. Deletion requires current-password reauthentication and atomically sets `pending_deletion`, the request timestamp, and a deadline exactly 30 days later. It increments the application session version and globally signs out Supabase sessions. Pending accounts are blocked by the proxy and by restrictive active-account RLS policies; lifecycle status is uncached because stale status could allow use after scheduling.
+
+After sign-out, the user can restore the account at `/info/account-recovery` by verifying the account email and password. A database function only cancels while the deadline is still in the future and no deletion worker has claimed the account. The hourly Vercel Cron endpoint `/info/api/cron/account-deletions` sends 7-day and 1-day reminders and permanently removes due accounts, their manifest-tracked storage objects, Supabase Auth identity, and profile-linked data. The deadline is enforced in the database; with the hourly schedule, processing occurs on the first successful run after the deadline, up to approximately one hour later. Configure a random `CRON_SECRET` of at least 32 bytes and the existing `SENDGRID_API_KEY` / `SENDGRID_FROM_EMAIL` values. Reminder send failures are retried; request/cancellation email failures are surfaced in the UI but do not roll back account state.
+
+Apply migration 072 before deploying the changed upload route, which now records each user upload in `user_storage_objects`. This manifest makes new uploads attributable and deletable. Older files in generic shared folders may not have enough ownership metadata for safe automatic cleanup and require a separate audit/backfill. Authored content follows the existing foreign-key behavior (cascade or author anonymization). Run this flow against a staging Supabase project before production; no live account lifecycle test is implied by the local code changes.
 
 
 ## Notification inbox behaviour (`/info/user/notifications`)

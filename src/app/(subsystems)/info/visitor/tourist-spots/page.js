@@ -8,7 +8,6 @@ import {
   Heart,
   MapPin,
   Search,
-  Star,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCacheKey, getPersistentCache, setPersistentCache } from '@/lib/cache'
@@ -286,8 +285,8 @@ export default function TouristSpotsPage() {
                   <div className="flex items-start justify-between gap-2">
                     <h3 className="line-clamp-2 text-sm font-bold text-slate-800">{spot.name}</h3>
                     {spot.rating != null && Number.isFinite(Number(spot.rating)) && (
-                      <div className="flex flex-shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                        <Star className="h-3 w-3 fill-current" />
+                      <div className="flex flex-shrink-0 items-center gap-1 rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700">
+                        <Heart className="h-3 w-3 fill-current" />
                         {Number(spot.rating).toFixed(1)}
                       </div>
                     )}

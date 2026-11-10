@@ -724,14 +724,14 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
 
   return (
     <main className="event-detail-page min-h-screen">
-      <UserTopHeader detailMode spacer homeHref={eventRouteBase} />
+      <UserTopHeader detailMode spacer homeHref={backHref} />
       <header className="event-detail-header">
         <div className="event-detail-header-inner">
           <button type="button" onClick={goBack} className="event-detail-back" aria-label="Go back">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             <span className="event-detail-back-label">Back</span>
           </button>
-          <Link href={eventRouteBase} className="event-detail-brand">
+          <Link href={backHref} className="event-detail-brand">
             <img src="/logo.png" alt="" />
             <span>Connect-Daet.ai</span>
           </Link>

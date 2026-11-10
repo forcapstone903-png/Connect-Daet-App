@@ -44,6 +44,7 @@ export default function UserTopHeader({
   homeHref = '/info/user/dashboard',
   standaloneNavigation = false,
   desktopOnly = false,
+  mobileOnly = false,
   edgeToEdgeMobile = false,
   showDesktopNavigationToggle = true,
 }) {
@@ -375,7 +376,7 @@ export default function UserTopHeader({
   return (
     <>
       {standaloneNavigation && !desktopOnly && <MobileNav mobileOnly />}
-      <header className="usr-desktop-header fixed inset-x-0 top-0 z-50 hidden h-16 items-center gap-5 border-b border-white/10 bg-[#171717] px-6 text-slate-100 shadow-sm lg:flex">
+      {!mobileOnly && <header className="usr-desktop-header fixed inset-x-0 top-0 z-50 hidden h-16 items-center gap-5 border-b border-white/10 bg-[#171717] px-6 text-slate-100 shadow-sm lg:flex">
         {showDesktopNavigationToggle && (
           <button
             type="button"
@@ -695,7 +696,7 @@ export default function UserTopHeader({
             )}
           </div>
         </div>
-      </header>
+      </header>}
       {!desktopOnly && <header className={`usr-fade-in fixed z-50 ${detailMode ? 'inset-x-0 top-0 content-detail-mobile-header px-2' : edgeToEdgeMobile ? 'inset-x-0 top-0 usr-mobile-header px-3 py-0' : 'inset-x-1 top-1 usr-mobile-header px-3 py-1'} lg:hidden`}>
         <div className={`mx-auto flex w-full max-w-none items-center gap-1 ${detailMode ? 'h-[88px] pl-1' : 'h-[90px]'}`}>
           <button

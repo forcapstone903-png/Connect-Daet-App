@@ -289,6 +289,7 @@ export default function RegisterPage() {
                       name="password"
                       required
                       minLength={8}
+                      maxLength={128}
                       autoComplete="new-password"
                       value={formData.password}
                       onChange={handlePasswordChange}

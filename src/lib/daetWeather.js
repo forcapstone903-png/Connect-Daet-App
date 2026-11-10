@@ -6,13 +6,33 @@ let cachedWeather = null
 let weatherRequest = null
 
 async function fetchProviderJson(url) {
-  const result = await fetch(url, {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(8000),
-  })
+  let lastError
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = await fetch(url, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(8000),
+      })
 
-  if (!result.ok) throw new Error(`Weather provider returned ${result.status}.`)
-  return result.json()
+      if (!result.ok) {
+        const error = new Error(`Weather provider returned ${result.status}.`)
+        if (result.status < 500 && result.status !== 429) {
+          error.retryable = false
+          throw error
+        }
+        lastError = error
+      } else {
+        return await result.json()
+      }
+    } catch (error) {
+      if (error.retryable === false) throw error
+      lastError = error
+    }
+
+    if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 300))
+  }
+
+  throw lastError || new Error('Weather provider request failed.')
 }
 
 function describeWeather(code) {

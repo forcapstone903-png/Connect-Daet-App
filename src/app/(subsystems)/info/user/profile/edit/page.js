@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
@@ -8,11 +9,12 @@ import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 export default function EditProfilePage() {
   const router = useRouter()
   const [userId, setUserId] = useState('')
-  const [form, setForm] = useState({ full_name: '', bio: '', location: '', avatar_url: '', cover_photo_url: '' })
+  const [form, setForm] = useState({ full_name: '', username: '', phone_number: '', bio: '', location: '', avatar_url: '', cover_photo_url: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -29,11 +31,13 @@ export default function EditProfilePage() {
       }
 
       const [{ data: userData }, { data: profileData }] = await Promise.all([
-        supabase.from('info_users').select('full_name, bio, city, country, profile_image_url').eq('id', id).maybeSingle(),
+        supabase.from('info_users').select('full_name, username, phone_number, bio, city, country, profile_image_url').eq('id', id).maybeSingle(),
         supabase.from('profiles').select('full_name, bio, city, country, location, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
       ])
       setForm({
-        full_name: profileData?.full_name || userData?.full_name || '',
+        full_name: userData?.full_name || profileData?.full_name || '',
+        username: userData?.username || '',
+        phone_number: userData?.phone_number || '',
         bio: profileData?.bio || userData?.bio || '',
         location: profileData?.location || [profileData?.city, profileData?.country].filter(Boolean).join(', ') || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
         avatar_url: userData?.profile_image_url || profileData?.profile_image_url || '',
@@ -43,7 +47,7 @@ export default function EditProfilePage() {
     }
 
     void loadProfile()
-  }, [])
+  }, [router])
 
   const saveProfile = async () => {
     if (!userId) {
@@ -65,6 +69,8 @@ export default function EditProfilePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fullName: form.full_name,
+          username: form.username,
+          phoneNumber: form.phone_number,
           bio: form.bio,
           location: trimmedLocation,
           avatarUrl: form.avatar_url,
@@ -93,16 +99,20 @@ export default function EditProfilePage() {
   }
 
   if (loading) return (
-    <main className="tourism-shell usr-section-page usr-profile flex min-h-screen items-center justify-center p-6">
+    <main className="tourism-shell usr-section-page usr-profile min-h-screen">
+      <UserTopHeader />
+      <div className="flex min-h-[calc(100vh-90px)] items-center justify-center p-6">
       <div className="usr-card usr-pop-in p-6 text-center">
         <span className="usr-spin mx-auto mb-3 flex h-6 w-6 rounded-full border-2 border-teal-700 border-t-transparent" />
         <p className="text-sm font-semibold text-slate-600">Loading profile...</p>
+      </div>
       </div>
     </main>
   )
 
   return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
+      <UserTopHeader />
       <div className="usr-section-container mx-auto w-full max-w-4xl px-3 pb-24 pt-2 sm:px-5 lg:px-6 lg:pb-10">
         <UserSectionHeader
           eyebrow="Public profile"
@@ -117,7 +127,7 @@ export default function EditProfilePage() {
 
         <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start">
           <aside className="usr-card usr-enter p-5 text-center">
-            <div className="usr-profile-avatar mx-auto flex items-center justify-center overflow-hidden">{form.avatar_url ? <img src={form.avatar_url} alt="Profile preview" className="h-full w-full object-cover" /> : <UserRound className="h-8 w-8" />}</div>
+            <div className="usr-profile-avatar mx-auto flex items-center justify-center overflow-hidden">{form.avatar_url ? <Image src={form.avatar_url} alt="Profile preview" width={160} height={160} unoptimized className="h-full w-full object-cover" /> : <UserRound className="h-8 w-8" />}</div>
             <p className="mt-3 truncate text-lg font-black text-slate-900">{form.full_name || 'Your name'}</p>
             <p className="mt-1 text-xs text-slate-500">This information appears on your public profile.</p>
             <div className="mt-5 space-y-2 text-left text-xs text-slate-600"><div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2.5"><MapPin className="h-4 w-4 text-teal-700" />{form.location || 'Add your location'}</div><div className="flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2.5"><FileText className="h-4 w-4 text-teal-700" />Your community bio</div></div>
@@ -131,6 +141,7 @@ export default function EditProfilePage() {
                 <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Cover photo</span>{form.cover_photo_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" trimLetterbox existingMediaUrl={form.cover_photo_url} previewClassName="h-32 w-full aspect-[3/1]" buttonText="Add / change cover" maxSizeMB={8} onUploadComplete={(url) => setForm((previous) => ({ ...previous, cover_photo_url: url || '' }))} onUploadError={setNotice} /></div>
               </div>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Display name</span><input value={form.full_name} onChange={(event) => setForm((previous) => ({ ...previous, full_name: event.target.value }))} placeholder="Your name" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
+              <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Username</span><div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100"><span className="text-sm text-slate-400">@</span><input value={form.username} onChange={(event) => setForm((previous) => ({ ...previous, username: event.target.value.toLowerCase() }))} placeholder="yourname" maxLength={30} autoCapitalize="none" autoCorrect="off" className="w-full border-0 bg-transparent px-2 py-3 text-sm outline-none" /></div><span className="mt-1 block text-xs text-slate-500">3–30 characters; letters, numbers, dots, and underscores.</span></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Location</span><input value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} placeholder="Daet, Camarines Norte, Philippines" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Bio</span><textarea rows={6} value={form.bio} onChange={(event) => setForm((previous) => ({ ...previous, bio: event.target.value }))} placeholder="Share what kind of places, stories, or experiences you love." className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /><span className="mt-1 block text-right text-[11px] text-slate-400">{form.bio.length} characters</span></label>
             </div>

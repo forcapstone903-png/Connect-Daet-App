@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { setSecureSessionCookie } from '@/lib/serverAuth'
+import { createSessionAdminClient, getUserSessionVersion } from '@/lib/sessionVersions'
 
 export async function GET(request) {
   const requestUrl = new URL(request.url)
@@ -46,7 +47,8 @@ export async function GET(request) {
           user_type: role,
           profile_image_url: profile?.profile_image_url || null,
         }
-        setSecureSessionCookie(response, userProfile)
+        const sessionVersion = await getUserSessionVersion(createSessionAdminClient(), user.id)
+        setSecureSessionCookie(response, userProfile, false, sessionVersion)
         response.cookies.set(
           'daet_auth_session',
           encodeURIComponent(JSON.stringify({

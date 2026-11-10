@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/info/api/cron/account-deletions",
+      "schedule": "0 * * * *"
+    }
+  ]
+}

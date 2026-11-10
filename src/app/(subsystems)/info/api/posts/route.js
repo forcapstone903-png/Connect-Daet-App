@@ -148,7 +148,7 @@ export async function POST(request) {
         subject: title,
       })
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/events' })
+      return NextResponse.json({ success: true, id: data?.id, destination: `/info/user/events/${data?.id}` })
     }
 
     if (shareType === 'complaint') {

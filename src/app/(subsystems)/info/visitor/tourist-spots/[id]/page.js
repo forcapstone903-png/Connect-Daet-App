@@ -18,7 +18,6 @@ import {
   MessageCircle,
   MoreHorizontal,
   Share2,
-  Star,
   ThumbsDown,
   ThumbsUp,
   X,
@@ -397,7 +396,6 @@ export default function TouristSpotDetailPage() {
       <main className="event-detail-page tourist-detail-page">
         <header className="event-detail-header">
           <div className="event-detail-header-inner">
-            <Link href="/info/visitor/tourist-spots" className="tourist-brand-back"><ArrowLeft size={18} /><span>Destinations</span></Link>
             <Link href="/info/visitor" className="event-detail-brand">
               <img src="/logo.png" alt="" /><span>Connect-Daet.ai</span>
             </Link>
@@ -412,6 +410,10 @@ export default function TouristSpotDetailPage() {
 
         <div className="tourist-detail-content">
           <section className="tourist-detail-intro">
+            <Link href="/info/visitor" className="tourist-home-back">
+              <ArrowLeft size={17} aria-hidden="true" />
+              <span>Back to home</span>
+            </Link>
             <div className="tourist-detail-kickers">
               {spot.category && <span>{spot.category}</span>}
               {(spot.is_popular || spot.is_featured) && <span className="tourist-popular-badge">Popular destination</span>}
@@ -430,7 +432,7 @@ export default function TouristSpotDetailPage() {
           <nav className="event-detail-engagement tourist-engagement" aria-label="Destination interactions">
             <div className="event-detail-engagement-group">
               <a href="#ratings-reviews" className="tourist-engagement-rating" aria-label="Read ratings and reviews">
-                <Star size={16} className="fill-amber-400 text-amber-400" />
+                <Heart size={16} className="fill-rose-500 text-rose-500" />
                 <strong>{ratingSummary.average_rating == null ? '—' : Number(ratingSummary.average_rating).toFixed(1)}</strong>
                 <span>({ratingSummary.total_count})</span>
               </a>
@@ -520,7 +522,7 @@ export default function TouristSpotDetailPage() {
                     const relatedImage = mediaItems(related.featured_image, related.gallery_images, related.images)[0]
                     return <Link key={related.id} href={`/info/visitor/tourist-spots/${related.id}`} className="event-detail-related-item">
                       {relatedImage ? <img src={relatedImage} alt="" loading="lazy" /> : <span className="event-detail-related-placeholder"><MapPin size={18} /></span>}
-                      <span className="event-detail-related-copy"><strong>{related.name}</strong><span>{related.location || related.address || 'Location not provided'}</span><span className="tourist-related-rating">{optionalNumber(related.rating) === null ? 'No ratings yet' : <><Star size={12} className="fill-amber-400 text-amber-400" /> {Number(related.rating).toFixed(1)}</>}</span></span>
+                      <span className="event-detail-related-copy"><strong>{related.name}</strong><span>{related.location || related.address || 'Location not provided'}</span><span className="tourist-related-rating">{optionalNumber(related.rating) === null ? 'No ratings yet' : <><Heart size={12} className="fill-rose-500 text-rose-500" /> {Number(related.rating).toFixed(1)}</>}</span></span>
                     </Link>
                   })}
                 </div>

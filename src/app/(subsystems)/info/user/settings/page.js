@@ -19,15 +19,17 @@
 //   reset action (resetUserSettings).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
-import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Bell, Check, ChevronRight, FileText, HardDrive, Languages, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react'
+import Image from 'next/image'
+import { ArrowLeft, Bell, Check, ChevronDown, CircleHelp, Eye, Languages, LockKeyhole, ShieldCheck, Sun, UserRound, UserRoundCog } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
+import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import { useUserSettings } from '@/components/UserSettingsProvider'
+import AccountManagementSection from './_components/AccountManagementSection'
+import AppearanceSection from './_components/AppearanceSection'
 import {
   clearLocalAppData,
   createDefaultSettings,
@@ -44,47 +46,29 @@ import { StatusBanner } from './_components/SettingsControls'
 import LanguageSection from './_components/LanguageSection'
 import NotificationsSection from './_components/NotificationsSection'
 import PrivacySection from './_components/PrivacySection'
+import ProfileInformationSection from './_components/ProfileInformationSection'
 import SecuritySection from './_components/SecuritySection'
 import DataStorageSection from './_components/DataStorageSection'
 import LegalSection from './_components/LegalSection'
 
 const TABS = [
-  { id: 'privacy', titleKey: 'settings.nav.privacy', descriptionKey: 'settings.privacy.description', icon: LockKeyhole },
-  { id: 'security', titleKey: 'settings.nav.security', descriptionKey: 'settings.security.description', icon: ShieldCheck },
-  { id: 'notifications', titleKey: 'settings.nav.notifications', descriptionKey: 'settings.notifications.description', icon: Bell },
-  { id: 'language', titleKey: 'settings.nav.language', descriptionKey: 'settings.language.description', icon: Languages },
-  { id: 'data', titleKey: 'settings.nav.data', descriptionKey: 'settings.data.description', icon: HardDrive },
-  { id: 'legal', titleKey: 'settings.nav.legal', descriptionKey: 'settings.legal.description', icon: FileText },
+  { id: 'profile', label: 'Profile Information', description: 'Personal details and public profile', icon: UserRound },
+  { id: 'security', label: 'Security & Authentication', description: 'Password, sign-ins, and sessions', icon: ShieldCheck },
+  { id: 'notifications', label: 'Notifications', description: 'In-app and device notification preferences', icon: Bell },
+  { id: 'privacy-data', label: 'Privacy & Data', description: 'Profile visibility, data export, and storage', icon: Eye },
+  { id: 'appearance', label: 'Appearance', description: 'Theme and motion preferences', icon: Sun },
+  { id: 'language', label: 'Language & Region', description: 'Language and regional behavior', icon: Languages },
+  { id: 'support', label: 'Help & Support', description: 'Legal information and support links', icon: CircleHelp },
+  { id: 'account', label: 'Account Management', description: 'Deactivation and account deletion', icon: UserRoundCog },
 ]
 
-const SETTINGS_GROUPS = [
-  { title: 'Profile', items: ['privacy', 'security'] },
-  { title: 'Preferences', items: ['notifications', 'language', 'data'] },
-  { title: 'Safety', items: ['legal'] },
-]
-
-function triggerDownload(filename, contents) {
-  try {
-    const blob = new Blob([contents], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = filename
-    document.body.appendChild(anchor)
-    anchor.click()
-    document.body.removeChild(anchor)
-    URL.revokeObjectURL(url)
-    return true
-  } catch (error) {
-    console.error('Settings export failed:', error)
-    return false
-  }
-}
 export default function UserSettingsPage() {
   const router = useRouter()
-  const { settings: deviceSettings, t, updateSettings, resetSettings } = useUserSettings()
+  const { settings: deviceSettings, resolvedTheme, t, updateSettings, resetSettings } = useUserSettings()
 
-  const [activeTab, setActiveTab] = useState(null)
+  const [activeTab, setActiveTab] = useState('profile')
+  const [mobileCategoryOpen, setMobileCategoryOpen] = useState(false)
+  const mobileCategoryButtonRef = useRef(null)
   const [draftValue, setDraft] = useState(null)
   const draft = draftValue ?? deviceSettings
   const [savedValue, setSavedSnapshot] = useState(null)
@@ -92,18 +76,28 @@ export default function UserSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState('')
   const [email, setEmail] = useState('')
-  const [profileIdentity, setProfileIdentity] = useState({ name: '', avatarUrl: '' })
+  const [profileIdentity, setProfileIdentity] = useState({
+    fullName: '',
+    username: '',
+    email: '',
+    emailVerified: false,
+    phoneNumber: '',
+    avatarUrl: '',
+    lastLoginAt: null,
+  })
+  const [profileError, setProfileError] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState(null)
   const [storageUsage, setStorageUsage] = useState({ bytes: 0, entries: 0 })
   const [cacheCleared, setCacheCleared] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
+  const [exportPending, setExportPending] = useState(false)
   const [resetPending, setResetPending] = useState(false)
   const [signOutPending, setSignOutPending] = useState(false)
   const [accountLifecycle, setAccountLifecycle] = useState(null)
   const [accountActionPending, setAccountActionPending] = useState(false)
-  const [resetStatus, setResetStatus] = useState('')
   const [confirmAction, setConfirmAction] = useState(null)
+  const [deletionPassword, setDeletionPassword] = useState('')
   const noticeTimerRef = useRef(null)
   const tRef = useRef(t)
 
@@ -133,17 +127,22 @@ export default function UserSettingsPage() {
       }
       setEmail(session?.user?.email || storedSession?.user_email || '')
       setProfileIdentity({
-        name: session?.user?.user_metadata?.full_name
+        fullName: session?.user?.user_metadata?.full_name
           || session?.user?.user_metadata?.name
           || storedSession?.user_name
           || storedSession?.full_name
           || session?.user?.email?.split('@')[0]
           || storedSession?.user_email?.split('@')[0]
           || '',
+        username: '',
+        email: session?.user?.email || storedSession?.user_email || '',
+        emailVerified: false,
+        phoneNumber: '',
         avatarUrl: session?.user?.user_metadata?.avatar_url
           || storedSession?.avatar_url
           || storedSession?.profile_image_url
           || '',
+        lastLoginAt: null,
       })
       const response = await fetch('/info/api/user/settings', { cache: 'no-store' })
       const result = await response.json().catch(() => ({}))
@@ -158,6 +157,18 @@ export default function UserSettingsPage() {
       setSavedSnapshot(next)
       setUserId(result.user_id || id)
       updateSettings({ theme: next.theme, language: next.language, reduceMotion: next.reduceMotion })
+      try {
+        const profileResponse = await fetch('/info/api/profile', { cache: 'no-store' })
+        const profileResult = await profileResponse.json().catch(() => ({}))
+        if (!profileResponse.ok || !profileResult.success) {
+          throw new Error(profileResult.message || 'Unable to load your profile information.')
+        }
+        setProfileIdentity(profileResult.profile)
+        setEmail(profileResult.profile.email || session?.user?.email || '')
+        setProfileError('')
+      } catch (error) {
+        setProfileError(error.message || 'Unable to load your profile information.')
+      }
       const lifecycleResponse = await fetch('/info/api/account/lifecycle', { cache: 'no-store' })
       const lifecycleResult = await lifecycleResponse.json().catch(() => ({}))
       if (lifecycleResponse.ok && lifecycleResult.lifecycle) setAccountLifecycle(lifecycleResult.lifecycle)
@@ -239,19 +250,46 @@ export default function UserSettingsPage() {
     return undefined
   }, [t])
 
-  const handleDownloadSettings = useCallback(() => {
-    const exported = {
-      exported_at: new Date().toISOString(),
-      app: 'CONNECT-Daet',
-      settings: draft,
-      privacy_level: draft.privacy.privacyLevel,
-      language_preference: draft.language,
-    }
-    const downloaded = triggerDownload('connect-daet-settings.json', JSON.stringify(exported, null, 2))
-    setNotice(downloaded
-      ? { tone: 'success', text: t('settings.data.downloadHint') }
-      : { tone: 'error', text: t('settings.status.saveFailed') })
-  }, [draft, t])
+  const handleDownloadPersonalData = useCallback(() => {
+    setExportPending(true)
+    setNotice(null)
+    void (async () => {
+      try {
+        const response = await fetch('/info/api/user/data-export', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        if (!response.ok) {
+          const result = await response.json().catch(() => ({}))
+          throw new Error(result.message || 'Unable to download your data.')
+        }
+        const blob = await response.blob()
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = `daet-connect-data-${new Date().toISOString().slice(0, 10)}.json`
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        setNotice({ tone: 'success', text: 'Your personal data export has been downloaded.' })
+      } catch (error) {
+        setNotice({ tone: 'error', text: error.message || 'Unable to download your data.' })
+      } finally {
+        setExportPending(false)
+      }
+    })()
+  }, [])
+
+  const cancelSettingsChanges = useCallback(() => {
+    setDraft(savedSnapshot)
+    updateSettings({
+      theme: savedSnapshot.theme,
+      language: savedSnapshot.language,
+      reduceMotion: savedSnapshot.reduceMotion,
+    })
+    setNotice({ tone: 'info', text: 'Unsaved preference changes were discarded.' })
+  }, [savedSnapshot, updateSettings])
 
   const handleResetSettings = useCallback(async () => {
     const defaults = createDefaultSettings()
@@ -278,26 +316,6 @@ export default function UserSettingsPage() {
     }
   }, [resetSettings, t, updateSettings, userId])
 
-  const handlePasswordReset = useCallback(async () => {
-    if (!email) return
-
-    setResetStatus(t('common.saving'))
-    try {
-      const response = await fetch('/info/api/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
-      })
-      const result = await response.json().catch(() => ({}))
-      setResetStatus(response.ok
-        ? t('settings.security.resetPasswordHint')
-        : (result.error || result.message || t('settings.status.saveFailed')))
-    } catch (error) {
-      console.error('Password reset request failed:', error)
-      setResetStatus(t('settings.status.saveFailed'))
-    }
-  }, [email, t])
-
   const handleSignOutAll = useCallback(async () => {
     setSignOutPending(true)
     try {
@@ -311,27 +329,47 @@ export default function UserSettingsPage() {
       return
     }
 
-    await performLogout()
-    window.location.assign('/info/login')
+    const logoutResult = await performLogout()
+    window.location.assign(logoutResult.sessionsRevoked
+      ? '/info/login'
+      : '/info/login?message=Signed%20out%20on%20this%20device%2C%20but%20other%20sessions%20could%20not%20be%20confirmed%20as%20revoked.')
   }, [t])
 
-  const handleAccountAction = useCallback(async (action) => {
+  const handleAccountAction = useCallback(async (action, password) => {
+    if (action === 'schedule_deletion' && !password) {
+      setNotice({ tone: 'error', text: 'Enter your current password to confirm account deletion.' })
+      return
+    }
+
     setAccountActionPending(true)
     setNotice(null)
 
     try {
       const response = await fetch('/info/api/account/lifecycle', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, ...(password ? { password } : {}) }),
       })
       const result = await response.json().catch(() => ({}))
-      if (!response.ok) throw new Error(result.message || t('settings.status.saveFailed'))
+      if (!response.ok || !result.success) throw new Error(result.message || t('settings.status.saveFailed'))
 
       setAccountLifecycle(result.lifecycle)
       setConfirmAction(null)
+      setDeletionPassword('')
 
-      if (action === 'deactivate' || action === 'schedule_deletion') {
+      if (action === 'schedule_deletion') {
+        await performLogout({ serverAlreadyRevoked: true })
+        const recoveryParams = new URLSearchParams({
+          scheduled: '1',
+          emailNotificationSent: String(result.emailNotificationSent === true),
+          deletionScheduledFor: result.lifecycle?.deletionScheduledFor || '',
+        })
+        window.location.assign(`/info/account-recovery?${recoveryParams.toString()}`)
+        return
+      }
+
+      if (action === 'deactivate') {
         await performLogout()
         window.location.assign('/info/login')
         return
@@ -346,12 +384,12 @@ export default function UserSettingsPage() {
     }
   }, [t])
 
-  const handleNotificationChange = useCallback((key, value) => {
-    patchDraft({ notifications: { [key]: value } })
-  }, [patchDraft])
-
   const handlePrivacyChange = useCallback((key, value) => {
     patchDraft({ privacy: { [key]: value } })
+  }, [patchDraft])
+
+  const handleNotificationChange = useCallback((key, value) => {
+    patchDraft({ notifications: { [key]: value } })
   }, [patchDraft])
 
   const confirmTitle = confirmAction === 'reset'
@@ -373,22 +411,27 @@ export default function UserSettingsPage() {
     : confirmAction === 'deactivate'
       ? () => handleAccountAction('deactivate')
       : confirmAction === 'delete'
-        ? () => handleAccountAction('schedule_deletion')
+        ? () => handleAccountAction('schedule_deletion', deletionPassword)
         : handleSignOutAll
-  const activeSetting = TABS.find(({ id }) => id === activeTab)
+  const activeSetting = TABS.find(({ id }) => id === activeTab) || TABS[0]
 
   return (
     <main className="tourism-shell usr-section-page usr-settings min-h-screen w-full overflow-x-clip text-slate-900">
+      <UserTopHeader mobileOnly homeHref="/info/user/dashboard" />
       <header className="settings-topbar">
         <button
           type="button"
-          onClick={() => activeTab ? setActiveTab(null) : router.push('/info/user/dashboard')}
-          aria-label={activeTab ? 'Back to settings' : 'Back to dashboard'}
+          onClick={() => {
+            if (window.history.length > 1) router.back()
+            else router.push('/info/user/dashboard')
+          }}
+          aria-label="Go back"
           className="settings-back-button"
         >
           <ArrowLeft className="h-6 w-6" aria-hidden="true" />
         </button>
         <h1>{t('settings.title')}</h1>
+        <p>Manage your account and preferences</p>
       </header>
       <div className="usr-section-container settings-container mx-auto w-full max-w-none px-0 pb-24 pt-0">
         {notice ? (
@@ -396,58 +439,182 @@ export default function UserSettingsPage() {
             <StatusBanner tone={notice.tone}>{notice.text}</StatusBanner>
           </div>
         ) : null}
+        <div className="settings-layout">
+          <aside className="settings-sidebar">
+            <div className="settings-sidebar-profile">
+              <span className="settings-profile-avatar">
+                {profileIdentity.avatarUrl
+                  ? <Image src={profileIdentity.avatarUrl} alt="" width={44} height={44} unoptimized />
+                  : <UserRound className="h-7 w-7" aria-hidden="true" />}
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold text-slate-900">{profileIdentity.fullName || 'Your account'}</p>
+                <p className="truncate text-xs text-slate-500">{email || ' '}</p>
+              </div>
+            </div>
+            <nav aria-label="Settings categories" className="settings-sidebar-nav">
+              {TABS.map(({ id, label, description, icon: Icon }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setActiveTab(id)}
+                  aria-current={activeTab === id ? 'page' : undefined}
+                  className="settings-sidebar-link"
+                >
+                  <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 text-left">
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </span>
+                </button>
+              ))}
+            </nav>
+          </aside>
 
-        {!activeTab ? (
-          <div className="settings-index">
-            {profileIdentity.name ? (
-              <Link href="/info/user/profile/edit" className="settings-profile-link">
-                <span className="settings-profile-avatar">
-                  {profileIdentity.avatarUrl
-                    ? <Image src={profileIdentity.avatarUrl} alt="" width={60} height={60} unoptimized />
-                    : <UserRound className="h-9 w-9" aria-hidden="true" />}
-                </span>
-                <span className="settings-profile-copy">
-                  <strong>{profileIdentity.name}</strong>
-                  <span>{email || t('settings.security.profile')}</span>
-                </span>
-                <ChevronRight className="settings-row-chevron h-5 w-5" aria-hidden="true" />
-              </Link>
-            ) : null}
+          <section className="settings-workspace settings-detail" aria-labelledby="settings-category-title">
+            <div
+              className="settings-mobile-select"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setMobileCategoryOpen(false)
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setMobileCategoryOpen(false)
+                  mobileCategoryButtonRef.current?.focus()
+                  event.preventDefault()
+                  return
+                }
 
-            {SETTINGS_GROUPS.map((group) => (
-              <section key={group.title} className="settings-group" aria-labelledby={`settings-group-${group.title}`}>
-                <h2 id={`settings-group-${group.title}`}>{group.title}</h2>
-                <div>
-                  {group.items.map((id) => {
-                    const item = TABS.find((setting) => setting.id === id)
-                    if (!item) return null
-                    const description = t(item.descriptionKey)
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setActiveTab(item.id)}
-                        className="settings-index-row"
-                        aria-label={`${t(item.titleKey)}. ${description}`}
-                      >
-                        <item.icon className="settings-row-icon" aria-hidden="true" />
-                        <span className="settings-row-copy">
-                          <strong>{t(item.titleKey)}</strong>
-                          <span>{description}</span>
-                        </span>
-                        <ChevronRight className="settings-row-chevron h-5 w-5" aria-hidden="true" />
-                      </button>
-                    )
-                  })}
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  const options = [...event.currentTarget.querySelectorAll('.settings-mobile-category-option')]
+                  const currentIndex = options.indexOf(document.activeElement)
+                  const direction = event.key === 'ArrowDown' ? 1 : -1
+                  const nextIndex = currentIndex < 0
+                    ? (direction > 0 ? 0 : options.length - 1)
+                    : (currentIndex + direction + options.length) % options.length
+                  options[nextIndex]?.focus()
+                  event.preventDefault()
+                }
+              }}
+            >
+              <label htmlFor="settings-category" className="settings-control-label">Settings category</label>
+              <button
+                ref={mobileCategoryButtonRef}
+                id="settings-category"
+                type="button"
+                className="settings-mobile-category-trigger"
+                aria-haspopup="menu"
+                aria-expanded={mobileCategoryOpen}
+                aria-controls="settings-category-menu"
+                onClick={() => setMobileCategoryOpen((open) => !open)}
+              >
+                <span>{activeSetting.label}</span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${mobileCategoryOpen ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+              {mobileCategoryOpen ? (
+                <div id="settings-category-menu" className="settings-mobile-category-menu" role="menu" aria-label="Settings categories">
+                  {TABS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={activeTab === id}
+                      className="settings-mobile-category-option"
+                      onClick={() => {
+                        setActiveTab(id)
+                        setMobileCategoryOpen(false)
+                        mobileCategoryButtonRef.current?.focus()
+                      }}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span>{label}</span>
+                    </button>
+                  ))}
                 </div>
-              </section>
-            ))}
-
+              ) : null}
+            </div>
+            <header className="settings-category-heading">
+              <div className="settings-category-heading-icon"><activeSetting.icon className="h-5 w-5" aria-hidden="true" /></div>
+              <div>
+                <h2 id="settings-category-title">{activeSetting.label}</h2>
+                <p>{activeSetting.description}</p>
+              </div>
+            </header>
+            {profileError && activeTab === 'profile' ? (
+              <div className="mb-4"><StatusBanner tone="error">{profileError}</StatusBanner></div>
+            ) : null}
+            <fieldset disabled={loading || saving} className="settings-panels min-w-0">
+              {activeTab === 'profile' ? (
+                <ProfileInformationSection profile={profileIdentity} email={email} />
+              ) : null}
+              {activeTab === 'security' ? (
+                <SecuritySection
+                  t={t}
+                  signingOut={signOutPending}
+                  onSignOutAll={() => {
+                    setSignOutPending(true)
+                    setConfirmAction('signout')
+                  }}
+                />
+              ) : null}
+              {activeTab === 'notifications' ? (
+                <NotificationsSection
+                  settings={draft}
+                  t={t}
+                  userId={userId}
+                  onNotificationChange={handleNotificationChange}
+                />
+              ) : null}
+              {activeTab === 'privacy-data' ? (
+                <>
+                  <PrivacySection settings={draft} t={t} onPrivacyChange={handlePrivacyChange} />
+                  <DataStorageSection
+                    t={t}
+                    storageUsage={storageUsage}
+                    cacheCleared={cacheCleared}
+                    clearingCache={clearingCache}
+                    resetPending={resetPending}
+                    exportPending={exportPending}
+                    onClearCache={handleClearCache}
+                    onDownloadData={handleDownloadPersonalData}
+                    onResetSettings={() => {
+                      setResetPending(true)
+                      setConfirmAction('reset')
+                    }}
+                  />
+                </>
+              ) : null}
+              {activeTab === 'appearance' ? (
+                <AppearanceSection
+                  settings={draft}
+                  t={t}
+                  resolvedTheme={resolvedTheme}
+                  onThemeChange={(theme) => applyDeviceSetting({ theme })}
+                  onReduceMotionChange={(reduceMotion) => applyDeviceSetting({ reduceMotion })}
+                />
+              ) : null}
+              {activeTab === 'language' ? (
+                <LanguageSection settings={draft} t={t} onLanguageChange={(language) => applyDeviceSetting({ language })} />
+              ) : null}
+              {activeTab === 'support' ? <LegalSection t={t} /> : null}
+              {activeTab === 'account' ? (
+                <AccountManagementSection
+                  t={t}
+                  accountLifecycle={accountLifecycle}
+                  accountActionPending={accountActionPending}
+                  onDeactivate={() => setConfirmAction('deactivate')}
+                  onReactivate={() => handleAccountAction('reactivate')}
+                  onScheduleDeletion={() => setConfirmAction('delete')}
+                />
+              ) : null}
+            </fieldset>
             {isDirty ? (
               <div className="settings-save-bar">
-                <div className="flex items-center justify-between gap-3">
-                  <p>{t('common.unsaved')}</p>
+                <p>{t('common.unsaved')}</p>
+                <div>
+                  <button type="button" onClick={cancelSettingsChanges} disabled={saving || loading} className="settings-cancel-button">
+                    {t('common.cancel')}
+                  </button>
                   <button type="button" onClick={saveSettings} disabled={saving || loading || !userId} className="usr-section-primary">
                     <Check className="h-4 w-4" />
                     {saving ? t('common.saving') : t('common.save')}
@@ -455,80 +622,14 @@ export default function UserSettingsPage() {
                 </div>
               </div>
             ) : null}
-          </div>
-        ) : (
-          <section className="settings-detail" aria-label={activeSetting ? t(activeSetting.titleKey) : t('settings.title')}>
-            <fieldset disabled={loading || saving} className="settings-panels min-w-0">
-              {activeTab === 'language' ? (
-                <LanguageSection settings={draft} t={t} onLanguageChange={(language) => applyDeviceSetting({ language })} />
-              ) : null}
-              {activeTab === 'notifications' ? (
-                <NotificationsSection settings={draft} t={t} userId={userId} onNotificationChange={handleNotificationChange} />
-              ) : null}
-              {activeTab === 'privacy' ? (
-                <PrivacySection settings={draft} t={t} onPrivacyChange={handlePrivacyChange} />
-              ) : null}
-              {activeTab === 'security' ? (
-                <SecuritySection
-                  t={t}
-                  email={email}
-                  resetStatus={resetStatus}
-                  signingOut={signOutPending}
-                  accountLifecycle={accountLifecycle}
-                  accountActionPending={accountActionPending}
-                  onResetPassword={handlePasswordReset}
-                  onDeactivate={() => setConfirmAction('deactivate')}
-                  onReactivate={() => handleAccountAction('reactivate')}
-                  onScheduleDeletion={() => setConfirmAction('delete')}
-                  onCancelDeletion={() => handleAccountAction('cancel_deletion')}
-                  onSignOutAll={() => {
-                    setSignOutPending(true)
-                    setConfirmAction('signout')
-                  }}
-                />
-              ) : null}
-              {activeTab === 'data' ? (
-                <DataStorageSection
-                  t={t}
-                  storageUsage={storageUsage}
-                  cacheCleared={cacheCleared}
-                  clearingCache={clearingCache}
-                  resetPending={resetPending}
-                  onClearCache={handleClearCache}
-                  onDownloadSettings={handleDownloadSettings}
-                  onResetSettings={() => {
-                    setResetPending(true)
-                    setConfirmAction('reset')
-                  }}
-                />
-              ) : null}
-              {activeTab === 'legal' ? <LegalSection t={t} /> : null}
-
-              <div className="settings-save-bar sticky bottom-0 z-20">
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="min-w-0 flex-1 text-xs font-semibold text-slate-500">
-                    {isDirty ? t('common.unsaved') : t('common.saved')}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={saveSettings}
-                    disabled={saving || loading || !userId}
-                    className="usr-section-primary"
-                  >
-                    <Check className="h-4 w-4" />
-                    {saving ? t('common.saving') : t('common.save')}
-                  </button>
-                </div>
-              </div>
-            </fieldset>
           </section>
-        )}
+        </div>
       </div>
 
       <ConfirmationModal
-        isOpen={confirmAction !== null}
         title={confirmTitle}
         message={confirmMessage}
+        isOpen={confirmAction !== null}
         confirmText={confirmAction === 'reset'
           ? t('common.reset')
           : confirmAction === 'deactivate'
@@ -538,13 +639,34 @@ export default function UserSettingsPage() {
               : t('settings.security.signOutAll')}
         cancelText={t('common.cancel')}
         isDangerous
+        confirmDisabled={accountActionPending || resetPending || signOutPending || (confirmAction === 'delete' && !deletionPassword.trim())}
         onConfirm={confirmHandler}
         onCancel={() => {
           setConfirmAction(null)
+          setDeletionPassword('')
           setResetPending(false)
           setSignOutPending(false)
         }}
-      />
+      >
+        {confirmAction === 'delete' ? (
+          <div className="space-y-3">
+            <p className="text-sm leading-6 text-amber-800">
+              Your account will be scheduled for permanent deletion 30 days after this request. You can restore it during that period.
+            </p>
+            <label htmlFor="delete-account-password" className="block text-sm font-semibold text-slate-700">Current password</label>
+            <input
+              id="delete-account-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              maxLength={128}
+              value={deletionPassword}
+              onChange={(event) => setDeletionPassword(event.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100"
+            />
+          </div>
+        ) : null}
+      </ConfirmationModal>
     </main>
   )
 }

@@ -13,7 +13,6 @@ import {
   ShieldCheck,
   Star,
   Trophy,
-  Users,
   Wand2,
 } from 'lucide-react'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
@@ -146,8 +145,6 @@ export default function UserProfilePage() {
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
   const [badges, setBadges] = useState([])
-  const [pointHistory, setPointHistory] = useState([])
-  const [activityLog, setActivityLog] = useState([])
   const [favoriteDestinations, setFavoriteDestinations] = useState([])
   const [eventsJoined, setEventsJoined] = useState(0)
   const [userPosts, setUserPosts] = useState([])
@@ -156,18 +153,12 @@ export default function UserProfilePage() {
   const [stats, setStats] = useState({
     followers: 0,
     following: 0,
+    friends: 0,
     posts: 0,
     points: 0,
   })
   const [saving, setSaving] = useState(false)
   const levelName = `Level ${profile.level || 1}`
-  const contributionStats = useMemo(() => [
-    { label: 'Posts', value: userPosts.filter((post) => post.type === 'Post' && !post.isRepost).length, icon: FileText },
-    { label: 'Blogs', value: userPosts.filter((post) => post.type === 'Blog' && !post.isRepost).length, icon: Briefcase },
-    { label: 'Forums', value: userPosts.filter((post) => post.type === 'Forum' && !post.isRepost).length, icon: MessageSquareText },
-    { label: 'Places shared', value: userPosts.filter((post) => post.type === 'Tourist Spot').length, icon: MapPin },
-    { label: 'Events joined', value: eventsJoined, icon: Star },
-  ], [eventsJoined, userPosts])
   const travelDestinations = useMemo(() => {
     const destinations = new Map()
     userPosts.filter((post) => post.type === 'Tourist Spot').forEach((post) => destinations.set(post.id, post))
@@ -239,7 +230,7 @@ export default function UserProfilePage() {
         }
         const savedSettings = settingsFromProfileRow(settingsResult.profile)
 
-        const [{ data: userData }, { data: profileData }, { data: badgeRows }, { data: pointRows }, { data: activityRows }, { data: favoriteRows, error: favoriteError }, { data: registrationRows, error: registrationError }, { data: blogsData }, { data: threadsData }, { data: eventsData }, profileResult] = await Promise.all([
+        const [{ data: userData }, { data: profileData }, { data: badgeRows }, { data: favoriteRows, error: favoriteError }, { data: registrationRows, error: registrationError }, { data: blogsData }, { data: threadsData }, { data: eventsData }, profileResult] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
@@ -255,18 +246,6 @@ export default function UserProfilePage() {
             .select('*')
             .eq('user_id', fallbackUserId)
             .order('earned_at', { ascending: false }),
-          supabase
-            .from('user_points')
-            .select('id, points, reason, source, created_at')
-            .eq('user_id', fallbackUserId)
-            .order('created_at', { ascending: false })
-            .limit(6),
-          supabase
-            .from('user_activity_log')
-            .select('*')
-            .eq('user_id', fallbackUserId)
-            .order('created_at', { ascending: false })
-            .limit(6),
           supabase
             .from('user_favorites')
             .select('item_id')
@@ -333,7 +312,7 @@ export default function UserProfilePage() {
         setEventsJoined((registrationRows || []).length)
         const mergedLocation = profileData?.location || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte'
         const nextProfile = {
-          full_name: profileData?.full_name || userData?.full_name || fallbackName,
+          full_name: userData?.full_name || profileData?.full_name || fallbackName,
           user_type: userData?.user_type || '',
           email: userData?.email || fallbackEmail,
           bio: profileData?.bio || userData?.bio || 'Tell the community what kind of experiences you love most.',
@@ -474,18 +453,6 @@ export default function UserProfilePage() {
         setFollowers(followSummary?.followers || [])
         setFollowing(followSummary?.following || [])
         setBadges((badgeRows || []).map((badge) => ({ ...badge, badge_name: badge.badge_name || badge.name || 'Badge' })))
-        setPointHistory((pointRows || []).map((entry) => ({
-          id: entry.id,
-          description: entry.reason || entry.source || 'Points activity',
-          points: Number(entry.points || 0),
-          created_at: entry.created_at,
-        })))
-        setActivityLog((activityRows || []).map((item) => ({
-          id: item.id,
-          type: item.activity_type || 'activity',
-          description: item.description || 'Updated profile activity',
-          created_at: item.created_at,
-        })))
         const completionFields = [
           { label: 'Profile photo', complete: Boolean(userData?.profile_image_url || profileData?.profile_image_url) },
           { label: 'Cover photo', complete: Boolean(profileData?.cover_photo_url) },
@@ -528,6 +495,7 @@ export default function UserProfilePage() {
         setStats({
           followers: followSummary?.followers_count ?? 0,
           following: followSummary?.following_count ?? 0,
+          friends: followSummary?.friends_count ?? followSummary?.friends?.length ?? 0,
           posts: enrichedPosts.length,
           points: userData?.points || nextProfile.points || 0,
         })
@@ -820,9 +788,10 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          <div className="profile-stat-strip grid grid-cols-3 border-b border-slate-200 text-center">
+          <div className="profile-stat-strip grid grid-cols-4 border-b border-slate-200 text-center">
             <div className="border-r border-slate-200 px-2 py-3"><p className="text-xl font-black text-slate-900">{stats.posts}</p><p className="usr-stat-label mt-0.5">Posts</p></div>
             <Link href="/info/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
+            <Link href="/info/user/profile/connections?tab=friends" className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.friends}</p><p className="usr-stat-label mt-0.5">Friends</p></Link>
             <Link href="/info/user/profile/connections?tab=following" className="px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.following}</p><p className="usr-stat-label mt-0.5">Following</p></Link>
           </div>
 
@@ -864,7 +833,7 @@ export default function UserProfilePage() {
                     <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
-                    <Link href="/info/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                    <Link href="/info/visitor/forum" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
@@ -922,52 +891,33 @@ export default function UserProfilePage() {
                         <p className="profile-overview-empty">No earned badges yet. Keep contributing to unlock achievements.</p>
                       )}
                       <div className="profile-overview-footer">
-                        {pointHistory.length > 0 && <span>Latest: {pointHistory[0].description} ({pointHistory[0].points > 0 ? '+' : ''}{pointHistory[0].points})</span>}
                         <Link href="/info/user/rewards">View rewards <span aria-hidden="true">→</span></Link>
                       </div>
                     </section>
 
-                    <section className="profile-overview-card">
-                      <div className="profile-overview-heading">
-                        <div>
-                          <p className="profile-overview-eyebrow">Your profile</p>
-                          <h3>Profile completion</h3>
-                        </div>
-                        <strong className="profile-completion-value">{profileCompletion.percent}%</strong>
-                      </div>
-                      <div className="profile-level-progress-track" role="progressbar" aria-label="Profile completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileCompletion.percent}>
-                        <span style={{ width: `${profileCompletion.percent}%` }} />
-                      </div>
-                      <ul className="profile-completion-list">
-                        {profileCompletion.items.map((item) => (
-                          <li key={item.label} data-complete={item.complete}>
-                            <span aria-hidden="true">{item.complete ? '✓' : '○'}</span>
-                            {item.label}
-                          </li>
-                        ))}
-                      </ul>
-                      <Link className="profile-overview-link" href="/info/user/profile/edit">Complete your profile <span aria-hidden="true">→</span></Link>
-                    </section>
-
-                    <section className="profile-overview-card profile-contribution-card">
-                      <div className="profile-overview-heading">
-                        <div>
-                          <p className="profile-overview-eyebrow">Community</p>
-                          <h3>Recent contributions</h3>
-                        </div>
-                        <Users aria-hidden="true" />
-                      </div>
-                      <div className="profile-contribution-grid">
-                        {contributionStats.map(({ label, value, icon: Icon }) => (
-                          <div key={label} className="profile-contribution-stat">
-                            <Icon aria-hidden="true" />
-                            <strong>{value}</strong>
-                            <span>{label}</span>
+                    {profileCompletion.items.length > 0 && !profileCompletion.items.every((item) => item.complete) && (
+                      <section className="profile-overview-card">
+                        <div className="profile-overview-heading">
+                          <div>
+                            <p className="profile-overview-eyebrow">Your profile</p>
+                            <h3>Profile completion</h3>
                           </div>
-                        ))}
-                      </div>
-                      <p className="profile-overview-caption">Counts reflect content currently available on this profile.</p>
-                    </section>
+                          <strong className="profile-completion-value">{profileCompletion.percent}%</strong>
+                        </div>
+                        <div className="profile-level-progress-track" role="progressbar" aria-label="Profile completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={profileCompletion.percent}>
+                          <span style={{ width: `${profileCompletion.percent}%` }} />
+                        </div>
+                        <ul className="profile-completion-list">
+                          {profileCompletion.items.map((item) => (
+                            <li key={item.label} data-complete={item.complete}>
+                              <span aria-hidden="true">{item.complete ? '✓' : '○'}</span>
+                              {item.label}
+                            </li>
+                          ))}
+                        </ul>
+                        <Link className="profile-overview-link" href="/info/user/profile/edit">Complete your profile <span aria-hidden="true">→</span></Link>
+                      </section>
+                    )}
 
                     {pinnedPosts.length > 0 && (
                       <section className="profile-overview-card">
@@ -1013,44 +963,6 @@ export default function UserProfilePage() {
                       <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab('Travel')}>Explore shared destinations <span aria-hidden="true">→</span></button>
                     </section>
 
-                    {pointHistory.length > 0 && (
-                      <section className="profile-overview-card">
-                        <div className="profile-overview-heading">
-                          <div>
-                            <p className="profile-overview-eyebrow">Points</p>
-                            <h3>Recent rewards history</h3>
-                          </div>
-                          <Briefcase aria-hidden="true" />
-                        </div>
-                        <ul className="profile-point-history">
-                          {pointHistory.slice(0, 4).map((entry) => (
-                            <li key={entry.id}>
-                              <span><strong>{entry.description}</strong><small>{formatDate(entry.created_at)}</small></span>
-                              <b data-positive={entry.points >= 0}>{entry.points > 0 ? '+' : ''}{entry.points}</b>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
-
-                    {activityLog.length > 0 && (
-                      <section className="profile-overview-card">
-                        <div className="profile-overview-heading">
-                          <div>
-                            <p className="profile-overview-eyebrow">Activity</p>
-                            <h3>Recent community activity</h3>
-                          </div>
-                          <MessageSquareText aria-hidden="true" />
-                        </div>
-                        <ul className="profile-point-history">
-                          {activityLog.slice(0, 4).map((item) => (
-                            <li key={item.id}>
-                              <span><strong>{item.description}</strong><small>{formatDate(item.created_at)}</small></span>
-                            </li>
-                          ))}
-                        </ul>
-                      </section>
-                    )}
                   </div>
                 )}
 

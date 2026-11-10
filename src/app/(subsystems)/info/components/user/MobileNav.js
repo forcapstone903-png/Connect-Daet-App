@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, Bookmark, Home, LogOut, Menu, MessageCircle, PlusCircle, Settings, UserRound, X } from 'lucide-react'
+import { Bell, Bookmark, Home, LogOut, Menu, MessageCircle, PlusCircle, Settings, Trophy, UserRound, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -45,6 +45,7 @@ const navItems = [
   { href: '/info/user/profile', labelKey: 'common.profile', icon: UserRound },
   { href: '/info/user/messaging', labelKey: 'common.messages', icon: MessageCircle },
   { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
+  { href: '/info/user/rewards', labelKey: 'common.rewards', icon: Trophy },
 ]
 
 export default function MobileNav({ mobileOnly = false }) {
@@ -58,8 +59,11 @@ export default function MobileNav({ mobileOnly = false }) {
   const [followingLoading, setFollowingLoading] = useState(false)
   const [followingError, setFollowingError] = useState(false)
   const [followingReloadToken, setFollowingReloadToken] = useState(0)
+  const visibleFollowingUsers = followingUsers.slice(0, 5)
+  const hasMoreFollowingUsers = followingUsers.length > visibleFollowingUsers.length
   const [userName, setUserName] = useState('')
   const [userAvatarUrl, setUserAvatarUrl] = useState('')
+  const [userPoints, setUserPoints] = useState(() => Number(getStoredSessionObject()?.points) || 0)
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
@@ -192,26 +196,36 @@ export default function MobileNav({ mobileOnly = false }) {
   }, [userName, userAvatarUrl])
 
   useEffect(() => {
+    if (!mobileDrawerOpen) return undefined
+
     const userId = readStoredUserId()
     if (!userId || !supabase) return undefined
 
     let active = true
     const loadProfile = async () => {
       try {
-        const { data } = await supabase.from('info_users').select('full_name, profile_image_url').eq('id', userId).maybeSingle()
+        const { data, error } = await supabase.from('info_users').select('full_name, profile_image_url, points').eq('id', userId).maybeSingle()
+        if (error) throw error
         if (!active) return
         if (data?.full_name?.trim()) setUserName(data.full_name.trim())
         if (data?.profile_image_url) setUserAvatarUrl(data.profile_image_url)
-      } catch {
-        // Keep session-derived identity when the profile lookup fails.
+        if (Number.isFinite(Number(data?.points))) setUserPoints(Number(data.points))
+      } catch (error) {
+        console.error('Unable to load navigation profile and rewards:', error)
       }
     }
 
     void loadProfile()
+    const updatePoints = (event) => {
+      const points = Number(event?.detail?.points)
+      if (Number.isFinite(points)) setUserPoints(points)
+    }
+    window.addEventListener('daet-user-points-updated', updatePoints)
     return () => {
       active = false
+      window.removeEventListener('daet-user-points-updated', updatePoints)
     }
-  }, [])
+  }, [mobileDrawerOpen])
 
   useEffect(() => {
     let active = true
@@ -355,6 +369,11 @@ export default function MobileNav({ mobileOnly = false }) {
                     {unreadMessages > 9 ? '9+' : unreadMessages}
                   </span>
                 )}
+                {labelKey === 'common.rewards' && (
+                  <span className="shrink-0 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${userPoints} points`}>
+                    {userPoints.toLocaleString()} pts
+                  </span>
+                )}
               </Link>
             )
           })}
@@ -403,8 +422,12 @@ export default function MobileNav({ mobileOnly = false }) {
           <button type="button" aria-label="Close navigation" onClick={() => setMobileDrawerOpen(false)} className="usr-navigation-drawer-backdrop absolute inset-0 h-full w-full bg-black/55" />
           <aside ref={mobileDrawerRef} aria-label="Primary navigation" className="usr-navigation-drawer absolute inset-y-0 left-0 flex w-[min(82vw,280px)] flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-2xl">
             <div className="usr-navigation-drawer-header flex min-h-16 items-center justify-between border-b border-white/10 px-4">
-              <Link href="/info/user/dashboard" onClick={() => setMobileDrawerOpen(false)} className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-lg font-black tracking-tight">Connect-Daet.ai</span>
+              <Link href="/info/user/dashboard" onClick={() => setMobileDrawerOpen(false)} className="-ml-1 flex min-w-0 items-center gap-2">
+                <img src="/logo.png" alt="" className="h-9 w-8 shrink-0 object-contain" />
+                <span className="min-w-0">
+                  <span className="block truncate text-base font-black tracking-tight">Connect-Daet.ai</span>
+                  <span className="mt-0.5 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
+                </span>
               </Link>
               <button type="button" onClick={() => setMobileDrawerOpen(false)} aria-label="Close navigation" className="usr-press ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white">
                 <X className="h-5 w-5" />
@@ -430,6 +453,11 @@ export default function MobileNav({ mobileOnly = false }) {
                         {unreadMessages > 9 ? '9+' : unreadMessages}
                       </span>
                     )}
+                    {labelKey === 'common.rewards' && (
+                      <span className="shrink-0 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${userPoints} points`}>
+                        {userPoints.toLocaleString()} pts
+                      </span>
+                    )}
                   </Link>
                 )
               })}
@@ -453,7 +481,7 @@ export default function MobileNav({ mobileOnly = false }) {
                 {!followingLoading && !followingError && followingUsers.length === 0 && (
                   <p className="px-3 py-2 text-sm text-slate-400">{t('navigation.following.empty')}</p>
                 )}
-                {!followingLoading && !followingError && followingUsers.map((person) => (
+                {!followingLoading && !followingError && visibleFollowingUsers.map((person) => (
                   <Link
                     key={person.id}
                     href={`/info/user/profile/${encodeURIComponent(person.id)}`}
@@ -468,6 +496,15 @@ export default function MobileNav({ mobileOnly = false }) {
                     <span className="truncate">{person.full_name || 'Community member'}</span>
                   </Link>
                 ))}
+                {!followingLoading && !followingError && hasMoreFollowingUsers && (
+                  <Link
+                    href="/info/user/profile/connections?tab=following"
+                    onClick={closeNavigationAfterSelection}
+                    className="usr-navigation-show-all mt-2 inline-flex w-full items-center justify-center rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 hover:text-white"
+                  >
+                    Show all
+                  </Link>
+                )}
               </section>
             </nav>
           </aside>

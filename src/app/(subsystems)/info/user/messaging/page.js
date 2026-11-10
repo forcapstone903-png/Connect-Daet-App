@@ -356,7 +356,7 @@ export default function UserMessagingPage() {
         onClick={openCompose}
         aria-label="Start a new conversation"
         title="Start a new conversation"
-        className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-[#147d75] text-white shadow-[0_8px_24px_rgba(20,125,117,0.3)] transition hover:bg-[#0f685f] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#147d75] lg:bottom-8 lg:right-8"
+        className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-blue-600 text-white shadow-[0_8px_24px_rgba(37,99,235,0.3)] transition hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 lg:bottom-8 lg:right-8"
       >
         <Plus className="h-6 w-6" />
       </button>

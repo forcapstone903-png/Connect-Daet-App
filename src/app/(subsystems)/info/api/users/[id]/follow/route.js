@@ -42,30 +42,31 @@ async function getFollowSummary(viewerId, targetUserId) {
 
   if (targetFollowingError) throw targetFollowingError
 
+  const [{ data: targetFollowingRows, error: targetFollowingRowsError }, { data: targetFollowerRows, error: targetFollowerRowsError }] = await Promise.all([
+    adminSupabase.from('user_follows').select('following_id').eq('follower_id', targetUserId),
+    adminSupabase.from('user_follows').select('follower_id').eq('following_id', targetUserId),
+  ])
+  if (targetFollowingRowsError) throw targetFollowingRowsError
+  if (targetFollowerRowsError) throw targetFollowerRowsError
+  const targetFollowerIds = new Set((targetFollowerRows || []).map((row) => row.follower_id))
+  const friendsCount = (targetFollowingRows || []).filter((row) => targetFollowerIds.has(row.following_id)).length
+
   return {
     is_following: true,
     is_followed_by: Boolean(reverseRow),
     is_mutual: Boolean(reverseRow),
     followers_count: targetFollowerCount || 0,
     following_count: targetFollowingCount || 0,
+    friends_count: friendsCount,
   }
 }
 
 async function notifyFollowEvent({ recipientId, actorId, actorName, message, link, type = 'follow' }) {
-  if (!adminSupabase || !recipientId || !actorId) return
+  if (!adminSupabase || !recipientId || !actorId) {
+    throw new Error('Follow notification service is not configured.')
+  }
 
-  const { data: existing } = await adminSupabase
-    .from('info_notifications')
-    .select('id')
-    .eq('user_id', recipientId)
-    .eq('message', message)
-    .eq('type', type)
-    .eq('link', link)
-    .limit(1)
-
-  if (existing && existing.length > 0) return
-
-  await adminSupabase.from('info_notifications').insert({
+  const { error } = await adminSupabase.from('info_notifications').insert({
     user_id: recipientId,
     title: message.includes('followed you back') ? 'Followed you back' : 'New follower',
     message,
@@ -76,6 +77,8 @@ async function notifyFollowEvent({ recipientId, actorId, actorName, message, lin
     link,
     actor_id: actorId,
   })
+
+  if (error) throw error
 }
 
 export async function POST(request, { params }) {
@@ -106,15 +109,16 @@ export async function POST(request, { params }) {
       .eq('following_id', viewerId)
       .maybeSingle()
 
-    const { error } = await adminSupabase
+    const { error: insertError } = await adminSupabase
       .from('user_follows')
       .insert({ follower_id: viewerId, following_id: targetUserId })
 
-    if (error && error.code !== '23505') {
-      console.error('Follow insert failed:', error)
-      return NextResponse.json({ success: false, message: error.message || 'Unable to follow this user.' }, { status: 500 })
+    if (insertError && insertError.code !== '23505') {
+      console.error('Follow insert failed:', insertError)
+      return NextResponse.json({ success: false, message: insertError.message || 'Unable to follow this user.' }, { status: 500 })
     }
 
+    const createdNewFollow = !insertError
     const { data: targetUser } = await adminSupabase
       .from('info_users')
       .select('id, full_name, user_type')
@@ -130,26 +134,21 @@ export async function POST(request, { params }) {
     const actorName = actor?.full_name || 'Someone'
     const actorProfileLink = `/info/user/profile/${viewerId}`
 
-    if (originalFollowRow?.id) {
-      if (!targetUser?.user_type || targetUser.user_type !== 'admin') {
+    if (createdNewFollow && (!targetUser?.user_type || targetUser.user_type !== 'admin')) {
+      try {
         await notifyFollowEvent({
           recipientId: targetUserId,
           actorId: viewerId,
           actorName,
-          message: `${actorName} followed you back.`,
+          message: originalFollowRow?.id
+            ? `${actorName} followed you back.`
+            : `${actorName} started following you.`,
           link: actorProfileLink,
           type: 'follow',
         })
+      } catch (notificationError) {
+        console.error('Follow notification insert failed:', notificationError)
       }
-    } else if (!targetUser?.user_type || targetUser.user_type !== 'admin') {
-      await notifyFollowEvent({
-        recipientId: targetUserId,
-        actorId: viewerId,
-        actorName,
-        message: `${actorName} started following you.`,
-        link: actorProfileLink,
-        type: 'follow',
-      })
     }
 
     return NextResponse.json({ success: true, ...(await getFollowSummary(viewerId, targetUserId)) })

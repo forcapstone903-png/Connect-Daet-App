@@ -5,11 +5,13 @@
 // src/app/globals.css remaps those surfaces when `html.dark` is active, so no
 // hand-written `dark:` variants are needed here.
 
+import { useRef, useState } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 
-export function SettingsCard({ icon: Icon, title, description, children, footer, headerAction }) {
+export function SettingsCard({ icon: Icon, title, description, children, footer, headerAction, className = '' }) {
   return (
-    <section className="usr-card usr-enter settings-card">
+    <section className={`usr-card usr-enter settings-card ${className}`}>
       {(title || description) && (
         <div className="settings-card-intro">
           {Icon ? (
@@ -45,9 +47,9 @@ export function ToggleRow({ id, label, hint, checked, onChange, disabled = false
         aria-label={label}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={`settings-toggle relative inline-flex h-8 w-[55px] shrink-0 items-center border transition disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'border-blue-600 bg-blue-600' : 'border-blue-600 bg-white'}`}
+        className="settings-toggle shrink-0 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className={`settings-toggle-knob inline-block h-6 w-6 transform transition ${checked ? 'translate-x-[25px]' : 'translate-x-0.5'}`} />
+        <span className="settings-toggle-knob" />
       </button>
     </div>
   )
@@ -86,20 +88,93 @@ export function ChoiceCards({ name, options, value, onChange, columns = 3 }) {
 }
 
 export function SelectField({ id, label, hint, value, onChange, options }) {
+  const [open, setOpen] = useState(false)
+  const triggerRef = useRef(null)
+  const selectedIndex = options.findIndex((option) => option.value === value)
+  const selectedOption = options[selectedIndex] || options[0]
+
+  const focusOption = (index) => {
+    const optionButtons = triggerRef.current?.parentElement?.querySelectorAll('[role="option"]')
+    if (!optionButtons?.length) return
+    const normalizedIndex = (index + optionButtons.length) % optionButtons.length
+    optionButtons[normalizedIndex]?.focus()
+  }
+
+  const handleKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      setOpen(false)
+      triggerRef.current?.focus()
+      event.preventDefault()
+      return
+    }
+
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      if (!open) {
+        setOpen(true)
+        window.requestAnimationFrame(() => focusOption(Math.max(0, selectedIndex)))
+      } else {
+        const optionButtons = [...(triggerRef.current?.parentElement?.querySelectorAll('[role="option"]') || [])]
+        const currentIndex = optionButtons.indexOf(document.activeElement)
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        focusOption(currentIndex < 0 ? Math.max(0, selectedIndex) : currentIndex + direction)
+      }
+      return
+    }
+
+    if ((event.key === 'Enter' || event.key === ' ') && !open) {
+      setOpen(true)
+      event.preventDefault()
+    }
+  }
+
   return (
-    <div className="settings-control-panel">
+    <div
+      className="settings-control-panel settings-dropdown-field"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+      onKeyDown={handleKeyDown}
+    >
       <label htmlFor={id} className="settings-control-label">{label}</label>
       {hint ? <p className="settings-control-hint">{hint}</p> : null}
-      <select
+      <button
+        ref={triggerRef}
         id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="settings-select mt-2 w-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-teal-600 focus:outline-none"
+        type="button"
+        className="settings-dropdown-trigger mt-2"
+        role="combobox"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={`${id}-options`}
+        aria-label={`${label}: ${selectedOption?.label || ''}`}
+        onClick={() => setOpen((current) => !current)}
       >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>{option.label}</option>
-        ))}
-      </select>
+        <span>{selectedOption?.label || ''}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <div id={`${id}-options`} className="settings-dropdown-menu" role="listbox" aria-label={label}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              tabIndex={option.value === value ? 0 : -1}
+              className="settings-dropdown-option"
+              onClick={() => {
+                onChange(option.value)
+                setOpen(false)
+                triggerRef.current?.focus()
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === value ? <Check className="settings-dropdown-check h-4 w-4" aria-hidden="true" /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   )
 }

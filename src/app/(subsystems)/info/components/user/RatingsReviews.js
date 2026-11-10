@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Pencil, Star, ThumbsUp, Trash2 } from 'lucide-react'
+import { Heart, Pencil, ThumbsUp, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCacheKey, invalidateCache } from '@/lib/cache'
 import { decodeReviewText, encodeReviewText } from '@/lib/reviewText'
@@ -24,7 +24,7 @@ function StarRating({ value, onChange, readOnly = false, compact = false }) {
     <div
       className="flex items-center gap-0.5"
       role={readOnly ? 'img' : 'group'}
-      aria-label={readOnly ? `${value} out of 5 stars` : 'Rate this place'}
+      aria-label={readOnly ? `${value} out of 5 hearts` : 'Rate this place'}
     >
       {[1, 2, 3, 4, 5].map((star) => (
         <button
@@ -32,14 +32,14 @@ function StarRating({ value, onChange, readOnly = false, compact = false }) {
           type="button"
           disabled={readOnly}
           onClick={() => onChange(star)}
-          aria-label={`${star} star${star === 1 ? '' : 's'}`}
+          aria-label={`${star} heart${star === 1 ? '' : 's'}`}
           aria-pressed={!readOnly && value === star}
           className={`flex items-center justify-center transition ${
             readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
           } ${compact ? 'h-5 w-5' : 'h-9 w-9'}`}
         >
-          <Star className={`${compact ? 'h-4 w-4' : 'h-6 w-6'} ${
-            star <= value ? 'fill-amber-400 text-amber-400' : 'text-slate-300'
+          <Heart className={`${compact ? 'h-4 w-4' : 'h-6 w-6'} ${
+            star <= value ? 'fill-rose-500 text-rose-500' : 'text-slate-300'
           }`} />
         </button>
       ))}
@@ -370,10 +370,10 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
             {distribution.map(({ stars, count }) => (
               <div key={stars} className="grid grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center gap-2 text-xs">
                 <span className="flex items-center gap-0.5 text-slate-600">
-                  {stars}<Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                  {stars}<Heart className="h-3 w-3 fill-rose-500 text-rose-500" />
                 </span>
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${(count / totalCount) * 100}%` }} />
+                  <div className="h-full rounded-full bg-rose-500" style={{ width: `${(count / totalCount) * 100}%` }} />
                 </div>
                 <span className="text-right text-slate-500">{count}</span>
               </div>
@@ -402,7 +402,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
 
           <div className="mb-2 flex items-center gap-2">
             <StarRating value={userRating} onChange={setUserRating} />
-            <span className="text-xs text-slate-500">{userRating ? `${userRating} / 5` : 'Select stars'}</span>
+            <span className="text-xs text-slate-500">{userRating ? `${userRating} / 5` : 'Select hearts'}</span>
           </div>
 
           <label className="mb-2 block text-xs font-medium text-slate-600">

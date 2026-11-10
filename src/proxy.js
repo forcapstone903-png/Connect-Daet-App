@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import publicRoutes from './lib/publicRoutes'
-import { getServerSession } from './lib/serverAuth'
+import { clearSecureSessionCookie, getServerSession } from './lib/serverAuth'
 
 // Routes that already-authenticated users should never sit on. Sitting on these
 // was the source of the flicker/glitch: pages like /visitor pushed an authed
@@ -14,6 +14,7 @@ const AUTHD_ONLY_EXIT = new Set([
   '/info/register',
   '/info/forgot-password',
   '/info/reset-password',
+  '/info/account-recovery',
 ])
 
 const LEGACY_INFO_ROUTE_PREFIXES = [
@@ -49,12 +50,63 @@ const MAINTENANCE_EXEMPT_PATHS = new Set([
   '/info/confirm',
   '/info/callback',
   '/info/api/login',
+  '/info/account-recovery',
+  '/info/api/account/recovery',
+  '/info/api/cron/account-deletions',
   '/info/api/logout',
   '/info/api/forgot-password',
   '/info/api/reset-password',
   '/info/api/resend-verification',
   '/info/api/auth/confirm-email',
 ])
+
+const AUTH_INDEPENDENT_API_PATHS = new Set([
+  '/info/api/login',
+  '/info/api/register',
+  '/info/api/forgot-password',
+  '/info/api/reset-password',
+  '/info/api/account/recovery',
+  '/info/api/resend-verification',
+  '/info/api/auth/confirm-email',
+])
+
+async function isSessionVersionCurrent(session) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  const expectedVersion = Number(session.session_version || 0)
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) return false
+
+  try {
+    const url = new URL('/rest/v1/user_session_versions', supabaseUrl)
+    url.searchParams.set('select', 'version')
+    url.searchParams.set('user_id', `eq.${session.user_id}`)
+    const response = await fetch(url, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.status === 404 && expectedVersion === 0) return true
+    if (!response.ok) {
+      console.error('Session version lookup failed with HTTP status:', response.status)
+      return response.status >= 500 || response.status === 429 ? null : false
+    }
+
+    const rows = await response.json()
+    if (!Array.isArray(rows)) return null
+    const activeVersion = Number(rows[0]?.version || 0)
+    if (!Number.isSafeInteger(activeVersion) || activeVersion < 0) return null
+    return activeVersion === expectedVersion
+  } catch (error) {
+    console.error('Session version lookup failed:', error)
+    return null
+  }
+}
 
 async function getMaintenanceSettings() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
@@ -141,12 +193,87 @@ export async function proxy(request) {
   // The client-facing `daet_auth_session` cookie is treated as display-only
   // state and is never trusted for access control, since it can be forged.
   const serverSession = getServerSession(request)
-  const loggedIn = Boolean(serverSession && serverSession.user_id)
+  let loggedIn = Boolean(serverSession && serverSession.user_id)
+  const isStaticOrAsset = pathname.startsWith('/_next') || pathname.includes('.')
+
+  const sessionVersionCurrent = loggedIn && !isStaticOrAsset
+    ? await isSessionVersionCurrent(serverSession)
+    : true
+
+  if (sessionVersionCurrent === null) {
+    const isApiRoute = pathname === '/info/api' || pathname.startsWith('/info/api/')
+    if (isApiRoute) {
+      return NextResponse.json(
+        { success: false, message: 'Authentication status is temporarily unavailable. Please try again.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      )
+    }
+
+    const retryPath = `${request.nextUrl.pathname}${request.nextUrl.search}`.replace(/[&<>"']/g, (character) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    })[character])
+    return new NextResponse(
+      `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Connection temporarily unavailable</title>
+  </head>
+  <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#f8fafc;color:#172033;font-family:Arial,sans-serif">
+    <main style="width:min(100% - 32px,420px);box-sizing:border-box;padding:28px;border:1px solid #e2e8f0;border-radius:20px;background:#fff;box-shadow:0 12px 32px #0f172a12">
+      <h1 style="margin:0;font-size:20px">We couldn’t verify your session</h1>
+      <p style="margin:12px 0 20px;color:#64748b;font-size:14px;line-height:1.6">Your sign-in has not been cleared. Please try again when the connection is restored.</p>
+      <a href="${retryPath}" style="display:inline-flex;align-items:center;min-height:42px;padding:0 18px;border-radius:12px;background:#2563eb;color:#fff;font-size:14px;font-weight:700;text-decoration:none">Try again</a>
+    </main>
+  </body>
+</html>`,
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Type': 'text/html; charset=utf-8',
+        },
+      }
+    )
+  }
+
+  if (loggedIn && !isStaticOrAsset && !sessionVersionCurrent) {
+    loggedIn = false
+    const isApiRoute = pathname === '/info/api' || pathname.startsWith('/info/api/')
+    let response
+
+    if (isApiRoute && !AUTH_INDEPENDENT_API_PATHS.has(normalizedPathname)) {
+      response = NextResponse.json(
+        { success: false, message: 'Your session has expired. Please sign in again.' },
+        { status: 401, headers: { 'Cache-Control': 'no-store' } }
+      )
+    } else if (isApiRoute) {
+      response = NextResponse.next()
+    } else if (
+      publicRoutes.isPublicPathname(pathname)
+      || AUTHD_ONLY_EXIT.has(normalizedPathname)
+      || isStaticOrAsset
+    ) {
+      response = NextResponse.next()
+    } else {
+      const loginUrl = new URL(deletionPending ? '/info/account-recovery' : '/info/login', request.url)
+      if (!deletionPending) loginUrl.searchParams.set('message', 'Your session has expired. Please sign in again.')
+      response = NextResponse.redirect(loginUrl)
+    }
+
+    clearSecureSessionCookie(response)
+    return response
+  }
+
   const role = String(serverSession?.role || '').trim().toLowerCase()
   const isAdmin = loggedIn && (role === 'admin' || role === 'administrator')
   const isAdminRoute = pathname === '/info/admin' || pathname.startsWith('/info/admin/')
 
-  const isStaticOrAsset = pathname.startsWith('/_next') || pathname.includes('.')
   if (!isAdmin && !isAdminRoute && !isStaticOrAsset && !MAINTENANCE_EXEMPT_PATHS.has(normalizedPathname)) {
     const maintenance = await getMaintenanceSettings()
     if (maintenance?.enabled) {

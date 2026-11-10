@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Loader, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
+import { isImageAttachment, parsePostContent } from '@/lib/postContent'
 
 export default function UserPostDetailPage() {
   const [post, setPost] = useState(null)
@@ -58,6 +59,8 @@ export default function UserPostDetailPage() {
     </main>
   )
 
+  const postContent = parsePostContent(post.content)
+
   return (
     <main className="tourism-shell usr-section-page usr-detail min-h-screen px-3 py-6 text-slate-900 sm:px-5">
       <div className="usr-section-container mx-auto max-w-6xl pb-8 pt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
@@ -73,7 +76,30 @@ export default function UserPostDetailPage() {
             <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Community post</span>
           </div>
           <h1 className="mt-5 text-2xl font-black text-slate-900 sm:text-3xl">{post.title}</h1>
-          <p className="usr-reading-body mt-5 whitespace-pre-wrap text-slate-700">{post.content}</p>
+          {postContent.text && <p className="usr-reading-body mt-5 whitespace-pre-wrap break-words text-slate-700">{postContent.text}</p>}
+          {postContent.attachments.length > 0 && (
+            <section className="mt-5" aria-label="Post attachments">
+              <h2 className="mb-3 text-sm font-bold text-slate-800">
+                Attachments ({postContent.attachments.length})
+              </h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {postContent.attachments.map((url, index) => (
+                  <a
+                    key={`${url}-${index}`}
+                    href={url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                    aria-label={`Open attachment ${index + 1}`}
+                  >
+                    {isImageAttachment(url)
+                      ? <img src={url} alt={`Attachment ${index + 1}`} loading="lazy" className="aspect-square w-full object-cover" />
+                      : <span className="flex aspect-square items-center justify-center p-3 text-center text-xs font-semibold text-blue-700">Open attachment {index + 1}</span>}
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </article>
       <aside className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">

@@ -213,7 +213,7 @@ export default function EditBlogPage() {
           </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Link href="/info/user/drafts" className="usr-section-secondary">Your drafts</Link>
-            <Link href="/info/user/blogs" className="usr-section-primary">Community stories</Link>
+            <Link href="/info/user/dashboard" className="usr-section-primary">Community stories</Link>
           </div>
         </div>
       </main>

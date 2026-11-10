@@ -1089,7 +1089,7 @@ export default function BlogDetailPage() {
           <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
           <p className="mt-1 text-xs text-slate-500">This story may have been unpublished, archived, or removed by its author.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Link href="/info/user/blogs" className="usr-section-primary">Back to stories</Link>
+            <Link href="/info/user/dashboard" className="usr-section-primary">Back to feed</Link>
           </div>
         </div>
       </main>

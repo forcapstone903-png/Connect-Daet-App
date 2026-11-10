@@ -604,7 +604,7 @@ export default function CreateBlogPage() {
 
       if (result.warning) window.alert(result.warning)
       setSuccess(true)
-      const destinations = { forum: '/info/user/forums', feedback: '/info/user/feedback' }
+      const destinations = { forum: '/info/visitor/forum', feedback: '/info/user/feedback' }
       window.setTimeout(() => router.push(destinations[shareType] || '/info/user/dashboard'), 1200)
     } catch (error) {
       const errorMessage = normalizeErrorMessage(error)

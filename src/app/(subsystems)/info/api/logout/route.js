@@ -1,12 +1,24 @@
 import { NextResponse } from 'next/server'
-import { clearAuthCookie } from '@/lib/authCookies'
-import { clearSecureSessionCookie } from '@/lib/serverAuth'
+import { clearSecureSessionCookie, getServerSession } from '@/lib/serverAuth'
+import { createSessionAdminClient, revokeUserSessions } from '@/lib/sessionVersions'
 
 export async function POST(request) {
+  const session = getServerSession(request)
+  let sessionsRevoked = false
+
+  if (session?.user_id) {
+    try {
+      await revokeUserSessions(createSessionAdminClient(), session.user_id)
+      sessionsRevoked = true
+    } catch (error) {
+      console.error('Logout session revocation failed:', { code: error.code || null })
+    }
+  }
+
   try {
     // Clear the auth cookie on the client side by setting Set-Cookie header
     const response = NextResponse.json(
-      { success: true, message: 'Logged out successfully' },
+      { success: true, sessionsRevoked, message: 'Logged out successfully' },
       { status: 200 }
     )
 

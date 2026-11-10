@@ -1,3 +1,5 @@
+import LegalBackButton from '../_components/LegalBackButton'
+
 const clauses = [
   {
     heading: 'Scope and eligibility',
@@ -38,6 +40,7 @@ export default function TermsAndConditionsPage() {
     <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-800 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-3xl">
         <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <LegalBackButton />
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-700">Legal</p>
           <h1 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">Terms and Conditions</h1>
           <p className="mt-4 text-sm leading-6 text-slate-600">

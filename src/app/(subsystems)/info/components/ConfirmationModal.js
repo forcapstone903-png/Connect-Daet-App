@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 
-export default function ConfirmationModal({ isOpen, title, message, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel', isDangerous = false }) {
+export default function ConfirmationModal({ isOpen, title, message, children, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel', isDangerous = false, confirmDisabled = false }) {
   const cancelRef = useRef(null)
   const confirmRef = useRef(null)
   const modalRef = useRef(null)
@@ -74,6 +74,7 @@ export default function ConfirmationModal({ isOpen, title, message, onConfirm, o
         {/* Body */}
         <div className="px-6 py-4">
           <p id="confirmation-modal-message" className="text-sm text-slate-600">{message}</p>
+          {children ? <div className="mt-4">{children}</div> : null}
         </div>
 
         {/* Footer */}
@@ -91,7 +92,8 @@ export default function ConfirmationModal({ isOpen, title, message, onConfirm, o
             type="button"
             onClick={onConfirm}
             autoFocus
-            className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 ${
+            disabled={confirmDisabled}
+            className={`flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
               isDangerous
                 ? 'bg-red-600 hover:bg-red-700 shadow-lg shadow-red-500/20 focus:ring-red-500'
                 : 'bg-sky-600 hover:bg-sky-700 shadow-lg shadow-sky-500/20 focus:ring-sky-500'

@@ -224,7 +224,7 @@ Supabase is the system's managed data service. The app uses tourism and communit
 - Protected route handling is centralized in `src/proxy.js`.
 - The server session is an HMAC-signed cookie with an expiration; cookie options include `HttpOnly`, `SameSite=Lax`, and `Secure` in production.
 - The proxy checks the server-session role for administrator routes. Client-side session state is for UI and must not be trusted as an authorization control.
-- Password helper functions use bcrypt hashing with work factor 12.
+- Supabase Auth is the source of truth for account credentials. Passwords are never returned by the password APIs; the optional legacy profile hash is not used to authenticate accounts.
 - Supabase RLS is present in migration history and should enforce row-level visibility and ownership.
 - Push subscription registration requires a server session and validates the subscription fields before storing it.
 - Logs include utilities to mask email and sanitize selected profile/registration fields.
@@ -233,15 +233,15 @@ Supabase is the system's managed data service. The app uses tourism and communit
 
 The following items must be addressed or formally accepted before production. They are called out so the project is not mistakenly described as security-certified:
 
-1. **Dedicated session-signing secret:** `src/lib/serverAuth.js` currently falls back from `SUPABASE_SERVICE_ROLE_KEY` to `NEXT_PUBLIC_SUPABASE_ANON_KEY` as the HMAC signing secret. The anon key is public by design. Replace this fallback with a strong, dedicated server-only session secret, require it in production, and rotate/invalidate sessions when changing the key.
-2. **Password policy:** Registration currently accepts passwords as short as six characters. Set a stronger policy aligned with current institutional requirements and test reset/change paths consistently.
-3. **Rate limiting and abuse prevention:** Verify and implement appropriate rate limits or equivalent controls for login, registration, password reset/resend, search, feedback, uploads, forum replies, and messaging. No comprehensive application-wide rate limiter was verified in this review.
+1. **Session-signing secret:** Configure a strong, dedicated server-only `SESSION_SECRET`. The application falls back to `SUPABASE_SERVICE_ROLE_KEY` for compatibility, never to the public anon key. Rotating the signing secret invalidates existing server-session cookies; users will need to sign in again.
+2. **Password policy:** Registration, password change, and recovery now enforce at least eight characters with lowercase, uppercase, numeric, and special characters. The local Supabase config enforces the same policy; set the equivalent policy in the hosted Supabase Auth settings.
+3. **Rate limiting and abuse prevention:** Password reset requests now have a persistent five-per-IP-per-15-minute limit. Verify and implement appropriate rate limits for login, registration, verification resend, search, feedback, uploads, forum replies, and messaging; there is no comprehensive application-wide rate limiter.
 4. **MFA:** `/info/admin/account/2fa` currently redirects to an account settings tab; it is not evidence that multi-factor authentication is implemented or enforced.
 5. **Moderator authorization:** Confirm whether moderator is a separate role. If so, enforce its limited permissions in server handlers and RLS; current admin route gating requires `admin`.
 6. **Database policy review:** Review every deployed table, view, function, storage bucket, and migration for RLS, least privilege, ownership checks, safe `SECURITY DEFINER` settings, and service-role use. Migration files in a repository do not prove that the production database has applied them.
 7. **Transport and browser protections:** Enforce HTTPS, review security headers (including CSP, frame protection, MIME sniffing protection, and referrer policy), cookie behavior, origin/CSRF expectations, and upload content/size validation.
 8. **Sensitive-data handling:** Keep service-role and VAPID private keys in trusted server/Edge Function secret stores. Never commit `.env.local`, secret values, session keys, or webhook credentials. Anything named `NEXT_PUBLIC_*` is bundled for browser access and must not be secret.
-9. **Email and identity lifecycle:** Verify email confirmation, duplicate-account behavior, password reset token expiry/one-time use, account suspension, deletion, session revocation, and recovery procedures against the production Supabase configuration.
+9. **Email and identity lifecycle:** Password recovery uses Supabase Auth's expiring, single-use link/session and a database-enforced one-use fingerprint. Verify recovery delivery, link expiry, notifications, session revocation, email confirmation, suspension, deletion, and recovery procedures against the production Supabase configuration.
 10. **Audit and incident response:** Define auditable administrator actions, log retention, access review, backup/restore drills, breach response, and ownership of moderation escalations.
 
 ### Community moderation rules to define
@@ -323,14 +323,23 @@ Create `.env.local` at the repository root. Example names (use credentials belon
 NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-private-service-role-key
+SESSION_SECRET=your-strong-random-server-only-session-secret
+NEXT_PUBLIC_APP_URL=https://your-daet-connect-domain.example
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=your-vapid-public-key
 SENDGRID_API_KEY=your-private-sendgrid-api-key
 SENDGRID_FROM_EMAIL=verified-sender@example.com
+CRON_SECRET=your-32-byte-or-longer-random-server-only-secret
 ```
 
-The application currently derives its server session signing secret from the service-role key and falls back to the public anon key. The dedicated secret described in [Required security work](#required-security-work--verification) is a production-hardening requirement and is not represented as an existing environment variable in this example.
+`SESSION_SECRET` should be generated as a strong random server-only value and must never use a `NEXT_PUBLIC_*` name. If omitted, the application uses `SUPABASE_SERVICE_ROLE_KEY` as its signing secret for backward compatibility.
 
-`SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` are server-only deployment variables used by the administrator email-delivery test. Never add either value to a `NEXT_PUBLIC_*` variable or browser storage. The maintenance-mode feature requires applying `supabase/migrations/065_site_maintenance_settings.sql` to the target database. Maintenance status is read uncached on each applicable request for immediate enforcement; if its database lookup fails, the proxy logs the error and allows the request through.
+`NEXT_PUBLIC_APP_URL` must be the canonical site origin and must be allowed in Supabase Auth's redirect URL list. Apply `supabase/migrations/071_password_reset_rate_limit.sql` to enable password-reset throttling, single-use reset-session fingerprints, and app-session revocation. Until applied, login can establish a secure version-0 cookie, but password recovery and revoking other app sessions are unavailable; apply the migration promptly. Set hosted Supabase Auth's minimum password length to 8, require lowercase/uppercase/digits/symbols, and set the recovery email OTP expiry (local config is one hour). Configure the branded recovery template from `supabase/templates/password-recovery.html` in hosted Supabase Auth.
+
+Apply `supabase/migrations/072_secure_account_deletion_grace_period.sql` after migration 071. It adds the `pending_deletion` state, atomic lifecycle functions, session-version revocation, restrictive active-account RLS checks, and an upload ownership manifest. Deploy the application only after both migrations are applied: the upload API requires the manifest table. The user must verify their current password to request deletion. The request invalidates application and Supabase Auth sessions; the public `/info/account-recovery` page allows a user to verify their email/password and cancel before the deadline. Account lifecycle emails use `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL`; if these are unavailable, the request still succeeds but the UI reports that its confirmation email was not sent. Reminder delivery is retried by later cron runs.
+
+The hourly Vercel Cron in `vercel.json` calls `/info/api/cron/account-deletions`. Set `CRON_SECRET` in Vercel to a cryptographically random server-only secret of at least 32 bytes; Vercel sends it as a bearer token. The job deletes only after the database deadline has passed, so deletion occurs on the first successful scheduled run after the 30-day deadline (up to approximately one hour later), not before it. Ensure the deployment plan supports hourly cron schedules, or configure an equivalent trusted scheduler. The job cleans manifest-tracked uploaded files, deletes the Supabase Auth user and profile (allowing schema cascades/author anonymization), and sends 7-day/1-day reminders. Files uploaded before the manifest was deployed may be in generic shared folders and cannot all be safely attributed automatically; review/backfill those files separately before promising their deletion.
+
+`SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` are server-only deployment variables used for password security notifications and the administrator email-delivery test. Configure Supabase Auth SMTP with the verified SendGrid sender (host `smtp.sendgrid.net`, port `587`, username `apikey`, and the API key as password) for recovery email delivery. Never add the API key to a `NEXT_PUBLIC_*` variable or browser storage. If notification delivery is not configured, password updates still complete and the interface reports the delivery issue. The maintenance-mode feature requires applying `supabase/migrations/065_site_maintenance_settings.sql` to the target database. Maintenance status is read uncached on each applicable request for immediate enforcement; if its database lookup fails, the proxy logs the error and allows the request through.
 
 Configure VAPID private key, push subject, and webhook credentials as Supabase Edge Function secrets, not in this file or in browser-exposed environment variables. Do not copy real secrets into issue reports or documentation.
 

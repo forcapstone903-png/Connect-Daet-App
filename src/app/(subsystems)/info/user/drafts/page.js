@@ -45,7 +45,7 @@ export default function UserDraftsPage() {
           title="Drafts"
           description="Unfinished stories are saved here. Pick one up whenever inspiration strikes."
           emoji="✒️"
-          backHref="/info/user/blogs"
+          backHref="/info/user/dashboard"
           backLabel="Community stories"
         >
           <span className="usr-section-counter">{drafts.length} draft{drafts.length === 1 ? '' : 's'}</span>

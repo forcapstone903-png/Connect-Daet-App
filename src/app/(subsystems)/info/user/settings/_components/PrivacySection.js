@@ -1,8 +1,7 @@
 'use client'
 
-import Link from 'next/link'
-import { Lock, ShieldCheck } from 'lucide-react'
-import { ActionRow, ChoiceCards, SelectField, SettingsCard, ToggleRow } from './SettingsControls'
+import { Lock } from 'lucide-react'
+import { ChoiceCards, SelectField, SettingsCard, StatusBanner, ToggleRow } from './SettingsControls'
 import { MESSAGE_PRIVACY_LEVELS, PRIVACY_LEVEL_OPTIONS } from '@/lib/userSettings'
 
 export default function PrivacySection({ settings, t, onPrivacyChange }) {
@@ -43,30 +42,6 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
       />
 
       <ToggleRow
-        id="settings-privacy-online"
-        label={t('settings.privacy.showOnlineStatus')}
-        hint={t('settings.privacy.showOnlineStatusHint')}
-        checked={settings.privacy.showOnlineStatus}
-        onChange={(next) => onPrivacyChange('showOnlineStatus', next)}
-      />
-
-      <ToggleRow
-        id="settings-privacy-activity"
-        label={t('settings.privacy.showActivity')}
-        hint={t('settings.privacy.showActivityHint')}
-        checked={settings.privacy.showActivity}
-        onChange={(next) => onPrivacyChange('showActivity', next)}
-      />
-
-      <ToggleRow
-        id="settings-privacy-mentions"
-        label={t('settings.privacy.allowMentions')}
-        hint={t('settings.privacy.allowMentionsHint')}
-        checked={settings.privacy.allowMentions}
-        onChange={(next) => onPrivacyChange('allowMentions', next)}
-      />
-
-      <ToggleRow
         id="settings-privacy-searchable"
         label={t('settings.privacy.searchable')}
         hint={t('settings.privacy.searchableHint')}
@@ -74,13 +49,7 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
         onChange={(next) => onPrivacyChange('searchable', next)}
       />
 
-      <ActionRow
-        icon={ShieldCheck}
-        label={t('settings.legal.privacy')}
-        hint={t('settings.legal.description')}
-      >
-        <Link href="/info/legal/privacy-policy" className="text-xs font-bold text-sky-700">{t('settings.legal.privacy')}</Link>
-      </ActionRow>
+      <StatusBanner tone="info">{t('settings.privacy.unavailable')}</StatusBanner>
     </SettingsCard>
   )
 }

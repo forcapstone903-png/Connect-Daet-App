@@ -184,14 +184,43 @@ export async function subscribeUserToPush({ userId } = {}) {
   }
   if (timeout) window.clearTimeout(timeout)
 
-  const result = await response.json().catch(() => ({}))
+  const contentType = response.headers.get('content-type') || ''
+  const responseBody = await response.text()
+  let result = {}
+  if (responseBody) {
+    try {
+      result = JSON.parse(responseBody)
+    } catch {
+      result = {}
+    }
+  }
 
   if (!response.ok || !result.success) {
-    console.error('Push subscription database save failed:', result)
+    const isAuthenticationError = response.status === 401 || response.status === 403
+    const message = typeof result.message === 'string'
+      ? result.message
+      : isAuthenticationError
+        ? 'Your sign-in session has expired. Sign in again before enabling notifications.'
+        : response.status === 503
+          ? 'The notification service is temporarily unavailable. Please try again later.'
+          : `The notification service returned an unexpected response (HTTP ${response.status}).`
+
+    if (isAuthenticationError) {
+      console.info('[push] Subscription was not saved because the session is no longer valid.')
+    } else {
+      console.error('Push subscription save failed:', {
+        status: response.status,
+        statusText: response.statusText,
+        contentType,
+        message: typeof result.message === 'string' ? result.message : null,
+        responseBodyPresent: Boolean(responseBody),
+      })
+    }
+
     return {
       success: false,
-      reason: 'server-error',
-      message: result.message || 'The push subscription could not be saved.',
+      reason: isAuthenticationError ? 'not-authenticated' : 'server-error',
+      message,
       subscription: subscriptionJson,
       registration,
       ...availability,
@@ -209,3 +238,54 @@ export async function subscribeUserToPush({ userId } = {}) {
 }
 
 export const subscribeToPushNotifications = subscribeUserToPush
+
+export async function unsubscribeFromPushNotifications() {
+  const registration = await navigator.serviceWorker.getRegistration()
+  const subscription = await registration?.pushManager.getSubscription()
+  if (!subscription) {
+    return { success: false, reason: 'no-subscription', message: 'This browser does not have an active push subscription.' }
+  }
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 10000)
+  let response
+  try {
+    response = await fetch('/info/api/push-subscriptions', {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint: subscription.endpoint }),
+    })
+  } catch (error) {
+    const isAbortError = error?.name === 'AbortError'
+    return {
+      success: false,
+      reason: isAbortError ? 'request-aborted' : 'network-error',
+      message: isAbortError
+        ? 'The notification request timed out. Please try again.'
+        : 'The notification service is temporarily unavailable. Please try again when you are online.',
+    }
+  } finally {
+    window.clearTimeout(timeout)
+  }
+
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok || !result.success) {
+    return {
+      success: false,
+      reason: response.status === 401 || response.status === 403 ? 'not-authenticated' : 'server-error',
+      message: typeof result.message === 'string'
+        ? result.message
+        : `The notification service returned an unexpected response (HTTP ${response.status}).`,
+    }
+  }
+
+  const unsubscribed = await subscription.unsubscribe()
+  if (!unsubscribed) {
+    console.warn('Push subscription was removed from the account but remains registered in this browser.')
+  }
+
+  return { success: true, browserUnsubscribed: unsubscribed }
+}

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Award,
+  Briefcase,
   Crown,
   Gift,
   Medal,
@@ -164,6 +165,7 @@ export default function UserRewardsPage() {
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to redeem this reward.')
       setProfile((current) => ({ ...current, points: result.points }))
+      window.dispatchEvent(new CustomEvent('daet-user-points-updated', { detail: { points: result.points } }))
       setRedeemedRewards((current) => [...current, reward.title])
       setRedemptionNotice(result.message)
     } catch (error) {
@@ -289,29 +291,26 @@ export default function UserRewardsPage() {
             </div>
 
             <div className="usr-card usr-enter p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between gap-2">
+              <div className="profile-overview-heading">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Activity</p>
-                  <h3 className="mt-1 text-lg font-bold text-slate-900">Points history</h3>
+                  <p className="profile-overview-eyebrow">Points</p>
+                  <h3>Recent rewards history</h3>
                 </div>
-                <Gift className="h-4 w-4 text-emerald-500" />
+                <Briefcase aria-hidden="true" />
               </div>
 
-              <div className="space-y-3">
+              <ul className="profile-point-history">
                 {pointsHistory.length ? pointsHistory.map((entry) => (
-                  <div key={entry.id} className="flex items-center justify-between border border-slate-200 bg-slate-50 p-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{entry.reason}</p>
-                      <p className="text-xs text-slate-500">{formatDate(entry.created_at)}</p>
-                    </div>
-                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-bold text-emerald-700">+{entry.points}</span>
-                  </div>
+                  <li key={entry.id}>
+                    <span><strong>{entry.reason}</strong><small>{formatDate(entry.created_at)}</small></span>
+                    <b data-positive={entry.points >= 0}>{entry.points > 0 ? '+' : ''}{entry.points}</b>
+                  </li>
                 )) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                  <li className="text-sm text-slate-500">
                     Your recent earning history will appear here.
-                  </div>
+                  </li>
                 )}
-              </div>
+              </ul>
             </div>
           </section>
 

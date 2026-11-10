@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 import { buildInfoUserRecord } from '@/lib/infoUserData'
 import { isDuplicateEmailError } from '@/lib/authFlow'
+import { isPasswordValid } from '@/lib/passwordPolicy'
 import { maskEmail, sanitizeRegistrationBodyForLog } from '@/lib/safeLogging'
 
 export const dynamic = 'force-dynamic'
@@ -54,16 +55,16 @@ export async function POST(request) {
     console.log('📝 Parsed body:', sanitizeRegistrationBodyForLog(body))
     
     // Validate input
-    if (!full_name || !normalizedEmail || !password) {
+    if (!full_name || !normalizedEmail || typeof password !== 'string' || !password) {
       return NextResponse.json(
         { success: false, message: 'Full name, email, and password are required' },
         { status: 400 }
       )
     }
 
-    if (password.length < 6) {
+    if (!isPasswordValid(password)) {
       return NextResponse.json(
-        { success: false, message: 'Password must be at least 6 characters long' },
+        { success: false, message: 'Password must be at most 128 characters and meet all listed strength requirements.' },
         { status: 400 }
       )
     }
@@ -117,7 +118,11 @@ export async function POST(request) {
       },
     })
 
-    console.log('📝 supabase.auth.signUp result:', { authData, authError: authError ? authError.message : null })
+    console.log('📝 Supabase sign-up result:', {
+      userId: authData?.user?.id || null,
+      sessionCreated: Boolean(authData?.session),
+      errorCode: authError?.code || null,
+    })
     if (authError) {
       console.error('🔴 Auth registration error:', authError)
       

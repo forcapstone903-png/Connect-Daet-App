@@ -192,7 +192,7 @@ export default function UserSavedPage() {
           emoji="🔖"
         >
           <span className="usr-section-counter">{savedItems.length} saved</span>
-          <Link href="/info/user/blogs" className="usr-section-secondary">Browse stories</Link>
+          <Link href="/info/user/dashboard" className="usr-section-secondary">Browse stories</Link>
         </UserSectionHeader>
 
         <SectionTabs label="Saved content filters" value={activeType} onChange={setActiveType} options={typeFilters} />
@@ -216,7 +216,7 @@ export default function UserSavedPage() {
             <p className="mt-1 text-xs text-slate-500">Bookmark blogs, events, forum threads, or destinations and they will show up here.</p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Link href="/info/visitor/search" className="usr-section-primary">Explore content</Link>
-              <Link href="/info/user/blogs" className="usr-section-secondary">Browse stories</Link>
+              <Link href="/info/user/dashboard" className="usr-section-secondary">Browse stories</Link>
             </div>
           </div>
         ) : (

@@ -25,6 +25,7 @@ import {
 import ProfileFeedActions from "@/app/(subsystems)/info/components/user/ProfileFeedActions";
 import PostMediaGallery from "@/app/(subsystems)/info/components/user/PostMediaGallery";
 import { getPostImages } from "@/lib/postMedia";
+import { getPostPreview } from "@/lib/postContent";
 import UserTopHeader from "@/app/(subsystems)/info/components/user/UserTopHeader";
 import { SectionLoading } from "@/app/(subsystems)/info/components/user/UserSectionHeader";
 import {
@@ -222,6 +223,7 @@ export default function PublicProfilePage() {
   const [profileTab, setProfileTab] = useState("Overview");
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
+  const [friendsCount, setFriendsCount] = useState(0);
   const [viewerId, setViewerId] = useState(null);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowedBy, setIsFollowedBy] = useState(false);
@@ -282,6 +284,7 @@ export default function PublicProfilePage() {
       setFollowingCount(
         profileResult.following_count ?? profileResult.following?.length ?? 0,
       );
+      setFriendsCount(profileResult.friends_count ?? profileResult.friends?.length ?? 0);
       setPosts(buildPostList(content));
     };
 
@@ -397,13 +400,18 @@ export default function PublicProfilePage() {
       setIsMutual(Boolean(result.is_mutual));
       setFollowerCount(result.followers_count ?? 0);
       setFollowingCount(result.following_count ?? 0);
+      setFriendsCount(result.friends_count ?? friendsCount);
       invalidateCachePrefix("profile:user:");
       if (viewerId) invalidateCachePrefix(`feed:user:${viewerId}`);
       if (!isFollowing && typeof window !== "undefined") {
         window.dispatchEvent(new Event("daet-notifications-updated"));
       }
       showNotice(
-        isFollowing
+        isMutual
+          ? `You are no longer friends with ${profile?.full_name || "this member"}.`
+          : !isFollowing && result.is_mutual
+            ? `You and ${profile?.full_name || "this member"} are now friends.`
+            : isFollowing
           ? `You are no longer following ${profile?.full_name || "this member"}.`
           : `You are now following ${profile?.full_name || "this member"}.`,
       );
@@ -552,7 +560,7 @@ export default function PublicProfilePage() {
   return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
       <UserTopHeader />
-      <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-2 sm:px-4 lg:px-6 lg:pb-10">
+      <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-0 sm:px-4 lg:px-6 lg:pb-10">
         {(fromReactions || fromComments) && (
           <button
             type="button"
@@ -631,10 +639,12 @@ export default function PublicProfilePage() {
                       disabled={followLoading || blockLoading}
                       className={isFollowing ? "usr-section-secondary" : "usr-section-primary"}
                     >
-                      {isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                      {isMutual ? <Users className="h-4 w-4" /> : isFollowing ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
                       {followLoading
                         ? "Updating…"
-                        : isFollowing
+                        : isMutual
+                          ? "Friends"
+                          : isFollowing
                           ? "Following"
                           : isFollowedBy && !isMutual
                             ? "Follow back"
@@ -715,7 +725,7 @@ export default function PublicProfilePage() {
             ) : null}
           </div>
 
-          <div className="profile-stat-strip grid grid-cols-3 border-b border-slate-200 text-center">
+          <div className="profile-stat-strip grid grid-cols-4 border-b border-slate-200 text-center">
             <div className="border-r border-slate-200 px-2 py-3">
               <p className="text-xl font-black text-slate-900">{posts.length}</p>
               <p className="usr-stat-label mt-0.5">Posts</p>
@@ -726,6 +736,13 @@ export default function PublicProfilePage() {
             >
               <p className="text-xl font-black text-slate-900">{followerCount}</p>
               <p className="usr-stat-label mt-0.5">Followers</p>
+            </Link>
+            <Link
+              href={`/info/user/profile/connections?user=${profile.id}&tab=friends`}
+              className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"
+            >
+              <p className="text-xl font-black text-slate-900">{friendsCount}</p>
+              <p className="usr-stat-label mt-0.5">Friends</p>
             </Link>
             <Link
               href={`/info/user/profile/connections?user=${profile.id}&tab=following`}
@@ -810,7 +827,7 @@ export default function PublicProfilePage() {
                     <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <FileText className="h-4 w-4" /> Write blog
                     </Link>
-                    <Link href="/info/user/forums" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
+                    <Link href="/info/visitor/forum" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
@@ -1013,8 +1030,8 @@ export default function PublicProfilePage() {
                     ) : null}
 
                     {post.text ? (
-                      <p className="profile-post-description line-clamp-3">
-                        {post.text}
+                      <p className="profile-post-description line-clamp-3 break-words">
+                        {getPostPreview(post.text)}
                       </p>
                     ) : null}
 

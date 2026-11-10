@@ -17,6 +17,7 @@ export default function ProfileConnectionsPage() {
   const [activeTab, setActiveTab] = useState('followers')
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
+  const [friends, setFriends] = useState([])
   const [blockedIds, setBlockedIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState('')
@@ -31,7 +32,7 @@ export default function ProfileConnectionsPage() {
     const profileId = query.get('user') || id
     queueMicrotask(() => {
       setUserId(id)
-      if (tab === 'following') setActiveTab(tab)
+      if (['followers', 'following', 'friends'].includes(tab)) setActiveTab(tab)
     })
 
     if (!id) {
@@ -45,13 +46,17 @@ export default function ProfileConnectionsPage() {
         if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load connections.')
         setFollowers(result.followers || [])
         setFollowing(result.following || [])
+        setFriends(result.friends || [])
         setBlockedIds(new Set(result.blocked_ids || []))
       })
       .catch((error) => setNotice(error.message))
       .finally(() => setLoading(false))
   }, [])
 
-  const people = useMemo(() => (activeTab === 'followers' ? followers : following), [activeTab, followers, following])
+  const people = useMemo(() => {
+    if (activeTab === 'friends') return friends
+    return activeTab === 'followers' ? followers : following
+  }, [activeTab, followers, following, friends])
 
   const unfollow = async (personId) => {
     setBusyId(personId)
@@ -61,6 +66,7 @@ export default function ProfileConnectionsPage() {
       const result = await response.json()
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to unfollow this user.')
       setFollowing((current) => current.filter((person) => person.id !== personId))
+      setFriends((current) => current.filter((person) => person.id !== personId))
       invalidateCachePrefix('profile:user:')
     } catch (error) {
       setNotice(error.message)
@@ -86,6 +92,7 @@ export default function ProfileConnectionsPage() {
       if (!isBlocked) {
         setFollowing((current) => current.filter((person) => person.id !== personId))
         setFollowers((current) => current.filter((person) => person.id !== personId))
+        setFriends((current) => current.filter((person) => person.id !== personId))
       }
     } catch (error) {
       setNotice(error.message)
@@ -101,12 +108,12 @@ export default function ProfileConnectionsPage() {
         <UserSectionHeader
           eyebrow="Your community"
           title="Connections"
-          description="See who follows you and who you follow, and keep your feed comfortable."
+          description="See who follows you, who you follow, and which connections are mutual friends."
           emoji="🤝"
           backHref="/info/user/profile"
           backLabel="Your profile"
         >
-          <span className="usr-section-counter">{followers.length + following.length} people</span>
+          <span className="usr-section-counter">{friends.length} friends</span>
         </UserSectionHeader>
 
         <SectionTabs
@@ -115,6 +122,7 @@ export default function ProfileConnectionsPage() {
           onChange={setActiveTab}
           options={[
             { value: 'followers', label: 'Followers', count: followers.length },
+            { value: 'friends', label: 'Friends', count: friends.length },
             { value: 'following', label: 'Following', count: following.length },
           ]}
         />
@@ -138,7 +146,9 @@ export default function ProfileConnectionsPage() {
                 <p className="mt-1 text-xs text-slate-500">
                   {activeTab === 'followers'
                     ? 'Share your profile so other travelers can follow your stories.'
-                    : 'Follow community members to see their stories and updates first.'}
+                    : activeTab === 'friends'
+                      ? 'When you and another member follow each other, you will appear here as friends.'
+                      : 'Follow community members to see their stories and updates first.'}
                 </p>
                 <Link href="/info/visitor/search" className="usr-section-secondary mt-4 inline-flex">Find people</Link>
               </div>
@@ -154,7 +164,7 @@ export default function ProfileConnectionsPage() {
                         <span className="min-w-0 truncate text-sm font-bold text-slate-900 group-hover:text-teal-700">{person.full_name || 'Community member'}</span>
                       </Link>
                       <div className="flex shrink-0 items-center gap-2">
-                        {activeTab === 'following' && <button type="button" disabled={isBusy} onClick={() => unfollow(person.id)} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"><UserRoundMinus className="h-3.5 w-3.5" /> Unfollow</button>}
+                        {(activeTab === 'following' || activeTab === 'friends') && <button type="button" disabled={isBusy} onClick={() => unfollow(person.id)} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"><UserRoundMinus className="h-3.5 w-3.5" /> Unfollow</button>}
                         <button type="button" disabled={isBusy} onClick={() => toggleBlock(person.id)} className={`usr-press inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${isBlocked ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-red-50 text-red-700 hover:bg-red-100'}`}>{isBlocked ? <Check className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />} {isBlocked ? 'Unblock' : 'Block'}</button>
                       </div>
                     </div>

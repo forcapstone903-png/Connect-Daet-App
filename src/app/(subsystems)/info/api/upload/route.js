@@ -85,6 +85,23 @@ export async function POST(request) {
       return NextResponse.json({ error: error.message || 'Upload failed.' }, { status: 500 })
     }
 
+    const trackedObject = await client
+      .from('user_storage_objects')
+      .upsert({
+        user_id: userId,
+        bucket_id: bucket,
+        object_path: data?.path || objectPath,
+      }, { onConflict: 'bucket_id,object_path' })
+
+    if (trackedObject.error) {
+      const { error: cleanupError } = await storage.from(bucket).remove([data?.path || objectPath])
+      console.error('Uploaded file ownership could not be recorded:', {
+        code: trackedObject.error.code || null,
+        cleanupCode: cleanupError?.code || null,
+      })
+      return NextResponse.json({ error: 'Unable to securely record the uploaded file. Please try again.' }, { status: 503 })
+    }
+
     const { data: publicUrlData } = storage.from(bucket).getPublicUrl(objectPath)
 
     return NextResponse.json({ success: true, url: publicUrlData.publicUrl, path: data?.path || objectPath })
@@ -138,6 +155,16 @@ export async function DELETE(request) {
     })
     const { error } = await client.storage.from(normalizedBucket).remove([objectPath])
     if (error) return NextResponse.json({ error: error.message || 'Unable to remove file.' }, { status: 500 })
+
+    const { error: trackingError } = await client
+      .from('user_storage_objects')
+      .delete()
+      .eq('user_id', userId)
+      .eq('bucket_id', normalizedBucket)
+      .eq('object_path', objectPath)
+    if (trackingError) {
+      console.error('Removed upload ownership record cleanup failed:', { code: trackingError.code || null })
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {
