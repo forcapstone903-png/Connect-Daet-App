@@ -7438,6 +7438,13 @@ html.dark .visitor-blog-detail .medium-article-editorial-error button {
   }
 }
 
+@media (max-width: 1023px) {
+  .visitor-layout-content .visitor-blog-detail > .user-top-header-spacer {
+    display: block !important;
+    height: 88px;
+  }
+}
+
 html:not(.dark) .event-detail-page {
   background: #fff;
   color: #172033;
