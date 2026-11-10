@@ -135,12 +135,15 @@ export async function GET(request) {
         const privacyLevel = profile?.is_public === false
           ? (['followers', 'private'].includes(profile.privacy_level) ? profile.privacy_level : 'followers')
           : profile?.privacy_level || 'public'
-        if (privacyLevel === 'private') return false
+        if (privacyLevel === 'private') return true
         return privacyLevel === 'public' || viewerFollowing.has(user.id)
       })
       .filter((user) => !connectionsOnly || matchesConnectionUser(user, query))
       .map((user) => ({
         ...user,
+        is_private: (profilesById.get(user.id)?.is_public === false
+          ? (['followers', 'private'].includes(profilesById.get(user.id)?.privacy_level) ? profilesById.get(user.id)?.privacy_level : 'followers')
+          : profilesById.get(user.id)?.privacy_level || 'public') === 'private',
         relevance_score: query
           ? (connectionsOnly ? scoreConnectionUser(user, query) : scoreUser(user, queryTokens))
           : 1,
@@ -175,6 +178,15 @@ export async function GET(request) {
           full_name: user.full_name,
           profile_image_url: user.profile_image_url,
         }
+        : user.is_private && !viewerFollowing.has(user.id)
+          ? {
+          id: user.id,
+          full_name: user.full_name,
+          profile_image_url: user.profile_image_url,
+          user_type: user.user_type,
+          relevance_score: user.relevance_score,
+          is_private: true,
+        }
         : {
           id: user.id,
           full_name: user.full_name,
@@ -185,6 +197,7 @@ export async function GET(request) {
           country: user.country,
           user_type: user.user_type,
           relevance_score: user.relevance_score,
+          is_private: user.is_private,
           mutual_friends: (mutualIdsByUser.get(user.id) || []).map((id) => mutualById.get(id)).filter(Boolean),
         }),
     })

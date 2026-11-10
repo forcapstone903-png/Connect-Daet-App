@@ -5,10 +5,11 @@ import Link from 'next/link'
 import { Archive, Mail, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
-import { supabase } from '@/lib/supabase'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 function getInitials(name = '') {
   return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
@@ -50,6 +51,22 @@ export default function UserMessagingPage() {
   const [conversationMenu, setConversationMenu] = useState(null)
   const [actionError, setActionError] = useState('')
   const gestureRef = useRef({ id: null, startX: 0, startY: 0, timer: null })
+  const sessionUser = getStoredSessionObject()
+  const realtimeUserId = sessionUser?.user_id || sessionUser?.id || sessionUser?.userId || sessionUser?.sub || ''
+  const loadMessagesRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: `inbox-realtime-${realtimeUserId || 'unknown'}`,
+    tables: realtimeUserId ? [
+      { table: 'direct_messages', filter: `sender_id=eq.${realtimeUserId}` },
+      { table: 'direct_messages', filter: `recipient_id=eq.${realtimeUserId}` },
+    ] : [],
+    enabled: Boolean(realtimeUserId),
+  })
+  const { setRefreshCallback } = realtime
+
+  useEffect(() => {
+    setRefreshCallback(() => loadMessagesRef.current?.() ?? false)
+  })
 
   const clearGesture = () => {
     if (gestureRef.current.timer) window.clearTimeout(gestureRef.current.timer)
@@ -114,11 +131,14 @@ export default function UserMessagingPage() {
         const result = await response.json()
         if (active && response.ok && result.success) {
           setConversations(result.conversations || [])
+          return true
         }
         else if (active) throw new Error(result.message || 'Unable to load messages')
+        return false
       } catch (error) {
         console.error('Messages fetch failed:', error)
         if (active) setLoadError('We could not load your messages right now. Please try again.')
+        return false
       } finally {
         if (active) setLoading(false)
       }
@@ -126,17 +146,7 @@ export default function UserMessagingPage() {
 
     if (getStoredSession()) {
       void loadMessages()
-      const session = getStoredSessionObject()
-      const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
-      let realtimeChannel = null
-      if (userId && supabase?.channel) {
-        realtimeChannel = supabase.channel(`inbox-realtime-${userId}`)
-          .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, (payload) => {
-            const message = payload?.new || payload?.old
-            if (active && message && (message.sender_id === userId || message.recipient_id === userId)) void loadMessages()
-          })
-          .subscribe()
-          }
+      loadMessagesRef.current = loadMessages
 
       const refreshInbox = () => {
         if (active) void loadMessages()
@@ -146,7 +156,6 @@ export default function UserMessagingPage() {
       return () => {
         active = false
         window.removeEventListener('daet-messages-updated', refreshInbox)
-        if (realtimeChannel) supabase.removeChannel(realtimeChannel)
       }
     }
 
@@ -239,6 +248,7 @@ export default function UserMessagingPage() {
         <UserSectionHeader title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
           <Link href="/info/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
         </UserSectionHeader>
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
 
         {composeOpen && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-0 sm:items-center sm:p-4">

@@ -174,10 +174,13 @@ export default function UserTopHeader({
     setDesktopSearchQuery(search)
     setDesktopSearchFocused(false)
     if (desktopSearchInputRef.current) desktopSearchInputRef.current.value = search
-    if (pathname === '/info/visitor/search') {
+    const searchPath = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
+      ? '/info/visitor/search'
+      : '/info/user/search'
+    if (pathname === searchPath) {
       window.dispatchEvent(new CustomEvent('daet-search-input', { detail: { query: search } }))
     } else {
-      router.push(`/info/visitor/search?q=${encodeURIComponent(search)}`)
+      router.push(`${searchPath}?q=${encodeURIComponent(search)}`)
     }
   }
 
@@ -190,7 +193,7 @@ export default function UserTopHeader({
     const input = desktopSearchInputRef.current
     if (!input) return
 
-    const query = pathname === '/info/visitor/search'
+    const query = pathname === '/info/visitor/search' || pathname === '/info/user/search'
       ? new URLSearchParams(window.location.search).get('q') || ''
       : ''
     if (input.value !== query) input.value = query
@@ -651,30 +654,30 @@ export default function UserTopHeader({
               {identity.avatarUrl ? <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(identity.name)}
             </button>
             {profileMenuOpen && (
-              <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-white/10 bg-[#1b1b1b] text-slate-200 shadow-2xl">
-                <Link role="menuitem" href="/info/user/profile" onClick={() => setProfileMenuOpen(false)} className="flex items-center gap-3 border-b border-white/10 px-4 py-4 transition hover:bg-white/5">
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-sm font-bold text-white">
+              <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl">
+                <Link role="menuitem" href="/info/user/profile" onClick={() => setProfileMenuOpen(false)} className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 transition hover:bg-slate-100">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-bold text-slate-700">
                     {identity.avatarUrl ? <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(identity.name)}
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-white">{identity.name || t('common.profile')}</span>
-                    <span className="mt-1 block text-xs text-slate-400">{t('navigation.profile.view')}</span>
+                    <span className="block truncate text-sm font-semibold text-slate-900">{identity.name || t('common.profile')}</span>
+                    <span className="mt-1 block text-xs text-slate-500">{t('navigation.profile.view')}</span>
                   </span>
                 </Link>
-                <div className="border-b border-white/10 py-2">
+                <div className="border-b border-slate-200 py-2">
                   <button
                     ref={appearanceTriggerRef}
                     role="menuitem"
                     type="button"
                     onClick={openAppearance}
                     aria-haspopup="dialog"
-                    className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm transition hover:bg-white/5"
+                    className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm transition hover:bg-slate-100"
                   >
-                    <Sparkles className="h-4 w-4 text-slate-400" />
+                    <Sparkles className="h-4 w-4 text-slate-500" />
                     <span className="flex-1">{t('settings.nav.appearance')}</span>
                   </button>
-                  <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-white/5">
-                    <Settings className="h-4 w-4 text-slate-400" />
+                  <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                    <Settings className="h-4 w-4 text-slate-500" />
                     <span>{t('common.settings')}</span>
                   </Link>
                 </div>
@@ -686,9 +689,9 @@ export default function UserTopHeader({
                       setProfileMenuOpen(false)
                       setShowLogoutConfirm(true)
                     }}
-                    className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
+                    className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
                   >
-                    <LogOut className="h-4 w-4 text-slate-400" />
+                    <LogOut className="h-4 w-4 text-slate-500" />
                     {t('common.logOut')}
                   </button>
                 </div>
@@ -716,7 +719,7 @@ export default function UserTopHeader({
           </Link>
 
           <div className="flex shrink-0 items-center gap-0.5">
-            <Link href="/info/visitor/search" aria-label={t('common.search')} title={t('common.search')} className="usr-mobile-search-trigger usr-press flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100 dark:hover:bg-white/10">
+            <Link href={pathname === '/info/visitor' || pathname.startsWith('/info/visitor/') ? '/info/visitor/search' : '/info/user/search'} aria-label={t('common.search')} title={t('common.search')} className="usr-mobile-search-trigger usr-press flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100 dark:hover:bg-white/10">
               <Search className="h-4 w-4" />
             </Link>
             <div className="relative" ref={profileMenuRef}>
@@ -733,26 +736,26 @@ export default function UserTopHeader({
                   : getInitials(identity.name)}
               </button>
               {profileMenuOpen && (
-                <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-white/10 bg-[#1b1b1b] text-slate-200 shadow-2xl">
+                <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl">
                   <Link
                     role="menuitem"
                     href="/info/user/profile"
                     onClick={() => setProfileMenuOpen(false)}
-                    className="flex items-center gap-3 border-b border-white/10 px-4 py-4 transition hover:bg-white/5"
+                    className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 transition hover:bg-slate-100"
                   >
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-sm font-bold text-white">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-bold text-slate-700">
                       {identity.avatarUrl
                         ? <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
                         : getInitials(identity.name)}
                     </span>
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-white">{identity.name || t('common.profile')}</span>
-                      <span className="mt-1 block text-xs text-slate-400">{t('navigation.profile.view')}</span>
+                      <span className="block truncate text-sm font-semibold text-slate-900">{identity.name || t('common.profile')}</span>
+                      <span className="mt-1 block text-xs text-slate-500">{t('navigation.profile.view')}</span>
                     </span>
                   </Link>
-                  <div className="border-b border-white/10 py-2">
-                    <Link role="menuitem" href="/info/user/notifications" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-white/5">
-                      <Bell className={`h-4 w-4 ${unreadAlerts > 0 ? 'text-sky-400' : 'text-slate-400'}`} />
+                  <div className="border-b border-slate-200 py-2">
+                    <Link role="menuitem" href="/info/user/notifications" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                      <Bell className={`h-4 w-4 ${unreadAlerts > 0 ? 'text-sky-600' : 'text-slate-500'}`} />
                       <span className="flex-1">{t('common.notifications')}</span>
                       {unreadAlerts > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">{unreadAlerts > 99 ? '99+' : unreadAlerts}</span>}
                     </Link>
@@ -762,13 +765,13 @@ export default function UserTopHeader({
                       type="button"
                       onClick={openAppearance}
                       aria-haspopup="dialog"
-                      className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm transition hover:bg-white/5"
+                      className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm transition hover:bg-slate-100"
                     >
-                      <Sparkles className="h-4 w-4 text-slate-400" />
+                      <Sparkles className="h-4 w-4 text-slate-500" />
                       <span className="flex-1">{t('settings.nav.appearance')}</span>
                     </button>
-                    <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-white/5">
-                      <Settings className="h-4 w-4 text-slate-400" />
+                    <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                      <Settings className="h-4 w-4 text-slate-500" />
                       <span>{t('common.settings')}</span>
                     </Link>
                   </div>
@@ -780,9 +783,9 @@ export default function UserTopHeader({
                         setProfileMenuOpen(false)
                         setShowLogoutConfirm(true)
                       }}
-                      className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm text-slate-300 transition hover:bg-white/5 hover:text-white"
+                      className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
                     >
-                      <LogOut className="h-4 w-4 text-slate-400" />
+                      <LogOut className="h-4 w-4 text-slate-500" />
                       {t('common.logOut')}
                     </button>
                   </div>

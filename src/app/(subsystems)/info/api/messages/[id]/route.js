@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -18,6 +19,11 @@ export async function GET(request, { params }) {
   if (!currentUserId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
   if (!otherUserId || otherUserId === currentUserId) return NextResponse.json({ success: false, message: 'A valid conversation participant is required.' }, { status: 400 })
+  const messagingAccess = await getPrivateProfileMessagingAccess(adminSupabase, currentUserId, otherUserId)
+  if (messagingAccess.error) return NextResponse.json({ success: false, message: messagingAccess.error.message }, { status: 500 })
+  if (!messagingAccess.allowed) {
+    return NextResponse.json({ success: false, message: 'You must be an approved follower to access this conversation.' }, { status: 403 })
+  }
 
   const [{ data: messages, error: messagesError }, { data: users, error: usersError }, { data: pins, error: pinsError }, { data: pinActivities, error: pinActivitiesError }] = await Promise.all([
     adminSupabase
@@ -67,7 +73,7 @@ export async function GET(request, { params }) {
         sender_user: usersById.get(message.sender_id) || null,
         recipient_user: usersById.get(message.recipient_id) || null,
       })),
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' } })
   }
 
   if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
@@ -83,7 +89,7 @@ export async function GET(request, { params }) {
       sender_user: usersById.get(message.sender_id) || null,
       recipient_user: usersById.get(message.recipient_id) || null,
     })),
-  })
+  }, { headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' } })
 }
 
 export async function PATCH(request, { params }) {
@@ -93,6 +99,11 @@ export async function PATCH(request, { params }) {
   if (!userId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
   if (!otherUserId || otherUserId === userId) return NextResponse.json({ success: false, message: 'Invalid conversation.' }, { status: 400 })
+  const messagingAccess = await getPrivateProfileMessagingAccess(adminSupabase, userId, otherUserId)
+  if (messagingAccess.error) return NextResponse.json({ success: false, message: messagingAccess.error.message }, { status: 500 })
+  if (!messagingAccess.allowed) {
+    return NextResponse.json({ success: false, message: 'You must be an approved follower to access this conversation.' }, { status: 403 })
+  }
 
   const body = await request.json().catch(() => ({}))
   if (body.messageId && ['pin', 'unpin', 'edit'].includes(body.action)) {
@@ -189,6 +200,11 @@ export async function DELETE(request, { params }) {
   if (!userId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 })
   if (!otherUserId || otherUserId === userId) return NextResponse.json({ success: false, message: 'Invalid conversation.' }, { status: 400 })
+  const messagingAccess = await getPrivateProfileMessagingAccess(adminSupabase, userId, otherUserId)
+  if (messagingAccess.error) return NextResponse.json({ success: false, message: messagingAccess.error.message }, { status: 500 })
+  if (!messagingAccess.allowed) {
+    return NextResponse.json({ success: false, message: 'You must be an approved follower to access this conversation.' }, { status: 403 })
+  }
 
   const messageId = new URL(request.url).searchParams.get('messageId')
   const deleteFor = new URL(request.url).searchParams.get('deleteFor') || 'you'

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink, UserPlus, UserCheck } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -13,18 +13,21 @@ import { Suspense } from 'react'
 import styles from './SearchPage.module.css'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
-const defaultBlogImage = 'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=80'
 const popularSearches = ['Bagasbas Beach', 'Calaguas', 'Daet events', 'local food', 'travel stories']
 
 function SearchContent() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams?.get('q') || ''
 
-  return <SearchContentView key={initialQuery} initialQuery={initialQuery} />
+  return <SearchContentView initialQuery={initialQuery} />
 }
 
 function SearchContentView({ initialQuery }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchPath = pathname.startsWith('/info/user/') || pathname.startsWith('/info/admin/')
+    ? '/info/user/search'
+    : '/info/visitor/search'
   const [query, setQuery] = useState(initialQuery)
   const [searchFocused, setSearchFocused] = useState(false)
   const { users: suggestedUsers, loading: suggestedUsersLoading } = useUserSearchSuggestions(query, searchFocused)
@@ -46,6 +49,7 @@ function SearchContentView({ initialQuery }) {
   const [followingIds, setFollowingIds] = useState(new Set())
   const [authorProfiles, setAuthorProfiles] = useState({})
   const [followBusyId, setFollowBusyId] = useState(null)
+  const [followNotice, setFollowNotice] = useState('')
   const [results, setResults] = useState({
     spots: [],
     events: [],
@@ -57,6 +61,16 @@ function SearchContentView({ initialQuery }) {
     forumComments: [],
     mentions: [],
   })
+
+  useEffect(() => {
+    const syncQueryFromHistory = () => {
+      setQuery(new URLSearchParams(window.location.search).get('q') || '')
+      setSearchFocused(false)
+    }
+
+    window.addEventListener('popstate', syncQueryFromHistory)
+    return () => window.removeEventListener('popstate', syncQueryFromHistory)
+  }, [])
 
   useEffect(() => {
     const handleLiveSearch = (event) => {
@@ -125,8 +139,7 @@ function SearchContentView({ initialQuery }) {
           return
         }
 
-        const [{ data: sessionData }, spotsRes, eventsRes, blogsRes, threadsRes, usersResponse] = await Promise.all([
-          supabase.auth.getSession(),
+        const [spotsRes, eventsRes, blogsRes, threadsRes, usersResponse] = await Promise.all([
           supabase
             .from('info_tourist_spots')
             .select('*')
@@ -152,12 +165,28 @@ function SearchContentView({ initialQuery }) {
 
         if (!active) return
 
-        const viewerId = sessionData?.session?.user?.id || null
-        const { data: followingRows } = viewerId
-          ? await supabase.from('user_follows').select('following_id').eq('follower_id', viewerId)
-          : { data: [] }
-        if (!active) return
-        if (viewerId) setFollowingIds(new Set((followingRows || []).map((row) => row.following_id)))
+        try {
+          const followingResponse = await fetch('/info/api/users/following', {
+            credentials: 'same-origin',
+            cache: 'no-store',
+          })
+          const followingResult = await followingResponse.json().catch(() => ({}))
+          if (!active) return
+
+          if (followingResponse.status === 401) {
+            setFollowingIds(new Set())
+            setFollowNotice('')
+          } else if (!followingResponse.ok || !followingResult.success) {
+            throw new Error(followingResult.message || 'Unable to load follow status.')
+          } else {
+            setFollowingIds(new Set(followingResult.following_ids || []))
+            setFollowNotice('')
+          }
+        } catch (followStatusError) {
+          if (!active) return
+          console.error('Search follow status lookup failed:', followStatusError)
+          setFollowNotice('Follow status could not be loaded. Please try again.')
+        }
 
         const authorIds = [...new Set([
           ...(blogsRes.data || []).map((item) => item.created_by),
@@ -236,7 +265,7 @@ function SearchContentView({ initialQuery }) {
     if (!query.trim()) return
     saveRecentSearch(query)
     setSearchFocused(false)
-    router.push(`/info/visitor/search?q=${encodeURIComponent(query.trim())}`)
+    router.push(`${searchPath}?q=${encodeURIComponent(query.trim())}`)
   }
 
   const toggleFollow = async (event, userId) => {
@@ -246,6 +275,7 @@ function SearchContentView({ initialQuery }) {
 
     const isFollowing = followingIds.has(userId)
     setFollowBusyId(userId)
+    setFollowNotice('')
     try {
       const response = await fetch(`/info/api/users/${encodeURIComponent(userId)}/follow`, {
         method: isFollowing ? 'DELETE' : 'POST',
@@ -262,6 +292,7 @@ function SearchContentView({ initialQuery }) {
       invalidateCachePrefix('profile:user:')
     } catch (followError) {
       console.error('Search follow update failed:', followError)
+      setFollowNotice(followError instanceof Error ? followError.message : 'Unable to update follow status. Please try again.')
     } finally {
       setFollowBusyId(null)
     }
@@ -304,7 +335,16 @@ function SearchContentView({ initialQuery }) {
   const getImage = (item) => {
     const image = item.featured_image || item.image_url || (Array.isArray(item.images) && item.images[0])
     if (typeof image === 'string' && image.trim()) return image
-    return item.category === 'blog' ? defaultBlogImage : defaultSpotImage
+    return defaultSpotImage
+  }
+
+  const getBlogImage = (blog) => {
+    const images = [blog.featured_image, blog.image_url, ...(Array.isArray(blog.images) ? blog.images : [])]
+    return images.find((image) => (
+      typeof image === 'string'
+      && image.trim()
+      && !image.includes('photo-1500530855697-b586d89ba3ee')
+    ))?.trim() || null
   }
 
   const getContentHref = (contentType, contentId) => {
@@ -321,8 +361,8 @@ function SearchContentView({ initialQuery }) {
     if (!authorId || !authorProfiles[authorId]) return null
     const isFollowing = followingIds.has(authorId)
     return (
-      <button type="button" onClick={(event) => toggleFollow(event, authorId)} disabled={followBusyId === authorId} className={`usr-press inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold transition ${isFollowing ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
-        {isFollowing ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
+      <button type="button" onClick={(event) => toggleFollow(event, authorId)} disabled={followBusyId === authorId} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${isFollowing ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
+        {isFollowing ? <UserCheck className="h-3 w-3" /> : <UserPlus className="h-3 w-3" />}
         {isFollowing ? 'Following' : 'Follow'}
       </button>
     )
@@ -340,7 +380,13 @@ function SearchContentView({ initialQuery }) {
             <form onSubmit={handleSubmit} autoComplete="off" className="min-w-0 flex-1">
               <div className="w-full max-w-xl rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
                 <div className="flex items-center gap-2">
-                  <SearchIcon className="h-4 w-4 flex-shrink-0" />
+                  <button
+                    type="submit"
+                    aria-label="Search"
+                    className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-teal-50 hover:text-teal-700"
+                  >
+                    <SearchIcon className="h-4 w-4" aria-hidden="true" />
+                  </button>
                   <input
                     type="search"
                     autoComplete="off"
@@ -348,18 +394,19 @@ function SearchContentView({ initialQuery }) {
                     onFocus={() => setSearchFocused(true)}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search destinations, events, blogs, forums..."
-                    className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                    className="min-w-0 flex-1 border-none bg-transparent p-0 text-sm text-slate-700 outline-none placeholder:text-slate-400"
                   />
-                  {query && (
-                    <button
-                      type="button"
-                      onClick={() => { setQuery(''); router.push('/info/visitor/search') }}
-                      className="flex-shrink-0 text-slate-400 hover:text-slate-600"
-                      aria-label="Clear search"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setQuery(''); router.push(searchPath) }}
+                    className={`${styles.searchClearButton} text-slate-400 hover:text-slate-600 ${query ? '' : 'invisible pointer-events-none'}`}
+                    aria-label="Clear search"
+                    aria-hidden={!query}
+                    tabIndex={query ? 0 : -1}
+                    disabled={!query}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             </form>
@@ -392,16 +439,16 @@ function SearchContentView({ initialQuery }) {
                 {query.trim() && matchingRecentSearches.length > 0 && (
                   <div className="mt-1 space-y-1">
                     <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Recent searches</p>
-                    {matchingRecentSearches.map((suggestion) => <button key={`recent-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}
+                    {matchingRecentSearches.map((suggestion) => <button key={`recent-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}
                   </div>
                 )}
                 {searchSuggestionOptions.length > 0 && (
                   <div className="mt-1 space-y-1">
                     {query.trim() && <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Matching results</p>}
-                    {searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}
+                    {searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}</button>)}
                   </div>
                 )}
-                {query.trim() && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { saveRecentSearch(query); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(query.trim())}`) }} className={`mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 opacity-60" />Search for “{query.trim()}”</button>}
+                {query.trim() && <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { saveRecentSearch(query); setSearchFocused(false); router.push(`${searchPath}?q=${encodeURIComponent(query.trim())}`) }} className={`mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${styles.searchSuggestionOption}`}><SearchIcon className="h-4 w-4 opacity-60" />Search for “{query.trim()}”</button>}
               </div>
             )}
             </div>
@@ -411,7 +458,13 @@ function SearchContentView({ initialQuery }) {
           <div className="mt-3 lg:hidden">
             <div className="relative flex items-center gap-2">
             <form onSubmit={handleSubmit} autoComplete="off" className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
-              <SearchIcon className="h-4 w-4 flex-shrink-0" />
+              <button
+                type="submit"
+                aria-label="Search"
+                className="inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition hover:bg-teal-50 hover:text-teal-700"
+              >
+                <SearchIcon className="h-4 w-4" aria-hidden="true" />
+              </button>
               <input
                 type="search"
                 autoComplete="off"
@@ -419,18 +472,19 @@ function SearchContentView({ initialQuery }) {
                 onFocus={() => setSearchFocused(true)}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search..."
-                className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+                className="min-w-0 flex-1 border-none bg-transparent p-0 text-base text-slate-700 outline-none placeholder:text-slate-400"
               />
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  className="flex-shrink-0 text-slate-400 hover:text-slate-600"
-                  aria-label="Clear search"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className={`${styles.searchClearButton} text-slate-400 hover:text-slate-600 ${query ? '' : 'invisible pointer-events-none'}`}
+                aria-label="Clear search"
+                aria-hidden={!query}
+                tabIndex={query ? 0 : -1}
+                disabled={!query}
+              >
+                <X className="h-4 w-4" />
+              </button>
             </form>
             <button type="button" onClick={() => setShowFilters((value) => !value)} aria-label="Open search filters" aria-expanded={showFilters} className={`usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition ${showFilters ? 'border-teal-300 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-500 hover:border-teal-200 hover:text-teal-700'}`}>
               <SlidersHorizontal className="h-4 w-4" />
@@ -463,7 +517,7 @@ function SearchContentView({ initialQuery }) {
                   <div className="mt-1 space-y-1">
                     <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Recent searches</p>
                     {matchingRecentSearches.map((suggestion) => (
-                      <button key={`recent-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}>
+                      <button key={`recent-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false);                       router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}>
                         <SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}
                       </button>
                     ))}
@@ -473,14 +527,14 @@ function SearchContentView({ initialQuery }) {
                   <div className="mt-1 space-y-1">
                     {query.trim() && <p className="px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Matching results</p>}
                     {searchSuggestionOptions.slice(0, 5).map((suggestion) => (
-                      <button key={`result-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}>
+                      <button key={`result-${suggestion}`} type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); setSearchFocused(false);                       router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className={`search-suggestion-option flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-teal-50 ${styles.searchSuggestionOption}`}>
                         <SearchIcon className="h-4 w-4 text-slate-400" />{suggestion}
                       </button>
                     ))}
                   </div>
                 )}
                 {query.trim() && (
-                  <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { saveRecentSearch(query); setSearchFocused(false); router.push(`/info/visitor/search?q=${encodeURIComponent(query.trim())}`) }} className={`mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${styles.searchSuggestionOption}`}>
+                  <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => { saveRecentSearch(query); setSearchFocused(false);                   router.push(`${searchPath}?q=${encodeURIComponent(query.trim())}`) }} className={`mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold ${styles.searchSuggestionOption}`}>
                     <SearchIcon className="h-4 w-4 opacity-60" />Search for “{query.trim()}”
                   </button>
                 )}
@@ -490,16 +544,18 @@ function SearchContentView({ initialQuery }) {
           </div>
 
           {showFilters && (
-            <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 lg:mx-auto lg:max-w-xl">
-              <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Filter by</span>
+            <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto border-t border-slate-100 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-auto lg:max-w-xl">
+              <span className="mr-1 shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Filter by</span>
               {tabs.map((tab) => (
                 <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFilters(false) }} className="usr-section-tab usr-press" aria-pressed={activeTab === tab.id}>
                   {tab.label}
+                  <span className="usr-section-tab-count">{tab.count}</span>
                 </button>
               ))}
             </div>
           )}
         </header>
+        {followNotice && <p role="status" aria-live="polite" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{followNotice}</p>}
 
         {/* Search Results Header */}
         <div className="usr-card usr-enter usr-search-results mb-6">
@@ -519,7 +575,7 @@ function SearchContentView({ initialQuery }) {
           {!query.trim() && (
             <div className="mt-4 flex flex-wrap gap-2">
               {popularSearches.map((suggestion) => (
-                <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:border-teal-200 hover:bg-teal-100">
+                <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:border-teal-200 hover:bg-teal-100">
                   <Sparkles className="h-3.5 w-3.5" />
                   {suggestion}
                 </button>
@@ -527,24 +583,6 @@ function SearchContentView({ initialQuery }) {
             </div>
           )}
         </div>
-
-        {/* Tabs */}
-        {!loading && totalCount > 0 && (
-          <div className="usr-section-tabs">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                aria-pressed={activeTab === tab.id}
-                className="usr-section-tab usr-press"
-              >
-                {tab.label}
-                <span className="usr-section-tab-count">{tab.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* Loading State */}
         {loading ? (
@@ -574,11 +612,11 @@ function SearchContentView({ initialQuery }) {
             <p className="text-sm text-slate-500">
               {query.trim() ? 'No results found. Try different keywords.' : 'Type something to search across Daet.'}
             </p>
-            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
+            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
             {query.trim() && (
               <button
                 type="button"
-                onClick={() => { setQuery(''); router.push('/info/visitor/search') }}
+                onClick={() => { setQuery(''); router.push(searchPath) }}
                 className="mt-3 text-xs font-bold text-teal-700 hover:underline"
               >
                 Clear search
@@ -606,7 +644,7 @@ function SearchContentView({ initialQuery }) {
                         {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
                       </div>
                       </UserProfileLink>
-                      <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`usr-press inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
+                      <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
                         {followingIds.has(user.id) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
                         {followingIds.has(user.id) ? 'Following' : 'Follow'}
                       </button>
@@ -630,7 +668,7 @@ function SearchContentView({ initialQuery }) {
                           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">{item.contentKind === 'post' ? 'Public post' : item.contentKind}</span>
                           <p className="mt-1 text-sm font-bold text-slate-900">{item.title || item.content || item.description}</p>
                         </Link>
-                        <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`usr-press inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
+                        <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
                           {followingIds.has(item.authorId) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
                           {followingIds.has(item.authorId) ? 'Following' : 'Follow'}
                         </button>
@@ -702,34 +740,33 @@ function SearchContentView({ initialQuery }) {
                 </h2>
                 <div className="usr-card space-y-1.5 p-1.5">
                   {results.events.slice(0, activeTab === 'all' ? 4 : undefined).map((event) => (
-                    <Link
-                      key={event.id}
-                      href={`/info/visitor/events/${event.id}`}
-                      className="usr-list-row group"
-                    >
-                      {event.featured_image ? (
-                        <img
-                          src={event.featured_image}
-                          alt={event.title}
-                          className="h-20 w-24 flex-shrink-0 object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-20 w-24 flex-shrink-0 items-center justify-center bg-gradient-to-br from-sky-100 to-emerald-100">
-                          <CalendarDays className="h-8 w-8 text-sky-400" />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{event.title}</h3>
-                        {getAuthor(event.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(event.created_by).full_name || 'Community member'}</span>{renderFollowButton(event.created_by)}</div>}
-                        <p className="mt-1 text-xs text-slate-500">{formatDate(event.start_date)}</p>
-                        {event.location && (
-                          <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
-                            <MapPin className="h-3 w-3 flex-shrink-0" />
-                            {event.location}
-                          </p>
+                    <div key={event.id} className="usr-list-row group">
+                      <Link href={`/info/visitor/events/${event.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                        {event.featured_image ? (
+                          <img
+                            src={event.featured_image}
+                            alt={event.title}
+                            className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-20 w-24 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-100 to-emerald-100">
+                            <CalendarDays className="h-8 w-8 text-sky-400" />
+                          </div>
                         )}
-                      </div>
-                    </Link>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{event.title}</h3>
+                          {getAuthor(event.created_by) && <p className="mt-1 text-[11px] text-slate-500">By {getAuthor(event.created_by).full_name || 'Community member'}</p>}
+                          <p className="mt-1 text-xs text-slate-500">{formatDate(event.start_date)}</p>
+                          {event.location && (
+                            <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
+                              <MapPin className="h-3 w-3 flex-shrink-0" />
+                              {event.location}
+                            </p>
+                          )}
+                        </div>
+                      </Link>
+                      {renderFollowButton(event.created_by)}
+                    </div>
                   ))}
                 </div>
               </section>
@@ -743,27 +780,31 @@ function SearchContentView({ initialQuery }) {
                   Blogs ({results.blogs.length})
                 </h2>
                 <div className="usr-card space-y-1.5 p-1.5">
-                  {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog) => (
-                    <Link
-                      key={blog.id}
-                      href={`/info/visitor/blog/${blog.id}`}
-                      className="usr-list-row group"
-                    >
-                      <img
-                        src={getImage(blog)}
-                        alt={blog.title}
-                        className="h-20 w-24 flex-shrink-0 object-cover"
-                      />
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{blog.title}</h3>
-                        {getAuthor(blog.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(blog.created_by).full_name || 'Community member'}</span>{renderFollowButton(blog.created_by)}</div>}
-                        <p className="mt-1 text-xs text-slate-600">{blog.excerpt}</p>
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
-                          {blog.category || 'Blog'}
-                        </p>
+                  {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog) => {
+                    const blogImage = getBlogImage(blog)
+                    return (
+                      <div key={blog.id} className="usr-list-row group">
+                        <Link href={`/info/visitor/blog/${blog.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                          {blogImage && (
+                            <img
+                              src={blogImage}
+                              alt={blog.title}
+                              className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
+                            />
+                          )}
+                          <div className="min-w-0">
+                            <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{blog.title}</h3>
+                            {getAuthor(blog.created_by) && <p className="mt-1 text-[11px] text-slate-500">By {getAuthor(blog.created_by).full_name || 'Community member'}</p>}
+                            {blog.excerpt && <p className="mt-1 text-xs text-slate-600">{blog.excerpt}</p>}
+                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
+                              {blog.category || 'Blog'}
+                            </p>
+                          </div>
+                        </Link>
+                        {renderFollowButton(blog.created_by)}
                       </div>
-                    </Link>
-                  ))}
+                    )
+                  })}
                 </div>
               </section>
             )}
@@ -784,8 +825,9 @@ function SearchContentView({ initialQuery }) {
                       <div className="flex items-start justify-between gap-3">
                         <Link href={`/info/visitor/forum/${thread.id}`} className="min-w-0 flex-1">
                           <h3 className="text-sm font-bold text-slate-900 hover:text-teal-700">{thread.title}</h3>
-                          {getAuthor(thread.created_by) && <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500"><span>By {getAuthor(thread.created_by).full_name || 'Community member'}</span>{renderFollowButton(thread.created_by)}</div>}
+                          {getAuthor(thread.created_by) && <p className="mt-1 text-[11px] text-slate-500">By {getAuthor(thread.created_by).full_name || 'Community member'}</p>}
                         </Link>
+                        {renderFollowButton(thread.created_by)}
                       </div>
                       <p className="mt-1 text-xs text-slate-600">{thread.content}</p>
                       <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">

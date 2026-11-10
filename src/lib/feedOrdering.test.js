@@ -1,6 +1,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { prioritizePinnedFeedItems } = require('./feedOrdering')
+const {
+  ANNOUNCEMENT_PIN_DURATION_MS,
+  getPinnedAnnouncement,
+  prioritizeAnnouncement,
+  prioritizePinnedFeedItems,
+} = require('./feedOrdering')
 
 test('saved items are moved to the front of the feed', () => {
   const items = [
@@ -27,4 +32,36 @@ test('new reposts stay pinned at the top until the user clears them', () => {
 
   assert.equal(ordered[0].id, 'new-repost')
   assert.equal(ordered[1].id, 'older')
+})
+
+test('the newest admin announcement is pinned for one day', () => {
+  const now = Date.parse('2026-11-10T00:00:00.000Z')
+  const recent = {
+    id: 'notice',
+    type: 'announcement',
+    author: { user_type: 'admin' },
+    published_at: new Date(now - 2 * 60 * 60 * 1000).toISOString(),
+  }
+  const older = {
+    id: 'old-notice',
+    type: 'announcement',
+    author: { user_type: 'admin' },
+    published_at: new Date(now - ANNOUNCEMENT_PIN_DURATION_MS - 1).toISOString(),
+  }
+  const feed = [{ id: 'post', type: 'post' }, recent, older]
+
+  assert.equal(getPinnedAnnouncement(feed, now).id, 'notice')
+  assert.deepEqual(prioritizeAnnouncement(feed, 'notice').map((item) => item.id), ['notice', 'post', 'old-notice'])
+  assert.equal(getPinnedAnnouncement(feed, now + 23 * 60 * 60 * 1000), null)
+})
+
+test('expired, future, and non-admin announcements are not pinned', () => {
+  const now = Date.parse('2026-11-10T00:00:00.000Z')
+  const feed = [
+    { id: 'expired', type: 'announcement', author: { user_type: 'admin' }, published_at: new Date(now - 60 * 60 * 1000).toISOString(), expires_at: new Date(now - 1).toISOString() },
+    { id: 'future', type: 'announcement', author: { user_type: 'admin' }, published_at: new Date(now + 1000).toISOString() },
+    { id: 'member', type: 'announcement', author: { user_type: 'member' }, published_at: new Date(now - 1000).toISOString() },
+  ]
+
+  assert.equal(getPinnedAnnouncement(feed, now), null)
 })

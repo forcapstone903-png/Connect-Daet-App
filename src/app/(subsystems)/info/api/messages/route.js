@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -38,12 +39,38 @@ export async function GET(request) {
   if (settingsError) return NextResponse.json({ success: false, message: settingsError.message }, { status: 500 })
   const settingsByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting]))
 
-  const rows = (data || []).filter((message) => !message.deleted_for?.includes(userId))
+  let rows = (data || []).filter((message) => !message.deleted_for?.includes(userId))
   const participantIds = [...new Set(rows.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
   const allUserIds = [...new Set([userId, ...participantIds])]
-  const { data: users } = allUserIds.length
-    ? await adminSupabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', allUserIds)
-    : { data: [] }
+  const [{ data: users, error: usersError }, { data: profiles, error: profilesError }, { data: followRows, error: followsError }] = await Promise.all([
+    allUserIds.length
+      ? adminSupabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', allUserIds)
+      : Promise.resolve({ data: [], error: null }),
+    participantIds.length
+      ? adminSupabase.from('profiles').select('user_id, privacy_level, is_public').in('user_id', participantIds)
+      : Promise.resolve({ data: [], error: null }),
+    participantIds.length
+      ? adminSupabase.from('user_follows').select('following_id').eq('follower_id', userId).in('following_id', participantIds)
+      : Promise.resolve({ data: [], error: null }),
+  ])
+  if (usersError) return NextResponse.json({ success: false, message: usersError.message }, { status: 500 })
+  if (profilesError) return NextResponse.json({ success: false, message: profilesError.message }, { status: 500 })
+  if (followsError) return NextResponse.json({ success: false, message: followsError.message }, { status: 500 })
+
+  const followedIds = new Set((followRows || []).map((row) => row.following_id))
+  const privateIds = new Set((profiles || [])
+    .filter((profile) => {
+      const privacyLevel = profile.is_public === false
+        ? (['followers', 'private'].includes(profile.privacy_level) ? profile.privacy_level : 'followers')
+        : profile.privacy_level || 'public'
+      return privacyLevel === 'private'
+    })
+    .map((profile) => profile.user_id)
+    .filter((id) => !followedIds.has(id)))
+  rows = rows.filter((message) => {
+    const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
+    return !privateIds.has(otherUserId)
+  })
 
   const usersById = new Map((users || []).map((user) => [user.id, user]))
   const latestByConversation = new Map()
@@ -106,7 +133,7 @@ export async function GET(request) {
     })),
     current_user: usersById.get(userId) || { id: userId, full_name: 'You', profile_image_url: null },
     unread_messages: rows.filter((message) => message.sender_id !== userId && message.recipient_id === userId && !message.read_at).length,
-  })
+  }, { headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' } })
 }
 
 export async function POST(request) {
@@ -146,10 +173,18 @@ export async function POST(request) {
 
   const { data: recipientProfile, error: recipientProfileError } = await adminSupabase
     .from('profiles')
-    .select('privacy_preferences')
+    .select('privacy_level, is_public, privacy_preferences')
     .eq('user_id', recipientId)
     .maybeSingle()
   if (recipientProfileError) return NextResponse.json({ success: false, message: recipientProfileError.message }, { status: 500 })
+
+  const messagingAccess = await getPrivateProfileMessagingAccess(adminSupabase, senderId, recipientId)
+  if (messagingAccess.error) {
+    return NextResponse.json({ success: false, message: messagingAccess.error.message }, { status: 500 })
+  }
+  if (!messagingAccess.allowed) {
+    return NextResponse.json({ success: false, message: 'You must be an approved follower to message this user.' }, { status: 403 })
+  }
 
   if (recipientProfile?.privacy_preferences?.allowMessagesFrom === 'connections') {
     const [{ data: existingMessage, error: existingMessageError }, { data: senderFollowsRecipient, error: senderFollowError }, { data: recipientFollowsSender, error: recipientFollowError }] = await Promise.all([

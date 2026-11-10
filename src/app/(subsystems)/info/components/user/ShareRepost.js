@@ -117,33 +117,43 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
   const loadShareCount = useCallback(async () => {
     if (!contentType || !contentId) return
 
-    const baseQuery = supabase
+    const makeRepostsQuery = () => supabase
       .from('reposts')
       .select('user_id')
       .eq('original_content_type', contentType)
       .eq('original_content_id', contentId)
 
-    let repostsResult
     try {
-      repostsResult = await baseQuery.eq('status', 'active')
+      let repostsResult = await makeRepostsQuery().eq('status', 'active')
+      if (repostsResult.error && isMissingRepostStatusColumnError(repostsResult.error)) {
+        repostsResult = await makeRepostsQuery()
+      }
+
+      if (repostsResult.error) {
+        console.error('Unable to load repost count:', repostsResult.error.message)
+        return
+      }
+
+      const sharesResult = await supabase
+        .from('content_shares')
+        .select('user_id')
+        .eq('content_type', contentType)
+        .eq('content_id', contentId)
+        .in('share_type', ['repost', 'quote', 'external'])
+
+      if (sharesResult.error) {
+        console.error('Unable to load share count:', sharesResult.error.message)
+        return
+      }
+
+      const users = new Set([
+        ...(repostsResult.data || []).map((row) => row.user_id),
+        ...(sharesResult.data || []).map((row) => row.user_id),
+      ].filter(Boolean))
+      setShareCount(users.size)
     } catch (error) {
-      if (!isMissingRepostStatusColumnError(error)) throw error
-      repostsResult = await baseQuery
+      console.error('Unable to load share count:', error)
     }
-
-    const sharesResult = await supabase
-      .from('content_shares')
-      .select('user_id')
-      .eq('content_type', contentType)
-      .eq('content_id', contentId)
-      .in('share_type', ['repost', 'quote', 'external'])
-
-    if (repostsResult.error || sharesResult.error) return
-    const users = new Set([
-      ...(repostsResult.data || []).map((row) => row.user_id),
-      ...(sharesResult.data || []).map((row) => row.user_id),
-    ].filter(Boolean))
-    setShareCount(users.size)
   }, [contentId, contentType])
 
   useEffect(() => {
@@ -153,26 +163,38 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
 
     let active = true
     const checkExistingRepost = async () => {
-      const baseQuery = supabase
-        .from('reposts')
-        .select('id, status')
-        .eq('user_id', userId)
-        .eq('original_content_type', contentType)
-        .eq('original_content_id', contentId)
-
       try {
-        const { data } = await baseQuery.maybeSingle()
-        if (active) setReposted(Boolean(data?.status === 'active'))
-      } catch (error) {
-        if (!isMissingRepostStatusColumnError(error)) throw error
-        const { data } = await supabase
+        let result = await supabase
           .from('reposts')
-          .select('id')
+          .select('id, status')
           .eq('user_id', userId)
           .eq('original_content_type', contentType)
           .eq('original_content_id', contentId)
           .maybeSingle()
-        if (active) setReposted(Boolean(data))
+
+        if (result.error && isMissingRepostStatusColumnError(result.error)) {
+          result = await supabase
+            .from('reposts')
+            .select('id')
+            .eq('user_id', userId)
+            .eq('original_content_type', contentType)
+            .eq('original_content_id', contentId)
+            .maybeSingle()
+          if (result.error) {
+            console.error('Unable to check existing repost:', result.error.message)
+            return
+          }
+          if (active) setReposted(Boolean(result.data))
+          return
+        }
+
+        if (result.error) {
+          console.error('Unable to check existing repost:', result.error.message)
+          return
+        }
+        if (active) setReposted(Boolean(result.data?.status === 'active'))
+      } catch (error) {
+        console.error('Unable to check existing repost:', error)
       }
     }
 

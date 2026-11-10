@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -17,10 +18,26 @@ export async function GET(request) {
 
   const ids = new URL(request.url).searchParams.get('messageIds')?.split(',').map((id) => id.trim()).filter(Boolean) || []
   if (!ids.length) return NextResponse.json({ success: true, reactions: [] })
+  const { data: messages, error: messagesError } = await adminSupabase
+    .from('direct_messages')
+    .select('id, sender_id, recipient_id')
+    .in('id', ids)
+    .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+  if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
+
+  const accessibleMessageIds = []
+  for (const message of messages || []) {
+    const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
+    const access = await getPrivateProfileMessagingAccess(adminSupabase, userId, otherUserId)
+    if (access.error) return NextResponse.json({ success: false, message: access.error.message }, { status: 500 })
+    if (access.allowed) accessibleMessageIds.push(message.id)
+  }
+  if (!accessibleMessageIds.length) return NextResponse.json({ success: true, reactions: [] })
+
   const { data, error } = await adminSupabase
     .from('direct_message_reactions')
     .select('message_id, user_id, reaction')
-    .in('message_id', ids)
+    .in('message_id', accessibleMessageIds)
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
   return NextResponse.json({ success: true, reactions: data || [] })
 }
@@ -42,6 +59,12 @@ export async function POST(request) {
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
     .maybeSingle()
   if (!message) return NextResponse.json({ success: false, message: 'Message not found.' }, { status: 404 })
+  const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
+  const access = await getPrivateProfileMessagingAccess(adminSupabase, userId, otherUserId)
+  if (access.error) return NextResponse.json({ success: false, message: access.error.message }, { status: 500 })
+  if (!access.allowed) {
+    return NextResponse.json({ success: false, message: 'You must be an approved follower to access this conversation.' }, { status: 403 })
+  }
 
   const { data, error } = await adminSupabase
     .from('direct_message_reactions')

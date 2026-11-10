@@ -33,6 +33,7 @@ import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import ShareRepost from '@/app/(subsystems)/info/components/user/ShareRepost'
 import MentionsAutoSuggest from '@/app/(subsystems)/info/components/user/MentionsAutoSuggest'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import { isImageAttachment, parsePostContent } from '@/lib/postContent'
 
 function formatDate(value) {
   if (!value) return 'New'
@@ -577,7 +578,7 @@ export default function ThreadDetailPage() {
     const isReplyingToThis = Boolean(replyTarget && replyTarget.id === reply.id)
 
     return (
-      <div key={reply.id} className={`feed-card border-b border-slate-200 ${reply.is_best_answer ? 'bg-emerald-50' : 'bg-white'} ${depth > 0 ? 'ml-4 border-l border-slate-200 pl-4' : ''} p-4 sm:p-5`}>
+      <div key={reply.id} className={`feed-card mb-3 rounded-2xl border ${reply.is_best_answer ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'} shadow-sm ${depth > 0 ? 'ml-4 border-l-4 border-l-sky-100 pl-4' : ''} p-4 sm:p-5`}>
         {reply.is_best_answer && (
           <div className="mb-3 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
             ✓ Best Answer
@@ -627,7 +628,7 @@ export default function ThreadDetailPage() {
         {reply.gif_url && <img src={reply.gif_url} alt="GIF" className="mt-3 max-h-48 rounded-xl" />}
         {reply.sticker_url && <span className="mt-2 block text-3xl">{reply.sticker_url}</span>}
 
-        <div className="mt-4 flex items-center gap-3 text-xs">
+        <div className="mt-4 inline-flex min-h-9 items-center rounded-full border border-slate-100 bg-slate-50 px-2 text-xs">
           <Reactions contentType="forum_reply" contentId={reply.id} userId={userId} compact label="" />
         </div>
 
@@ -684,6 +685,12 @@ export default function ThreadDetailPage() {
     )
   }
 
+  const parsedThreadContent = parsePostContent(thread.content)
+  const threadAttachments = [...new Set([
+    ...(Array.isArray(thread.image_urls) ? thread.image_urls : []),
+    ...parsedThreadContent.attachments,
+  ])]
+
   return (
     <main className="tourism-shell usr-section-page usr-detail min-h-screen text-slate-900">
       <div className="usr-section-container mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-5 lg:px-6 lg:pb-10">
@@ -738,13 +745,15 @@ export default function ThreadDetailPage() {
             </div>
           </div>
 
-          {editingThread ? <textarea value={threadDraft.content} onChange={(event) => setThreadDraft((current) => ({ ...current, content: event.target.value }))} rows={5} className="mt-5 w-full rounded-lg border border-slate-200 p-3 text-[15px] leading-7 outline-none" /> : <div className="mt-5 text-[15px] leading-7 text-slate-700">{thread.content}</div>}
+          {editingThread ? <textarea value={threadDraft.content} onChange={(event) => setThreadDraft((current) => ({ ...current, content: event.target.value }))} rows={5} className="mt-5 w-full rounded-lg border border-slate-200 p-3 text-[15px] leading-7 outline-none" /> : <div className="mt-5 whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">{parsedThreadContent.text}</div>}
           {thread.location && <p className="mt-3 text-sm font-medium text-slate-500">📍 {thread.location}</p>}
-          {Array.isArray(thread.image_urls) && thread.image_urls.length > 0 && (
+          {threadAttachments.length > 0 && (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {thread.image_urls.map((url, index) => (
+              {threadAttachments.map((url, index) => (
                 <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-slate-200">
-                  <img src={url} alt={`Discussion attachment ${index + 1}`} className="h-36 w-full object-cover transition hover:scale-[1.02]" />
+                  {isImageAttachment(url)
+                    ? <img src={url} alt={`Discussion attachment ${index + 1}`} className="h-36 w-full object-cover transition hover:scale-[1.02]" />
+                    : <span className="block truncate px-3 py-4 text-sm font-semibold text-sky-700">Open attachment {index + 1}</span>}
                 </a>
               ))}
             </div>
@@ -784,15 +793,19 @@ export default function ThreadDetailPage() {
 
         {/* Reply Form */}
         {thread.status !== 'locked' && thread.status !== 'archived' && (
-          <div className="mb-3 rounded-[18px] border border-slate-200 bg-white p-4">
-            <h3 className="mb-4 text-sm font-bold text-slate-900">Share Your Reply</h3>
+          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <h3 className="mb-3 text-sm font-bold text-slate-900">Share Your Reply</h3>
 
-              <div className="mt-3 flex items-center gap-1 rounded-[18px] border border-slate-200 bg-slate-50 p-1.5">
-              <button type="button" onClick={() => setShowReplyTools((value) => !value)} aria-label="Add photo or video" title="Add photo or video" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700"><Plus className="h-5 w-5" /></button>
-                <button type="button" onClick={() => { setShowGifPicker((value) => !value); setShowStickerPicker(false) }} aria-label="Add GIF" title="Add GIF" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700 ${replyGifUrl ? 'bg-white text-sky-700' : ''}`}><Gift className="h-4 w-4" /></button>
-                <button type="button" onClick={() => { setShowStickerPicker((value) => !value); setShowGifPicker(false) }} aria-label="Add sticker" title="Add sticker" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-white hover:text-sky-700 ${replySticker ? 'bg-white text-sky-700' : ''}`}><Smile className="h-4 w-4" /></button>
-              <div className="min-w-0 flex-1"><MentionsAutoSuggest value={replyContent} onChange={setReplyContent} placeholder="Share your thoughts, links, or mention someone..." rows={1} userId={userId} onMentionAdded={(mention) => setReplyMentionRefs((current) => [...current.filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }])} /></div>
-              <button type="button" onClick={handleReplySubmit} disabled={submittingReply || (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker)} aria-label="Post reply" title="Post reply" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-600 text-white hover:bg-sky-700 disabled:opacity-50"><Send className="h-4 w-4" /></button>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
+              <MentionsAutoSuggest value={replyContent} onChange={setReplyContent} placeholder="Share your thoughts, links, or mention someone..." rows={3} userId={userId} onMentionAdded={(mention) => setReplyMentionRefs((current) => [...current.filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }])} />
+              <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2">
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => setShowReplyTools((value) => !value)} aria-label="Add photo or video" title="Add photo or video" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-white hover:text-sky-700 ${showReplyTools ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500'}`}><Plus className="h-5 w-5" /></button>
+                  <button type="button" onClick={() => { setShowGifPicker((value) => !value); setShowStickerPicker(false) }} aria-label="Add GIF" title="Add GIF" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-white hover:text-sky-700 ${replyGifUrl || showGifPicker ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500'}`}><Gift className="h-4 w-4" /></button>
+                  <button type="button" onClick={() => { setShowStickerPicker((value) => !value); setShowGifPicker(false) }} aria-label="Add sticker" title="Add sticker" className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition hover:bg-white hover:text-sky-700 ${replySticker || showStickerPicker ? 'bg-white text-sky-700 shadow-sm' : 'text-slate-500'}`}><Smile className="h-4 w-4" /></button>
+                </div>
+                <button type="button" onClick={handleReplySubmit} disabled={submittingReply || (!replyContent.trim() && !replyMedia.image_url && !replyMedia.video_url && !replyGifUrl && !replySticker)} aria-label="Post reply" title="Post reply" className="inline-flex h-10 items-center justify-center gap-2 rounded-full bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"><Send className="h-4 w-4" /><span>{submittingReply ? 'Posting…' : 'Reply'}</span></button>
+              </div>
             </div>
             {(replyGifUrl || replySticker) && <div className="mt-2 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50 p-2">{replyGifUrl ? <img src={replyGifUrl} alt="Selected GIF preview" className="h-20 max-w-36 rounded-lg object-cover" /> : null}{replySticker ? <span className="flex h-20 w-20 items-center justify-center rounded-lg bg-white text-4xl">{replySticker}</span> : null}<button type="button" onClick={() => { setReplyGifUrl(''); setReplySticker('') }} className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white text-slate-500 hover:bg-slate-100 hover:text-red-600" aria-label="Remove selected GIF or sticker" title="Remove preview"><X className="h-4 w-4" /></button></div>}
             {showReplyTools && <div className="mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2"><MediaUpload key={replyComposerResetKey} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="image" buttonText="Add photo" maxSizeMB={10} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, image_url: url || '' }))} onUploadError={(message) => alert(message)} /><MediaUpload key={`${replyComposerResetKey}-video`} bucket="post-media" folder={`forum-replies/${userId}/${threadId}`} mediaType="video" buttonText="Add video" maxSizeMB={20} maxVideoDuration={30} onUploadComplete={(url) => setReplyMedia((current) => ({ ...current, video_url: url || '' }))} onUploadError={(message) => alert(message)} /></div>}
@@ -800,8 +813,6 @@ export default function ThreadDetailPage() {
             {showGifPicker && <div className="mt-2 overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={gifQuery} onChange={(event) => setGifQuery(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>{gifLoading ? <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-slate-500"><LoaderCircle className="h-4 w-4 animate-spin" /> Loading GIFs...</div> : gifError ? <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">{gifError}</div> : <div className="grid max-h-56 grid-cols-3 gap-2 overflow-y-auto p-2">{gifResults.map((gif) => <button key={gif.id || gif.url} type="button" onClick={() => { setReplyGifUrl(gif.url); setReplySticker(''); setShowGifPicker(false); setGifQuery('') }} className="overflow-hidden rounded-lg border border-slate-100 bg-slate-50 hover:ring-2 hover:ring-sky-500"><img src={gif.url} alt={gif.title || 'GIF'} className="h-20 w-full object-cover" /></button>)}</div>}</div>}
             {showStickerPicker && <div className="mt-2 flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-white p-2">{STICKERS.map((sticker) => <button key={sticker} type="button" onClick={() => { setReplySticker(sticker); setReplyGifUrl(''); setShowStickerPicker(false) }} className="flex h-10 w-10 items-center justify-center rounded-lg text-xl hover:bg-slate-100">{sticker}</button>)}</div>}
 
-            <div className="mt-4 flex gap-2">
-            </div>
           </div>
         )}
 

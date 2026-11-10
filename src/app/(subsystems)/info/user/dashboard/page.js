@@ -9,9 +9,10 @@
  * - Error handling with user feedback
  */
 
+import { Fragment } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowUp,
@@ -25,6 +26,7 @@ import {
   Megaphone,
   MessageSquare,
   MapPin,
+  Pin,
   PenLine,
   RefreshCw,
   ShieldCheck,
@@ -39,7 +41,7 @@ import {
 import { getDaetDestinationImage } from '@/lib/daetDestinationImages'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import { clearUserCache, getCache, getCacheKey, invalidateCache, invalidateCachePrefix, setCache } from '@/lib/cache'
+import { clearUserCache, getCacheKey, invalidateCache, invalidateCachePrefix } from '@/lib/cache'
 import { normalizeAnnouncementRecord } from '@/lib/announcementSchema'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import { buildRepostFeedItem } from '@/lib/repostIdentity'
@@ -54,9 +56,11 @@ import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader
 import DaetWeatherCard from '@/app/(subsystems)/info/components/user/DaetWeatherCard'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
-import { prioritizePinnedFeedItems } from '@/lib/feedOrdering'
+import { getAnnouncementPinExpiry, getPinnedAnnouncement, prioritizeAnnouncement, prioritizePinnedFeedItems } from '@/lib/feedOrdering'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getPostImages } from '@/lib/postMedia'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 // Database table constants
 const TABLES = {
@@ -70,7 +74,6 @@ const TABLES = {
   ACTIVITY_LOG: 'user_activity_log',
 }
 
-const DASHBOARD_CACHE_TTL_MS = 120000
 const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
 const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
 
@@ -81,7 +84,6 @@ const FEED_TABS = [
   { value: 'blog', label: 'Blogs' },
   { value: 'forum', label: 'Forums' },
   { value: 'tourist_spot', label: 'Travel' },
-  { value: 'other', label: 'Others' },
 ]
 
 function favoriteTypeToFeedType(itemType) {
@@ -107,14 +109,6 @@ function writeStoredSet(key, values) {
 }
 
 const getDashboardCacheKey = (userId) => getCacheKey('feed', 'user', userId, 'dashboard')
-
-function getDashboardCache(userId) {
-  return getCache(getDashboardCacheKey(userId))?.data || null
-}
-
-function setDashboardCache(userId, data) {
-  setCache(getDashboardCacheKey(userId), data, DASHBOARD_CACHE_TTL_MS)
-}
 
 // Helper functions
 function formatDate(value) {
@@ -226,6 +220,11 @@ export default function UserDashboardPage() {
   const [openPostMenu, setOpenPostMenu] = useState(null)
   const [blogActionConfirm, setBlogActionConfirm] = useState(null)
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
+  const [pendingSuggestedFollows, setPendingSuggestedFollows] = useState(() => new Set())
+  const [followingUserIds, setFollowingUserIds] = useState(() => new Set())
+  const [followSuggestionPosition, setFollowSuggestionPosition] = useState(3)
+  const impressionTimersRef = useRef(new Map())
+  const trackedImpressionsRef = useRef(new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
   const [feedRefreshing, setFeedRefreshing] = useState(false)
   const [feedNow, setFeedNow] = useState(() => Date.now())
@@ -239,6 +238,28 @@ export default function UserDashboardPage() {
   const [pullDistance, setPullDistance] = useState(0)
   const sheetTouchStartY = useRef(null)
   const pullStartY = useRef(null)
+  const pendingDashboardRefreshRef = useRef(null)
+  const dashboardRefreshSucceededRef = useRef(true)
+  const realtime = useRealtimeRefresh({
+    channelName: `user-dashboard-content-${userId || 'unknown'}`,
+    tables: [
+      TABLES.ANNOUNCEMENTS,
+      TABLES.EVENTS,
+      'info_tourist_spots',
+      TABLES.FORUM_THREADS,
+      'forum_replies',
+    ],
+    enabled: Boolean(authenticated && userId),
+  })
+  const { setRefreshCallback } = realtime
+  const refreshDashboardSilently = useCallback(() => new Promise((resolve) => {
+    pendingDashboardRefreshRef.current = resolve
+    setFeedRefreshKey((value) => value + 1)
+  }), [])
+
+  useEffect(() => {
+    setRefreshCallback(refreshDashboardSilently)
+  }, [refreshDashboardSilently, setRefreshCallback])
 
   useEffect(() => {
     if (!userId) return undefined
@@ -255,6 +276,12 @@ export default function UserDashboardPage() {
     }
 
     loadUnreadAlerts()
+    const refreshUnreadAlerts = () => {
+      if (document.visibilityState === 'visible') void loadUnreadAlerts()
+    }
+    const refreshTimer = window.setInterval(refreshUnreadAlerts, 30_000)
+    window.addEventListener('online', refreshUnreadAlerts)
+    document.addEventListener('visibilitychange', refreshUnreadAlerts)
     const notificationChannel = supabase?.channel?.(`dashboard-notifications-${userId}`)
     notificationChannel
       ?.on('postgres_changes', {
@@ -262,7 +289,7 @@ export default function UserDashboardPage() {
         schema: 'public',
         table: 'info_notifications',
         filter: `user_id=eq.${userId}`,
-      }, () => setUnreadAlerts((count) => count + 1))
+      }, refreshUnreadAlerts)
       ?.subscribe()
     const updateUnreadAlerts = (event) => {
       const count = Number(event?.detail?.unreadCount)
@@ -272,6 +299,9 @@ export default function UserDashboardPage() {
     window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
     return () => {
       active = false
+      window.clearInterval(refreshTimer)
+      window.removeEventListener('online', refreshUnreadAlerts)
+      document.removeEventListener('visibilitychange', refreshUnreadAlerts)
       window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
       if (notificationChannel) supabase.removeChannel(notificationChannel)
     }
@@ -442,6 +472,7 @@ export default function UserDashboardPage() {
     if (!userId) return
 
     let isMounted = true
+    dashboardRefreshSucceededRef.current = true
     const loadFollowedPeople = async () => {
       try {
         const response = await fetch('/info/api/users/following', { credentials: 'same-origin' })
@@ -644,7 +675,10 @@ export default function UserDashboardPage() {
   }, [feed, savedItems])
 
   const suggestions = useMemo(() => {
-    const availableFeed = feed.filter((item) => item.author?.id && item.author.id !== userId && !followedSuggestions.has(item.author.id))
+    const availableFeed = feed.filter((item) => item.author?.id
+      && item.author.id !== userId
+      && !followingUserIds.has(item.author.id)
+      && !followedSuggestions.has(item.author.id))
     const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
     const suggestedLocations = [...new Map(
       feed
@@ -658,17 +692,35 @@ export default function UserDashboardPage() {
       suggestedContent,
       suggestedLocations,
     }
-  }, [feed, userId, followedSuggestions])
+  }, [feed, userId, followingUserIds, followedSuggestions])
 
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
     try {
-      const response = await fetch(`/info/api/users/${personId}/follow`, { method: 'POST', credentials: 'same-origin' })
+      const isPending = pendingSuggestedFollows.has(personId)
+      const response = await fetch(`/info/api/users/${personId}/follow`, {
+        method: isPending ? 'DELETE' : 'POST',
+        credentials: 'same-origin',
+      })
       const result = await response.json()
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to follow this person right now')
-      setFollowedSuggestions((previous) => new Set([...previous, personId]))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update this follow right now')
+      if (isPending) {
+        setPendingSuggestedFollows((previous) => {
+          const next = new Set(previous)
+          next.delete(personId)
+          return next
+        })
+      } else if (result.follow_request_pending) {
+        setPendingSuggestedFollows((previous) => new Set([...previous, personId]))
+      } else if (result.is_following) {
+        setFollowingUserIds((previous) => new Set([...previous, personId]))
+        setFollowedSuggestions((previous) => new Set([...previous, personId]))
+      } else {
+        throw new Error('The follow action did not complete.')
+      }
       invalidateCache(getDashboardCacheKey(userId))
       invalidateCachePrefix('profile:user:')
+      window.dispatchEvent(new Event('daet-feed-refresh'))
     } catch (followError) {
       console.error('Suggested follow failed:', followError?.message || followError)
       setToastMessage(followError?.message || 'Unable to follow this person right now')
@@ -1014,14 +1066,6 @@ export default function UserDashboardPage() {
           announcements: announcementStats.count || 0,
         }
 
-        const cachedDashboard = getDashboardCache(currentUserId)
-        const nextDashboardData = {
-          ...(cachedDashboard || { categories: [], announcements: [], feed: [] }),
-          stats: nextStats,
-        }
-
-        setDashboardCache(currentUserId, nextDashboardData)
-
         if (!isMounted) return
         setStats(nextStats)
       } catch (error) {
@@ -1115,19 +1159,7 @@ export default function UserDashboardPage() {
       }
 
       try {
-        const cachedDashboard = getDashboardCache(userId)
-        if (cachedDashboard && feedRefreshKey === 0) {
-          if (!isMounted) return
-          setAnnouncements(cachedDashboard.announcements || [])
-          setStats(cachedDashboard.stats || { blogs: 0, events: 0, announcements: 0 })
-          setFeed(cachedDashboard.feed || [])
-          setLoading(false)
-          void loadDashboardStats(userId)
-          void fetchCommentCounts(cachedDashboard.feed || [])
-          return
-        }
-
-        setLoading(true)
+        if (!pendingDashboardRefreshRef.current) setLoading(true)
         setError(null)
 
         const [categoriesResult, announcementsResult, feedResult] = await Promise.all([
@@ -1168,28 +1200,28 @@ export default function UserDashboardPage() {
               .eq('status', 'active')
               .order('created_at', { ascending: false })
               .limit(20),
-            fetch('/info/api/users/following', { credentials: 'same-origin' }).then(async (response) => {
+            fetch('/info/api/users/following', { credentials: 'same-origin', cache: 'no-store' }).then(async (response) => {
               const result = await response.json()
-              if (!response.ok || !result.success) return { data: [], error: null }
+              if (!response.ok || !result.success) {
+                throw new Error(result.message || `Unable to load followed accounts (${response.status}).`)
+              }
               return { data: (result.following_ids || []).map((followingId) => ({ following_id: followingId })), error: null }
-            }).catch((followingError) => {
-              console.error('Dashboard following list unavailable:', followingError)
-              return { data: [], error: null }
             }),
-            supabase
-              .from('info_user_posts')
-              .select('id, user_id, title, content, created_at, updated_at, status, visibility')
-              .eq('status', 'published')
-              .order('created_at', { ascending: false })
-              .limit(50),
+            fetch('/info/api/user/feed', { credentials: 'same-origin', cache: 'no-store' }).then(async (response) => {
+              const result = await response.json()
+              if (!response.ok || !result.success) {
+                throw new Error(result.message || `Unable to load community posts (${response.status}).`)
+              }
+              return { data: result, error: null }
+            }),
           ]),
         ])
 
         if (categoriesResult.error) throw categoriesResult.error
         if (announcementsResult.error) throw announcementsResult.error
 
-        const [blogsFeed, eventsFeed, threadsFeed, touristSpotsFeed, followsFeed, userPostsFeed] = feedResult
-        if (blogsFeed.error || eventsFeed.error || threadsFeed.error || touristSpotsFeed.error) {
+        const [blogsFeed, eventsFeed, threadsFeed, touristSpotsFeed, followsFeed, memberContentFeed] = feedResult
+        if (blogsFeed.error || eventsFeed.error || threadsFeed.error || touristSpotsFeed.error || followsFeed.error || memberContentFeed.error) {
           throw new Error('Failed to load feed content')
         }
 
@@ -1197,8 +1229,8 @@ export default function UserDashboardPage() {
           userId,
           ...(followsFeed.data || []).map((row) => row.following_id).filter(Boolean),
         ])
-        const followedPosts = (userPostsFeed.data || [])
-          .filter((post) => followedUserIds.has(post.user_id) && (post.visibility !== 'private' || post.user_id === userId))
+        setFollowingUserIds(new Set([...followedUserIds].filter((id) => id !== userId)))
+        const availablePosts = (memberContentFeed.data.posts || [])
           .map((post) => ({
             ...post,
             created_by: post.user_id,
@@ -1206,56 +1238,12 @@ export default function UserDashboardPage() {
             published_at: post.created_at,
             category: 'Community',
           }))
-        const followedUserIdsArray = [...followedUserIds].filter(Boolean)
-        const { data: followedReposts } = followedUserIdsArray.length
-          ? await supabase
-            .from('reposts')
-            .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
-            .in('user_id', followedUserIdsArray)
-            .in('original_content_type', ['user_post', 'blog', 'event'])
-            .eq('status', 'active')
-            .order('created_at', { ascending: false })
-            .limit(50)
-          : { data: [] }
-        const repostedPostIds = [...new Set((followedReposts || []).filter((repost) => repost.original_content_type === 'user_post').map((repost) => repost.original_content_id).filter(Boolean))]
-        const { data: repostedPosts } = repostedPostIds.length
-          ? await supabase
-            .from('info_user_posts')
-            .select('id, user_id, title, content, created_at, updated_at, status, visibility')
-            .in('id', repostedPostIds)
-            .eq('status', 'published')
-          : { data: [] }
-        const repostedPostMap = new Map((repostedPosts || []).map((post) => [post.id, post]))
-        const repostedBlogIds = [...new Set((followedReposts || []).filter((repost) => repost.original_content_type === 'blog').map((repost) => repost.original_content_id).filter(Boolean))]
-        const { data: repostedBlogs } = repostedBlogIds.length
-          ? await supabase
-            .from('info_blogs')
-            .select('id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, status')
-            .in('id', repostedBlogIds)
-            .eq('status', 'published')
-          : { data: [] }
-        const repostedBlogMap = new Map((repostedBlogs || []).map((blog) => [blog.id, blog]))
-        const repostedEventIds = [...new Set((followedReposts || []).filter((repost) => repost.original_content_type === 'event').map((repost) => repost.original_content_id).filter(Boolean))]
-        const { data: repostedEvents } = repostedEventIds.length
-          ? await supabase
-            .from('info_events')
-            .select('id, created_by, title, description, featured_image, images, start_date, start_time, category, location, venue, created_at, status')
-            .in('id', repostedEventIds)
-            .in('status', ['published', 'cancelled', 'completed'])
-          : { data: [] }
-        const repostedEventMap = new Map((repostedEvents || []).map((event) => [event.id, event]))
-        const repostFeed = (followedReposts || [])
+        const visibleReposts = memberContentFeed.data.reposts || []
+        const repostFeed = (visibleReposts || [])
           .map((repost) => {
-            if (repost.visibility === 'private' && repost.user_id !== userId) return null
-            const originalPost = repost.original_content_type === 'blog'
-              ? repostedBlogMap.get(repost.original_content_id)
-              : repost.original_content_type === 'event'
-                ? repostedEventMap.get(repost.original_content_id)
-                : repostedPostMap.get(repost.original_content_id)
+            const originalPost = repost.original_post
             if (!originalPost) return null
             const originalOwnerId = originalPost.user_id || originalPost.created_by
-            if (originalPost.visibility === 'private' && originalOwnerId !== userId) return null
-            if (originalPost.visibility === 'followers' && !followedUserIds.has(originalOwnerId)) return null
             return {
               ...originalPost,
               id: repost.id,
@@ -1308,11 +1296,9 @@ export default function UserDashboardPage() {
           ...(eventsFeed.data || []).map((item) => item.created_by),
           ...(threadsFeed.data || []).map((item) => item.created_by),
           ...(touristSpotPosts || []).map((item) => item.created_by),
-          ...followedPosts.map((item) => item.created_by),
+          ...availablePosts.map((item) => item.user_id),
           ...repostFeed.map((item) => item.created_by),
-          ...(repostedPosts || []).map((item) => item.user_id),
-          ...(repostedBlogs || []).map((item) => item.created_by),
-          ...(repostedEvents || []).map((item) => item.created_by),
+          ...repostFeed.map((item) => item.original_author_id),
           ...(nextAnnouncements || []).map((item) => item.created_by),
         ].filter(Boolean)
         const uniqueAuthorIds = [...new Set(authorIds)]
@@ -1323,7 +1309,7 @@ export default function UserDashboardPage() {
           ])
           : [{ data: [], error: null }, { data: [], error: null }]
         if (authorsError) throw authorsError
-        if (authorProfilesError) console.error('Dashboard author profile names could not be loaded:', authorProfilesError)
+        if (authorProfilesError) throw authorProfilesError
         const authorProfileMap = new Map((authorProfiles || []).map((profile) => [profile.user_id, profile]))
         const authorRows = (authors || []).map((author) => {
           const profile = authorProfileMap.get(author.id)
@@ -1405,7 +1391,7 @@ export default function UserDashboardPage() {
             best_time_to_visit: spot.best_visit_time,
             gallery_images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
           })),
-          ...followedPosts.map((post) => ({
+          ...availablePosts.map((post) => ({
             ...withAuthor(post),
             type: 'post',
             href: `/info/user/posts/${post.id}`,
@@ -1430,25 +1416,19 @@ export default function UserDashboardPage() {
           })),
         ].sort((a, b) => new Date(b.published_at || b.last_activity_at || 0) - new Date(a.published_at || a.last_activity_at || 0))
 
-        const nextDashboardData = {
-          announcements: nextAnnouncements,
-          stats: { blogs: 0, events: 0, announcements: nextAnnouncements.length },
-          feed: mixedFeed,
-        }
-
-        setDashboardCache(userId, nextDashboardData)
-
         if (!isMounted) return
 
         setAnnouncements(nextAnnouncements)
-        setStats(nextDashboardData.stats)
+        setStats({ blogs: 0, events: 0, announcements: nextAnnouncements.length })
         setFeed(mixedFeed)
+        setFollowSuggestionPosition(Math.floor(Math.random() * Math.min(mixedFeed.length, 6)))
         setLoading(false)
         setFeedRefreshing(false)
 
         void loadDashboardStats(userId)
         void fetchCommentCounts(mixedFeed)
       } catch (err) {
+        dashboardRefreshSucceededRef.current = false
         if (!isMounted) return
         console.error('Dashboard load error:', err)
         setError(err.message || 'Failed to load dashboard')
@@ -1459,6 +1439,9 @@ export default function UserDashboardPage() {
           setFeedRefreshing(false)
         }
         if (isMounted) setLoading(false)
+        const resolveRefresh = pendingDashboardRefreshRef.current
+        pendingDashboardRefreshRef.current = null
+        resolveRefresh?.(isMounted && dashboardRefreshSucceededRef.current)
       }
     }
 
@@ -1503,8 +1486,7 @@ export default function UserDashboardPage() {
       if (hiddenPosts.has(`${item.type}-${item.id}`)) return false
       if (item.author?.id && notInterestedTopics.has(`author:${item.author.id}`)) return false
       if (item.category && notInterestedTopics.has(`category:${String(item.category).toLowerCase()}`)) return false
-      if (feedCategory === 'other' && ['event', 'blog', 'forum', 'tourist_spot'].includes(item.type)) return false
-      if (feedCategory !== 'all' && feedCategory !== 'other' && item.type !== feedCategory) return false
+      if (feedCategory !== 'all' && item.type !== feedCategory) return false
       if (feedScope === 'featured' && !item.featured) return false
       return true
     })
@@ -1529,9 +1511,10 @@ export default function UserDashboardPage() {
     userSignals.preferredCategories.forEach((category) => addWeight(categoryWeights, category, 8))
     userSignals.activities.forEach((activity) => {
       const entityType = activity.entity_type === 'forum_thread' ? 'forum' : activity.entity_type
-      addWeight(typeWeights, entityType, activity.activity_type === 'visit_dashboard' ? 0 : 2)
-      if (activity.entity_id) interactedIds.add(`${entityType}-${activity.entity_id}`)
-      if (activity.metadata?.category) addWeight(categoryWeights, activity.metadata.category, 4)
+      const isImpression = activity.activity_type === 'content_impression'
+      addWeight(typeWeights, activity.metadata?.contentType || entityType, isImpression ? 0.02 : activity.activity_type === 'visit_dashboard' ? 0 : 2)
+      if (activity.entity_id && !isImpression) interactedIds.add(`${entityType}-${activity.entity_id}`)
+      if (activity.metadata?.category) addWeight(categoryWeights, activity.metadata.category, isImpression ? 0.03 : 4)
     })
 
     userSignals.reactions.forEach((reaction) => {
@@ -1571,7 +1554,7 @@ export default function UserDashboardPage() {
       : rankFeedItems({
         items: result,
         profile: recommendationProfile,
-        userFollows: new Set(),
+        userFollows: followingUserIds,
         now: feedNow,
         coldStart: result.length > 0 && Object.keys(recommendationProfile.categories || {}).length === 0,
       }).sort((left, right) => {
@@ -1580,11 +1563,43 @@ export default function UserDashboardPage() {
         return rhs - lhs
       }).map(({ recommendationScore, recommendationKey, contributionBreakdown, ...item }) => item)
 
-    if (feedRefreshKey === 0 || rankedResult.length < 2) return rankedResult
+    const rotatedResult = feedRefreshKey === 0 || rankedResult.length < 2
+      ? rankedResult
+      : (() => {
+        const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
+        return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
+      })()
+    const pinnedAnnouncement = feedScope === 'for-you' && feedCategory === 'all'
+      ? getPinnedAnnouncement(rotatedResult, feedNow)
+      : null
+    return prioritizeAnnouncement(rotatedResult, pinnedAnnouncement?.id)
+  }, [feed, feedScope, feedCategory, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds, savedItems, followingUserIds])
 
-    const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
-    return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-  }, [feed, feedScope, feedCategory, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds, savedItems])
+  const pinnedAnnouncementId = feedScope === 'for-you'
+    && feedCategory === 'all'
+    && filteredFeed[0]?.type === 'announcement'
+    && getPinnedAnnouncement([filteredFeed[0]], feedNow)
+    ? filteredFeed[0].id
+    : null
+
+  useEffect(() => {
+    const now = Date.now()
+    const pinnedAnnouncement = getPinnedAnnouncement(feed, now)
+    if (!pinnedAnnouncement) return undefined
+
+    const pinExpiry = getAnnouncementPinExpiry(pinnedAnnouncement)
+    if (pinExpiry === null) return undefined
+
+    const timer = window.setTimeout(() => setFeedNow(Date.now()), Math.max(pinExpiry - now + 50, 0))
+    const refreshClockWhenVisible = () => {
+      if (document.visibilityState === 'visible') setFeedNow(Date.now())
+    }
+    document.addEventListener('visibilitychange', refreshClockWhenVisible)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener('visibilitychange', refreshClockWhenVisible)
+    }
+  }, [feed, feedNow])
 
   const openCommentsSheet = (sheetData) => {
     setActiveCommentsSheet(sheetData)
@@ -1634,8 +1649,101 @@ export default function UserDashboardPage() {
     return () => window.clearTimeout(timer)
   }, [feed, loading, notificationCommentRequest, router, userId])
 
-  const visibleFeed = filteredFeed.slice(0, feedVisibleCount)
+  const visibleFeed = useMemo(() => filteredFeed.slice(0, feedVisibleCount), [filteredFeed, feedVisibleCount])
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
+  const followSuggestionIndex = Math.min(followSuggestionPosition, Math.max(visibleFeed.length - 1, 0))
+
+  useEffect(() => {
+    if (!userId || typeof IntersectionObserver === 'undefined') return undefined
+
+    const impressionTimers = impressionTimersRef.current
+    const itemsByImpressionId = new Map(visibleFeed.map((item) => [
+      `${item.type}-${item.id}-${userId}`,
+      item,
+    ]))
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        const impressionId = entry.target.getAttribute('data-impression-id')
+        if (!impressionId || trackedImpressionsRef.current.has(impressionId)) return
+
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+          if (impressionTimersRef.current.has(impressionId)) return
+          const item = itemsByImpressionId.get(impressionId)
+          if (!item) return
+
+          const timer = window.setTimeout(() => {
+            impressionTimersRef.current.delete(impressionId)
+            trackedImpressionsRef.current.add(impressionId)
+            const contentType = item.is_repost
+              ? item.original_content_type
+              : item.type === 'post' ? 'user_post' : item.type === 'forum' ? 'forum_thread' : item.type
+            const contentId = item.original_content_id || item.original_post_id || item.id
+            void trackUserActivity({
+              userId,
+              activityType: 'content_impression',
+              entityType: contentType,
+              entityId: contentId,
+              description: 'Viewed content in the Home feed.',
+              metadata: {
+                contentType,
+                authorId: item.original_author_id || item.author?.id || item.created_by || null,
+                category: item.original_post?.category || item.category || item.type,
+              },
+            })
+          }, 1200)
+          impressionTimersRef.current.set(impressionId, timer)
+        } else {
+          const timer = impressionTimersRef.current.get(impressionId)
+          if (timer) window.clearTimeout(timer)
+          impressionTimersRef.current.delete(impressionId)
+        }
+      })
+    }, { threshold: 0.5 })
+
+    document.querySelectorAll('[data-impression-id]').forEach((element) => observer.observe(element))
+    return () => {
+      observer.disconnect()
+      impressionTimers.forEach((timer) => window.clearTimeout(timer))
+      impressionTimers.clear()
+    }
+  }, [visibleFeed, userId])
+
+  const renderPeopleSuggestionCard = () => {
+    if (!suggestions.suggestedPeople.length) return null
+
+    return (
+      <section className="usr-card rounded-[18px] border border-sky-100 bg-sky-50 p-4" aria-label="People to follow">
+        <div className="mb-3 flex items-center gap-2 text-sky-800">
+          <UserPlus className="h-4 w-4" aria-hidden="true" />
+          <h2 className="text-sm font-black">People to follow</h2>
+        </div>
+        <div className="space-y-3">
+          {suggestions.suggestedPeople.map((person) => {
+            const isFollowing = followingUserIds.has(person.id) || followedSuggestions.has(person.id)
+            const hasPendingRequest = pendingSuggestedFollows.has(person.id)
+            return (
+              <div key={person.id} className="flex items-center justify-between gap-3">
+                <UserProfileLink user={person} className="flex min-w-0 items-center gap-2.5">
+                  <span className="medium-home-follow-avatar flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                    {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full rounded-full object-cover" /> : getInitials(person.full_name)}
+                  </span>
+                  <span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>
+                </UserProfileLink>
+                <button
+                  type="button"
+                  onClick={() => void followSuggestedPerson(person.id)}
+                  disabled={isFollowing}
+                  className="usr-press shrink-0 rounded-full bg-white px-3 py-1.5 text-[10px] font-bold text-sky-700 disabled:text-slate-400"
+                >
+                  {isFollowing ? 'Following' : hasPendingRequest ? 'Cancel request' : 'Follow'}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </section>
+    )
+  }
 
   // Time-aware greeting. This only runs on the client (the page renders the
   // auth loader until the session resolves), so there is no hydration drift.
@@ -1725,6 +1833,9 @@ export default function UserDashboardPage() {
       )}
 
       <div className="mx-auto w-full max-w-[1280px] px-0 pb-24 pt-0 sm:px-0 sm:pt-3 lg:mx-0 lg:max-w-none lg:px-6 lg:pb-10">
+        <div className="mb-2 flex justify-end px-3 sm:px-4">
+          <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
+        </div>
         <ConfirmationModal
           isOpen={Boolean(blogActionConfirm)}
           title={blogActionConfirm?.action === 'delete' ? 'Delete blog?' : 'Archive blog?'}
@@ -1820,7 +1931,7 @@ export default function UserDashboardPage() {
 
             <div className="medium-home-feedback"><DailyFeedback userId={userId} /></div>
 
-            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length > 0 || suggestions.suggestedContent.length > 0 || suggestions.suggestedLocations.length > 0) && (
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedContent.length > 0 || suggestions.suggestedLocations.length > 0) && (
               <section className="medium-home-suggestions usr-card usr-enter rounded-[22px] p-4 sm:p-5 lg:hidden">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" /><h2 className="text-base font-black leading-tight text-slate-900">Suggested for you</h2></div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1830,13 +1941,6 @@ export default function UserDashboardPage() {
                       <p className="mt-1 line-clamp-2 text-[13px] font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p>
                       <p className="mt-1 text-[11px] text-slate-500">From {suggestions.suggestedPost.author?.full_name || 'the Daet community'}</p>
                     </Link>
-                  )}
-
-                  {suggestions.suggestedPeople.length > 0 && (
-                    <div className="rounded-xl bg-emerald-50 p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
-                      <div className="mt-2 space-y-2">{suggestions.suggestedPeople.map((person) => <div key={person.id} className="flex items-center justify-between gap-2"><UserProfileLink user={person} className="flex min-w-0 items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[10px] font-bold text-white">{person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}</span><span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span></UserProfileLink><button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white px-2.5 py-1.5 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">{followedSuggestions.has(person.id) ? 'Following' : <><UserPlus className="h-3 w-3" />Follow</>}</button></div>)}</div>
-                    </div>
                   )}
 
                   {suggestions.suggestedContent.length > 0 && (
@@ -1886,7 +1990,7 @@ export default function UserDashboardPage() {
               </div>
             ) : (
               <div className="usr-stagger space-y-3">
-                {visibleFeed.map((item) => {
+                {visibleFeed.map((item, index) => {
                   const itemKey = `${item.type}-${item.id}`
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
                   // Comments, reactions and share counts all key on the
@@ -1899,6 +2003,9 @@ export default function UserDashboardPage() {
                   const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
+                  const isFollowingAuthor = author?.id
+                    ? followingUserIds.has(author.id) || followedSuggestions.has(author.id)
+                    : null
                   const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
                   const itemDate = item.reposted_at || item.last_activity_at || item.published_at || item.created_at || item.start_date
                   const compactDate = itemDate && !Number.isNaN(new Date(itemDate).getTime())
@@ -1937,33 +2044,39 @@ export default function UserDashboardPage() {
 
                   if (item.is_repost) {
                     return (
-                      <article key={itemKey} data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
-                        <div className="medium-home-post-inner">
-                          <QuoteRepostCard
-                            item={item}
-                            reposter={author}
-                            reposterName={authorName}
-                            userId={userId}
-                            commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0}
-                            isSaved={isSaved}
-                            onToggleComments={() => router.push(item.href)}
-                            onToggleSave={(event) => handleBookmark(event, item)}
-                            onEdit={(quoteText) => void editOwnRepost(item, quoteText)}
-                            onPrivacyChange={(visibility) => updateOwnRepostPrivacy(item, visibility)}
-                            onDelete={() => void updateOwnRepost(item, 'delete')}
-                            onArchive={() => void updateOwnRepost(item, 'archive')}
-                            onHide={() => hidePost(itemKey)}
-                            onNotInterested={() => markNotInterested(item)}
-                            onCopyLink={() => void copyPostLink(item)}
-                            compactFeed
-                          />
-                        </div>
-                      </article>
+                      <Fragment key={itemKey}>
+                        <article data-post-id={item.original_post_id || item.id} data-repost-id={item.repost_id || item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
+                          <div className="medium-home-post-inner">
+                            <QuoteRepostCard
+                              item={item}
+                              reposter={author}
+                              reposterName={authorName}
+                              reposterFollowing={isFollowingAuthor}
+                              originalAuthorFollowing={item.original_author_id ? followingUserIds.has(item.original_author_id) : undefined}
+                              userId={userId}
+                              commentCount={commentCounts[`${item.type}-${actionContentId}`] || 0}
+                              isSaved={isSaved}
+                              onToggleComments={() => router.push(item.href)}
+                              onToggleSave={(event) => handleBookmark(event, item)}
+                              onEdit={(quoteText) => void editOwnRepost(item, quoteText)}
+                              onPrivacyChange={(visibility) => updateOwnRepostPrivacy(item, visibility)}
+                              onDelete={() => void updateOwnRepost(item, 'delete')}
+                              onArchive={() => void updateOwnRepost(item, 'archive')}
+                              onHide={() => hidePost(itemKey)}
+                              onNotInterested={() => markNotInterested(item)}
+                              onCopyLink={() => void copyPostLink(item)}
+                              compactFeed
+                            />
+                          </div>
+                        </article>
+                        {index === followSuggestionIndex && renderPeopleSuggestionCard()}
+                      </Fragment>
                     )
                   }
 
                   return (
-                    <article key={itemKey} data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
+                    <Fragment key={itemKey}>
+                    <article data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
                       <div className="medium-home-post-inner">
                         <div className="medium-home-post-head">
                           <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-post-avatar" aria-label={`View ${authorName}'s profile`}>
@@ -1971,6 +2084,17 @@ export default function UserDashboardPage() {
                           </Link>
                           <div className="medium-home-post-byline">
                             <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-author-name">{authorName}</Link>
+                            {isFollowingAuthor !== null && author?.user_type !== 'admin' && (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                                {isFollowingAuthor ? 'Following' : 'Not following'}
+                              </span>
+                            )}
+                            {item.id === pinnedAnnouncementId && (
+                              <span title="Pinned for one day after publication" className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-800">
+                                <Pin className="h-2.5 w-2.5" aria-hidden="true" />
+                                Pinned
+                              </span>
+                            )}
                             {author?.user_type === 'admin' && <ShieldCheck className="h-3 w-3 text-emerald-500" aria-label="Verified organization" />}
                             <span aria-hidden="true">·</span>
                             <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined}>
@@ -2038,6 +2162,8 @@ export default function UserDashboardPage() {
                         </div>
                       </div>
                     </article>
+                    {index === followSuggestionIndex && renderPeopleSuggestionCard()}
+                    </Fragment>
                   )
                 })}
               </div>
@@ -2100,7 +2226,7 @@ export default function UserDashboardPage() {
             </section>
             <DaetWeatherCard />
 
-            {!loading && (suggestions.suggestedPost || suggestions.suggestedPeople.length || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
+            {!loading && (suggestions.suggestedPost || suggestions.suggestedContent.length || suggestions.suggestedLocations.length) && (
               <section className="usr-card usr-enter rounded-[18px] p-4">
                 <div className="mb-3 flex items-center gap-2"><Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" /><h2 className="text-sm font-black text-slate-900">Suggested for you</h2></div>
                 <div className="space-y-3">
@@ -2109,26 +2235,6 @@ export default function UserDashboardPage() {
                       <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">Suggested post</p>
                       <p className="mt-1 line-clamp-2 text-xs font-bold leading-5 text-slate-900">{suggestions.suggestedPost.title}</p>
                     </Link>
-                  )}
-                  {suggestions.suggestedPeople.length > 0 && (
-                    <div className="rounded-xl bg-emerald-50 p-3">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">People to follow</p>
-                      <div className="mt-2 space-y-2">
-                        {suggestions.suggestedPeople.map((person) => (
-                          <div key={person.id} className="flex items-center justify-between gap-2">
-                            <UserProfileLink user={person} className="flex min-w-0 items-center gap-2">
-                              <span className="dashboard-profile-avatar flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-emerald-600 text-[9px] font-bold text-white">
-                                {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(person.full_name)}
-                              </span>
-                              <span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>
-                            </UserProfileLink>
-                            <button type="button" onClick={() => followSuggestedPerson(person.id)} disabled={followedSuggestions.has(person.id)} className="usr-press shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-emerald-700 disabled:text-slate-400">
-                              {followedSuggestions.has(person.id) ? 'Following' : 'Follow'}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
                   )}
                   {suggestions.suggestedLocations.length > 0 && (
                     <div className="rounded-xl bg-violet-50 p-3">

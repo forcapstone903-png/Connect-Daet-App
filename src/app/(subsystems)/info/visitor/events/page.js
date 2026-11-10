@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, CalendarDays, Loader, MapPin, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 function formatDateRange(startDate, endDate) {
   if (!startDate) return 'TBA'
@@ -42,12 +44,18 @@ export default function EventsIndexPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [retryKey, setRetryKey] = useState(0)
+  const refreshEventsRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: 'visitor-events-index',
+    tables: ['info_events'],
+  })
+  const { setRefreshCallback } = realtime
 
   useEffect(() => {
     let ignore = false
 
-    const loadEvents = async () => {
-      setLoading(true)
+    const loadEvents = async (silent = false) => {
+      if (!silent) setLoading(true)
       setError('')
       try {
         const today = new Date().toISOString().slice(0, 10)
@@ -61,23 +69,31 @@ export default function EventsIndexPage() {
         if (error) {
           console.error('Events index load failed:', error)
           if (!ignore) setError('We could not load events right now. Please try again in a moment.')
-          return
+          return false
         }
         if (!ignore) setEvents(data || [])
+        return true
       } catch (err) {
         console.error('Events index fetch failed:', err)
         if (!ignore) setError('We could not load events right now. Please try again in a moment.')
+        return false
       } finally {
         if (!ignore) setLoading(false)
       }
     }
 
+    refreshEventsRef.current = () => loadEvents(true)
     void loadEvents()
 
     return () => {
       ignore = true
+      refreshEventsRef.current = null
     }
   }, [retryKey])
+
+  useEffect(() => {
+    setRefreshCallback(() => refreshEventsRef.current?.() ?? false)
+  }, [setRefreshCallback])
 
   const categories = useMemo(() => {
     const set = new Set(events.filter((event) => event.category).map((event) => event.category))
@@ -101,6 +117,7 @@ export default function EventsIndexPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[1200px] px-3 pb-12 pt-3 sm:px-4 lg:px-6">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <Link

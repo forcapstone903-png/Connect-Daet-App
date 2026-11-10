@@ -19,6 +19,8 @@ import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess, canAccessAdminDashboard } from '@/lib/adminRoles'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 // Weather advisories persist for one week before expiring.
 const WEATHER_ALERT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -120,7 +122,7 @@ export default function AdminDashboard() {
   // Analytics Stats
   const [stats, setStats] = useState({
     totalUsers: 0, totalTourists: 0, totalBusinesses: 0, totalModerators: 0, onlineUsers: 0,
-    totalEvents: 0, totalSpots: 0, totalBlogs: 0
+    totalEvents: 0, totalSpots: 0, totalBlogs: 0, totalAnnouncements: 0, totalForumThreads: 0,
   });
   const [dailyFeedbackQuestion, setDailyFeedbackQuestion] = useState(null);
   const [dailyFeedbackVotes, setDailyFeedbackVotes] = useState([]);
@@ -168,6 +170,11 @@ export default function AdminDashboard() {
   const locationInputRef = useRef(null);
   const weatherPopoverRef = useRef(null);
   const notificationsPopoverRef = useRef(null);
+  const realtime = useRealtimeRefresh({
+    channelName: `admin-dashboard-content-${user?.user_id || user?.id || 'unknown'}`,
+    tables: ['info_announcements', 'info_events', 'info_tourist_spots', 'forum_threads', 'forum_replies'],
+    enabled: Boolean(user),
+  })
 
   useEffect(() => {
     if (!showWeatherDetails && !showNotifications) return undefined;
@@ -241,7 +248,7 @@ export default function AdminDashboard() {
     return colors[category] || '#0f3b2c';
   };
 
-  const fetchEventsFromDB = async () => {
+  const fetchEventsFromDB = async ({ throwOnError = false } = {}) => {
     try {
       const { data, error } = await supabase
         .from('info_events')
@@ -280,6 +287,7 @@ export default function AdminDashboard() {
       } else if (!markErrorNotified('fetch_events_error')) {
         addNotification('Database Error', `Failed to load events: ${err.message}`, 'error', null, 0);
       }
+      if (throwOnError) throw err
       return [];
     }
   };
@@ -914,7 +922,7 @@ export default function AdminDashboard() {
     }
   };
 
-  const fetchTouristSpotsCount = async () => {
+  const fetchTouristSpotsCount = async ({ throwOnError = false } = {}) => {
     try {
       const { count, error } = await supabase
         .from('info_tourist_spots')
@@ -925,6 +933,38 @@ export default function AdminDashboard() {
       setStats(prev => ({ ...prev, totalSpots: count || 0 }));
     } catch (err) {
       console.error('Error fetching spots count:', err);
+      if (throwOnError) throw err
+    }
+  };
+
+  const fetchAnnouncementsCount = async ({ throwOnError = false } = {}) => {
+    try {
+      const { count, error } = await supabase
+        .from('info_announcements')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'published')
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+
+      if (error) throw error;
+      setStats((prev) => ({ ...prev, totalAnnouncements: count || 0 }));
+    } catch (err) {
+      console.error('Error fetching announcements count:', err);
+      if (throwOnError) throw err;
+    }
+  };
+
+  const fetchForumThreadsCount = async ({ throwOnError = false } = {}) => {
+    try {
+      const { count, error } = await supabase
+        .from('forum_threads')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'published');
+
+      if (error) throw error;
+      setStats((prev) => ({ ...prev, totalForumThreads: count || 0 }));
+    } catch (err) {
+      console.error('Error fetching forum threads count:', err);
+      if (throwOnError) throw err;
     }
   };
 
@@ -942,17 +982,19 @@ export default function AdminDashboard() {
     }
   };
 
-  const fetchVenues = async () => {
+  const fetchVenues = async ({ throwOnError = false } = {}) => {
     try {
       const spotsRes = await supabase
         .from('info_tourist_spots')
         .select('name')
         .eq('status', 'active');
 
+      if (spotsRes.error) throw spotsRes.error
       const spots = (spotsRes?.data || []).map(s => s.name).filter(Boolean);
       setVenues(Array.from(new Set(spots)));
     } catch (err) {
       console.error('Error fetching venues:', err);
+      if (throwOnError) throw err
     }
   };
 
@@ -1024,7 +1066,7 @@ export default function AdminDashboard() {
     return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
-  async function fetchRecentActivity() {
+  async function fetchRecentActivity({ throwOnError = false } = {}) {
     try {
       const response = await fetch('/info/api/activity/track?scope=recent', { credentials: 'same-origin', cache: 'no-store' })
       const result = await response.json()
@@ -1057,8 +1099,24 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error('Error fetching recent activity:', err);
       setActivityFeed([{ id: 'recent-activity-unavailable', title: 'Recent activity unavailable', detail: 'The activity stream could not be loaded.', time: 'Now', color: 'bg-slate-100 text-slate-700' }]);
+      if (throwOnError) throw err
     }
   }
+
+  useEffect(() => {
+    realtime.setRefreshCallback(async () => {
+      if (!user) return false
+      await Promise.all([
+        fetchEventsFromDB({ throwOnError: true }),
+        fetchTouristSpotsCount({ throwOnError: true }),
+        fetchAnnouncementsCount({ throwOnError: true }),
+        fetchForumThreadsCount({ throwOnError: true }),
+        fetchVenues({ throwOnError: true }),
+        fetchRecentActivity({ throwOnError: true }),
+      ])
+      return true
+    })
+  })
 
   useEffect(() => {
     let active = true;
@@ -1103,6 +1161,8 @@ export default function AdminDashboard() {
           fetchEventsFromDB(),
           fetchUnreadInquiries(),
           fetchTouristSpotsCount(),
+          fetchAnnouncementsCount(),
+          fetchForumThreadsCount(),
           fetchBlogsCount(),
           fetchVenues(),
           fetchRecentActivity(),
@@ -1194,6 +1254,8 @@ export default function AdminDashboard() {
   const quickStats = [
     { label: 'Total Attractions', value: stats.totalSpots || 0, tone: 'sky', icon: 'attractions' },
     { label: 'Events', value: calendarStats.totalEvents || 0, tone: 'emerald', icon: 'events' },
+    { label: 'Announcements', value: stats.totalAnnouncements || 0, tone: 'violet', icon: 'notifications' },
+    { label: 'Forum Topics', value: stats.totalForumThreads || 0, tone: 'amber', icon: 'forum' },
     { label: 'Users', value: stats.totalUsers || 0, tone: 'amber', icon: 'users' },
     { label: 'Complaints', value: unreadInquiries.length || 0, tone: 'rose', icon: 'warning' },
   ];
@@ -1433,6 +1495,7 @@ export default function AdminDashboard() {
           </div>
         </div>
 
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
         <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           {quickStats.map((stat) => (
             <div key={stat.label} className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">

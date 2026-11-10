@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -18,6 +19,11 @@ async function getContext(request, params) {
   if (!userId) return { error: NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 }) }
   if (!adminSupabase) return { error: NextResponse.json({ success: false, message: 'Messaging service is not configured.' }, { status: 500 }) }
   if (!otherUserId || otherUserId === userId) return { error: NextResponse.json({ success: false, message: 'Invalid conversation.' }, { status: 400 }) }
+  const messagingAccess = await getPrivateProfileMessagingAccess(adminSupabase, userId, otherUserId)
+  if (messagingAccess.error) return { error: NextResponse.json({ success: false, message: messagingAccess.error.message }, { status: 500 }) }
+  if (!messagingAccess.allowed) {
+    return { error: NextResponse.json({ success: false, message: 'You must be an approved follower to access this conversation.' }, { status: 403 }) }
+  }
   return { userId, otherUserId, conversationId: getConversationId(userId, otherUserId) }
 }
 

@@ -10,6 +10,8 @@ import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 const ANNOUNCEMENT_TYPES = [
   { value: 'info', label: 'Info', icon: 'notifications', color: 'blue' },
@@ -102,6 +104,12 @@ export default function AdminAnnouncementPage() {
 
   // File input refs
   const imageInputRef = useRef(null);
+  const realtime = useRealtimeRefresh({
+    channelName: 'admin-announcements',
+    tables: ['info_announcements'],
+    enabled: Boolean(user),
+  })
+  const { setRefreshCallback } = realtime
 
   const showToast = useCallback((message, isError = false) => {
     setToastMessage({ message, isError });
@@ -184,11 +192,17 @@ export default function AdminAnnouncementPage() {
         totalViews,
         totalOpens,
       });
+      return true
     } catch (err) {
       console.error('Error fetching announcements:', err);
       showToast('Failed to load announcements', true);
+      return false
     }
   }, [showToast]);
+
+  useEffect(() => {
+    setRefreshCallback(fetchAnnouncements)
+  }, [fetchAnnouncements, setRefreshCallback])
 
   useEffect(() => {
     let isActive = true;
@@ -228,14 +242,6 @@ export default function AdminAnnouncementPage() {
       isActive = false;
     };
   }, [fetchAnnouncements, router]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      fetchAnnouncements();
-    }, 30000);
-
-    return () => clearInterval(timer);
-  }, [fetchAnnouncements]);
 
   const filteredAnnouncements = useMemo(() => {
     let filtered = [...announcements];
@@ -553,6 +559,7 @@ export default function AdminAnnouncementPage() {
             </button>
           </div>
         </div>
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
 
         {/* Stats Cards */}
         <div className="mb-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">

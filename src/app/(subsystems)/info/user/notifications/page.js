@@ -10,9 +10,10 @@ import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 const NOTIFICATIONS_CACHE_TTL_MS = 30 * 1000
-const NOTIFICATIONS_REFRESH_INTERVAL_MS = 10_000
+const NOTIFICATIONS_REFRESH_INTERVAL_MS = 30_000
 
 function readStoredSession() {
   if (typeof window === 'undefined') return null
@@ -122,6 +123,8 @@ export default function UserNotificationsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [realtimeStatus, setRealtimeStatus] = useState('connecting')
+  const [lastSuccessfulRefresh, setLastSuccessfulRefresh] = useState(null)
   const [retryKey, setRetryKey] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingHistory, setDeletingHistory] = useState(false)
@@ -132,6 +135,7 @@ export default function UserNotificationsPage() {
   const searchInputRef = useRef(null)
   const soundEnabledRef = useRef(false)
   const audioContextRef = useRef(null)
+  const realtimeConnectedRef = useRef(false)
 
   const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
   const notificationsCacheKey = getCacheKey('notifications', 'user', userId)
@@ -335,9 +339,11 @@ export default function UserNotificationsPage() {
             setCache(notificationsCacheKey, { notifications: nextNotifications, unreadCount: serverUnreadCount }, NOTIFICATIONS_CACHE_TTL_MS)
           }
           if (!silent) setLoading(false)
+          setLastSuccessfulRefresh(new Date())
+          setRealtimeStatus(realtimeConnectedRef.current ? 'live' : navigator.onLine ? 'reconnecting' : 'offline')
           window.clearTimeout(timeout)
           return incomingNotificationId
-            ? nextNotifications.some((notification) => notification.id === incomingNotificationId)
+            ? nextNotifications.some((notification) => notification.id === incomingNotificationId && !notification.is_read)
             : true
         } catch (error) {
           lastError = error
@@ -348,13 +354,32 @@ export default function UserNotificationsPage() {
 
       if (!silent && lastError) setLoadError('We could not load your notifications right now. Please try again.')
       if (!silent) setLoading(false)
+      realtimeConnectedRef.current = false
+      setRealtimeStatus(navigator.onLine ? 'stale' : 'offline')
       return false
     }
 
     loadNotifications()
     const refreshTimer = window.setInterval(() => {
-      void loadNotifications(true)
+      if (document.visibilityState === 'visible') void loadNotifications(true)
     }, NOTIFICATIONS_REFRESH_INTERVAL_MS)
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setRealtimeStatus('reconnecting')
+        void loadNotifications(true)
+      }
+    }
+    const handleOffline = () => {
+      realtimeConnectedRef.current = false
+      setRealtimeStatus('offline')
+    }
+    const handleOnline = () => {
+      setRealtimeStatus('reconnecting')
+      refreshWhenVisible()
+    }
+    window.addEventListener('offline', handleOffline)
+    window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
 
     let realtimeChannel = null
     let active = true
@@ -374,8 +399,8 @@ export default function UserNotificationsPage() {
           const incoming = payload?.new || null
           if (!incoming || !incoming.id) return
 
-          void loadNotifications(true, incoming.id).then((isVisible) => {
-            if (isVisible && !incoming.is_read) notifyUrgent()
+          void loadNotifications(true, incoming.id).then((isUnread) => {
+            if (isUnread) notifyUrgent()
           })
         },
       )
@@ -387,11 +412,7 @@ export default function UserNotificationsPage() {
       }, (payload) => {
         const updated = payload?.new
         if (!updated?.id) return
-        setNotifications((previous) => {
-          const next = previous.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
-          syncUnreadBadge(next)
-          return next
-        })
+        void loadNotifications(true)
       })
       realtimeChannel.on('postgres_changes', {
         event: 'DELETE',
@@ -399,20 +420,19 @@ export default function UserNotificationsPage() {
         table: 'info_notifications',
         filter: `user_id=eq.${userIdForRealtime}`,
       }, (payload) => {
-        const deletedId = payload?.old?.id
-        if (!deletedId) return
-        setNotifications((previous) => {
-          const next = previous.filter((item) => item.id !== deletedId)
-          syncUnreadBadge(next)
-          return next
-        })
+        if (!payload?.old?.id) return
+        void loadNotifications(true)
       })
       realtimeChannel.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
           reconnectAttempt = 0
+          realtimeConnectedRef.current = true
+          setRealtimeStatus('live')
           return
         }
         if (!['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) return
+        realtimeConnectedRef.current = false
+        setRealtimeStatus(navigator.onLine ? 'reconnecting' : 'offline')
         if (reconnectTimeout) window.clearTimeout(reconnectTimeout)
         const delay = Math.min(5000, 1000 * (2 ** reconnectAttempt))
         reconnectAttempt += 1
@@ -423,8 +443,9 @@ export default function UserNotificationsPage() {
     }
 
     return () => {
+      active = false
+      realtimeConnectedRef.current = false
       if (realtimeChannel) {
-        active = false
         if (reconnectTimeout) window.clearTimeout(reconnectTimeout)
         try {
           supabase.removeChannel(realtimeChannel)
@@ -433,6 +454,10 @@ export default function UserNotificationsPage() {
         }
       }
       window.clearInterval(refreshTimer)
+      window.removeEventListener('offline', handleOffline)
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('online', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [notificationsCacheKey, session, syncUnreadBadge, userId, retryKey])
 
@@ -844,7 +869,10 @@ export default function UserNotificationsPage() {
                 <h1 className="mt-1 text-[28px] font-black leading-none tracking-[-0.04em] text-slate-900 sm:text-4xl">Notifications</h1>
                 <p className="mt-2 max-w-xl text-[13px] leading-[18px] text-slate-600">Reactions, conversations, and community updates—all in one place.</p>
               </div>
-              <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold text-slate-700" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
+              <div className="flex flex-col items-start gap-1">
+                <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold text-slate-700" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
+                <RealtimeStatus status={realtimeStatus} lastSuccessfulRefresh={lastSuccessfulRefresh} />
+              </div>
             </div>
           </div>
 
@@ -914,14 +942,14 @@ export default function UserNotificationsPage() {
               </button>
             </div>
           ) : notifications.length ? (
-            <div className="space-y-3">
+            <div className="space-y-3 px-2 sm:px-4">
               {groupedNotifications.length ? groupedNotifications.map(([groupLabel, groupItems]) => (
                 <section key={groupLabel} className="notifications-group">
                   <div className="mb-2 flex items-center justify-between px-1">
                     <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-400">{groupLabel}</h2>
                     <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">{groupItems.length}</span>
                   </div>
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                   {groupItems.map((notification) => {
                     const NotificationIcon = getNotificationIcon(notification)
                     const actor = notification.actor || null

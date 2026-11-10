@@ -12,7 +12,7 @@ Treat “real-time updates” as an unverified requirement until it is implement
 
 ### 1. Confirm the system’s real-time requirements
 
-**Scope and freshness target agreed; implementation and end-to-end verification remain outstanding.** The agreed target is immediate push updates, with a 30-second reconciliation fallback:
+**Scope and freshness target agreed. Repository implementation is in place; hosted end-to-end verification remains outstanding.** The target is immediate push updates, with a 30-second reconciliation fallback:
 
 | Information | Intended audience | Agreed freshness | Planned delivery |
 |---|---|---|---|
@@ -27,13 +27,14 @@ The 30-second target is a maximum reconciliation interval while a page is visibl
 
 **Current implementation evidence:**
 
-- Announcement administration currently refetches every 30 seconds. The visitor announcement flow and the dashboard’s initial feed load do not establish push delivery for announcement changes.
-- The dashboard has a user-filtered notification subscription, but its content feed is initially loaded rather than kept current by a content-change subscription.
-- Event detail currently subscribes to reactions, comments, and reposts, not event-record changes. Tourist-spot detail similarly subscribes to engagement changes, not spot-record changes.
-- Existing notification and messaging pages have some Realtime subscriptions; notifications also poll, and messaging contains reconnect handling. This is partial wiring, not proof of end-to-end delivery or authorization.
-- The migrations inspected enable RLS for the content tables and define public/admin/owner SELECT policies. The inspected Realtime migrations add other tables, but do not establish that announcements, events, tourist spots, or forum activity are in the deployed Realtime publication. The deployed database configuration and policies must be checked directly.
+- Visitor home, event and tourist-spot lists/details, forum lists/details, signed-in announcements and dashboard, and admin announcement/dashboard surfaces now subscribe to relevant content tables and refresh through authorized queries.
+- The shared refresh hook coalesces bursts, ignores row payloads as data, reconciles every 30 seconds while visible, refreshes after visibility/online changes, tracks connection and last-successful-refresh state, and retries with bounded backoff. Notifications and messaging retain user-scoped subscriptions and authorized reloads, with visible-tab 30-second reconciliation.
+- Migration `076_realtime_content_streams.sql` adds the content tables to `supabase_realtime` and narrows announcement visibility by audience: public/tourist, business-account, or administrator access.
+- Duplicate and out-of-order notifications do not overwrite local records: notifications only trigger fresh authorized queries, so the database query result is authoritative.
 
-**Implementation requirements:** Add the agreed content subscriptions and 30-second reconciliation; re-query through existing authorized reads rather than trusting broadcast row data; deduplicate events by record ID and ignore older versions; expose reconnecting/offline and last-successful-refresh state; retry subscriptions with bounded backoff; and refresh when a hidden tab becomes visible again. Do not send private/admin row contents through a public channel.
+These are repository changes, not proof of deployed delivery or authorization. Apply migration 076 in the target environment and verify its publication membership, RLS behavior, auth/session configuration, and the behavior of each page there.
+
+**Implementation requirements:** Preserve authorized re-queries rather than trusting broadcast row data; expose reconnecting/offline and last-successful-refresh state; retry subscriptions with bounded backoff; and refresh when a hidden tab becomes visible again. Do not send private/admin row contents through a public channel.
 
 **Verification still required:** In a configured test deployment, publish/update each stream from a second session and confirm prompt delivery plus the 30-second reconciliation bound; simulate duplicate and out-of-order notifications, disconnect/reconnect, offline/online transitions, and tab visibility changes; and test anonymous, regular-user, conversation-participant, and administrator accounts to confirm unauthorized users cannot receive private messages, restricted content, or admin data. Verify the deployed Realtime publication and RLS policies as part of this test.
 

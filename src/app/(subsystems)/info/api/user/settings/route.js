@@ -20,6 +20,7 @@ const DEFAULT_PRIVACY = {
   allowMessagesFrom: 'everyone',
   allowMentions: true,
   searchable: true,
+  autoApproveFollowRequests: false,
 }
 
 function getAdminClient() {
@@ -97,6 +98,9 @@ export async function PUT(request) {
       allowMessagesFrom: ['everyone', 'connections'].includes(privacy.allowMessagesFrom) ? privacy.allowMessagesFrom : DEFAULT_PRIVACY.allowMessagesFrom,
       allowMentions: typeof privacy.allowMentions === 'boolean' ? privacy.allowMentions : DEFAULT_PRIVACY.allowMentions,
       searchable: typeof privacy.searchable === 'boolean' ? privacy.searchable : DEFAULT_PRIVACY.searchable,
+      autoApproveFollowRequests: typeof privacy.autoApproveFollowRequests === 'boolean'
+        ? privacy.autoApproveFollowRequests
+        : DEFAULT_PRIVACY.autoApproveFollowRequests,
     }
     const normalizedNotifications = Object.fromEntries(
       Object.entries(DEFAULT_NOTIFICATIONS).map(([key, defaultValue]) => [

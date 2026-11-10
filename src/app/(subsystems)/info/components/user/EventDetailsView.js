@@ -30,8 +30,10 @@ import {
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import Comments from './Comments'
 import UserTopHeader from './UserTopHeader'
+import RealtimeStatus from './RealtimeStatus'
 
 const EVENT_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000
 const SHARE_EMOJIS = ['😀', '😂', '😍', '🥳', '👏', '❤️', '📍', '🎉']
@@ -158,10 +160,17 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
   const menuRef = useRef(null)
   const secondaryMenuRef = useRef(null)
+  const refreshEventRef = useRef(null)
   const [engagementBarVisible, setEngagementBarVisible] = useState(true)
   const previousScrollYRef = useRef(0)
   const programmaticScrollRef = useRef(false)
   const programmaticScrollTimerRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: `event-detail-${eventId || 'unknown'}`,
+    tables: [{ table: 'info_events', filter: `id=eq.${eventId}` }],
+    enabled: Boolean(eventId),
+  })
+  const { setRefreshCallback } = realtime
 
   useEffect(() => {
     previousScrollYRef.current = window.scrollY
@@ -267,10 +276,10 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     const cacheKey = getCacheKey('event', 'public', 'detail', eventId)
     const cached = getCache(cacheKey, { allowStale: true })?.data
 
-    const loadEvent = async () => {
+    const loadEvent = async (silent = false) => {
       await Promise.resolve()
       if (!active) return
-      if (cached?.event) {
+      if (!silent && cached?.event) {
         setEvent(cached.event)
         setOrganizer(cached.organizer || null)
         setRelatedEvents(cached.relatedEvents || [])
@@ -289,17 +298,18 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
         console.error('Event detail load failed:', eventError)
         if (cached?.event) {
           setNotice('Showing the last available event details. Refresh to try again.')
-          return
+          return false
         }
         setError('We could not load this event. Please try again.')
-        setLoading(false)
-        return
+        if (!silent) setLoading(false)
+        return false
       }
       if (!data) {
         invalidateCache(cacheKey)
         setError('This event is unavailable or has not been published.')
-        setLoading(false)
-        return
+        setEvent(null)
+        if (!silent) setLoading(false)
+        return true
       }
 
       const [profileResult, relatedResult] = await Promise.all([
@@ -337,10 +347,13 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       setOrganizer(detail.organizer)
       setRelatedEvents(detail.relatedEvents)
       setCache(cacheKey, detail, EVENT_DETAIL_CACHE_TTL_MS)
+      setError('')
+      setNotice('')
       setLoading(false)
+      return true
     }
 
-    void loadEvent().catch((loadError) => {
+    const refreshEvent = (silent = false) => loadEvent(silent).catch((loadError) => {
       if (!active) return
       console.error('Event detail fetch failed:', loadError)
       if (cached?.event) {
@@ -348,11 +361,18 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       } else {
         setError('We could not load this event. Please try again.')
       }
-      setLoading(false)
+      if (!silent) setLoading(false)
+      return false
     })
+    refreshEventRef.current = () => refreshEvent(true)
+    setRefreshCallback(() => refreshEventRef.current?.() ?? false)
+    void refreshEvent()
 
-    return () => { active = false }
-  }, [eventId])
+    return () => {
+      active = false
+      refreshEventRef.current = null
+    }
+  }, [eventId, setRefreshCallback])
 
   useEffect(() => {
     if (!eventId) return undefined
@@ -725,6 +745,9 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   return (
     <main className="event-detail-page min-h-screen">
       <UserTopHeader detailMode spacer homeHref={backHref} />
+      <div className="mx-auto max-w-[1080px] px-4 pt-2">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
+      </div>
       <header className="event-detail-header">
         <div className="event-detail-header-inner">
           <button type="button" onClick={goBack} className="event-detail-back" aria-label="Go back">

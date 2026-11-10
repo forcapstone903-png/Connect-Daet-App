@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
@@ -18,6 +18,9 @@ import {
   User,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
+import { isImageAttachment, parsePostContent } from '@/lib/postContent'
 
 function formatDate(value) {
   if (!value) return 'New'
@@ -71,6 +74,16 @@ export default function PublicThreadDetailPage() {
   const [userLikes, setUserLikes] = useState(new Set())
   const [showShareMenu, setShowShareMenu] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
+  const refreshThreadRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: `visitor-forum-thread-${threadId || 'unknown'}`,
+    tables: [
+      { table: 'forum_threads', filter: `id=eq.${threadId}` },
+      { table: 'forum_replies', filter: `thread_id=eq.${threadId}` },
+    ],
+    enabled: Boolean(threadId),
+  })
+  const { setRefreshCallback } = realtime
 
   useEffect(() => {
     let ignore = false
@@ -85,7 +98,7 @@ export default function PublicThreadDetailPage() {
           setUserId(session.user.id)
         }
 
-        if (!threadId) return
+        if (!threadId) return false
 
         const { data: threadData, error: threadError } = await supabase
           .from('forum_threads')
@@ -98,14 +111,22 @@ export default function PublicThreadDetailPage() {
           )
           .eq('id', threadId)
           .eq('status', 'published')
-          .single()
+          .maybeSingle()
 
         if (threadError) {
           console.error('Error loading thread:', threadError)
-        } else if (threadData && !ignore) {
-          setThread(threadData)
+          return false
+        }
+        if (!threadData) {
+          if (!ignore) {
+            setThread(null)
+            setReplies([])
+          }
+          return true
+        }
+        if (!ignore) setThread(threadData)
 
-          const { data: repliesData } = await supabase
+        const { data: repliesData, error: repliesError } = await supabase
             .from('forum_replies')
             .select(
               `
@@ -117,36 +138,43 @@ export default function PublicThreadDetailPage() {
             .order('is_best_answer', { ascending: false })
             .order('likes', { ascending: false })
             .order('created_at', { ascending: true })
+        if (repliesError) throw repliesError
 
-          setReplies(repliesData || [])
+        if (!ignore) setReplies(repliesData || [])
 
-          if (session?.user?.id) {
-            const { data: subData } = await supabase
-              .from('forum_subscriptions')
-              .select('id')
-              .eq('thread_id', threadId)
-              .eq('user_id', session.user.id)
-              .single()
+        if (session?.user?.id) {
+          const { data: subData, error: subscriptionError } = await supabase
+            .from('forum_subscriptions')
+            .select('id')
+            .eq('thread_id', threadId)
+            .eq('user_id', session.user.id)
+            .maybeSingle()
+          if (subscriptionError) throw subscriptionError
 
-            setIsSubscribed(!!subData)
-          }
+          if (!ignore) setIsSubscribed(!!subData)
         }
 
-        if (!ignore) {
-          setLoading(false)
-        }
+        return true
       } catch (error) {
         console.error('Thread fetch failed:', error)
+        return false
+      } finally {
         if (!ignore) setLoading(false)
       }
     }
 
-    loadData()
+    refreshThreadRef.current = loadData
+    void loadData()
 
     return () => {
       ignore = true
+      refreshThreadRef.current = null
     }
   }, [threadId])
+
+  useEffect(() => {
+    setRefreshCallback(() => refreshThreadRef.current?.() ?? false)
+  }, [setRefreshCallback])
 
   const handleSubscribe = async () => {
     if (!userId) {
@@ -283,8 +311,17 @@ export default function PublicThreadDetailPage() {
     )
   }
 
+  const parsedThreadContent = parsePostContent(thread.content)
+  const threadAttachments = [...new Set([
+    ...(Array.isArray(thread.image_urls) ? thread.image_urls : []),
+    ...parsedThreadContent.attachments,
+  ])]
+
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
+      <div className="mx-auto max-w-3xl px-3 pt-3 sm:px-4 lg:px-6">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
+      </div>
       {showAuthModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl">
@@ -376,7 +413,18 @@ export default function PublicThreadDetailPage() {
             </div>
           </div>
 
-          <div className="mt-6 text-base leading-relaxed text-slate-700">{thread.content}</div>
+          <div className="mt-6 whitespace-pre-wrap break-words text-base leading-relaxed text-slate-700">{parsedThreadContent.text}</div>
+          {threadAttachments.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {threadAttachments.map((url, index) => (
+                <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-slate-200">
+                  {isImageAttachment(url)
+                    ? <img src={url} alt={`Discussion attachment ${index + 1}`} className="h-36 w-full object-cover transition hover:scale-[1.02]" />
+                    : <span className="block truncate px-3 py-4 text-sm font-semibold text-sky-700">Open attachment {index + 1}</span>}
+                </a>
+              ))}
+            </div>
+          )}
 
           {/* Thread Meta */}
           <div className="mt-6 border-t border-slate-200 pt-4">

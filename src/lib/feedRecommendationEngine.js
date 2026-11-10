@@ -275,11 +275,14 @@ function buildRecommendationProfile({ activities = [], reactions = [], favorites
     const entityType = activity?.entity_type || ''
     const meta = activity?.metadata || {}
     const category = meta?.category || meta?.topic || meta?.destination || activity?.entity_type || ''
-    addNumeric(nextProfile.contentTypes, entityType, 0.06)
-    addNumeric(nextProfile.categories, category, 0.12)
-    addNumeric(nextProfile.interactions, entityType, 0.08)
+    const isImpression = activity?.activity_type === 'content_impression'
+    const signalWeight = isImpression ? 0.01 : 0.12
+    addNumeric(nextProfile.contentTypes, meta?.contentType || entityType, isImpression ? 0.01 : 0.06)
+    addNumeric(nextProfile.categories, category, signalWeight)
+    addNumeric(nextProfile.interactions, entityType, isImpression ? 0.005 : 0.08)
+    if (meta?.authorId) addNumeric(nextProfile.authors, meta.authorId, isImpression ? 0.015 : 0.14)
     if (meta?.category || meta?.topic || meta?.destination) {
-      addNumeric(nextProfile.topics, meta.category || meta.topic || meta.destination, 0.08)
+      addNumeric(nextProfile.topics, meta.category || meta.topic || meta.destination, isImpression ? 0.01 : 0.08)
     }
   })
 
@@ -301,20 +304,31 @@ function buildRecommendationProfile({ activities = [], reactions = [], favorites
 
 function rankFeedItems({ items = [], profile, userFollows = new Set(), now = Date.now(), coldStart = false }) {
   const normalizedProfile = normalizeProfile(profile || createColdStartProfile())
-  const ranked = items
-    .map((item, index) => scoreItem(item, normalizedProfile, {
-      index,
-      previousItems: items.slice(0, index),
-      now,
-      userFollows,
-      coldStart: Boolean(coldStart || !Object.keys(normalizedProfile.categories || {}).length),
-    }))
-    .sort((left, right) => {
-      if (right.recommendationScore !== left.recommendationScore) {
-        return right.recommendationScore - left.recommendationScore
+  const remaining = items.map((item, index) => ({ item, index }))
+  const ranked = []
+
+  while (remaining.length) {
+    let bestIndex = 0
+    let bestScore = null
+    for (let index = 0; index < remaining.length; index += 1) {
+      const { item, index: originalIndex } = remaining[index]
+      const scored = scoreItem(item, normalizedProfile, {
+        index: originalIndex,
+        previousItems: ranked,
+        now,
+        userFollows,
+        coldStart: Boolean(coldStart || !Object.keys(normalizedProfile.categories || {}).length),
+      })
+      if (!bestScore || scored.recommendationScore > bestScore.recommendationScore
+        || (scored.recommendationScore === bestScore.recommendationScore && scored.index < bestScore.index)) {
+        bestIndex = index
+        bestScore = scored
       }
-      return left.index - right.index
-    })
+    }
+
+    ranked.push(bestScore)
+    remaining.splice(bestIndex, 1)
+  }
 
   return ranked
 }

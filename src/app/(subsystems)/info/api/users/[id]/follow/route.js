@@ -18,7 +18,7 @@ async function getTargetUserId(params) {
   return resolvedParams?.id || null
 }
 
-async function getFollowSummary(viewerId, targetUserId) {
+async function getFollowSummary(viewerId, targetUserId, isFollowing = true, followRequestPending = false) {
   const [{ count: targetFollowerCount, error: followerCountError }, { data: reverseRow, error: reverseError }] = await Promise.all([
     adminSupabase
       .from('user_follows')
@@ -52,9 +52,10 @@ async function getFollowSummary(viewerId, targetUserId) {
   const friendsCount = (targetFollowingRows || []).filter((row) => targetFollowerIds.has(row.following_id)).length
 
   return {
-    is_following: true,
+    is_following: isFollowing,
     is_followed_by: Boolean(reverseRow),
     is_mutual: Boolean(reverseRow),
+    follow_request_pending: followRequestPending,
     followers_count: targetFollowerCount || 0,
     following_count: targetFollowingCount || 0,
     friends_count: friendsCount,
@@ -68,7 +69,7 @@ async function notifyFollowEvent({ recipientId, actorId, actorName, message, lin
 
   const { error } = await adminSupabase.from('info_notifications').insert({
     user_id: recipientId,
-    title: message.includes('followed you back') ? 'Followed you back' : 'New follower',
+    title: type === 'follow_request' ? 'Follow request' : message.includes('followed you back') ? 'Followed you back' : 'New follower',
     message,
     type,
     is_read: false,
@@ -91,23 +92,83 @@ export async function POST(request, { params }) {
   if (!targetUserId || viewerId === targetUserId) return NextResponse.json({ success: false, message: 'You cannot follow this user.' }, { status: 400 })
 
   try {
-    const { data: existingRow } = await adminSupabase
+    const [{ data: existingRow, error: existingError }, { data: targetProfile, error: targetProfileError }] = await Promise.all([
+      adminSupabase
       .from('user_follows')
       .select('id')
       .eq('follower_id', viewerId)
       .eq('following_id', targetUserId)
-      .maybeSingle()
+      .maybeSingle(),
+      adminSupabase
+        .from('profiles')
+        .select('privacy_level, is_public, privacy_preferences')
+        .eq('user_id', targetUserId)
+        .maybeSingle(),
+    ])
+    if (existingError) throw existingError
+    if (targetProfileError) throw targetProfileError
 
     if (existingRow?.id) {
       return NextResponse.json({ success: true, ...(await getFollowSummary(viewerId, targetUserId)) })
     }
 
-    const { data: originalFollowRow } = await adminSupabase
+    const { data: pendingRequest, error: pendingRequestError } = await adminSupabase
+      .from('follow_requests')
+      .select('id')
+      .eq('follower_id', viewerId)
+      .eq('following_id', targetUserId)
+      .eq('status', 'pending')
+      .maybeSingle()
+    if (pendingRequestError) throw pendingRequestError
+
+    const targetPrivacy = targetProfile?.is_public === false
+      ? (['followers', 'private'].includes(targetProfile.privacy_level) ? targetProfile.privacy_level : 'followers')
+      : targetProfile?.privacy_level || 'public'
+    const autoApprove = targetProfile?.privacy_preferences?.autoApproveFollowRequests === true
+    if (targetPrivacy === 'private' && !autoApprove) {
+      if (!pendingRequest) {
+        const { error: requestError } = await adminSupabase
+          .from('follow_requests')
+          .upsert({
+            follower_id: viewerId,
+            following_id: targetUserId,
+            status: 'pending',
+            created_at: new Date().toISOString(),
+            responded_at: null,
+          }, { onConflict: 'follower_id,following_id' })
+        if (requestError) throw requestError
+
+        const { data: actor } = await adminSupabase
+          .from('info_users')
+          .select('id, full_name')
+          .eq('id', viewerId)
+          .maybeSingle()
+        try {
+          await notifyFollowEvent({
+            recipientId: targetUserId,
+            actorId: viewerId,
+            message: `${actor?.full_name || 'Someone'} requested to follow you.`,
+            link: `/info/user/profile/${viewerId}`,
+            type: 'follow_request',
+          })
+        } catch (notificationError) {
+          console.error('Follow request notification insert failed:', notificationError)
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        ...(await getFollowSummary(viewerId, targetUserId, false, true)),
+      })
+    }
+
+    const { data: originalFollowRow, error: originalFollowError } = await adminSupabase
       .from('user_follows')
       .select('id')
       .eq('follower_id', targetUserId)
       .eq('following_id', viewerId)
       .maybeSingle()
+    if (originalFollowError) throw originalFollowError
 
     const { error: insertError } = await adminSupabase
       .from('user_follows')
@@ -117,6 +178,13 @@ export async function POST(request, { params }) {
       console.error('Follow insert failed:', insertError)
       return NextResponse.json({ success: false, message: insertError.message || 'Unable to follow this user.' }, { status: 500 })
     }
+    const { error: clearRequestError } = await adminSupabase
+      .from('follow_requests')
+      .update({ status: 'approved', responded_at: new Date().toISOString() })
+      .eq('follower_id', viewerId)
+      .eq('following_id', targetUserId)
+      .eq('status', 'pending')
+    if (clearRequestError) throw clearRequestError
 
     const createdNewFollow = !insertError
     const { data: targetUser } = await adminSupabase
@@ -176,6 +244,16 @@ export async function DELETE(request, { params }) {
   if (error) {
     console.error('Follow delete failed:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to unfollow this user.' }, { status: 500 })
+  }
+  const { error: requestError } = await adminSupabase
+    .from('follow_requests')
+    .update({ status: 'cancelled', responded_at: new Date().toISOString() })
+    .eq('follower_id', viewerId)
+    .eq('following_id', targetUserId)
+    .eq('status', 'pending')
+  if (requestError) {
+    console.error('Follow request cancellation failed:', requestError)
+    return NextResponse.json({ success: false, message: 'Follow status changed, but the pending request could not be cancelled.' }, { status: 500 })
   }
 
   try {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   ChevronRight,
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCacheKey, getPersistentCache, setPersistentCache } from '@/lib/cache'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 const SPOTS_CACHE_KEY = getCacheKey('places', 'public', 'all', 'daet-content-v1')
@@ -29,14 +31,20 @@ export default function TouristSpotsPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [favorites, setFavorites] = useState(new Set())
+  const refreshSpotsRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: 'visitor-tourist-spots-index',
+    tables: ['info_tourist_spots'],
+  })
+  const { setRefreshCallback } = realtime
 
   useEffect(() => {
     let ignore = false
 
-    const loadSpots = async () => {
+    const loadSpots = async (silent = false) => {
       try {
         const cachedSpots = getPersistentCache(SPOTS_CACHE_KEY)?.data
-        if (Array.isArray(cachedSpots)) {
+        if (!silent && Array.isArray(cachedSpots)) {
           setSpots(cachedSpots)
           setLoading(false)
         }
@@ -55,29 +63,38 @@ export default function TouristSpotsPage() {
           ? await supabase.from('user_favorites').select('item_id').eq('user_id', userId).eq('item_type', 'tourist_spot')
           : { data: [] }
 
+        if (error) {
+          console.error('Error loading tourist spots:', error)
+          if (!ignore) setLoading(false)
+          return false
+        }
+
         if (!ignore) {
-          if (error) {
-            console.error('Error loading tourist spots:', error)
-            setSpots([])
-          } else {
-            setSpots(data || [])
-            setPersistentCache(SPOTS_CACHE_KEY, data || [], SPOTS_CACHE_TTL_MS)
-          }
+          setSpots(data || [])
+          setPersistentCache(SPOTS_CACHE_KEY, data || [], SPOTS_CACHE_TTL_MS)
           setFavorites(new Set((favoriteRows || []).map((favorite) => favorite.item_id)))
           setLoading(false)
         }
+        return true
       } catch (error) {
         console.error('Tourist spots fetch failed:', error)
         if (!ignore) setLoading(false)
+        return false
       }
     }
 
-    loadSpots()
+    refreshSpotsRef.current = () => loadSpots(true)
+    void loadSpots()
 
     return () => {
       ignore = true
+      refreshSpotsRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    setRefreshCallback(() => refreshSpotsRef.current?.() ?? false)
+  }, [setRefreshCallback])
 
   const categories = useMemo(() => {
     const set = new Set(spots.filter((s) => s.category).map((s) => s.category))
@@ -128,6 +145,7 @@ export default function TouristSpotsPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
         {/* Header */}
         <header className="visitor-local-header sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5 lg:hidden">
           <div className="flex items-center justify-between gap-3">

@@ -395,18 +395,48 @@
 
 .searchPage :global(.usr-search-toolbar form > div),
 .searchPage :global(.usr-search-toolbar > div > div > form) {
-  border-radius: 11px;
+  border-radius: 8px;
   background: var(--paper-muted);
   box-shadow: none;
 }
 
 .searchPage :global(.usr-search-toolbar input[type='search']) {
+  box-sizing: border-box;
+  width: 0;
+  max-width: 100%;
+  min-width: 0;
+  flex: 1 1 0%;
   min-height: 24px;
+  border: 0;
+  background-color: transparent !important;
+  padding: 0;
   color: var(--foreground);
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.searchPage :global(.usr-search-toolbar input[type='search']::-webkit-search-cancel-button) {
+  display: none !important;
+  width: 0;
+  margin: 0;
+  -webkit-appearance: none !important;
+  appearance: none !important;
 }
 
 .searchPage :global(.usr-search-toolbar input[type='search']::placeholder) {
   color: var(--text-muted);
+}
+
+.searchClearButton {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  flex: 0 0 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 .searchPage :global(.usr-search-toolbar button[aria-label='Open search filters']) {
@@ -522,7 +552,19 @@
 
 .searchPage :global(.usr-search-results ~ .space-y-6) {
   display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 18px;
+}
+
+.searchPage :global(.usr-search-results ~ .space-y-6 > section),
+.searchPage :global(.usr-search-results ~ .space-y-6 > section > *) {
+  min-width: 0;
+}
+
+.searchPage :global(.usr-search-results ~ .space-y-6 :is(p, a, h2, h3, span)) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .searchPage :global(.usr-search-results ~ .space-y-6 > section > h2) {
@@ -535,6 +577,8 @@
 
 .searchPage :global(.usr-search-results ~ .space-y-6 > section > .usr-card) {
   display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -574,6 +618,19 @@
 
 .searchPage :global(.usr-list-row p) {
   color: var(--text-secondary);
+}
+
+.followButton {
+  min-height: 25px;
+  padding: 3px 7px;
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.followButton svg {
+  width: 10px;
+  height: 10px;
 }
 
 .searchPage :global(.usr-search-results ~ .space-y-6 > section > .usr-card > .rounded-2xl) {
@@ -700,7 +757,10 @@
   }
 
   .searchPage :global(.usr-search-toolbar form) {
+    width: 100%;
+    min-width: 0;
     min-height: 42px;
+    flex: 1 1 0%;
     padding-inline: 12px;
   }
 

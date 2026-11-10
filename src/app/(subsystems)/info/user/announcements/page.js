@@ -1,20 +1,45 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Bell, Loader, MessageCircle, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 export default function UserAnnouncementsPage() {
   const router = useRouter()
+  const [authorizedUserId, setAuthorizedUserId] = useState('')
   const [authChecking, setAuthChecking] = useState(true)
   const [loading, setLoading] = useState(true)
   const [announcements, setAnnouncements] = useState([])
   const [sentiment, setSentiment] = useState(null)
   const [sentimentQuestion, setSentimentQuestion] = useState(null)
+  const loadAnnouncements = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('info_announcements')
+      .select('*')
+      .eq('status', 'published')
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .order('published_at', { ascending: false })
+
+    if (error) throw error
+    setAnnouncements(data || [])
+    return true
+  }, [])
+  const realtime = useRealtimeRefresh({
+    channelName: `user-announcements-${authorizedUserId || 'unknown'}`,
+    tables: ['info_announcements'],
+    enabled: Boolean(authorizedUserId),
+  })
+  const { setRefreshCallback } = realtime
+
+  useEffect(() => {
+    setRefreshCallback(loadAnnouncements)
+  }, [loadAnnouncements, setRefreshCallback])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -32,19 +57,12 @@ export default function UserAnnouncementsPage() {
         }
 
         setAuthChecking(false)
+        setAuthorizedUserId(activeSession.user.id)
 
-        const [{ data, error }, feedbackResponse] = await Promise.all([
-          supabase
-            .from('info_announcements')
-            .select('*')
-            .eq('status', 'published')
-            .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-            .order('published_at', { ascending: false }),
+        const [, feedbackResponse] = await Promise.all([
+          loadAnnouncements(),
           fetch('/info/api/daily-feedback', { credentials: 'same-origin' }),
         ])
-
-        if (error) throw error
-        setAnnouncements(data || [])
 
         if (feedbackResponse.ok) {
           const feedback = await feedbackResponse.json()
@@ -61,7 +79,7 @@ export default function UserAnnouncementsPage() {
     }
 
     checkAuth()
-  }, [router])
+  }, [loadAnnouncements, router])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Recently'
@@ -100,6 +118,7 @@ export default function UserAnnouncementsPage() {
     <main className="tourism-shell usr-section-page usr-announcements min-h-screen text-slate-900">
       <div className="usr-section-container mx-auto max-w-[1000px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <UserSectionHeader eyebrow="Stay informed" title="Announcements" description="Official updates, helpful advisories, and the latest news from the Daet tourism office." emoji="📣" />
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
 
         {sentimentQuestion && sentiment && (
           <section className="mb-6 rounded-[20px] border border-emerald-100 bg-white p-4 shadow-sm sm:p-5">

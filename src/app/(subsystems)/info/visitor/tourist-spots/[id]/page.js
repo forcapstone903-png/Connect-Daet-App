@@ -28,7 +28,9 @@ import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import RatingsReviews from '@/app/(subsystems)/info/components/user/RatingsReviews'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { trackUserActivity } from '@/lib/trackActivity'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 
 const DETAIL_CACHE_TTL_MS = 2 * 60 * 1000
 
@@ -71,6 +73,7 @@ export default function TouristSpotDetailPage() {
   const router = useRouter()
   const spotId = params?.id
   const menuRef = useRef(null)
+  const refreshSpotRef = useRef(null)
   const [spot, setSpot] = useState(null)
   const [spotAuthor, setSpotAuthor] = useState(null)
   const [relatedSpots, setRelatedSpots] = useState([])
@@ -91,6 +94,12 @@ export default function TouristSpotDetailPage() {
   const [shareOpen, setShareOpen] = useState(false)
   const [shareMessage, setShareMessage] = useState('')
   const [moreOpen, setMoreOpen] = useState(false)
+  const realtime = useRealtimeRefresh({
+    channelName: `tourist-spot-detail-${spotId || 'unknown'}`,
+    tables: [{ table: 'info_tourist_spots', filter: `id=eq.${spotId}` }],
+    enabled: Boolean(spotId),
+  })
+  const { setRefreshCallback } = realtime
 
   const loadEngagement = useCallback(async (id, currentUserId) => {
     const [reactions, comments] = await Promise.all([
@@ -115,12 +124,12 @@ export default function TouristSpotDetailPage() {
   useEffect(() => {
     if (!spotId) return undefined
     let active = true
-    const load = async () => {
+    const load = async (silent = false) => {
       let hasCachedDetails = false
       let hasDestinationData = false
       const cacheKey = getCacheKey('tourist-spot-detail', 'public', spotId)
       const cached = getCache(cacheKey, { allowStale: true })?.data
-      if (cached && active) {
+      if (!silent && cached && active) {
         hasCachedDetails = true
         hasDestinationData = true
         setSpot(cached.spot)
@@ -162,7 +171,14 @@ export default function TouristSpotDetailPage() {
           .eq('id', spotId)
           .maybeSingle()
         if (spotError) throw spotError
-        if (!data) throw new Error('Destination not found or unavailable.')
+        if (!data) {
+          if (active) {
+            setSpot(null)
+            setRelatedSpots([])
+            setError('Destination not found or unavailable.')
+          }
+          return true
+        }
         if (!active) return
         hasDestinationData = true
         setSpot(data)
@@ -220,6 +236,7 @@ export default function TouristSpotDetailPage() {
           if (active) setIsSaved(Boolean(favoriteResult.data))
         }
         await loadEngagement(spotId, currentUserId)
+        return true
       } catch (loadError) {
         console.error('Tourist spot details failed to load:', loadError)
         if (active && hasDestinationData) {
@@ -229,13 +246,19 @@ export default function TouristSpotDetailPage() {
         } else if (active) {
           setError(loadError.message || 'Destination details could not be loaded.')
         }
+        return false
       } finally {
         if (active) setLoading(false)
       }
     }
+    refreshSpotRef.current = () => load(true)
+    setRefreshCallback(() => refreshSpotRef.current?.() ?? false)
     void load()
-    return () => { active = false }
-  }, [spotId, loadEngagement])
+    return () => {
+      active = false
+      refreshSpotRef.current = null
+    }
+  }, [spotId, loadEngagement, setRefreshCallback])
 
   useEffect(() => {
     if (!moreOpen) return undefined
@@ -407,6 +430,10 @@ export default function TouristSpotDetailPage() {
             </div>
           </div>
         </header>
+
+        <div className="tourist-detail-content pt-2">
+          <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
+        </div>
 
         <div className="tourist-detail-content">
           <section className="tourist-detail-intro">

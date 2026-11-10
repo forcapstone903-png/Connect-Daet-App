@@ -1,14 +1,16 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { Search, ArrowRight, MapPin, Home, Sparkles, Plane, Newspaper, Menu, X, Star, Calendar, Megaphone, MessageCircle, Heart, Clock, Lock, ThumbsUp, Bookmark, Reply, PhoneCall, Radio, Utensils, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { decodeReviewText } from '@/lib/reviewText'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import VisitorScrollEffects from './VisitorScrollEffects'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import bagasbasImage from '@/app/(subsystems)/info/assets/images/bagasbasbeach.webp'
 import morgaImage from '@/app/(subsystems)/info/assets/images/morga.jpg'
 import ElevatedTownPlazaImage from '@/app/(subsystems)/info/assets/images/elevated-town-plaza.jpg'
@@ -19,6 +21,13 @@ const COOKIE_CONSENT_KEY = 'daet-cookie-consent'
 const PUBLIC_ANNOUNCEMENT_SEEN_KEY = 'daet:visitor:seen-public-announcement'
 const PUBLIC_REVIEWS_CACHE_KEY = getCacheKey('visitor', 'public', 'reviews')
 const PUBLIC_REVIEWS_CACHE_TTL = 5 * 60 * 1000
+const VISITOR_REALTIME_TABLES = [
+  'info_announcements',
+  'info_events',
+  'info_tourist_spots',
+  'forum_threads',
+  'forum_replies',
+]
 
 function getCookieConsent() {
   try {
@@ -113,6 +122,22 @@ export default function VisitorPage() {
   const [travelGuides, setTravelGuides] = useState([])
   const [visitorReviews, setVisitorReviews] = useState([])
   const [tripStage, setTripStage] = useState('stories')
+  const silentContentRefreshRef = useRef(false)
+  const pendingContentRefreshRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: 'visitor-home-content',
+    tables: VISITOR_REALTIME_TABLES,
+  })
+  const { setRefreshCallback } = realtime
+  const refreshContentSilently = useCallback(() => new Promise((resolve) => {
+    silentContentRefreshRef.current = true
+    pendingContentRefreshRef.current = resolve
+    setContentRetryKey((current) => current + 1)
+  }), [])
+
+  useEffect(() => {
+    setRefreshCallback(refreshContentSilently)
+  }, [refreshContentSilently, setRefreshCallback])
 
   const navigationItems = [
     { id: 'discover', label: 'Discover' },
@@ -165,22 +190,30 @@ export default function VisitorPage() {
   }, [router])
 
   useEffect(() => {
+    let active = true
+    const silentRefresh = silentContentRefreshRef.current
+    silentContentRefreshRef.current = false
+
     const loadContent = async () => {
+      let refreshSucceeded = true
       try {
-        setLoading(true)
-        setContentError('')
-        setFailedSections([])
-        setPopularSpots([])
-        setTrendingBlogs([])
-        setTravelGuides([])
-        setForumThreads([])
-        setFeaturedEvents([])
-        setUpcomingEvents([])
-        setAnnouncements([])
+        if (!silentRefresh) {
+          setLoading(true)
+          setContentError('')
+          setFailedSections([])
+          setPopularSpots([])
+          setTrendingBlogs([])
+          setTravelGuides([])
+          setForumThreads([])
+          setFeaturedEvents([])
+          setUpcomingEvents([])
+          setAnnouncements([])
+        }
 
         const failures = new Set()
         const reportError = (section, error) => {
           if (!error) return
+          refreshSucceeded = false
           console.error(`Visitor page: ${section} could not load:`, error.message)
           failures.add(section)
           setFailedSections([...failures])
@@ -208,8 +241,8 @@ export default function VisitorPage() {
 
         reportError('destinations', spotsError)
 
-        if (!spotsError && spots?.length) {
-          const validSpots = spots.filter(Boolean)
+        if (!spotsError) {
+          const validSpots = (spots || []).filter(Boolean)
           setPopularSpots(validSpots)
           const uniqueCategories = ['All', ...new Set(validSpots.map(spot => spot.category).filter(Boolean))]
           setCategories(uniqueCategories)
@@ -253,7 +286,7 @@ export default function VisitorPage() {
 
         reportError('featured events', eventsError)
 
-        if (!eventsError && events?.length) {
+        if (!eventsError) {
           setFeaturedEvents(events.filter(Boolean))
         }
 
@@ -346,17 +379,29 @@ export default function VisitorPage() {
           stories: storyCountError ? null : storyCount ?? 0,
           guides: guideCountError ? null : guideCount ?? 0,
         })
+        if (silentRefresh && failures.size === 0) {
+          setContentError('')
+          setFailedSections([])
+        }
 
       } catch (error) {
+        refreshSucceeded = false
         console.error('Visitor page content load failed:', error)
         setFailedSections((previous) => [...new Set([...previous, 'visitor content'])])
         setContentError('Some content could not be loaded. Check your connection and retry.')
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
+        const resolveRefresh = pendingContentRefreshRef.current
+        pendingContentRefreshRef.current = null
+        resolveRefresh?.(refreshSucceeded)
       }
     }
 
-    loadContent()
+    void loadContent()
+
+    return () => {
+      active = false
+    }
   }, [contentRetryKey])
 
   const heroStats = [
@@ -633,6 +678,14 @@ export default function VisitorPage() {
               </div>
             )}
           </header>
+
+          <div className="mb-3 flex justify-end">
+            <RealtimeStatus
+              status={realtime.connectionStatus}
+              lastSuccessfulRefresh={realtime.lastSuccessfulRefresh}
+              className="rounded-full bg-white/90 px-3 py-1"
+            />
+          </div>
 
           {contentError && (
             <div

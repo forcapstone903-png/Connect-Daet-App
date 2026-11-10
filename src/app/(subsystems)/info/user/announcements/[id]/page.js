@@ -1,20 +1,47 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
 import { AlertCircle, ArrowLeft, Bell, Loader, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
 export default function AnnouncementDetailPage() {
   const router = useRouter()
   const params = useParams()
   const announcementId = params.id
+  const [authorizedUserId, setAuthorizedUserId] = useState('')
   const [authChecking, setAuthChecking] = useState(true)
   const [loading, setLoading] = useState(true)
   const [announcement, setAnnouncement] = useState(null)
   const [error, setError] = useState(null)
+  const loadAnnouncement = useCallback(async () => {
+    const { data, error: queryError } = await supabase
+      .from('info_announcements')
+      .select('*')
+      .eq('id', announcementId)
+      .eq('status', 'published')
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .maybeSingle()
+
+    if (queryError) throw queryError
+    setAnnouncement(data || null)
+    setError(data ? null : 'Post not found.')
+    return true
+  }, [announcementId])
+  const realtime = useRealtimeRefresh({
+    channelName: `announcement-detail-${authorizedUserId || 'unknown'}-${announcementId}`,
+    tables: [{ table: 'info_announcements', filter: `id=eq.${announcementId}` }],
+    enabled: Boolean(authorizedUserId && announcementId),
+  })
+  const { setRefreshCallback } = realtime
+
+  useEffect(() => {
+    setRefreshCallback(loadAnnouncement)
+  }, [loadAnnouncement, setRefreshCallback])
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -32,16 +59,8 @@ export default function AnnouncementDetailPage() {
         }
 
         setAuthChecking(false)
-
-        const { data, error } = await supabase
-          .from('info_announcements')
-          .select('*')
-          .eq('id', announcementId)
-          .eq('status', 'published')
-          .single()
-
-        if (error) throw error
-        setAnnouncement(data)
+        setAuthorizedUserId(activeSession.user.id)
+        await loadAnnouncement()
       } catch (err) {
         console.error('Error loading announcement:', err)
         setError('Post not found.')
@@ -51,7 +70,7 @@ export default function AnnouncementDetailPage() {
     }
 
     checkAuth()
-  }, [router, announcementId])
+  }, [loadAnnouncement, router])
 
   const formatDate = (dateStr) => {
     if (!dateStr) return 'Recently'
@@ -99,6 +118,7 @@ export default function AnnouncementDetailPage() {
   return (
     <main className="usr-section-page usr-detail min-h-screen text-slate-900">
       <div className="usr-section-container mx-auto max-w-[880px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
         <Link href="/info/user/announcements" className="mb-4 inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700">
           <ArrowLeft className="h-4 w-4" />
           Back to Announcements

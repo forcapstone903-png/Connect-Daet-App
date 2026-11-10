@@ -1064,7 +1064,7 @@ export default function BlogDetailPage() {
   if (loading) {
     return (
       <main className="tourism-shell usr-section-page usr-detail medium-article-page min-h-screen text-slate-900">
-        <UserTopHeader detailMode spacer={false} />
+        <UserTopHeader detailMode />
         <div className="usr-section-container mx-auto max-w-3xl px-3 pb-24 pt-3 sm:px-4 lg:px-6">
           <div className="usr-section-loading">
             {[0, 1].map((item) => (
@@ -1083,7 +1083,7 @@ export default function BlogDetailPage() {
   if (!blog) {
     return (
       <main className="tourism-shell usr-section-page usr-detail medium-article-page flex min-h-screen items-center justify-center p-6 text-slate-900">
-        <UserTopHeader detailMode spacer={false} />
+        <UserTopHeader detailMode />
         <div className="usr-empty-state max-w-xl">
           <FileText className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
           <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
@@ -1117,11 +1117,12 @@ export default function BlogDetailPage() {
 
   return (
     <main className="tourism-shell usr-section-page usr-detail usr-stories medium-article-page min-h-screen text-slate-900">
-      <UserTopHeader detailMode spacer={false} />
+      <UserTopHeader detailMode />
       <div className="usr-section-container mx-auto max-w-6xl px-3 py-3 sm:px-4 sm:py-5 lg:px-6">
         <div className="medium-article-layout">
         <article className="medium-article-card mb-5 rounded-[16px] border border-slate-200 bg-white p-4 shadow-sm sm:p-6 lg:mb-0">
 
+          <header className="medium-article-header">
           <div className="medium-article-topic-list">
             <span className="medium-article-category">{categories[blog.category] || blog.category || 'Daet story'}</span>
             {Array.isArray(blog.tags) && blog.tags.map((tag, index) => (
@@ -1156,12 +1157,14 @@ export default function BlogDetailPage() {
               </div>
             </div>
           </div>
+          </header>
 
           <div className="medium-article-top-actions medium-article-top-social">
             <SocialActionBar
               contentType="blog"
               contentId={blog.id}
               userId={userId}
+              heartOnly
               commentCount={comments.length}
               onToggleComments={handleOpenComments}
               isSaved={isSaved}

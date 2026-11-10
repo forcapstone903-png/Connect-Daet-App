@@ -6,7 +6,7 @@ Caching is part of the feature design, not an afterthought. Any data read more t
 
 The shared implementation is in `src/lib/cache.js`:
 
-- Authenticated feed, profile, and notification data use a user-scoped in-memory TTL cache.
+- Authenticated profile and notification data use a user-scoped in-memory TTL cache. The Home feed is fetched without a client cache because its contents depend on current follow and privacy permissions.
 - Public tourist spot data uses a versioned `localStorage` cache with a one-day TTL and background revalidation.
 - Public visitor review previews use the shared in-memory cache with a five-minute TTL and stale-while-revalidate behavior.
 - Logout clears user-scoped memory entries.
@@ -241,9 +241,9 @@ Manual clear method: Reload the notification inbox or use Settings > Data & stor
 ## Saved dashboard items
 
 The dashboard loads saved-item rows for the signed-in user and uses them to
-render bookmark state and personalize feed ranking. Reads are uncached; save and
-remove mutations invalidate the dashboard feed cache after the server confirms
-the write.
+render bookmark state and personalize feed ranking. Reads are uncached; save
+and remove mutations update dashboard state only after the server confirms the
+write.
 
 ```text
 Feature: Dashboard saved items
@@ -253,14 +253,39 @@ Visibility: User-specific
 Freshness: Fetch on dashboard signal load; update UI only after a successful write
 Stale behavior: No server cache; in-memory dashboard state is replaced on a successful load
 Missing-cache behavior: Read from the signed-session API
-Invalidation trigger: Successful save/remove invalidates feed:user:{userId}:dashboard
-Cache layer: None for the API read; dashboard feed data remains in its existing user-scoped memory cache
-Cache key: None for favorites API; feed:user:{userId}:dashboard for dashboard content
-TTL: None for favorites API; 2 minutes for dashboard feed
+Invalidation trigger: Successful save/remove updates the dashboard's in-memory state
+Cache layer: None
+Cache key: None
+TTL: None
 Offline behavior: Keep current view and report save/remove request failures
 Security notes: API derives ownership from the signed session; no favorite rows are shared or persisted in a browser cache
-Manual clear method: Reload the dashboard; use the existing dashboard cache clear behavior if needed
+Manual clear method: None; reload to fetch the latest saved items
 ```
+
+## Home For You recommendations
+
+The Home feed fetches eligible published posts and reposts, ranks them using the
+signed-in user's activity and preference signals, and records an impression
+after a card remains at least half visible for 1.2 seconds. Follow suggestions
+are inserted at a randomized position among the first six feed items. The
+newest active admin announcement is pinned to the top of For You for 24 hours
+after publication (or until its configured expiration, if earlier).
+
+```text
+Feature: Personalized Home For You feed
+Data fetched: Publicly available posts and reposts, current follows, user-specific activity and saved-item signals
+Change frequency: Content and follow changes; impression signals are recorded during feed viewing; announcement pin expires 24 hours after publication
+Visibility: Mixed public content and user-specific personalization data
+Freshness: Fetch current feed and follow permissions on page load or refresh
+Stale behavior: Do not render cached feed records; failed loads show the dashboard error
+Missing-cache behavior: Fetch directly from Supabase and signed-session APIs
+Invalidation trigger: No feed cache; successful follow/content writes trigger a feed refresh
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: No stale feed cache; retain the current in-memory view and report refresh failures
+Security notes: The session-checked feed API filters account privacy, follower-only posts, and reposts before returning content; database row-level security remains authoritative for other feed sources. Activity data is scoped to the signed-in user and impression events do not create notifications
+Manual clear method: None; feed reloads on refresh, while persisted activity signals remain user-specific
 ```
 
 ## Feature Decision Template
@@ -477,4 +502,21 @@ Cache key: None
 TTL: None
 Offline behavior: Article interactions remain available where already loaded; author details and recommendations show unavailable with retry
 Security notes: Only published stories are queried; preferences and follow state are queried only for the signed-in viewer; private author bio is hidden unless the viewer follows the author; follow writes use the authenticated follow API
+Manual clear method: None
+
+## Private account profiles
+
+Feature: Private account identity, follow state, and shared content
+Data fetched: Publicly discoverable profile identity, the current viewer's approved-follow/request state, and profile content only when the viewer is an approved follower
+Change frequency: Privacy, follow-request, profile, and content writes may change visibility at any time
+Visibility: Identity fields are searchable; private posts, reposts, and other profile content are restricted to approved followers
+Freshness: Fetch directly from the profile API on every page load; no cache
+Stale behavior: Never render cached private content or stale follow approval state
+Missing-cache behavior: No cache is used; show the existing retryable profile error on fetch failure
+Invalidation trigger: None; successful follow changes trigger a fresh profile request
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: No stale private data is shown; show a retryable load error
+Security notes: API responses use `Cache-Control: private, no-store`; the profile page bypasses the shared memory cache, and RLS independently protects direct content reads
 Manual clear method: None

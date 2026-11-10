@@ -1,15 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { ChevronLeft, ChevronRight, ImageOff, Maximize2 } from 'lucide-react';
 import MediaLightbox from './MediaLightbox';
 
 /**
- * Swipe-mode media viewer used on the post detail page.
- * - Horizontal snap-scroll track showing ALL images (mobile: native swipe,
- *   desktop: side arrows + keyboard arrows).
- * - Counter pill "X / N", dot navigation and a fullscreen expand button that
- *   opens the shared MediaLightbox at the currently visible image.
+ * Media viewer used on the post detail page.
+ * - Shows one complete image at a time without making the page horizontally scrollable.
+ * - Counter pill, compact dot navigation, arrow/keyboard controls and a fullscreen viewer.
  * - object-contain: nothing is ever cropped; broken images fall back
  *   gracefully instead of breaking the page.
  * - `resolveUrl` maps stored media references to browsable URLs.
@@ -20,57 +18,32 @@ export default function PostMediaCarousel({ images, resolveUrl = (url) => url, a
     .map((item) => (item && typeof item.url === 'string' ? { ...item, url: item.url.trim() } : null))
     .filter((item) => item && item.url);
   const total = safeImages.length;
+  const imageKey = JSON.stringify(safeImages.map((item) => item.url));
 
-  const trackRef = useRef(null);
-  const lockScrollRef = useRef(false);
-  const [index, setIndex] = useState(0);
+  const [selection, setSelection] = useState(() => ({ imageKey, index: 0 }));
   const [failed, setFailed] = useState(() => new Set());
   const [viewer, setViewer] = useState(null); // { startIndex }
+  const index = selection.imageKey === imageKey ? selection.index : 0;
 
-  useEffect(() => {
-    setIndex(0);
-    setFailed(new Set());
-  }, [total]);
-
-  const scrollToIndex = useCallback(
-    (next) => {
-      if (total === 0) return;
-      const clamped = Math.min(Math.max(next, 0), total - 1);
-      const track = trackRef.current;
-      if (track) {
-        lockScrollRef.current = true;
-        track.scrollTo({ left: clamped * track.clientWidth, behavior: 'smooth' });
-        window.setTimeout(() => { lockScrollRef.current = false; }, 450);
-      }
-      setIndex(clamped);
-    },
-    [total]
-  );
-
-  const handleScroll = useCallback(() => {
-    if (lockScrollRef.current) return;
-    const track = trackRef.current;
-    if (!track || !track.clientWidth) return;
-    const next = Math.min(Math.max(Math.round(track.scrollLeft / track.clientWidth), 0), total - 1);
-    setIndex((current) => (next === current ? current : next));
-  }, [total]);
-
-  const handleKeyDown = useCallback(
-    (event) => {
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        scrollToIndex(index - 1);
-      } else if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        scrollToIndex(index + 1);
-      }
-    },
-    [index, scrollToIndex]
-  );
+  const selectIndex = (next) => {
+    if (total === 0) return;
+    const clamped = Math.min(Math.max(next, 0), total - 1);
+    setSelection({ imageKey, index: clamped });
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      selectIndex(index - 1);
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      selectIndex(index + 1);
+    }
+  };
 
   if (total === 0) return null;
 
   const resolved = safeImages.map((image) => ({ ...image, url: resolveUrl(image.url) }));
+  const activeIndex = Math.min(index, total - 1);
 
   return (
     <section
@@ -80,33 +53,23 @@ export default function PostMediaCarousel({ images, resolveUrl = (url) => url, a
       className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:outline-none dark:border-[#26344a] dark:bg-[#131d2c]"
     >
       <div
-        ref={trackRef}
-        onScroll={handleScroll}
-        className="flex aspect-[16/10] w-full snap-x snap-mandatory overflow-x-auto overscroll-x-contain scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:aspect-[16/9]"
-        style={{ touchAction: 'pan-y' }}
+        className="flex h-[min(56vw,280px)] w-full items-center justify-center sm:h-[min(38vw,380px)]"
       >
-        {resolved.map((image, imageIndex) => (
-          <div
-            key={`${image.url}-${imageIndex}`}
-            className="flex h-full w-full shrink-0 snap-center items-center justify-center"
-          >
-            {failed.has(imageIndex) ? (
-              <div className="flex flex-col items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
-                <ImageOff className="h-7 w-7" aria-hidden="true" />
-                <span>This image could not be loaded.</span>
-              </div>
-            ) : (
-              <img
-                src={image.url}
-                alt={image.alt || `Image ${imageIndex + 1} of ${total}`}
-                loading={imageIndex === 0 ? 'eager' : 'lazy'}
-                draggable={false}
-                onError={() => setFailed((previous) => new Set(previous).add(imageIndex))}
-                className="h-full w-full select-none object-contain"
-              />
-            )}
+        {failed.has(resolved[activeIndex].url) ? (
+          <div className="flex flex-col items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+            <ImageOff className="h-7 w-7" aria-hidden="true" />
+            <span>This image could not be loaded.</span>
           </div>
-        ))}
+        ) : (
+          <img
+            src={resolved[activeIndex].url}
+            alt={resolved[activeIndex].alt || `Image ${activeIndex + 1} of ${total}`}
+            loading="eager"
+            draggable={false}
+            onError={() => setFailed((previous) => new Set(previous).add(resolved[activeIndex].url))}
+            className="h-full w-full select-none object-contain"
+          />
+        )}
       </div>
       {/* Counter pill + fullscreen expand */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between p-3">
@@ -114,11 +77,11 @@ export default function PostMediaCarousel({ images, resolveUrl = (url) => url, a
           aria-live="polite"
           className="rounded-full bg-black/55 px-3 py-1 text-xs font-bold tabular-nums text-white backdrop-blur-sm"
         >
-          {index + 1} / {total}
+          {activeIndex + 1} / {total}
         </span>
         <button
           type="button"
-          onClick={() => setViewer({ startIndex: index })}
+          onClick={() => setViewer({ startIndex: activeIndex })}
           aria-label="Open fullscreen viewer"
           className="pointer-events-auto inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition hover:bg-black/70"
         >
@@ -126,22 +89,24 @@ export default function PostMediaCarousel({ images, resolveUrl = (url) => url, a
         </button>
       </div>
 
-      {/* Desktop arrows (mobile swipes natively) */}
+      {/* Keep image navigation available without a swipe-scroll track. */}
       {total > 1 && (
         <>
           <button
             type="button"
-            onClick={() => scrollToIndex(index - 1)}
+            onClick={() => selectIndex(activeIndex - 1)}
             aria-label="Previous image"
-            className="absolute left-3 top-1/2 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white shadow-lg backdrop-blur-sm transition hover:bg-black/65 sm:inline-flex"
+            disabled={activeIndex === 0}
+            className="absolute left-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white shadow-lg backdrop-blur-sm transition hover:bg-black/65 disabled:opacity-40 sm:left-3 sm:h-10 sm:w-10"
           >
             <ChevronLeft className="h-5 w-5" aria-hidden="true" />
           </button>
           <button
             type="button"
-            onClick={() => scrollToIndex(index + 1)}
+            onClick={() => selectIndex(activeIndex + 1)}
             aria-label="Next image"
-            className="absolute right-3 top-1/2 hidden h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white shadow-lg backdrop-blur-sm transition hover:bg-black/65 sm:inline-flex"
+            disabled={activeIndex === total - 1}
+            className="absolute right-2 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 text-white shadow-lg backdrop-blur-sm transition hover:bg-black/65 disabled:opacity-40 sm:right-3 sm:h-10 sm:w-10"
           >
             <ChevronRight className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -155,11 +120,20 @@ export default function PostMediaCarousel({ images, resolveUrl = (url) => url, a
             <button
               key={`dot-${item.url}-${dotIndex}`}
               type="button"
-              onClick={() => scrollToIndex(dotIndex)}
+              onClick={() => selectIndex(dotIndex)}
               aria-label={`Go to image ${dotIndex + 1} of ${total}`}
-              aria-current={dotIndex === index}
-              className={`h-1.5 rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.6)] transition-all ${dotIndex === index ? 'w-5 bg-white' : 'w-1.5 bg-white/50 hover:bg-white/80'}`}
-            />
+              aria-current={dotIndex === activeIndex}
+              className="flex h-6 w-6 min-h-6 min-w-6 items-center justify-center rounded-full border-0 bg-transparent p-0 shadow-none hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500"
+            >
+              <span
+                className="block rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.6)] transition-all"
+                style={{
+                  width: dotIndex === activeIndex ? 8 : 5,
+                  height: 5,
+                  opacity: dotIndex === activeIndex ? 1 : 0.55,
+                }}
+              />
+            </button>
           ))}
         </div>
       )}

@@ -694,61 +694,27 @@ html.dark .usr-section-heading {
 html.dark .usr-section-page h1,
 html.dark .usr-section-page h2,
 html.dark .usr-section-page h3,
-html.dark .usr-section-page h4,
-html.dark .usr-section-page p,
-html.dark .usr-section-page label,
-html.dark .usr-section-page span,
-html.dark .usr-section-page button,
-html.dark .usr-section-page select,
-html.dark .usr-section-page option,
-html.dark .usr-section-page a,
-html.dark .usr-section-page textarea,
-html.dark .usr-section-page input,
-html.dark .usr-section-page .usr-stat-label,
-html.dark .usr-section-page .usr-stat-value,
-html.dark .usr-section-page .usr-section-title,
-html.dark .usr-section-page .usr-section-description {
-  color: inherit;
+html.dark .usr-section-page h4 {
+  color: var(--text-primary);
 }
 
-html.dark .usr-section-title,
-html.dark .usr-stat-value,
-html.dark .usr-card h2,
-html.dark .usr-card h3,
-html.dark .usr-card .text-slate-900,
-html.dark .usr-card .text-slate-800,
-html.dark .usr-card .text-slate-700,
-html.dark .usr-card .text-slate-600,
-html.dark .usr-card .text-slate-500,
-html.dark .usr-card .text-slate-400,
-html.dark .usr-section-page .text-slate-900,
-html.dark .usr-section-page .text-slate-800,
-html.dark .usr-section-page .text-slate-700,
-html.dark .usr-section-page .text-slate-600,
-html.dark .usr-section-page .text-slate-500,
-html.dark .usr-section-page .text-slate-400 {
-color: var(--foreground) !important;
+html.dark .usr-section-page :is(.usr-section-title, .usr-stat-value, .usr-card h2, .usr-card h3) {
+  color: var(--text-primary);
 }
 
-html.dark .usr-section-page .text-slate-500,
-html.dark .usr-section-page .text-slate-400,
-html.dark .usr-section-page .text-slate-600,
-html.dark .usr-card .text-slate-500,
-html.dark .usr-card .text-slate-400,
-html.dark .usr-card .text-slate-600 {
-  color: var(--muted-ink) !important;
+html.dark .usr-section-page :is(.usr-section-description, .usr-stat-label) {
+  color: var(--text-secondary);
 }
 
 html.dark .usr-section-page .usr-section-eyebrow,
 html.dark .usr-section-page .usr-stat-label,
-html.dark .usr-section-page .usr-section-counter,
 html.dark .usr-section-page .usr-section-tab-count {
   color: var(--brand-active);
 }
 
 html.dark .usr-section-page .usr-section-counter {
-  background: rgba(37, 99, 235, 0.14);
-  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.16);
+  color: #bfdbfe;
 }
 
 html.dark .usr-section-page .usr-section-primary {
@@ -788,14 +754,14 @@ html.dark .usr-section-page .usr-section-tab:hover {
 
 html.dark .usr-section-page .usr-section-tab[aria-selected='true'],
 html.dark .usr-section-page .usr-section-tab[aria-pressed='true'] {
-  background: rgba(37, 99, 235, 0.16);
-  color: #dbeafe;
-  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3);
+  background: rgba(59, 130, 246, 0.18);
+  color: #bfdbfe;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.3);
 }
 
 html.dark .usr-section-page .usr-section-tab-count {
-  background: rgba(37, 99, 235, 0.14);
-  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.16);
+  color: #bfdbfe;
 }
 
 html.dark .usr-section-page .usr-section-secondary {
@@ -838,10 +804,8 @@ html.dark .usr-card .bg-blue-50 {
 html.dark .usr-section-page .text-teal-700,
 html.dark .usr-section-page .text-sky-700,
 html.dark .usr-card .text-teal-700,
-html.dark .usr-card .text-sky-700,
-html.dark .usr-section-page a,
-html.dark .usr-card a {
-  color: var(--brand-dark) !important;
+html.dark .usr-card .text-sky-700 {
+  color: var(--brand-active);
 }
 
 html.dark .usr-section-page .border-slate-200,
@@ -2867,17 +2831,29 @@ html.dark .usr-editor .rich-text-toolbar-button.is-active {
 }
 
 @media (max-width: 767px) {
+  .usr-editor > .usr-mobile-header {
+    min-height: 76px;
+  }
+
+  .usr-editor > .usr-mobile-header > div {
+    height: 76px;
+  }
+
+  .usr-editor > .user-top-header-spacer {
+    height: 76px;
+  }
+
   .usr-editor .content-studio-layout {
     padding: 0 0 calc(96px + var(--content-studio-mobile-obstruction, 0px) + env(safe-area-inset-bottom));
   }
 
   .usr-editor .content-studio-action-bar {
-    top: calc(88px + env(safe-area-inset-top));
-    gap: 5px;
+    top: calc(80px + env(safe-area-inset-top));
+    gap: 2px;
     border-radius: 0;
     border-inline: 0;
     background: color-mix(in srgb, var(--paper) 96%, transparent);
-    padding: 5px 12px 7px;
+    padding: 4px 12px 6px;
     box-shadow: 0 3px 12px rgb(15 23 42 / 5%);
   }
 
@@ -2892,7 +2868,39 @@ html.dark .usr-editor .rich-text-toolbar-button.is-active {
   }
 
   .usr-editor .content-studio-action-items {
-    gap: 6px;
+    gap: 5px;
+    min-height: 40px;
+  }
+
+  .usr-editor .content-studio-autosave {
+    width: auto;
+    min-width: 0;
+    max-width: 112px;
+    height: 30px;
+    justify-content: flex-start;
+    gap: 5px;
+    margin: 0 auto 0 0;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--paper-muted);
+    padding: 0 8px;
+    color: var(--text-secondary);
+    font-size: 10px;
+    text-overflow: ellipsis;
+  }
+
+  .usr-editor .content-studio-autosave > svg,
+  .usr-editor .content-studio-autosave > span:not(.hidden) {
+    display: block;
+    flex: 0 0 auto;
+  }
+
+  .usr-editor .content-studio-autosave > .hidden {
+    display: none;
+  }
+
+  .usr-editor .content-studio-autosave::before {
+    display: none;
   }
 
   .usr-editor .content-studio-writing-column {
@@ -4205,6 +4213,173 @@ html.dark .usr-settings .settings-mobile-category-option[aria-current="page"] {
 
 html.dark .usr-settings .settings-mobile-category-option[aria-current="page"] svg {
   color: #93c5fd;
+}
+
+/* Use one softer slate palette across every signed-in user surface. */
+html.dark .user-page-shell,
+html.dark .user-page-shell .usr-section-page,
+html.dark .visitor-layout-content .usr-section-page {
+  background-color: var(--page-background);
+  color: var(--text-primary);
+}
+
+html.dark :is(
+  .usr-mobile-header,
+  .usr-desktop-header,
+  .usr-desktop-sidebar,
+  .usr-navigation-drawer
+) {
+  border-color: var(--border-gray);
+  background-color: var(--navbar-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-navigation-drawer-nav > a[aria-current="page"]:not(.usr-create-post-nav) {
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+}
+
+html.dark .usr-navigation-drawer-nav > a[aria-current="page"]:not(.usr-create-post-nav)::before {
+  background: #60a5fa;
+}
+
+html.dark .usr-navigation-drawer-nav > a:not(.usr-create-post-nav):hover,
+html.dark .usr-navigation-drawer-nav > section > a:hover {
+  background: var(--hover-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-navigation-drawer-nav > section {
+  border-color: var(--border-gray);
+}
+
+html.dark .usr-notifications .notifications-hub,
+html.dark .usr-inbox .usr-section-heading,
+html.dark .usr-settings .settings-topbar {
+  border-color: var(--border-gray);
+  background: var(--navbar-background);
+}
+
+html.dark .usr-notifications .notifications-controls,
+html.dark .usr-notifications .notifications-group > div:first-child {
+  background: var(--page-background);
+}
+
+html.dark .usr-notifications [role="button"] {
+  border-color: var(--border-gray);
+  background: var(--card-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-notifications [role="button"]:hover {
+  border-color: #3b82f6;
+  background: var(--hover-background);
+}
+
+html.dark .usr-inbox .tourism-panel,
+html.dark .usr-inbox section.tourism-panel .divide-y > div > div > a,
+html.dark .usr-inbox .usr-section-loading > div {
+  border-color: var(--border-gray);
+  background: var(--card-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-inbox section.tourism-panel .divide-y > div > div > a:hover {
+  background: var(--hover-background);
+}
+
+html.dark .usr-settings {
+  background: var(--page-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-settings .settings-card,
+html.dark .usr-settings .settings-sidebar,
+html.dark .usr-settings .settings-detail .settings-save-bar,
+html.dark .usr-settings .settings-toggle-row,
+html.dark .usr-settings .settings-control-panel,
+html.dark .usr-settings .settings-choice-option,
+html.dark .usr-settings .settings-profile-value {
+  border-color: var(--border-gray);
+  background: var(--card-background);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+html.dark .usr-settings .settings-card-intro,
+html.dark .usr-settings .settings-card-footer,
+html.dark .usr-settings .settings-sidebar-profile {
+  border-color: var(--border-gray);
+}
+
+html.dark .usr-settings .settings-card-title,
+html.dark .usr-settings .settings-control-label,
+html.dark .usr-settings .settings-theme-title,
+html.dark .usr-settings .settings-profile-summary h3 {
+  color: var(--text-primary);
+}
+
+html.dark .usr-settings :is(
+  .settings-card-description,
+  .settings-control-hint,
+  .settings-theme-hint,
+  .settings-current-theme,
+  .settings-sidebar-link small
+) {
+  color: var(--text-secondary);
+}
+
+html.dark .usr-settings .settings-card-content :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
+html.dark .usr-settings .settings-mobile-select select,
+html.dark .usr-settings .settings-mobile-category-trigger,
+html.dark .usr-settings .settings-mobile-category-menu,
+html.dark .usr-settings .settings-dropdown-trigger,
+html.dark .usr-settings .settings-dropdown-menu,
+html.dark .usr-settings .settings-profile-summary {
+  border-color: var(--border-gray);
+  background: var(--input-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-settings .settings-sidebar-link,
+html.dark .usr-settings .settings-mobile-category-option,
+html.dark .usr-settings .settings-dropdown-option {
+  color: var(--text-secondary);
+}
+
+html.dark .usr-settings :is(
+  .settings-sidebar-link:hover,
+  .settings-sidebar-link[aria-current="page"],
+  .settings-mobile-category-option:hover,
+  .settings-mobile-category-option[aria-current="page"],
+  .settings-dropdown-option:hover,
+  .settings-dropdown-option[aria-selected="true"],
+  .settings-choice-option:hover,
+  .settings-choice-option.is-selected
+) {
+  border-color: rgba(96, 165, 250, 0.4);
+  background: rgba(59, 130, 246, 0.14);
+  color: #bfdbfe;
+}
+
+html.dark .settings-appearance-overlay {
+  background: rgba(7, 12, 20, 0.82);
+}
+
+html.dark .usr-settings.settings-appearance-dialog,
+html.dark .usr-settings.settings-appearance-dialog .settings-card-intro {
+  background: var(--page-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-settings.settings-appearance-dialog .settings-appearance-close {
+  border-color: var(--border-gray);
+  background: var(--card-background);
+  color: var(--text-primary);
+}
+
+html.dark .usr-settings.settings-appearance-dialog .settings-appearance-close:hover {
+  background: var(--hover-background);
 }
 
 .usr-settings .settings-dropdown-field {

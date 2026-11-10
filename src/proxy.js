@@ -273,6 +273,13 @@ export async function proxy(request) {
   const role = String(serverSession?.role || '').trim().toLowerCase()
   const isAdmin = loggedIn && (role === 'admin' || role === 'administrator')
   const isAdminRoute = pathname === '/info/admin' || pathname.startsWith('/info/admin/')
+  const isVisitorRoute = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
+
+  if (loggedIn && isVisitorRoute) {
+    return NextResponse.redirect(
+      new URL(isAdmin ? '/info/admin/dashboard' : '/info/user/dashboard', request.url)
+    )
+  }
 
   if (!isAdmin && !isAdminRoute && !isStaticOrAsset && !MAINTENANCE_EXEMPT_PATHS.has(normalizedPathname)) {
     const maintenance = await getMaintenanceSettings()

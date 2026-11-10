@@ -23,7 +23,7 @@ function formatRelativeTime(value) {
   return `${Math.floor(seconds / 86400)}d`
 }
 
-export default function QuoteRepostCard({ item, reposter, reposterName, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink, compactFeed = false }) {
+export default function QuoteRepostCard({ item, reposter, reposterName, reposterFollowing, originalAuthorFollowing, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink, compactFeed = false }) {
   const original = item.original_post || {}
   const originalAuthor = original.author || item.original_author || {}
   const originalAuthorName = originalAuthor.full_name || 'Community member'
@@ -127,6 +127,11 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
             </Link>
             <div className="medium-home-post-byline">
               <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-author-name">{reposterDisplayName}</Link>
+              {reposterFollowing !== undefined && reposterId !== userId && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                  {reposterFollowing ? 'Following' : 'Not following'}
+                </span>
+              )}
               <span>reposted</span>
               <span aria-hidden="true">·</span>
               <time dateTime={repostDate || undefined}>{compactRepostDate || formatRelativeTime(repostDate)}</time>
@@ -139,6 +144,11 @@ export default function QuoteRepostCard({ item, reposter, reposterName, userId, 
             <div className="medium-home-post-copy">
               <div className="medium-home-original-byline">
                 Originally by <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref}>{originalAuthorName}</Link>
+                {originalAuthorFollowing !== undefined && originalAuthor.id !== userId && (
+                  <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                    {originalAuthorFollowing ? 'Following' : 'Not following'}
+                  </span>
+                )}
               </div>
               {original.title && <Link href={originalHref} className="medium-home-post-title"><h2>{original.title}</h2></Link>}
               {originalText && <p className="medium-home-post-excerpt">{originalText}</p>}

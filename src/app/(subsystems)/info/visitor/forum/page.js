@@ -1,9 +1,12 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { ArrowLeft, Clock, Eye, Loader, MessageSquare, Pin, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
+import { getPostPreview } from '@/lib/postContent'
 
 function formatDate(value) {
   if (!value) return 'Recently'
@@ -25,12 +28,18 @@ export default function PublicForumPage() {
   const [category, setCategory] = useState('all')
   const [sortBy, setSortBy] = useState('recent')
   const [retryKey, setRetryKey] = useState(0)
+  const refreshThreadsRef = useRef(null)
+  const realtime = useRealtimeRefresh({
+    channelName: 'visitor-forum-index',
+    tables: ['forum_threads', 'forum_replies'],
+  })
+  const { setRefreshCallback } = realtime
 
   useEffect(() => {
     let ignore = false
 
-    async function loadThreads() {
-      setLoading(true)
+    async function loadThreads(silent = false) {
+      if (!silent) setLoading(true)
       setError('')
 
       const { data, error: queryError } = await supabase
@@ -45,20 +54,28 @@ export default function PublicForumPage() {
       if (queryError) {
         console.error('Public forum load failed:', queryError)
         setError('We could not load public discussions. Please try again.')
-        setThreads([])
+        setLoading(false)
+        return false
       } else {
         setThreads(data || [])
       }
 
       setLoading(false)
+      return true
     }
 
+    refreshThreadsRef.current = () => loadThreads(true)
     void loadThreads()
 
     return () => {
       ignore = true
+      refreshThreadsRef.current = null
     }
   }, [retryKey])
+
+  useEffect(() => {
+    setRefreshCallback(() => refreshThreadsRef.current?.() ?? false)
+  }, [setRefreshCallback])
 
   const categories = useMemo(() => (
     [...new Set(threads.map((thread) => thread.forum_categories?.name).filter(Boolean))]
@@ -88,6 +105,7 @@ export default function PublicForumPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-4xl px-3 py-5 sm:px-5 sm:py-8">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
         <div className="mb-5 flex items-center justify-between gap-3">
           <Link href="/info/visitor" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             <ArrowLeft className="h-4 w-4" />
@@ -160,7 +178,7 @@ export default function PublicForumPage() {
                       {thread.pinned && <Pin className="h-4 w-4 text-amber-600" aria-label="Pinned" />}
                       <h2 className="text-base font-bold text-slate-900 sm:text-lg">{thread.title}</h2>
                     </div>
-                    <p className="mt-2 line-clamp-3 whitespace-pre-line text-sm leading-6 text-slate-600">{thread.content}</p>
+                    <p className="mt-2 line-clamp-3 whitespace-pre-line text-sm leading-6 text-slate-600">{getPostPreview(thread.content)}</p>
                   </div>
                   {thread.forum_categories?.name && <span className="shrink-0 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">{thread.forum_categories.name}</span>}
                 </div>

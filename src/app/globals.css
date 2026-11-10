@@ -59,22 +59,22 @@ html[data-cookie-consent='saved'] .cookie-consent-notice {
    `!important` overrides win on specificity: html.dark (0,1,1) beats the
    `:root` (0,1,0) and `html, body` (0,0,1) light declarations above. */
 .dark {
-  --primary-blue: #3b82f6;
-  --deep-blue: #2563eb;
-  --indigo: #6366f1;
-  --light-blue: #1e3a5f;
-  --page-background: #0b0f16;
-  --white: #151b26;
-  --border-gray: #273244;
-  --dark-navy: #f1f5f9;
-  --slate-gray: #a1aec0;
-  --card-background: #151b26;
-  --navbar-background: #111722;
-  --input-background: #101722;
-  --hover-background: #202a39;
-  --text-primary: #f1f5f9;
-  --text-secondary: #a1aec0;
-  --text-muted: #8492a6;
+  --primary-blue: #2563eb;
+  --deep-blue: #1d4ed8;
+  --indigo: #818cf8;
+  --light-blue: #203956;
+  --page-background: #101827;
+  --white: #182437;
+  --border-gray: #2b3a50;
+  --dark-navy: #edf2f8;
+  --slate-gray: #b3c0d2;
+  --card-background: #182437;
+  --navbar-background: #141f30;
+  --input-background: #131f30;
+  --hover-background: #223149;
+  --text-primary: #edf2f8;
+  --text-secondary: #b3c0d2;
+  --text-muted: #91a1b7;
   --background: var(--page-background);
   --foreground: var(--text-primary);
   --ink: var(--text-primary);
@@ -85,7 +85,7 @@ html[data-cookie-consent='saved'] .cookie-consent-notice {
   --line: var(--border-gray);
   --brand: var(--primary-blue);
   --brand-dark: var(--deep-blue);
-  --brand-active: var(--primary-blue);
+  --brand-active: #93c5fd;
   --sun: #facc15;
   --coral: #f87171;
   color-scheme: dark !important;
@@ -1795,7 +1795,7 @@ html:not(.dark) .usr-navigation-drawer-nav > section > a.usr-navigation-show-all
   font-size: 20px;
   line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .medium-home-original-byline {
@@ -1856,9 +1856,9 @@ html:not(.dark) .usr-navigation-drawer-nav > section > a.usr-navigation-show-all
 }
 
 .medium-home .feed-actions {
-  margin-top: 16px;
+  margin-top: 8px;
   border-top: 0;
-  padding-top: 10px;
+  padding-top: 4px;
 }
 
 .medium-home-action-row {
@@ -2020,10 +2020,12 @@ main.dashboard-shell.medium-home > header button[aria-label='Profile'],
 main.dashboard-shell.medium-home > header [role='menu'] > a > span:first-child,
 main.dashboard-shell.medium-home .medium-home-post-avatar,
 main.dashboard-shell.medium-home .dashboard-profile-avatar,
+main.dashboard-shell.medium-home .medium-home-follow-avatar,
 main.dashboard-shell.medium-home > header button[aria-label='Profile'] img,
 main.dashboard-shell.medium-home > header [role='menu'] > a > span:first-child img,
 main.dashboard-shell.medium-home .medium-home-post-avatar img,
-main.dashboard-shell.medium-home .dashboard-profile-avatar img {
+main.dashboard-shell.medium-home .dashboard-profile-avatar img,
+main.dashboard-shell.medium-home .medium-home-follow-avatar img {
   border-radius: 50% !important;
 }
 
@@ -2094,6 +2096,18 @@ main.dashboard-shell.medium-home .medium-home-intro {
     padding-inline: 16px;
   }
 
+  .medium-home-tabs {
+    justify-content: space-between;
+    gap: 0;
+  }
+
+  .medium-home-tab {
+    flex: 1 1 0;
+    justify-content: center;
+    padding-inline: 1px;
+    font-size: 12px;
+  }
+
   main.dashboard-shell.medium-home .feed-card {
     border-bottom: 0 !important;
   }
@@ -2152,11 +2166,12 @@ main.dashboard-shell.medium-home .medium-home-intro {
     margin-top: 7px;
     font-size: 16px;
     line-height: 1.45;
+    -webkit-line-clamp: 3;
   }
 
   .medium-home .feed-actions {
-    margin-top: 10px;
-    padding-top: 8px;
+    margin-top: 6px;
+    padding-top: 4px;
   }
 
   .medium-home-action-row {
@@ -2184,22 +2199,10 @@ main.dashboard-shell.medium-home .medium-home-intro {
     background: transparent !important;
   }
 
-  html.dark main.dashboard-shell.medium-home .medium-home-intro,
-  html.dark main.dashboard-shell.medium-home .medium-home-composer,
-  html.dark main.dashboard-shell.medium-home .medium-home-tabs,
-  html.dark main.dashboard-shell.medium-home .feed-card {
-    margin-block: 0 !important;
-  }
-
   html.dark main.dashboard-shell.medium-home .medium-home-tabs {
     border: 0 !important;
     background: transparent !important;
     box-shadow: none !important;
-  }
-
-  html.dark main.dashboard-shell.medium-home .dashboard-feed-main .space-y-3 > :not(:first-child),
-  html.dark main.dashboard-shell.medium-home .usr-stagger.space-y-3 > :not(:first-child) {
-    margin-block-start: 0 !important;
   }
 }
 
@@ -6736,7 +6739,7 @@ html.dark .tourist-mobile-shell .content-detail-mobile-header {
   box-shadow: none !important;
 }
 
-.medium-article-page > .usr-section-container > div:first-child button {
+.medium-article-page .medium-article-top-social button {
   border-color: #dbe3ef;
   background: #fff;
   color: #475569;
@@ -6769,7 +6772,7 @@ html.dark .tourist-mobile-shell .content-detail-mobile-header {
 
 .medium-article-gallery > section {
   border: 0 !important;
-  border-radius: 0 !important;
+  border-radius: 16px !important;
   background: #e2e8f0 !important;
 }
 
@@ -6838,7 +6841,7 @@ html.dark .medium-article-page .usr-section-skeleton {
   background: var(--paper-muted);
 }
 
-html.dark .medium-article-page > .usr-section-container > div:first-child button {
+html.dark .medium-article-page .medium-article-top-social button {
   border-color: var(--line);
   background: var(--paper);
   color: var(--foreground);

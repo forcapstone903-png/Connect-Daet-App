@@ -31,7 +31,7 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
 
   return (
     <div className={compactFeed
-      ? 'tourism-action-row medium-home-action-row mt-2 flex min-w-0 items-center gap-4 pt-1'
+      ? 'tourism-action-row medium-home-action-row mt-0 flex min-w-0 items-center gap-4 pt-0'
       : `tourism-action-row mt-3 grid min-w-0 items-end gap-1.5 pt-3 sm:gap-2 ${showOverflowMenu ? 'grid-cols-5' : 'grid-cols-4'}`}>
       <div className={`flex min-w-0 items-center ${compactFeed ? '' : 'justify-center'}`}>
         <Reactions contentType={contentType} contentId={contentId} userId={userId} compact fullWidth={!compactFeed} breakdown heartOnly={heartOnly} compactFeed={compactFeed} />
@@ -48,7 +48,7 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
         <span key={commentCount} className="usr-count-pop font-bold">{commentCount}</span>
       </button>
 
-      <div className={`flex h-9 min-w-0 items-center justify-center rounded-full border border-slate-200 bg-slate-50 ${compactFeed ? 'medium-home-action' : 'w-full'}`}>
+      <div className={`flex h-9 min-w-0 items-center justify-center ${compactFeed ? 'medium-home-action' : 'w-full'}`}>
         {/* Reactions/comments may key on the repost instance, so the repost
             action takes its own explicit target when one is supplied. */}
         <ShareRepost contentType={repostContentType ?? contentType} contentId={repostContentId ?? contentId} userId={userId} onRepost={onRepost} originalPost={originalPost} fullWidth compactFeed={compactFeed} />

@@ -31,7 +31,7 @@ export async function GET(request, { params }) {
   const archivedOnly = new URL(request.url).searchParams.get('archived') === 'true'
 
   try {
-    const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }, { data: reverseFollowRow, error: reverseFollowError }] = await Promise.all([
+    const [{ data: userData, error: userError }, { data: profileData, error: profileError }, { data: followRow, error: followError }, { data: followRequestRow, error: followRequestError }, { data: reverseFollowRow, error: reverseFollowError }] = await Promise.all([
       adminSupabase
         .from('info_users')
         .select('id, full_name, profile_image_url, bio, city, country, points, level, user_type, status, created_at')
@@ -52,6 +52,15 @@ export async function GET(request, { params }) {
         : Promise.resolve({ data: null }),
       viewerId && viewerId !== profileId
         ? adminSupabase
+            .from('follow_requests')
+            .select('id')
+            .eq('follower_id', viewerId)
+            .eq('following_id', profileId)
+            .eq('status', 'pending')
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      viewerId && viewerId !== profileId
+        ? adminSupabase
             .from('user_follows')
             .select('id')
             .eq('follower_id', profileId)
@@ -64,6 +73,7 @@ export async function GET(request, { params }) {
     if (profileError) throw profileError
     if (followError) throw followError
     if (reverseFollowError) throw reverseFollowError
+    if (followRequestError) throw followRequestError
     if (!userData || userData.status !== 'active') {
       return NextResponse.json({ success: false, message: 'This profile could not be found.' }, { status: 404 })
     }
@@ -72,12 +82,7 @@ export async function GET(request, { params }) {
     const privacyLevel = profileData?.is_public === false
       ? (['followers', 'private'].includes(profileData.privacy_level) ? profileData.privacy_level : 'followers')
       : profileData?.privacy_level || 'public'
-    if (privacyLevel === 'private' && !isOwnProfile) {
-      return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
-    }
-    if (privacyLevel === 'followers' && !isOwnProfile && !followRow) {
-      return NextResponse.json({ success: false, message: 'This profile is private.' }, { status: 403 })
-    }
+    const canViewProfileContent = isOwnProfile || privacyLevel === 'public' || Boolean(followRow)
     const followedProfileIds = new Set(followRow ? [profileId] : [])
 
     const [{ data: userPosts }, { data: blogs }, { data: threads }, { data: events }, { data: reposts }, { data: followRows }, { count: followersCount, error: followersCountError }, { count: followingCount, error: followingCountError }, { data: blockedRows, error: blockedError }] = await Promise.all([
@@ -304,6 +309,7 @@ export async function GET(request, { params }) {
       is_following: Boolean(followRow),
       is_followed_by: Boolean(reverseFollowRow),
       is_mutual: Boolean(followRow && reverseFollowRow),
+      follow_request_pending: Boolean(followRequestRow),
       followers,
       following,
       friends,
@@ -320,18 +326,19 @@ export async function GET(request, { params }) {
         city: profileData?.city || userData.city,
         country: profileData?.country || userData.country,
         earned_badges: earnedBadges || [],
+        is_private: privacyLevel !== 'public',
       },
       content: {
-        user_posts: archivedOnly && viewerId === profileId ? [] : attachEngagement(visibleUserPosts, 'user_post'),
-        archived_user_posts: archivedOnly && viewerId === profileId ? visibleUserPosts : [],
-        blogs: attachEngagement(blogs, 'blog'),
-        threads: attachEngagement(threads, 'forum_thread'),
-        events: attachEngagement(events, 'event'),
-        tourist_spots: touristSpots || [],
-        reposts: archivedOnly && viewerId === profileId ? [] : repostContent,
-        archived_reposts: archivedOnly && viewerId === profileId ? repostContent : [],
+        user_posts: canViewProfileContent && !(archivedOnly && viewerId === profileId) ? attachEngagement(visibleUserPosts, 'user_post') : [],
+        archived_user_posts: canViewProfileContent && archivedOnly && viewerId === profileId ? visibleUserPosts : [],
+        blogs: canViewProfileContent ? attachEngagement(blogs, 'blog') : [],
+        threads: canViewProfileContent ? attachEngagement(threads, 'forum_thread') : [],
+        events: canViewProfileContent ? attachEngagement(events, 'event') : [],
+        tourist_spots: canViewProfileContent ? touristSpots || [] : [],
+        reposts: canViewProfileContent && !(archivedOnly && viewerId === profileId) ? repostContent : [],
+        archived_reposts: canViewProfileContent && archivedOnly && viewerId === profileId ? repostContent : [],
       },
-    })
+    }, { headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' } })
   } catch (error) {
     console.error('Public profile API failed:', error)
     return NextResponse.json({ success: false, message: 'Unable to load this profile right now.' }, { status: 500 })

@@ -66,6 +66,7 @@ export const DEFAULT_PRIVACY_PREFERENCES = {
   allowMessagesFrom: 'everyone',
   allowMentions: true,
   searchable: true,
+  autoApproveFollowRequests: false,
 }
 
 export function createDefaultSettings() {
@@ -113,6 +114,9 @@ export function normalizeSettings(raw) {
       allowMessagesFrom: MESSAGE_PRIVACY_LEVELS.includes(privacy.allowMessagesFrom) ? privacy.allowMessagesFrom : DEFAULT_PRIVACY_PREFERENCES.allowMessagesFrom,
       allowMentions: typeof privacy.allowMentions === 'boolean' ? privacy.allowMentions : DEFAULT_PRIVACY_PREFERENCES.allowMentions,
       searchable: typeof privacy.searchable === 'boolean' ? privacy.searchable : DEFAULT_PRIVACY_PREFERENCES.searchable,
+      autoApproveFollowRequests: typeof privacy.autoApproveFollowRequests === 'boolean'
+        ? privacy.autoApproveFollowRequests
+        : DEFAULT_PRIVACY_PREFERENCES.autoApproveFollowRequests,
     },
   }
 }

@@ -33,13 +33,8 @@ import {
   getStoredSessionObject,
 } from "@/lib/authCookies";
 import {
-  getCache,
-  getCacheKey,
   invalidateCachePrefix,
-  setCache,
 } from "@/lib/cache";
-
-const PROFILE_CACHE_TTL_MS = 10 * 60 * 1000;
 
 function getInitials(name = "") {
   return (
@@ -228,6 +223,7 @@ export default function PublicProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowedBy, setIsFollowedBy] = useState(false);
   const [isMutual, setIsMutual] = useState(false);
+  const [followRequestPending, setFollowRequestPending] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -277,6 +273,7 @@ export default function PublicProfilePage() {
       setIsFollowing(Boolean(profileResult.is_following));
       setIsFollowedBy(Boolean(profileResult.is_followed_by));
       setIsMutual(Boolean(profileResult.is_mutual));
+      setFollowRequestPending(Boolean(profileResult.follow_request_pending));
       setIsBlocked((profileResult.blocked_ids || []).includes(profileId));
       setFollowerCount(
         profileResult.followers_count ?? profileResult.followers?.length ?? 0,
@@ -308,26 +305,9 @@ export default function PublicProfilePage() {
           return;
         }
 
-        const cacheKey = getCacheKey(
-          "profile",
-          "user",
-          profileId,
-          "viewer",
-          currentViewerId,
-        );
-        const cachedProfile = getCache(cacheKey)?.data;
-        if (cachedProfile) {
-          if (cachedProfile.viewer_id === profileId) {
-            router.replace("/info/user/profile");
-            return;
-          }
-          applyProfileResult(cachedProfile);
-          setLoading(false);
-          return;
-        }
-
         const profileResponse = await fetch(`/info/api/users/${profileId}`, {
           credentials: "same-origin",
+          cache: "no-store",
         });
         const profileResult = await profileResponse.json();
 
@@ -343,17 +323,6 @@ export default function PublicProfilePage() {
           return;
         }
 
-        setCache(
-          getCacheKey(
-            "profile",
-            "user",
-            profileId,
-            "viewer",
-            profileResult.viewer_id || currentViewerId,
-          ),
-          profileResult,
-          PROFILE_CACHE_TTL_MS,
-        );
         applyProfileResult(profileResult);
       } catch (loadError) {
         console.error("Public profile load failed:", loadError);
@@ -381,8 +350,9 @@ export default function PublicProfilePage() {
 
     setFollowLoading(true);
     try {
+      const removingFollowOrRequest = isFollowing || followRequestPending;
       const response = await fetch(`/info/api/users/${profileId}/follow`, {
-        method: isFollowing ? "DELETE" : "POST",
+        method: removingFollowOrRequest ? "DELETE" : "POST",
         credentials: "same-origin",
       });
       const result = await response.json();
@@ -398,18 +368,23 @@ export default function PublicProfilePage() {
       setIsFollowing(Boolean(result.is_following));
       setIsFollowedBy(Boolean(result.is_followed_by));
       setIsMutual(Boolean(result.is_mutual));
+      setFollowRequestPending(Boolean(result.follow_request_pending));
       setFollowerCount(result.followers_count ?? 0);
       setFollowingCount(result.following_count ?? 0);
       setFriendsCount(result.friends_count ?? friendsCount);
       invalidateCachePrefix("profile:user:");
       if (viewerId) invalidateCachePrefix(`feed:user:${viewerId}`);
-      if (!isFollowing && typeof window !== "undefined") {
+      if (!removingFollowOrRequest && result.is_following && typeof window !== "undefined") {
         window.dispatchEvent(new Event("daet-notifications-updated"));
       }
       showNotice(
-        isMutual
-          ? `You are no longer friends with ${profile?.full_name || "this member"}.`
-          : !isFollowing && result.is_mutual
+        !removingFollowOrRequest && result.follow_request_pending
+          ? `Your follow request was sent to ${profile?.full_name || "this member"}.`
+          : followRequestPending && !result.follow_request_pending
+            ? "Follow request cancelled."
+            : isMutual
+              ? `You are no longer friends with ${profile?.full_name || "this member"}.`
+              : !isFollowing && result.is_mutual
             ? `You and ${profile?.full_name || "this member"} are now friends.`
             : isFollowing
           ? `You are no longer following ${profile?.full_name || "this member"}.`
@@ -644,19 +619,23 @@ export default function PublicProfilePage() {
                         ? "Updating…"
                         : isMutual
                           ? "Friends"
+                          : followRequestPending
+                            ? "Cancel request"
                           : isFollowing
                           ? "Following"
                           : isFollowedBy && !isMutual
                             ? "Follow back"
                             : "Follow"}
                     </button>
-                    <Link
-                      href={`/info/user/messaging/${encodeURIComponent(profile.id)}`}
-                      className="usr-section-secondary"
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      Message
-                    </Link>
+                    {(!profile.is_private || isFollowing) ? (
+                      <Link
+                        href={`/info/user/messaging/${encodeURIComponent(profile.id)}`}
+                        className="usr-section-secondary"
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        Message
+                      </Link>
+                    ) : null}
                     <div className="relative" ref={menuRef}>
                       <button
                         type="button"
@@ -814,6 +793,17 @@ export default function PublicProfilePage() {
             </aside>
 
             <section className="profile-content-main min-w-0 space-y-4">
+              {profile.is_private && !isFollowing ? (
+                <div className="usr-card p-5">
+                  <p className="text-sm font-bold text-slate-900">This account is private</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {followRequestPending
+                      ? "Your follow request is waiting for approval. Posts, reposts, and messaging are only available to approved followers."
+                      : "Follow this member to request access. Posts, reposts, and messaging are only available to approved followers."}
+                  </p>
+                </div>
+              ) : (
+                <>
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p>
@@ -831,14 +821,14 @@ export default function PublicProfilePage() {
                       <MessageSquareText className="h-4 w-4" /> Start forum
                     </Link>
                   </div>
-                ) : (
+                ) : (!profile.is_private || isFollowing) ? (
                   <Link
                     href={`/info/user/messaging/${encodeURIComponent(profile.id)}`}
                     className="usr-section-secondary min-w-0 flex-1 sm:flex-none"
                   >
                     <MessageCircle className="h-4 w-4" /> Send a message
                   </Link>
-                )}
+                ) : null}
               </div>
 
               <div className="profile-tabs" role="tablist" aria-label="Profile content">
@@ -1073,6 +1063,8 @@ export default function PublicProfilePage() {
               </p>
             </div>
           )}
+                </>
+              )}
             </section>
           </div>
         </section>

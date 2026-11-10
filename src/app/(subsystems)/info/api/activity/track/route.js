@@ -241,6 +241,10 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: activityError.message }, { status: 500 })
     }
 
+    if (activityType === 'content_impression') {
+      return NextResponse.json({ success: true })
+    }
+
     const meta = buildActivityMeta(activityType)
     const message = buildActivityMessage({ actorName, activityType, contentTitle, entityType })
 
