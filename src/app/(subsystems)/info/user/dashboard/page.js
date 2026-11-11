@@ -28,6 +28,7 @@ import {
   MapPin,
   Pin,
   PenLine,
+  Play,
   RefreshCw,
   ShieldCheck,
   Sparkles,
@@ -53,10 +54,11 @@ import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import DailyFeedback from '@/app/(subsystems)/info/components/user/DailyFeedback'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import PostTimestamp from '@/app/(subsystems)/info/components/user/PostTimestamp'
 import DaetWeatherCard from '@/app/(subsystems)/info/components/user/DaetWeatherCard'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
-import { getAnnouncementPinExpiry, getPinnedAnnouncement, prioritizeAnnouncement, prioritizePinnedFeedItems } from '@/lib/feedOrdering'
+import { getAnnouncementPinExpiry, getPinnedAnnouncement, isHiddenByFeedPreferences, prioritizeNewestCommunityPost, prioritizeOwnerFeedItems, prioritizePinnedFeedItems } from '@/lib/feedOrdering'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getPostImages } from '@/lib/postMedia'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
@@ -76,6 +78,7 @@ const TABLES = {
 
 const HIDDEN_POSTS_KEY = 'daet_hidden_posts'
 const NOT_INTERESTED_KEY = 'daet_not_interested_topics'
+const FOLLOW_SUGGESTION_AFTER_POSTS = 3
 
 const FEED_TABS = [
   { value: 'for-you', label: 'For You', scope: true },
@@ -84,7 +87,10 @@ const FEED_TABS = [
   { value: 'blog', label: 'Blogs' },
   { value: 'forum', label: 'Forums' },
   { value: 'tourist_spot', label: 'Travel' },
+  { value: 'other', label: 'Others' },
 ]
+
+const DEDICATED_FEED_CATEGORIES = new Set(['event', 'blog', 'forum', 'tourist_spot'])
 
 function favoriteTypeToFeedType(itemType) {
   if (itemType === 'user_post') return 'post'
@@ -116,18 +122,6 @@ function formatDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Recently'
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-}
-
-function formatRelativeTime(value) {
-  if (!value) return 'Recently'
-  const timestamp = new Date(value).getTime()
-  if (Number.isNaN(timestamp)) return 'Recently'
-  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
-  if (seconds < 60) return 'Just now'
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`
-  return formatDate(value)
 }
 
 function getImageUrl(value, fallback = null) {
@@ -222,7 +216,6 @@ export default function UserDashboardPage() {
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [pendingSuggestedFollows, setPendingSuggestedFollows] = useState(() => new Set())
   const [followingUserIds, setFollowingUserIds] = useState(() => new Set())
-  const [followSuggestionPosition, setFollowSuggestionPosition] = useState(3)
   const impressionTimersRef = useRef(new Map())
   const trackedImpressionsRef = useRef(new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
@@ -248,6 +241,8 @@ export default function UserDashboardPage() {
       'info_tourist_spots',
       TABLES.FORUM_THREADS,
       'forum_replies',
+      { table: TABLES.BLOGS, filter: `created_by=eq.${userId}` },
+      { table: 'info_user_posts', filter: `user_id=eq.${userId}` },
     ],
     enabled: Boolean(authenticated && userId),
   })
@@ -347,10 +342,14 @@ export default function UserDashboardPage() {
           reposted_at: restored.created_at,
           published_at: restored.created_at,
           category: 'Repost',
-          type: restored.original_content_type === 'blog' ? 'blog' : restored.original_content_type === 'event' ? 'event' : 'post',
+          type: restored.original_content_type === 'blog' ? 'blog' : restored.original_content_type === 'event' ? 'event' : restored.original_content_type === 'tourist_spot' ? 'tourist_spot' : 'post',
           href: restored.original_content_type === 'blog'
             ? `/info/user/blogs/${restored.original_content_id}`
-            : restored.original_content_type === 'event' ? `/info/user/events/${restored.original_content_id}` : `/info/user/posts/${restored.original_content_id}`,
+            : restored.original_content_type === 'event'
+              ? `/info/user/events/${restored.original_content_id}`
+              : restored.original_content_type === 'tourist_spot'
+                ? `/info/visitor/tourist-spots/${restored.original_content_id}`
+                : `/info/user/posts/${restored.original_content_id}`,
           is_repost: true,
           author: activeAuthor,
           original_author: restored.original_author || original.author || null,
@@ -368,6 +367,13 @@ export default function UserDashboardPage() {
         reposter: detail.reposter || reposterAuthor,
       })
       if (!repostItem) return
+      if (detail.action === 'updated') {
+        setFeed((previous) => previous.map((item) => item.repost_id === repostItem.repost_id
+          ? { ...item, repost_quote: repostItem.repost_quote }
+          : item))
+        invalidateCache(getDashboardCacheKey(userId))
+        return
+      }
       setFeed((previous) => [repostItem, ...previous.filter((item) => item.repost_id !== repostItem.repost_id)])
       setNewRepostIds((previous) => new Set(previous).add(repostItem.id))
       setFeedVisibleCount((previous) => Math.max(previous, 10))
@@ -395,11 +401,27 @@ export default function UserDashboardPage() {
   }, [feed, pendingRepostId])
 
   useEffect(() => {
-    const handleFeedRefresh = () => {
+    const refreshFeed = () => {
       setFeedNow(Date.now())
       setFeedRefreshing(true)
       setFeedRefreshKey((value) => value + 1)
     }
+    const handleFeedRefresh = () => {
+      refreshFeed()
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    if (params.has('refreshFeed')) {
+      refreshFeed()
+      params.delete('refreshFeed')
+      const search = params.toString()
+      window.history.replaceState(
+        null,
+        '',
+        `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`,
+      )
+    }
+
     window.addEventListener('daet-feed-refresh', handleFeedRefresh)
     return () => window.removeEventListener('daet-feed-refresh', handleFeedRefresh)
   }, [])
@@ -1052,7 +1074,7 @@ export default function UserDashboardPage() {
       try {
         const [blogStats, eventStats, announcementStats] = await Promise.all([
           supabase.from(TABLES.BLOGS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
-          supabase.from(TABLES.EVENTS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
+          supabase.from(TABLES.EVENTS).select('id', { count: 'exact', head: true }).eq('status', 'published').eq('approval_status', 'approved'),
           supabase.from(TABLES.ANNOUNCEMENTS).select('id', { count: 'exact', head: true }).eq('status', 'published'),
         ])
 
@@ -1171,7 +1193,7 @@ export default function UserDashboardPage() {
             .limit(6),
           supabase
             .from(TABLES.ANNOUNCEMENTS)
-            .select('id, title, announcement_type, audience, priority, published_at, expires_at, image_url, video_url, content, created_by, updated_at, status')
+            .select('id, title, announcement_type, severity, audience, priority, published_at, expires_at, image_url, video_url, content, created_by, updated_at, status')
             .eq('status', 'published')
             .order('published_at', { ascending: false })
             .limit(4),
@@ -1186,6 +1208,7 @@ export default function UserDashboardPage() {
               .from(TABLES.EVENTS)
               .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
               .eq('status', 'published')
+              .eq('approval_status', 'approved')
               .order('start_date', { ascending: true })
               .limit(20),
             supabase
@@ -1243,9 +1266,13 @@ export default function UserDashboardPage() {
           .map((repost) => {
             const originalPost = repost.original_post
             if (!originalPost) return null
+            const originalTitle = originalPost.title || originalPost.name
+            const originalContent = originalPost.content || originalPost.description
             const originalOwnerId = originalPost.user_id || originalPost.created_by
             return {
               ...originalPost,
+              title: originalTitle,
+              content: originalContent,
               id: repost.id,
               original_post_id: originalPost.id,
               original_content_id: originalPost.id,
@@ -1258,15 +1285,19 @@ export default function UserDashboardPage() {
               created_by: repost.user_id,
               created_at: repost.created_at,
               published_at: repost.created_at,
-              excerpt: originalPost.content,
+              excerpt: originalContent,
               category: 'Repost',
-              type: repost.original_content_type === 'blog' ? 'blog' : repost.original_content_type === 'event' ? 'event' : 'post',
+              type: repost.original_content_type === 'blog' ? 'blog' : repost.original_content_type === 'event' ? 'event' : repost.original_content_type === 'tourist_spot' ? 'tourist_spot' : 'post',
               href: repost.original_content_type === 'blog'
                 ? `/info/user/blogs/${originalPost.id}`
-                : repost.original_content_type === 'event' ? `/info/user/events/${originalPost.id}` : `/info/user/posts/${originalPost.id}`,
+                : repost.original_content_type === 'event'
+                  ? `/info/user/events/${originalPost.id}`
+                  : repost.original_content_type === 'tourist_spot'
+                    ? `/info/visitor/tourist-spots/${originalPost.id}`
+                    : `/info/user/posts/${originalPost.id}`,
               is_repost: true,
               original_author_id: originalPost.user_id || originalPost.created_by,
-              original_post: originalPost,
+              original_post: { ...originalPost, title: originalTitle, content: originalContent },
             }
           })
           .filter(Boolean)
@@ -1315,7 +1346,7 @@ export default function UserDashboardPage() {
           const profile = authorProfileMap.get(author.id)
           return {
             ...author,
-            full_name: profile?.full_name?.trim() || author.full_name,
+            full_name: author.full_name?.trim() || profile?.full_name?.trim(),
             profile_image_url: profile?.profile_image_url || author.profile_image_url,
           }
         })
@@ -1408,7 +1439,7 @@ export default function UserDashboardPage() {
             ...withAuthor(announcement),
             author: authorMap.get(announcement.created_by) || {
               id: announcement.created_by,
-              full_name: 'Administrator',
+              full_name: 'Daet Tourism Admin',
               user_type: 'admin',
             },
             type: 'announcement',
@@ -1421,7 +1452,6 @@ export default function UserDashboardPage() {
         setAnnouncements(nextAnnouncements)
         setStats({ blogs: 0, events: 0, announcements: nextAnnouncements.length })
         setFeed(mixedFeed)
-        setFollowSuggestionPosition(Math.floor(Math.random() * Math.min(mixedFeed.length, 6)))
         setLoading(false)
         setFeedRefreshing(false)
 
@@ -1483,10 +1513,13 @@ export default function UserDashboardPage() {
 
   const filteredFeed = useMemo(() => {
     let result = feed.filter((item) => {
-      if (hiddenPosts.has(`${item.type}-${item.id}`)) return false
-      if (item.author?.id && notInterestedTopics.has(`author:${item.author.id}`)) return false
-      if (item.category && notInterestedTopics.has(`category:${String(item.category).toLowerCase()}`)) return false
-      if (feedCategory !== 'all' && item.type !== feedCategory) return false
+      if (item.is_repost || item.isRepost) return false
+      if (isHiddenByFeedPreferences(item, userId, hiddenPosts, notInterestedTopics)) return false
+      if (feedCategory === 'other') {
+        if (DEDICATED_FEED_CATEGORIES.has(item.type)) return false
+      } else if (feedCategory !== 'all' && item.type !== feedCategory) {
+        return false
+      }
       if (feedScope === 'featured' && !item.featured) return false
       return true
     })
@@ -1563,17 +1596,11 @@ export default function UserDashboardPage() {
         return rhs - lhs
       }).map(({ recommendationScore, recommendationKey, contributionBreakdown, ...item }) => item)
 
-    const rotatedResult = feedRefreshKey === 0 || rankedResult.length < 2
-      ? rankedResult
-      : (() => {
-        const rotation = (feedRefreshKey * Math.max(1, Math.ceil(rankedResult.length / 3))) % rankedResult.length
-        return [...rankedResult.slice(rotation), ...rankedResult.slice(0, rotation)]
-      })()
     const pinnedAnnouncement = feedScope === 'for-you' && feedCategory === 'all'
-      ? getPinnedAnnouncement(rotatedResult, feedNow)
+      ? getPinnedAnnouncement(rankedResult, feedNow)
       : null
-    return prioritizeAnnouncement(rotatedResult, pinnedAnnouncement?.id)
-  }, [feed, feedScope, feedCategory, userSignals, hiddenPosts, notInterestedTopics, feedRefreshKey, feedNow, newRepostIds, savedItems, followingUserIds])
+    return prioritizeNewestCommunityPost(prioritizeOwnerFeedItems(rankedResult, userId, pinnedAnnouncement?.id))
+  }, [feed, feedScope, feedCategory, userSignals, hiddenPosts, notInterestedTopics, feedNow, newRepostIds, savedItems, followingUserIds, userId])
 
   const pinnedAnnouncementId = feedScope === 'for-you'
     && feedCategory === 'all'
@@ -1651,7 +1678,7 @@ export default function UserDashboardPage() {
 
   const visibleFeed = useMemo(() => filteredFeed.slice(0, feedVisibleCount), [filteredFeed, feedVisibleCount])
   const hasMoreFeed = feedVisibleCount < filteredFeed.length
-  const followSuggestionIndex = Math.min(followSuggestionPosition, Math.max(visibleFeed.length - 1, 0))
+  const followSuggestionIndex = FOLLOW_SUGGESTION_AFTER_POSTS - 1
 
   useEffect(() => {
     if (!userId || typeof IntersectionObserver === 'undefined') return undefined
@@ -1709,6 +1736,7 @@ export default function UserDashboardPage() {
   }, [visibleFeed, userId])
 
   const renderPeopleSuggestionCard = () => {
+    if (feedScope !== 'for-you' || feedCategory !== 'all') return null
     if (!suggestions.suggestedPeople.length) return null
 
     return (
@@ -1857,7 +1885,7 @@ export default function UserDashboardPage() {
         )}
 
         <div className="dashboard-feed-layout">
-          <div className="dashboard-feed-main min-w-0 lg:pr-3">
+          <div className="dashboard-feed-main min-w-0 overflow-x-clip lg:pr-3">
         <section className="medium-home-intro usr-hero usr-card usr-enter mb-3 rounded-[22px] p-3.5 sm:p-4">
           <div className="flex items-start gap-3">
             <span className="dashboard-profile-avatar flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-sm font-black text-white">
@@ -1898,32 +1926,34 @@ export default function UserDashboardPage() {
           </div>
         </section>
 
-        <div className="usr-rail medium-home-tabs mb-4" role="tablist" aria-label="Home feed">
-          {FEED_TABS.map(({ value, label, scope }) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={value === 'for-you'
-                ? feedScope === value && feedCategory === 'all'
-                : scope
-                  ? feedScope === value
-                  : feedScope === 'for-you' && feedCategory === value}
-              onClick={() => {
-                if (scope) {
-                  setFeedScope(value)
-                  setFeedCategory('all')
-                } else {
-                  setFeedScope('for-you')
-                  setFeedCategory(value)
-                }
-                setFeedVisibleCount(10)
-              }}
-              className="medium-home-tab"
-            >
-              {label}
-            </button>
-          ))}
+        <div className="medium-home-tabs-wrap sticky top-[90px] z-30 mb-3 bg-[var(--background)] py-1 lg:top-16">
+          <div className="usr-rail medium-home-tabs" role="tablist" aria-label="Home feed">
+            {FEED_TABS.map(({ value, label, scope }) => (
+              <button
+                key={value}
+                type="button"
+                role="tab"
+                aria-selected={value === 'for-you'
+                  ? feedScope === value && feedCategory === 'all'
+                  : scope
+                    ? feedScope === value
+                    : feedScope === 'for-you' && feedCategory === value}
+                onClick={() => {
+                  if (scope) {
+                    setFeedScope(value)
+                    setFeedCategory('all')
+                  } else {
+                    setFeedScope('for-you')
+                    setFeedCategory(value)
+                  }
+                  setFeedVisibleCount(10)
+                }}
+                className="medium-home-tab"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div>
@@ -2002,15 +2032,21 @@ export default function UserDashboardPage() {
                     : (item.original_post_id || item.id)
                   const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
-                  const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: item.organizer || '', user_type: 'admin' } : null)
+                  const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: 'Daet Tourism Admin', user_type: 'admin' } : null)
+                  const isOwnAuthor = Boolean(userId && author?.id && String(author.id) === String(userId))
                   const isFollowingAuthor = author?.id
                     ? followingUserIds.has(author.id) || followedSuggestions.has(author.id)
                     : null
-                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : item.type === 'event' || item.type === 'announcement' ? 'Administrator' : 'Daet storyteller')
+                  const authorName = getAuthorDisplayName(author || {}, item.type === 'forum' || item.type === 'post' ? 'Community member' : 'Daet storyteller')
+                  const contentTypeLabel = {
+                    blog: 'Story',
+                    forum: 'Forum',
+                    event: 'Event',
+                    tourist_spot: 'Tourist spot',
+                    announcement: 'Announcement',
+                    post: 'Post',
+                  }[item.type] || 'Community post'
                   const itemDate = item.reposted_at || item.last_activity_at || item.published_at || item.created_at || item.start_date
-                  const compactDate = itemDate && !Number.isNaN(new Date(itemDate).getTime())
-                    ? new Date(itemDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                    : ''
                   const eventMediaUrl = (item.type === 'event' || item.type === 'tourist_spot') ? getImageUrl(item.featured_image || item.images || item.gallery_images || item.videos, null) : null
                   const eventVideoUrl = item.type === 'event' && Array.isArray(item.videos) && item.videos.length > 0 ? item.videos[0] : item.video_url || null
                   const postGallery = ['blog', 'post'].includes(item.type) ? getPostImages(item) : []
@@ -2076,48 +2112,58 @@ export default function UserDashboardPage() {
 
                   return (
                     <Fragment key={itemKey}>
-                    <article data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} className="usr-card feed-card medium-home-post usr-enter">
+                    <article data-post-id={item.id} data-impression-id={`${itemKey}-${userId || 'guest'}`} data-type={item.type} data-severity={item.type === 'announcement' ? String(item.severity || 'info').toLowerCase() : undefined} className="usr-card feed-card medium-home-post usr-enter">
                       <div className="medium-home-post-inner">
                         <div className="medium-home-post-head">
                           <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-post-avatar" aria-label={`View ${authorName}'s profile`}>
                             {author?.profile_image_url ? <img src={author.profile_image_url} alt="" /> : getInitials(authorName)}
                           </Link>
-                          <div className="medium-home-post-byline">
-                            <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-author-name">{authorName}</Link>
-                            {isFollowingAuthor !== null && author?.user_type !== 'admin' && (
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
-                                {isFollowingAuthor ? 'Following' : 'Not following'}
-                              </span>
-                            )}
-                            {item.id === pinnedAnnouncementId && (
-                              <span title="Pinned for one day after publication" className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-800">
-                                <Pin className="h-2.5 w-2.5" aria-hidden="true" />
-                                Pinned
-                              </span>
-                            )}
-                            {author?.user_type === 'admin' && <ShieldCheck className="h-3 w-3 text-emerald-500" aria-label="Verified organization" />}
-                            <span aria-hidden="true">·</span>
-                            <time dateTime={itemDate || undefined} title={itemDate ? new Date(itemDate).toLocaleString() : undefined}>
-                              {compactDate || formatRelativeTime(itemDate)}
-                            </time>
+                          <div className="medium-home-post-byline medium-home-post-byline--with-type">
+                            <div className="medium-home-post-byline-main">
+                              <Link href={author?.id ? `/info/user/profile/${author.id}` : '/info/user/profile'} className="medium-home-author-name">{authorName}</Link>
+                              {isFollowingAuthor !== null && author?.user_type !== 'admin' && (
+                                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                                  {isOwnAuthor ? 'You' : isFollowingAuthor ? 'Following' : 'Not following'}
+                                </span>
+                              )}
+                              {item.id === pinnedAnnouncementId && (
+                                <span title="Pinned for one day after publication" className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-800">
+                                  <Pin className="h-2.5 w-2.5" aria-hidden="true" />
+                                  Pinned
+                                </span>
+                              )}
+                              {author?.user_type === 'admin' && <ShieldCheck className="h-3 w-3 text-emerald-500" aria-label="Verified organization" />}
+                              <span aria-hidden="true">·</span>
+                              <PostTimestamp value={itemDate} />
+                            </div>
+                            <span className="medium-home-content-type">{contentTypeLabel}</span>
                           </div>
                         </div>
 
-                        <div className={`medium-home-post-body${postThumbnailUrl || postThumbnailVideoUrl ? ' has-thumbnail' : ''}`}>
+                        <Link
+                          href={item.href}
+                          aria-label={`Open ${item.title}`}
+                          className={`medium-home-post-body${postThumbnailUrl || postThumbnailVideoUrl ? ' has-thumbnail' : ''}`}
+                        >
                           <div className="medium-home-post-copy">
-                            <Link href={item.href} className="medium-home-post-title">
+                            <span className="medium-home-post-title">
                               <h2>{item.title}</h2>
-                            </Link>
+                            </span>
                             {contentText && <p className="medium-home-post-excerpt">{contentText}</p>}
                           </div>
                           {(postThumbnailUrl || postThumbnailVideoUrl) && (
-                            <Link href={item.href} className="medium-home-post-thumbnail" aria-label={`Open ${item.title}`}>
+                            <span className="medium-home-post-thumbnail" aria-hidden="true">
                               {postThumbnailUrl
                                 ? <img src={postThumbnailUrl} alt="" />
-                                : <video src={postThumbnailVideoUrl} muted playsInline preload="metadata" />}
-                            </Link>
+                                : (
+                                  <>
+                                    <video src={postThumbnailVideoUrl} muted playsInline preload="metadata" />
+                                    <span className="post-video-indicator" aria-hidden="true"><Play size={9} fill="currentColor" /> VIDEO</span>
+                                  </>
+                                )}
+                            </span>
                           )}
-                        </div>
+                        </Link>
 
                         <div className="feed-actions">
                           <SocialActionBar
@@ -2126,7 +2172,6 @@ export default function UserDashboardPage() {
                             userId={userId}
                             heartOnly
                             compactFeed
-                            onNotInterested={() => markNotInterested(item)}
                             postOptions={
                               <span className="medium-home-post-options">
                                 <PostActionMenu
@@ -2147,6 +2192,7 @@ export default function UserDashboardPage() {
                                     ? () => void updateOwnPost(item, 'delete')
                                     : canManageOwnBlog ? () => requestBlogAction(item, 'delete') : undefined}
                                   onHide={!ownsOriginalPost ? () => hidePost(itemKey) : undefined}
+                                  onNotInterested={() => markNotInterested(item)}
                                   onCopyLink={() => void copyPostLink(item)}
                                   isSaved={isSaved}
                                   onToggleSave={() => handleBookmark(null, item)}

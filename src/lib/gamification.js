@@ -61,16 +61,16 @@ function getDailyStreak(dates = []) {
   return { current: activeCurrent || 1, longest }
 }
 
-function getRewardBadges(points = 0) {
-  const badges = []
-
-  if (points >= 0) badges.push({ name: 'First Visit', description: 'Joined the community' })
-  if (points >= 120) badges.push({ name: 'Explorer', description: 'Reached 120 points' })
-  if (points >= 350) badges.push({ name: 'Top Contributor', description: 'Reached 350 points' })
-  if (points >= 800) badges.push({ name: 'Community Guide', description: 'Reached 800 points' })
-  if (points >= 1500) badges.push({ name: 'Local Legend', description: 'Reached 1500 points' })
-
-  return badges
+function getRewardBadges(points = 0, milestones = [
+  { name: 'First Visit', description: 'Joined the community', points: 0 },
+  { name: 'Explorer', description: 'Reach 120 points', points: 120 },
+  { name: 'Top Contributor', description: 'Reach 350 points', points: 350 },
+  { name: 'Community Guide', description: 'Reach 800 points', points: 800 },
+  { name: 'Local Legend', description: 'Reach 1,500 points', points: 1500 },
+]) {
+  return milestones
+    .filter((milestone) => points >= milestone.points)
+    .map(({ name, description }) => ({ name, description }))
 }
 
 module.exports = {

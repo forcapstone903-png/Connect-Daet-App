@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 import { notifyFollowers } from '@/lib/notificationAudience'
+import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 
 export async function POST(request) {
   try {
@@ -17,17 +18,10 @@ export async function POST(request) {
     }
 
     const body = await request.json().catch(() => ({}))
-    const shareType = String(body.shareType || '').trim().toLowerCase()
-
-    if (shareType === 'event') {
-      const role = String(session.role || '').trim().toLowerCase()
-      if (role !== 'admin' && role !== 'administrator') {
-        return NextResponse.json(
-          { success: false, message: 'Only an administrator can create events. Contact the admin to request an event listing.' },
-          { status: 403 }
-        )
-      }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ success: false, message: 'A content submission is required.' }, { status: 400 })
     }
+    const shareType = String(body.shareType || '').trim().toLowerCase()
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -37,6 +31,13 @@ export async function POST(request) {
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+
+    if (shareType === 'forum' || shareType === 'event') {
+      const restriction = await getActivePublishingRestriction(adminSupabase, userId)
+      if (restriction) {
+        return NextResponse.json({ success: false, message: 'Your account is currently restricted from publishing content.' }, { status: 403 })
+      }
+    }
 
     if (shareType === 'forum') {
       const title = String(body.forumForm?.title || '').trim()
@@ -112,11 +113,49 @@ export async function POST(request) {
       const title = String(body.eventForm?.title || '').trim()
       const description = String(body.eventForm?.description || '').trim()
       const startDate = String(body.eventForm?.start_date || '').trim()
+      const endDate = String(body.eventForm?.end_date || '').trim()
+      const startTime = String(body.eventForm?.start_time || '').trim()
+      const endTime = String(body.eventForm?.end_time || '').trim()
       const location = String(body.eventForm?.location || '').trim()
       const category = String(body.eventForm?.category || '').trim()
+      const organizer = String(body.eventForm?.organizer || '').trim()
+      const isFree = body.eventForm?.is_free === true
+      const rawTicketPrice = body.eventForm?.ticket_price
+      const ticketPrice = Number(rawTicketPrice)
 
+      if (typeof body.eventForm?.is_free !== 'boolean') {
+        return NextResponse.json({ success: false, message: 'Choose whether the event is free or ticketed.' }, { status: 400 })
+      }
       if (!title || !description || !startDate) {
         return NextResponse.json({ success: false, message: 'Please add an event title, description, and date.' }, { status: 400 })
+      }
+      if (title.length > 180 || description.length > 10000 || location.length > 240 || organizer.length > 180) {
+        return NextResponse.json({ success: false, message: 'One or more event fields exceed the allowed length.' }, { status: 400 })
+      }
+      const isValidDate = (value) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+        const parsed = new Date(`${value}T00:00:00.000Z`)
+        return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value
+      }
+      if (!isValidDate(startDate) || (endDate && !isValidDate(endDate))) {
+        return NextResponse.json({ success: false, message: 'Enter valid event dates.' }, { status: 400 })
+      }
+      const isValidTime = (value) => {
+        if (!value) return true
+        const match = /^(\d{2}):(\d{2})$/.exec(value)
+        return Boolean(match && Number(match[1]) <= 23 && Number(match[2]) <= 59)
+      }
+      if (!isValidTime(startTime) || !isValidTime(endTime)) {
+        return NextResponse.json({ success: false, message: 'Enter valid event times.' }, { status: 400 })
+      }
+      if (endDate && endDate < startDate) {
+        return NextResponse.json({ success: false, message: 'The event end date cannot be before its start date.' }, { status: 400 })
+      }
+      if (!['festival', 'concert', 'exhibition', 'workshop', 'sports', 'cultural'].includes(category)) {
+        return NextResponse.json({ success: false, message: 'Choose a valid event category.' }, { status: 400 })
+      }
+      if (!isFree && (rawTicketPrice === undefined || rawTicketPrice === null || String(rawTicketPrice).trim() === '' || !Number.isFinite(ticketPrice) || ticketPrice < 0)) {
+        return NextResponse.json({ success: false, message: 'Enter a valid ticket price.' }, { status: 400 })
       }
 
       const { data, error } = await adminSupabase
@@ -125,30 +164,54 @@ export async function POST(request) {
           title,
           description,
           location: location || null,
+          venue: location || null,
           start_date: startDate,
+          end_date: endDate || startDate,
+          start_time: startTime || null,
+          end_time: endTime || null,
           category,
-          status: 'published',
-          published_at: new Date().toISOString(),
+          organizer: organizer || null,
+          is_free: isFree,
+          ticket_price: isFree ? 0 : ticketPrice,
+          status: 'draft',
+          approval_status: 'pending',
+          submitted_at: new Date().toISOString(),
+          published_at: null,
           created_by: userId,
         })
-        .select('id')
+        .select('id, title, approval_status, submitted_at')
         .single()
 
       if (error) {
-        return NextResponse.json({ success: false, message: error.message || 'Unable to create event.' }, { status: 500 })
+        console.error('Event submission failed:', error)
+        const missingApprovalColumn = ['42703', 'PGRST204'].includes(error.code)
+          && /approval_status|submitted_at/i.test(`${error.message || ''} ${error.details || ''}`)
+        return NextResponse.json({
+          success: false,
+          message: missingApprovalColumn
+            ? 'Event approval is not configured in the database yet. Apply migration 082_event_admin_approval.sql and retry.'
+            : 'Unable to submit your event for approval.',
+        }, { status: missingApprovalColumn ? 503 : 500 })
       }
 
-      await notifyFollowers(adminSupabase, {
-        authorId: userId,
-        type: 'event',
-        link: `/info/user/events/${data.id}`,
-        postId: data.id,
-        title: 'New event',
-        actionText: 'created a new event',
-        subject: title,
-      })
+      const { error: notificationError } = await adminSupabase
+        .from('info_notifications')
+        .insert({
+          user_id: userId,
+          title: 'Event submitted for review',
+          message: `Your event "${title}" was sent to the admin team for approval.`,
+          type: 'info',
+          is_read: false,
+        })
+      if (notificationError) console.error('Event submission notification failed:', notificationError)
 
-      return NextResponse.json({ success: true, id: data?.id, destination: `/info/user/events/${data?.id}` })
+      return NextResponse.json({
+        success: true,
+        id: data.id,
+        approval_status: data.approval_status,
+        submitted_at: data.submitted_at,
+        destination: '/info/user/event-submissions',
+      }, { headers: { 'Cache-Control': 'private, no-store' } })
     }
 
     if (shareType === 'complaint') {

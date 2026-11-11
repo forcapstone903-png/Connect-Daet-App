@@ -7,70 +7,77 @@ export const runtime = 'nodejs'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-const adminSupabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
+const adminSupabase = supabaseUrl && serviceRoleKey
+  ? createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } })
+  : null
 
-const rewards = new Map([
-  ['Local food voucher', 500],
-  ['Weekend attraction pass', 900],
-  ['Community souvenir pack', 1400],
-])
+function response(body, status = 200) {
+  return NextResponse.json(body, {
+    status,
+    headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+  })
+}
 
 export async function POST(request) {
   const userId = getServerSession(request)?.user_id
-  if (!userId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
-  if (!adminSupabase) return NextResponse.json({ success: false, message: 'Rewards service is not configured.' }, { status: 500 })
+  if (!userId) return response({ success: false, message: 'User session is required.' }, 401)
+  if (!adminSupabase) return response({ success: false, message: 'Rewards service is not configured.' }, 503)
 
   try {
-    const { title } = await request.json()
-    const pointsRequired = rewards.get(title)
-    if (!pointsRequired) return NextResponse.json({ success: false, message: 'That reward is unavailable.' }, { status: 400 })
-
-    const { data: user, error: userError } = await adminSupabase
-      .from('info_users')
-      .select('points')
-      .eq('id', userId)
-      .maybeSingle()
-    if (userError) throw userError
-
-    const currentPoints = Number(user?.points || 0)
-    if (currentPoints < pointsRequired) {
-      return NextResponse.json({ success: false, message: `You need ${pointsRequired - currentPoints} more points to redeem this reward.` }, { status: 400 })
+    const payload = await request.json()
+    const rewardId = payload?.rewardId
+    if (typeof rewardId !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(rewardId)) {
+      return response({ success: false, message: 'A valid reward is required.' }, 400)
     }
 
-    const nextPoints = currentPoints - pointsRequired
-    const { data: updatedUser, error: updateError } = await adminSupabase
-      .from('info_users')
-      .update({ points: nextPoints, updated_at: new Date().toISOString() })
-      .eq('id', userId)
-      .eq('points', currentPoints)
-      .select('points')
-      .maybeSingle()
-    if (updateError) throw updateError
-    if (!updatedUser) return NextResponse.json({ success: false, message: 'Your points changed. Please try again.' }, { status: 409 })
-
-    const [{ error: pointsError }, { error: historyError }] = await Promise.all([
-      adminSupabase.from('user_points').insert({ user_id: userId, points: -pointsRequired, reason: `Redeemed ${title}`, source: 'reward_redemption' }),
-      adminSupabase.from('reward_history').insert({ user_id: userId, points_earned: -pointsRequired, subsystem_source: 'reward_redemption', description: title }),
-    ])
-    if (pointsError) throw pointsError
-    if (historyError) throw historyError
+    const { data, error } = await adminSupabase.rpc('redeem_configured_reward', {
+      p_user_id: userId,
+      p_reward_id: rewardId,
+    })
+    if (error) {
+      console.error('Reward redemption transaction failed:', { code: error.code || null })
+      return response({ success: false, message: 'Unable to redeem this reward right now.' }, 503)
+    }
+    if (!data?.success) {
+      if (data?.code === 'insufficient_points') {
+        return response({ success: false, message: `You need ${data.missing_points} more points to redeem this reward.` }, 400)
+      }
+      if (data?.code === 'already_redeemed') {
+        return response({ success: false, message: 'You have already redeemed this reward.' }, 409)
+      }
+      if (data?.code === 'reward_unavailable') {
+        return response({ success: false, message: 'That reward is unavailable.' }, 400)
+      }
+      return response({ success: false, message: 'Unable to redeem this reward.' }, 400)
+    }
 
     // Confirm the redemption in the user's own notification inbox.
     const { error: notificationError } = await adminSupabase.from('info_notifications').insert({
       user_id: userId,
       title: 'Reward redeemed',
-      message: `${title} redeemed for ${pointsRequired} points. You now have ${nextPoints} points.`,
+      message: `${data.title} redeemed for ${data.points_spent} points. You now have ${data.points} points.`,
       type: 'reward',
       is_read: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       link: '/info/user/rewards',
     })
-    if (notificationError) console.error('Reward redemption notification failed:', notificationError)
+    if (notificationError) {
+      console.error('Reward redemption notification failed:', { code: notificationError.code || null })
+    }
 
-    return NextResponse.json({ success: true, points: nextPoints, message: `${title} redeemed successfully.` })
+    return response({
+      success: true,
+      points: data.points,
+      rewardId,
+      message: `${data.title} redeemed successfully.`,
+      warning: notificationError ? 'Your reward was redeemed, but its notification could not be delivered.' : null,
+    })
   } catch (error) {
+    if (error instanceof SyntaxError) {
+      return response({ success: false, message: 'Request body must be valid JSON.' }, 400)
+    }
     console.error('Reward redemption failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to redeem this reward.' }, { status: 500 })
+    return response({ success: false, message: 'Unable to redeem this reward.' }, 500)
   }
 }

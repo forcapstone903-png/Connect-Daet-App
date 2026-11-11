@@ -1,42 +1,34 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft,
-  Bookmark,
+  ChevronLeft,
   Bell,
+  Bookmark,
   CalendarDays,
-  Clock3,
   Copy,
   ExternalLink,
-  Globe2,
   Heart,
   LoaderCircle,
-  LockKeyhole,
   MapPin,
   MessageCircle,
   MoreHorizontal,
-  Repeat2,
   Share2,
   ShieldCheck,
-  Smile,
   ThumbsDown,
   UserRound,
   Users,
-  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
-import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
+import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import Comments from './Comments'
 import UserTopHeader from './UserTopHeader'
 import RealtimeStatus from './RealtimeStatus'
-
-const EVENT_DETAIL_CACHE_TTL_MS = 2 * 60 * 1000
-const SHARE_EMOJIS = ['😀', '😂', '😍', '🥳', '👏', '❤️', '📍', '🎉']
+import ShareRepost from './ShareRepost'
 
 function mediaUrl(value) {
   if (Array.isArray(value)) return value.find((item) => typeof item === 'string' && item.trim()) || ''
@@ -56,6 +48,26 @@ function formatTime(value) {
   const date = new Date()
   date.setHours(Number(match[1]), Number(match[2]), 0, 0)
   return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+
+function formatEventDateRange(startValue, endValue) {
+  if (!startValue) return 'Date to be announced'
+  const start = new Date(`${startValue}T00:00:00`)
+  if (Number.isNaN(start.getTime())) return 'Date to be announced'
+
+  const startLabel = start.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+  if (!endValue || endValue === startValue) return startLabel
+
+  const end = new Date(`${endValue}T00:00:00`)
+  if (Number.isNaN(end.getTime())) return startLabel
+  const endLabel = start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()
+    ? String(end.getDate())
+    : end.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      ...(start.getFullYear() !== end.getFullYear() ? { year: 'numeric' } : {}),
+    })
+  return `${startLabel} – ${endLabel}`
 }
 
 function getEventDateTime(dateValue, timeValue, isEnd = false) {
@@ -135,6 +147,9 @@ function getOrganizerInitials(name) {
 export default function EventDetailsView({ eventId, userId: initialUserId = '', backHref = '/info/visitor/events' }) {
   const router = useRouter()
   const [event, setEvent] = useState(null)
+  const [eventRegistrationState, setEventRegistrationState] = useState({ eventId: null, registration: null })
+  const eventRegistration = eventRegistrationState.eventId === eventId ? eventRegistrationState.registration : null
+  const [registrationLoading, setRegistrationLoading] = useState(false)
   const [organizer, setOrganizer] = useState(null)
   const [currentUser, setCurrentUser] = useState(null)
   const [relatedEvents, setRelatedEvents] = useState([])
@@ -142,29 +157,30 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   const [userId, setUserId] = useState(initialUserId)
   const [isSaved, setIsSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [isFollowingOrganizer, setIsFollowingOrganizer] = useState(false)
+  const [organizerFollowPending, setOrganizerFollowPending] = useState(false)
+  const [organizerFollowLoading, setOrganizerFollowLoading] = useState(false)
   const [reaction, setReaction] = useState('')
   const [likeCount, setLikeCount] = useState(0)
   const [commentCount, setCommentCount] = useState(0)
-  const [repostCount, setRepostCount] = useState(0)
-  const [reposted, setReposted] = useState(false)
   const [reactionLoading, setReactionLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [shareOpen, setShareOpen] = useState(false)
-  const [shareText, setShareText] = useState('')
-  const [shareVisibility, setShareVisibility] = useState('public')
-  const [shareError, setShareError] = useState('')
-  const [shareLoading, setShareLoading] = useState(false)
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
+  const [commentsSheetVisible, setCommentsSheetVisible] = useState(false)
+  const [commentsSheetHeight, setCommentsSheetHeight] = useState(75)
+  const [commentsSheetDragging, setCommentsSheetDragging] = useState(false)
   const menuRef = useRef(null)
-  const secondaryMenuRef = useRef(null)
+  const commentsDialogRef = useRef(null)
+  const commentsCloseButtonRef = useRef(null)
+  const commentsTriggerRef = useRef(null)
+  const commentsHistoryRef = useRef(false)
+  const commentsCloseTimerRef = useRef(null)
+  const commentsDragRef = useRef(null)
+  const closeCommentsSheetRef = useRef(null)
   const refreshEventRef = useRef(null)
-  const [engagementBarVisible, setEngagementBarVisible] = useState(true)
-  const previousScrollYRef = useRef(0)
-  const programmaticScrollRef = useRef(false)
-  const programmaticScrollTimerRef = useRef(null)
   const realtime = useRealtimeRefresh({
     channelName: `event-detail-${eventId || 'unknown'}`,
     tables: [{ table: 'info_events', filter: `id=eq.${eventId}` }],
@@ -172,41 +188,151 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   })
   const { setRefreshCallback } = realtime
 
+  const openCommentsSheet = () => {
+    if (commentsCloseTimerRef.current) window.clearTimeout(commentsCloseTimerRef.current)
+    setCommentsSheetHeight(75)
+    setCommentsSheetOpen(true)
+    window.requestAnimationFrame(() => setCommentsSheetVisible(true))
+  }
+
+  const closeCommentsSheet = useCallback(() => {
+    if (!commentsSheetOpen || commentsCloseTimerRef.current) return
+    setCommentsSheetVisible(false)
+    if (commentsHistoryRef.current) {
+      commentsHistoryRef.current = false
+      window.history.back()
+    }
+    commentsCloseTimerRef.current = window.setTimeout(() => {
+      commentsCloseTimerRef.current = null
+      setCommentsSheetOpen(false)
+      setCommentsSheetHeight(75)
+      commentsTriggerRef.current?.focus()
+    }, 300)
+  }, [commentsSheetOpen])
+
   useEffect(() => {
-    previousScrollYRef.current = window.scrollY
+    closeCommentsSheetRef.current = closeCommentsSheet
+  }, [closeCommentsSheet])
 
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY
-      const scrollDelta = currentScrollY - previousScrollYRef.current
-      previousScrollYRef.current = currentScrollY
+  const handleCommentsHeaderPointerDown = (event) => {
+    if (event.target.closest('button, select')) return
+    commentsDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: commentsSheetHeight,
+      deltaY: 0,
+    }
+    setCommentsSheetDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
 
-      if (programmaticScrollRef.current) return
-      if (currentScrollY <= 24) {
-        setEngagementBarVisible(true)
-      } else if (scrollDelta > 4) {
-        setEngagementBarVisible(false)
-      } else if (scrollDelta < -4) {
-        setEngagementBarVisible(true)
-      }
+  const handleCommentsHeaderPointerMove = (event) => {
+    const drag = commentsDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const deltaY = event.clientY - drag.startY
+    drag.deltaY = deltaY
+    setCommentsSheetHeight(Math.max(35, Math.min(92, drag.startHeight - (deltaY / window.innerHeight) * 100)))
+  }
+
+  const handleCommentsHeaderPointerUp = (event) => {
+    const drag = commentsDragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    commentsDragRef.current = null
+    setCommentsSheetDragging(false)
+    if (drag.deltaY > 100) closeCommentsSheet()
+    else setCommentsSheetHeight(drag.deltaY < -20 ? 92 : 75)
+  }
+
+  useEffect(() => {
+    if (!commentsSheetOpen) return undefined
+
+    const previousOverflow = document.body.style.overflow
+    const previousPaddingRight = document.body.style.paddingRight
+    document.body.style.overflow = 'hidden'
+    document.body.style.paddingRight = `${Math.max(0, window.innerWidth - document.documentElement.clientWidth)}px`
+    document.body.classList.add('event-comments-sheet-open')
+
+    const sheet = commentsDialogRef.current
+    const visualViewport = window.visualViewport
+    const updateViewport = () => {
+      if (!sheet || !visualViewport) return
+      const visibleBottom = visualViewport.height + visualViewport.offsetTop
+      sheet.style.setProperty('--event-comments-viewport-height', `${visualViewport.height}px`)
+      sheet.style.setProperty('--event-comments-bottom-gap', `${Math.max(0, window.innerHeight - visibleBottom)}px`)
+    }
+    updateViewport()
+    visualViewport?.addEventListener('resize', updateViewport)
+    visualViewport?.addEventListener('scroll', updateViewport)
+
+    const handlePopState = () => {
+      if (!commentsHistoryRef.current) return
+      commentsHistoryRef.current = false
+      setCommentsSheetVisible(false)
+      if (commentsCloseTimerRef.current) window.clearTimeout(commentsCloseTimerRef.current)
+      commentsCloseTimerRef.current = window.setTimeout(() => {
+        commentsCloseTimerRef.current = null
+        setCommentsSheetOpen(false)
+        setCommentsSheetHeight(75)
+        commentsTriggerRef.current?.focus()
+      }, 300)
     }
 
-    const finishProgrammaticScroll = () => {
-      programmaticScrollRef.current = false
-      if (programmaticScrollTimerRef.current) {
-        window.clearTimeout(programmaticScrollTimerRef.current)
-        programmaticScrollTimerRef.current = null
-      }
+    if (!commentsHistoryRef.current) {
+      window.history.pushState({ ...(window.history.state || {}), eventCommentsSheet: true }, '')
+      commentsHistoryRef.current = true
     }
-
-    window.addEventListener('scroll', handleScroll, { passive: true })
-    window.addEventListener('scrollend', finishProgrammaticScroll)
+    window.addEventListener('popstate', handlePopState)
+    const focusFrame = window.requestAnimationFrame(() => commentsCloseButtonRef.current?.focus())
 
     return () => {
-      window.removeEventListener('scroll', handleScroll)
-      window.removeEventListener('scrollend', finishProgrammaticScroll)
-      if (programmaticScrollTimerRef.current) window.clearTimeout(programmaticScrollTimerRef.current)
+      window.cancelAnimationFrame(focusFrame)
+      visualViewport?.removeEventListener('resize', updateViewport)
+      visualViewport?.removeEventListener('scroll', updateViewport)
+      window.removeEventListener('popstate', handlePopState)
+      document.body.style.overflow = previousOverflow
+      document.body.style.paddingRight = previousPaddingRight
+      document.body.classList.remove('event-comments-sheet-open')
+      if (commentsCloseTimerRef.current) {
+        window.clearTimeout(commentsCloseTimerRef.current)
+        commentsCloseTimerRef.current = null
+      }
     }
-  }, [])
+  }, [commentsSheetOpen])
+
+  useEffect(() => {
+    const dialog = commentsDialogRef.current
+    if (!commentsSheetOpen || !dialog) return undefined
+
+    const handleDialogKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeCommentsSheetRef.current?.()
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const focusable = [...dialog.querySelectorAll(
+        'button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [href], [tabindex]:not([tabindex="-1"])',
+      )].filter((element) => element.offsetParent !== null)
+      if (!focusable.length) {
+        event.preventDefault()
+        dialog.focus()
+        return
+      }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    dialog.addEventListener('keydown', handleDialogKeyDown)
+    return () => dialog.removeEventListener('keydown', handleDialogKeyDown)
+  }, [commentsSheetOpen])
 
   useEffect(() => {
     if (initialUserId) return undefined
@@ -270,44 +396,98 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   }, [eventId, userId])
 
   useEffect(() => {
+    if (!userId || !eventId) {
+      return undefined
+    }
+
+    let active = true
+    fetch(`/info/api/user/events/${encodeURIComponent(eventId)}/registration`, {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load registration status.')
+        if (active) setEventRegistrationState({ eventId, registration: result.registration })
+      })
+      .catch((registrationError) => {
+        if (!active) return
+        console.error('Event registration lookup failed:', registrationError)
+        setNotice(registrationError.message || 'Could not load your registration status.')
+      })
+
+    return () => { active = false }
+  }, [eventId, userId])
+
+  const toggleEventRegistration = async () => {
+    if (!userId) {
+      router.push('/info/login')
+      return
+    }
+    if (registrationLoading || !event) return
+
+    setRegistrationLoading(true)
+    setNotice('')
+    try {
+      const response = await fetch(`/info/api/user/events/${encodeURIComponent(event.id)}/registration`, {
+        method: eventRegistration?.status === 'confirmed' ? 'DELETE' : 'POST',
+        credentials: 'same-origin',
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update your registration.')
+      const joining = result.registration?.status === 'confirmed'
+      setEventRegistrationState({ eventId: event.id, registration: result.registration })
+      setEvent((current) => current && ({
+        ...current,
+        current_attendees: Math.max(0, Number(current.current_attendees || 0) + (joining ? 1 : -1)),
+      }))
+      setNotice(joining ? 'You are registered for this event.' : 'Your registration was cancelled.')
+    } catch (registrationError) {
+      console.error('Event registration update failed:', registrationError)
+      setNotice(registrationError.message || 'Could not update your registration.')
+    } finally {
+      setRegistrationLoading(false)
+    }
+  }
+
+  useEffect(() => {
     if (!eventId) return undefined
 
     let active = true
-    const cacheKey = getCacheKey('event', 'public', 'detail', eventId)
-    const cached = getCache(cacheKey, { allowStale: true })?.data
 
     const loadEvent = async (silent = false) => {
       await Promise.resolve()
       if (!active) return
-      if (!silent && cached?.event) {
-        setEvent(cached.event)
-        setOrganizer(cached.organizer || null)
-        setRelatedEvents(cached.relatedEvents || [])
-        setLoading(false)
-      }
+      setEvent(null)
+      setOrganizer(null)
+      setRelatedEvents([])
+      setError('')
+      setNotice('')
+      if (!silent) setLoading(true)
 
       const { data, error: eventError } = await supabase
         .from('info_events')
         .select('id, title, description, location, venue, latitude, longitude, start_date, end_date, start_time, end_time, category, organizer, current_attendees, featured_image, images, videos, status, published_at, created_by, created_at')
         .eq('id', eventId)
         .in('status', ['published', 'cancelled', 'completed'])
+        .eq('approval_status', 'approved')
         .maybeSingle()
 
       if (!active) return
       if (eventError) {
         console.error('Event detail load failed:', eventError)
-        if (cached?.event) {
-          setNotice('Showing the last available event details. Refresh to try again.')
-          return false
-        }
+        setEvent(null)
+        setOrganizer(null)
+        setRelatedEvents([])
         setError('We could not load this event. Please try again.')
         if (!silent) setLoading(false)
         return false
       }
       if (!data) {
-        invalidateCache(cacheKey)
         setError('This event is unavailable or has not been published.')
         setEvent(null)
+        setOrganizer(null)
+        setRelatedEvents([])
         if (!silent) setLoading(false)
         return true
       }
@@ -324,6 +504,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
           .from('info_events')
           .select('id, title, description, location, venue, start_date, start_time, category, featured_image, images')
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
           .neq('id', data.id)
           .order('start_date', { ascending: true })
           .limit(12),
@@ -334,9 +515,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
         console.error('Related event load failed:', relatedResult.error)
         setRelatedError('Related events could not be loaded.')
       }
-      const relatedItems = relatedResult.error && cached?.relatedEvents
-        ? cached.relatedEvents
-        : relatedResult.data || []
+      const relatedItems = relatedResult.data || []
       const related = [...relatedItems].sort((a, b) => {
         const aCategory = a.category === data.category ? 0 : 1
         const bCategory = b.category === data.category ? 0 : 1
@@ -346,7 +525,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       setEvent(detail.event)
       setOrganizer(detail.organizer)
       setRelatedEvents(detail.relatedEvents)
-      setCache(cacheKey, detail, EVENT_DETAIL_CACHE_TTL_MS)
       setError('')
       setNotice('')
       setLoading(false)
@@ -356,11 +534,10 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     const refreshEvent = (silent = false) => loadEvent(silent).catch((loadError) => {
       if (!active) return
       console.error('Event detail fetch failed:', loadError)
-      if (cached?.event) {
-        setNotice('Showing the last available event details. Refresh to try again.')
-      } else {
-        setError('We could not load this event. Please try again.')
-      }
+      setEvent(null)
+      setOrganizer(null)
+      setRelatedEvents([])
+      setError('We could not load this event. Please try again.')
       if (!silent) setLoading(false)
       return false
     })
@@ -375,11 +552,40 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   }, [eventId, setRefreshCallback])
 
   useEffect(() => {
+    if (!userId || !organizer?.id || userId === organizer.id) return undefined
+
+    let active = true
+    const loadFollowStatus = async () => {
+      const { data, error: followError } = await supabase
+        .from('user_follows')
+        .select('id')
+        .eq('follower_id', userId)
+        .eq('following_id', organizer.id)
+        .maybeSingle()
+      if (!active) return
+      if (followError) {
+        console.error('Event organizer follow status lookup failed:', followError)
+        setNotice('Could not check whether you follow this organizer.')
+        return
+      }
+      setIsFollowingOrganizer(Boolean(data))
+      setOrganizerFollowPending(false)
+    }
+
+    void loadFollowStatus().catch((followError) => {
+      if (!active) return
+      console.error('Event organizer follow status lookup failed:', followError)
+      setNotice('Could not check whether you follow this organizer.')
+    })
+    return () => { active = false }
+  }, [organizer?.id, userId])
+
+  useEffect(() => {
     if (!eventId) return undefined
 
     let active = true
     const loadEngagement = async () => {
-      const [reactionResult, commentResult, repostResult, ownRepostResult] = await Promise.all([
+      const [reactionResult, commentResult] = await Promise.all([
         supabase
           .from('content_reactions')
           .select('user_id, reaction_type')
@@ -391,21 +597,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
           .eq('content_type', 'event')
           .eq('content_id', eventId)
           .eq('status', 'active'),
-        supabase
-          .from('reposts')
-          .select('id', { count: 'exact', head: true })
-          .eq('original_content_type', 'event')
-          .eq('original_content_id', eventId)
-          .eq('status', 'active'),
-        userId
-          ? supabase
-            .from('reposts')
-            .select('id, status')
-            .eq('user_id', userId)
-            .eq('original_content_type', 'event')
-            .eq('original_content_id', eventId)
-            .maybeSingle()
-          : Promise.resolve({ data: null, error: null }),
       ])
       if (!active) return
 
@@ -417,10 +608,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       }
       if (commentResult.error) console.error('Event comment count load failed:', commentResult.error)
       else setCommentCount(commentResult.count || 0)
-      if (repostResult.error) console.error('Event repost count load failed:', repostResult.error)
-      else setRepostCount(repostResult.count || 0)
-      if (ownRepostResult.error) console.error('Event repost status load failed:', ownRepostResult.error)
-      else setReposted(Boolean(ownRepostResult.data && ownRepostResult.data.status !== 'archived'))
     }
 
     const refreshEngagement = () => {
@@ -437,7 +624,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     const channel = supabase.channel(`event-engagement-${eventId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'content_reactions', filter: `content_id=eq.${eventId}` }, refreshEngagement)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'content_comments', filter: `content_id=eq.${eventId}` }, refreshEngagement)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reposts', filter: `original_content_id=eq.${eventId}` }, refreshEngagement)
       .subscribe()
 
     return () => {
@@ -447,21 +633,9 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   }, [eventId, userId])
 
   useEffect(() => {
-    if (!shareOpen) return undefined
-    const closeOnEscape = (keyEvent) => {
-      if (keyEvent.key === 'Escape') setShareOpen(false)
-    }
-    document.addEventListener('keydown', closeOnEscape)
-    return () => document.removeEventListener('keydown', closeOnEscape)
-  }, [shareOpen])
-
-  useEffect(() => {
     if (!menuOpen) return undefined
     const closeOnOutsideClick = (clickEvent) => {
-      if (
-        !menuRef.current?.contains(clickEvent.target)
-        && !secondaryMenuRef.current?.contains(clickEvent.target)
-      ) setMenuOpen(false)
+      if (!menuRef.current?.contains(clickEvent.target)) setMenuOpen(false)
     }
     const closeOnEscape = (keyEvent) => {
       if (keyEvent.key === 'Escape') setMenuOpen(false)
@@ -481,13 +655,19 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     : location
   const mapUrl = mapQuery ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}` : ''
   const mapEmbedUrl = mapQuery ? `https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&output=embed` : ''
-  const organizerName = organizer?.full_name || event?.organizer || 'Event organizer'
+  const organizerName = getAuthorDisplayName(
+    { ...organizer, full_name: organizer?.full_name || event?.organizer },
+    'Event organizer',
+  )
   const eventStatus = event ? getEventStatus(event) : ''
   const eventRouteBase = backHref.startsWith('/info/user') ? '/info/user/events' : '/info/visitor/events'
   const profileHref = userId ? `/info/user/profile/${encodeURIComponent(userId)}` : '/info/login'
-  const participantCount = event?.current_attendees == null || event.current_attendees === ''
+  const parsedParticipantCount = event?.current_attendees == null || event.current_attendees === ''
     ? undefined
     : Number(event.current_attendees)
+  const participantCount = Number.isFinite(parsedParticipantCount) && parsedParticipantCount >= 0
+    ? parsedParticipantCount
+    : undefined
 
   const goBack = () => {
     if (window.history.length > 1) router.back()
@@ -553,18 +733,41 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     }
   }
 
+  const toggleOrganizerFollow = async () => {
+    if (!organizer?.id || organizerFollowLoading) return
+    if (!userId) {
+      router.push('/info/login')
+      return
+    }
+
+    setOrganizerFollowLoading(true)
+    setNotice('')
+    try {
+      const response = await fetch(`/info/api/users/${encodeURIComponent(organizer.id)}/follow`, {
+        method: isFollowingOrganizer || organizerFollowPending ? 'DELETE' : 'POST',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update organizer follow status.')
+      setIsFollowingOrganizer(Boolean(result.is_following))
+      setOrganizerFollowPending(Boolean(result.follow_request_pending))
+    } catch (followError) {
+      console.error('Event organizer follow update failed:', followError)
+      setNotice(followError instanceof Error ? followError.message : 'Unable to update organizer follow status.')
+    } finally {
+      setOrganizerFollowLoading(false)
+    }
+  }
+
   const refreshEngagementCounts = async () => {
     const [reactionsResult, commentsResult, repostsResult] = await Promise.all([
       supabase.from('content_reactions').select('reaction_type').eq('content_type', 'event').eq('content_id', event.id),
       supabase.from('content_comments').select('id', { count: 'exact', head: true }).eq('content_type', 'event').eq('content_id', event.id).eq('status', 'active'),
-      supabase.from('reposts').select('id', { count: 'exact', head: true }).eq('original_content_type', 'event').eq('original_content_id', event.id).eq('status', 'active'),
     ])
     if (reactionsResult.error) throw reactionsResult.error
     if (commentsResult.error) throw commentsResult.error
-    if (repostsResult.error) throw repostsResult.error
     setLikeCount((reactionsResult.data || []).filter((item) => item.reaction_type !== 'dislike').length)
     setCommentCount(commentsResult.count || 0)
-    setRepostCount(repostsResult.count || 0)
   }
 
   const toggleEventReaction = async (targetReaction) => {
@@ -601,91 +804,34 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     }
   }
 
-  const publishEventRepost = async () => {
-    if (!userId) {
-      router.push('/info/login')
-      return
-    }
-    if (shareLoading || reposted) return
-
-    setShareLoading(true)
-    setShareError('')
-    try {
-      const response = await fetch('/info/api/reposts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({
-          contentType: 'event',
-          contentId: event.id,
-          quoteText: shareText.trim() || null,
-          visibility: shareVisibility,
-        }),
-      })
-      const result = await response.json().catch(() => ({}))
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to share this event.')
-
-      setReposted(true)
-      setShareOpen(false)
-      setShareText('')
-      setShowEmojiPicker(false)
-      if (result.alreadyReposted) {
-        setNotice('You have already shared this event.')
-      } else {
-        window.dispatchEvent(new CustomEvent('daet-repost-created', {
-          detail: {
-            action: 'created',
-            repost: result.repost,
-            reposter: result.reposter || currentUser,
-            original: result.original || event,
-            contentType: 'event',
-            contentId: event.id,
-            userId,
-          },
-        }))
-        setNotice('Event shared to your community feed.')
-        try {
-          await refreshEngagementCounts()
-        } catch (countError) {
-          console.error('Event repost count refresh failed:', countError)
-        }
-      }
-    } catch (repostError) {
-      console.error('Event repost failed:', repostError)
-      setShareError(repostError.message || 'Unable to share this event. Please try again.')
-    } finally {
-      setShareLoading(false)
-    }
-  }
-
-  const focusComments = () => {
-    setEngagementBarVisible(true)
-    programmaticScrollRef.current = true
-    if (programmaticScrollTimerRef.current) window.clearTimeout(programmaticScrollTimerRef.current)
-    programmaticScrollTimerRef.current = window.setTimeout(() => {
-      programmaticScrollRef.current = false
-      programmaticScrollTimerRef.current = null
-    }, 1200)
-    document.getElementById('event-comments')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-
-  const renderEventEngagementActions = (optionsMenuRef) => (
+  const renderEventEngagementActions = (optionsMenuRef, compact = false) => (
     <>
       <div className="event-detail-engagement-group">
         <button type="button" onClick={() => void toggleEventReaction('love')} disabled={reactionLoading} aria-label={`${reaction === 'love' ? 'Unlike' : 'Like'} event, ${likeCount} likes`} aria-pressed={reaction === 'love'} title="Like event">
           <Heart className={reaction === 'love' ? 'fill-current text-rose-400' : ''} aria-hidden="true" /><span>{likeCount}</span>
         </button>
-        <button type="button" onClick={focusComments} aria-label={`View ${commentCount} comments`} title="Comments">
+        <button type="button" onClick={openCommentsSheet} aria-label={`View ${commentCount} comments`} title="Comments">
           <MessageCircle aria-hidden="true" /><span>{commentCount}</span>
         </button>
-        <button type="button" onClick={() => userId ? setShareOpen(true) : router.push('/info/login')} aria-label={reposted ? `Event already shared, ${repostCount} shares` : `Share event to your feed, ${repostCount} shares`} title="Share to feed">
-          <Repeat2 aria-hidden="true" /><span>{repostCount}</span>
-        </button>
-        <button type="button" onClick={() => void toggleBookmark()} disabled={saving} aria-label={isSaved ? 'Remove event from saved' : 'Save event'} aria-pressed={isSaved} title={isSaved ? 'Remove from saved events' : 'Save event'}>
-          {saving ? <LoaderCircle className="animate-spin" aria-hidden="true" /> : <Bookmark className={isSaved ? 'fill-current text-sky-300' : ''} aria-hidden="true" />}
+        <ShareRepost
+          contentType="event"
+          contentId={event.id}
+          userId={userId}
+          originalPost={{ ...event, featured_image: image, author: { full_name: organizerName } }}
+          buttonClassName="event-detail-repost-button"
+        />
+        <button
+          type="button"
+          onClick={() => void toggleBookmark()}
+          disabled={saving}
+          aria-label={isSaved ? 'Remove event from saved items' : 'Save event'}
+          aria-pressed={isSaved}
+          title={isSaved ? 'Remove from saved items' : 'Save event'}
+        >
+          <Bookmark className={isSaved ? 'fill-current text-blue-600' : ''} aria-hidden="true" />
         </button>
       </div>
-      <div className="event-detail-engagement-group event-detail-engagement-end">
+      {!compact && <div className="event-detail-engagement-group event-detail-engagement-end">
         <button type="button" onClick={() => void toggleEventReaction('dislike')} disabled={reactionLoading} aria-label={reaction === 'dislike' ? 'Remove dislike' : 'Dislike event'} aria-pressed={reaction === 'dislike'} title="Dislike event">
           <ThumbsDown className={reaction === 'dislike' ? 'fill-current text-sky-300' : ''} aria-hidden="true" />
         </button>
@@ -701,11 +847,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
               <button type="button" role="menuitem" onClick={() => void copyEventLink()}>
                 <Copy className="h-4 w-4" aria-hidden="true" /> Copy event link
               </button>
-              {mapUrl && (
-                <a href={mapUrl} target="_blank" rel="noreferrer" role="menuitem" onClick={() => setMenuOpen(false)}>
-                  <ExternalLink className="h-4 w-4" aria-hidden="true" /> Open location in Maps
-                </a>
-              )}
               {organizer?.id && (
                 <Link href={`/info/user/profile/${organizer.id}`} role="menuitem" onClick={() => setMenuOpen(false)}>
                   <ExternalLink className="h-4 w-4" aria-hidden="true" /> View organizer profile
@@ -714,7 +855,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </>
   )
 
@@ -735,7 +876,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
         <div className="event-detail-error">
           <p role="alert">{error || 'This event is unavailable.'}</p>
           <button type="button" onClick={goBack} className="event-detail-back">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to events
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Back to events
           </button>
         </div>
       </main>
@@ -751,12 +892,12 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       <header className="event-detail-header">
         <div className="event-detail-header-inner">
           <button type="button" onClick={goBack} className="event-detail-back" aria-label="Go back">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
             <span className="event-detail-back-label">Back</span>
           </button>
           <Link href={backHref} className="event-detail-brand">
             <img src="/logo.png" alt="" />
-            <span>Connect-Daet.ai</span>
+            <span>Connect Daet</span>
           </Link>
           <div className="event-detail-header-actions">
             <Link href={userId ? '/info/user/notifications' : '/info/login'} className="event-detail-icon-button" aria-label="Notifications" title="Notifications">
@@ -772,106 +913,169 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       </header>
 
       <article className="event-detail-content">
+        {image ? (
+          <div className="event-detail-cover">
+            <img src={image} alt={event.title} />
+          </div>
+        ) : (
+          <div className="event-detail-cover event-detail-cover-empty" aria-hidden="true">
+            <CalendarDays className="h-12 w-12" />
+          </div>
+        )}
+
         <div className="event-detail-body">
-          <header className="event-detail-intro">
-            <div className="event-detail-kickers">
-              <span>{event.category || 'Community event'}</span>
-              <span className={`event-detail-status status-${eventStatus.toLowerCase()}`}>{eventStatus}</span>
-            </div>
-            <h1>{event.title}</h1>
-            {event.description && <p className="event-detail-deck">{event.description.slice(0, 220)}{event.description.length > 220 ? '…' : ''}</p>}
-
-            <div className="event-detail-organizer">
-              {organizer?.id ? (
-                <Link href={`/info/user/profile/${organizer.id}`} className="event-detail-organizer-link">
-                  <span className="event-detail-avatar">
-                    {organizer.profile_image_url
-                      ? <img src={organizer.profile_image_url} alt="" />
-                      : getOrganizerInitials(organizerName)}
-                  </span>
-                  <span>{organizerName}</span>
-                  {organizer.user_type === 'admin' && <ShieldCheck className="h-4 w-4 text-sky-400" aria-label="Verified organizer" title="Verified organizer" />}
-                </Link>
-              ) : (
-                <span className="event-detail-organizer-link">
-                  <span className="event-detail-avatar">
-                    {organizer?.profile_image_url
-                      ? <img src={organizer.profile_image_url} alt="" />
-                      : getOrganizerInitials(organizerName)}
-                  </span>
-                  <span>{organizerName}</span>
-                </span>
-              )}
-            </div>
-
-            {notice && <p className="event-detail-notice" role="status">{notice}</p>}
-
-            <div className="event-detail-facts">
-            <div><CalendarDays className="h-4 w-4" aria-hidden="true" /><span>{formatDate(event.start_date)}{event.end_date && event.end_date !== event.start_date ? ` – ${formatDate(event.end_date, { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}</span></div>
-            {(event.start_time || event.end_time) && (
-              <div><Clock3 className="h-4 w-4" aria-hidden="true" /><span>{formatTime(event.start_time) || 'Time TBA'}{event.end_time ? ` – ${formatTime(event.end_time)}` : ''}</span></div>
-            )}
-            {location && <div><MapPin className="h-4 w-4" aria-hidden="true" /><span>{location}</span></div>}
-            {(event.published_at || event.created_at) && (
-              <div><CalendarDays className="h-4 w-4" aria-hidden="true" /><span>Published {formatDate(String(event.published_at || event.created_at).slice(0, 10), { month: 'long', day: 'numeric', year: 'numeric' })}</span></div>
-            )}
-            {participantCount !== undefined && <div><Users className="h-4 w-4" aria-hidden="true" /><span>{participantCount} {participantCount === 1 ? 'participant' : 'participants'}</span></div>}
-            </div>
-          </header>
-
-          <section className={`event-detail-engagement${engagementBarVisible ? '' : ' is-scroll-hidden'}`} aria-label="Event interactions">
-            {renderEventEngagementActions(menuRef)}
-          </section>
-
-          {image ? (
-            <div className="event-detail-cover">
-              <img src={image} alt={event.title} />
-            </div>
-          ) : (
-            <div className="event-detail-cover event-detail-cover-empty" aria-hidden="true">
-              <CalendarDays className="h-12 w-12" />
-            </div>
-          )}
-
-          {event.description && (
-            <section className="event-detail-section">
-              <h2>About this event</h2>
-              <p>{event.description}</p>
-            </section>
-          )}
-
-          <EventSections event={event} />
-
-          {mapQuery && (
-            <section className="event-detail-section">
-              <h2>Location</h2>
-              <p className="event-detail-location-label">{location || mapQuery}</p>
-              <div className="event-detail-map">
-                <iframe title={`Map showing ${location || event.title}`} src={mapEmbedUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+          <div className="event-detail-overview">
+            <header className="event-detail-intro">
+              <div className="event-detail-kickers">
+                <span>{event.category || 'Community event'}</span>
+                <span className={`event-detail-status status-${eventStatus.toLowerCase()}`}>{eventStatus}</span>
               </div>
-              <a className="event-detail-map-link" href={mapUrl} target="_blank" rel="noreferrer">
-                Open in Maps <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              </a>
+              <h1>{event.title}</h1>
+
+              <div className="event-detail-organizer">
+                <div className="event-detail-organizer-details">
+                  {organizer?.id ? (
+                    <Link href={`/info/user/profile/${organizer.id}`} className="event-detail-organizer-link">
+                      <span className="event-detail-avatar">
+                        {organizer.profile_image_url
+                          ? <img src={organizer.profile_image_url} alt="" />
+                          : getOrganizerInitials(organizerName)}
+                      </span>
+                      <span>{organizerName}</span>
+                      {organizer.user_type === 'admin' && <ShieldCheck className="h-4 w-4 text-sky-400" aria-label="Verified organizer" title="Verified organizer" />}
+                    </Link>
+                  ) : (
+                    <span className="event-detail-organizer-link">
+                      <span className="event-detail-avatar">{getOrganizerInitials(organizerName)}</span>
+                      <span>{organizerName}</span>
+                    </span>
+                  )}
+                  {(event.published_at || event.created_at) && (
+                    <span className="event-detail-published">
+                      Published {formatDate(String(event.published_at || event.created_at).slice(0, 10), { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+                {organizer?.id && userId !== organizer.id && (
+                  <button
+                    type="button"
+                    className="event-detail-follow-button"
+                    onClick={() => void toggleOrganizerFollow()}
+                    disabled={organizerFollowLoading}
+                    aria-pressed={isFollowingOrganizer}
+                  >
+                    {organizerFollowLoading ? 'Please wait…' : organizerFollowPending ? 'Requested' : isFollowingOrganizer ? 'Following' : 'Follow'}
+                  </button>
+                )}
+              </div>
+
+              {notice && <p className="event-detail-notice" role="status">{notice}</p>}
+
+              <div className="event-detail-facts">
+                <div><CalendarDays className="h-4 w-4" aria-hidden="true" /><span>{formatEventDateRange(event.start_date, event.end_date)}{(event.start_time || event.end_time) ? ` · ${formatTime(event.start_time) || 'Time TBA'}${event.end_time ? ` – ${formatTime(event.end_time)}` : ''}` : ''}</span></div>
+                {location && <div><MapPin className="h-4 w-4" aria-hidden="true" /><span>{location}</span></div>}
+                {participantCount !== undefined && <div><Users className="h-4 w-4" aria-hidden="true" /><span>{participantCount} going</span></div>}
+              </div>
+
+              {event.status === 'published' && (
+                <button
+                  type="button"
+                  onClick={() => void toggleEventRegistration()}
+                  disabled={registrationLoading}
+                  className="mt-4 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {registrationLoading
+                    ? 'Please wait…'
+                    : eventRegistration?.status === 'confirmed'
+                      ? 'Cancel registration'
+                      : 'Register for event'}
+                </button>
+              )}
+
+              {!commentsSheetOpen && (
+                <section className="event-detail-engagement event-detail-engagement-secondary" aria-label="Event interactions">
+                  {renderEventEngagementActions(menuRef, true)}
+                </section>
+              )}
+            </header>
+          </div>
+
+          {!commentsSheetOpen && (
+            <section className="event-detail-engagement" aria-label="Event interactions">
+              {renderEventEngagementActions(menuRef)}
             </section>
           )}
+
+          <div className="event-detail-sections">
+            {event.description && (
+              <section className="event-detail-section">
+                <h2>About this event</h2>
+                <p>{event.description}</p>
+              </section>
+            )}
+
+            <EventSections event={event} />
+
+            {mapQuery && (
+              <section className="event-detail-section">
+                <h2>Location</h2>
+                <div className="event-detail-map">
+                  <iframe title={`Map showing ${location || event.title}`} src={mapEmbedUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+                </div>
+                <a className="event-detail-map-link" href={mapUrl} target="_blank" rel="noreferrer">
+                  Open in Maps <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </a>
+              </section>
+            )}
+          </div>
         </div>
       </article>
 
-      <section id="event-comments" className="event-detail-comments" aria-label="Event comments">
-        <Comments
-          contentType="event"
-          contentId={event.id}
-          userId={userId}
-          contentOwnerId={event.created_by}
-          contentTitle={event.title}
-          articleStyle
-          eventStyle
-        />
+      <section className="event-detail-comments-entry" aria-label="Event comments">
+        <button
+          ref={commentsTriggerRef}
+          type="button"
+          className="event-detail-comments-link"
+          onClick={openCommentsSheet}
+        >
+          View all {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
+        </button>
       </section>
 
-      <section className="event-detail-engagement event-detail-engagement-secondary" aria-label="More event interactions">
-        {renderEventEngagementActions(secondaryMenuRef)}
-      </section>
+      {commentsSheetOpen && (
+        <div
+          className={`event-comments-backdrop${commentsSheetVisible ? ' is-visible' : ''}`}
+          onClick={(clickEvent) => {
+            if (clickEvent.target === clickEvent.currentTarget) closeCommentsSheet()
+          }}
+        >
+          <div
+            ref={commentsDialogRef}
+            className={`event-comments-sheet${commentsSheetVisible ? ' is-visible' : ''}${commentsSheetDragging ? ' is-dragging' : ''}`}
+            style={{ '--event-comments-sheet-height': `${commentsSheetHeight}dvh` }}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Event comments"
+            tabIndex={-1}
+          >
+            <Comments
+              contentType="event"
+              contentId={event.id}
+              userId={userId}
+              contentOwnerId={event.created_by}
+              contentTitle={event.title}
+              sheetMode
+              eventStyle
+              onClose={closeCommentsSheet}
+              onCommentCountChange={setCommentCount}
+              onHeaderPointerDown={handleCommentsHeaderPointerDown}
+              onHeaderPointerMove={handleCommentsHeaderPointerMove}
+              onHeaderPointerUp={handleCommentsHeaderPointerUp}
+              closeButtonRef={commentsCloseButtonRef}
+            />
+          </div>
+        </div>
+      )}
 
       {(relatedEvents.length > 0 || relatedError) && (
         <section className="event-detail-related" aria-labelledby="related-events-title">
@@ -895,71 +1099,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
         </section>
       )}
 
-      {shareOpen && (
-        <div className="event-share-backdrop" role="presentation" onMouseDown={(mouseEvent) => { if (mouseEvent.target === mouseEvent.currentTarget) setShareOpen(false) }}>
-          <section className="event-share-dialog" role="dialog" aria-modal="true" aria-labelledby="event-share-title">
-            <div className="event-share-heading">
-              <h2 id="event-share-title">Share this event</h2>
-              <button type="button" onClick={() => setShareOpen(false)} aria-label="Close share composer"><X aria-hidden="true" /></button>
-            </div>
-            <div className="event-share-identity">
-              <span className="event-share-avatar">
-                {currentUser?.profile_image_url ? <img src={currentUser.profile_image_url} alt="" /> : <UserRound aria-hidden="true" />}
-              </span>
-              <strong>{currentUser?.full_name || 'You'}</strong>
-            </div>
-            <textarea
-              value={shareText}
-              onChange={(changeEvent) => setShareText(changeEvent.target.value)}
-              placeholder="Write something about this event..."
-              rows={3}
-              maxLength={2000}
-              aria-label="Write something about this event"
-            />
-            <div className="event-share-toolbar">
-              <button type="button" onClick={() => setShowEmojiPicker((shown) => !shown)} aria-expanded={showEmojiPicker} aria-label="Open emoji picker">
-                <Smile aria-hidden="true" /> Add emoji
-              </button>
-              <span>Audience</span>
-            </div>
-            <div className="event-share-audiences" role="group" aria-label="Choose who can see this post">
-              {[
-                { value: 'public', label: 'Public', Icon: Globe2 },
-                { value: 'followers', label: 'Followers', Icon: Users },
-                { value: 'private', label: 'Only me', Icon: LockKeyhole },
-              ].map(({ value, label, Icon }) => (
-                <button key={value} type="button" onClick={() => setShareVisibility(value)} aria-pressed={shareVisibility === value}>
-                  <Icon aria-hidden="true" /> {label}
-                </button>
-              ))}
-            </div>
-            {showEmojiPicker && (
-              <div className="event-share-emojis" aria-label="Choose an emoji">
-                {SHARE_EMOJIS.map((emoji) => (
-                  <button key={emoji} type="button" onClick={() => setShareText((text) => `${text}${emoji}`)} aria-label={`Add ${emoji}`}>{emoji}</button>
-                ))}
-              </div>
-            )}
-            <article className="event-share-preview">
-              {image && <img src={image} alt="" />}
-              <div>
-                <span>{event.category || 'Community event'}</span>
-                <strong>{event.title}</strong>
-                {event.description && <p>{event.description}</p>}
-                <small>Originally shared by {organizerName}</small>
-              </div>
-            </article>
-            {reposted && <p className="event-share-error" role="status">You have already shared this event.</p>}
-            {shareError && <p className="event-share-error" role="alert">{shareError}</p>}
-            <div className="event-share-actions">
-              <button type="button" onClick={() => setShareOpen(false)}>Cancel</button>
-              <button type="button" onClick={() => void publishEventRepost()} disabled={shareLoading || reposted}>
-                {shareLoading ? 'Sharing...' : reposted ? 'Already shared' : 'Share Post'}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
     </main>
   )
 }

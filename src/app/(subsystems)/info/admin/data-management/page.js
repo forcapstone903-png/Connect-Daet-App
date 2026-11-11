@@ -103,8 +103,8 @@ export default function DataManagementPage() {
       });
       const data = await readJsonResponse(response);
       if (!response.ok || !data.success) {
-        const partialResult = data.restoredRows
-          ? ` ${data.restoredRows} rows were merged before the error; upload the same file again to retry.`
+        const partialResult = data.partialRestore
+          ? ` Partial progress: ${data.restoredRows} rows across ${data.restoredTables} tables were merged before the error. Retrying the same snapshot is safe.`
           : '';
         throw new Error(`${data.message || `Restore failed (${response.status}).`}${partialResult}`);
       }
@@ -214,14 +214,14 @@ export default function DataManagementPage() {
                 Includes application tables, including user and community data. Password hashes, password-reset records, push-subscription credentials, page-view telemetry, and server-side maintenance settings are excluded. Media files are not included.
               </p>
               <p className="mt-2 text-xs font-medium text-amber-800">
-                Snapshots may contain personal and private application data. Store downloaded files securely. Existing user passwords are preserved on restore; users newly added from a snapshot must reset their password before signing in.
+                Snapshots may contain personal and private application data. Downloads are not encrypted by the application: store them only in encrypted, access-restricted storage and remove unsecured copies. Existing user passwords are preserved on restore; users newly added from a snapshot must reset their password before signing in.
               </p>
             </section>
 
             <section id="retention" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="mb-2 text-lg font-bold text-slate-800">Backup behavior</h2>
               <p className="text-sm text-slate-600">
-                Backups run only when an administrator downloads a snapshot. This page does not configure scheduled cloud storage, media-file backup, automatic retention, or data purging. No existing records are removed by backup or restore.
+                Backups run only when an administrator downloads a snapshot. Scheduled backups, remote archival, media-file backups, automatic retention, and transactional restore are not available. Restore merges rows in batches, so a failure can leave a partial merge; retrying the same snapshot is safe for already-merged IDs. No existing records are removed by backup or restore.
               </p>
             </section>
           </div>

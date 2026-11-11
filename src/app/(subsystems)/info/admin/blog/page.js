@@ -58,7 +58,6 @@ export default function BlogManagement() {
   const [commentQueue, setCommentQueue] = useState([]);
   const [categoryOptions, setCategoryOptions] = useState(BLOG_CATEGORIES);
   const [newCategoryValue, setNewCategoryValue] = useState('');
-  const [featuredIds, setFeaturedIds] = useState({});
 
   const [blogForm, setBlogForm] = useState(EMPTY_FORM);
 
@@ -113,11 +112,19 @@ export default function BlogManagement() {
     }
   };
 
-  const toggleFeatured = (blogId) => {
-    setFeaturedIds((prev) => ({
-      ...prev,
-      [blogId]: !prev[blogId],
-    }));
+  const toggleFeatured = async (blog) => {
+    try {
+      const { error } = await supabase
+        .from('info_blogs')
+        .update({ featured: !blog.featured, updated_at: new Date().toISOString() })
+        .eq('id', blog.id);
+      if (error) throw error;
+      await fetchBlogs();
+      showToast(blog.featured ? 'Blog removed from featured posts.' : 'Blog featured.');
+    } catch (error) {
+      console.error('Blog featured status update failed:', error);
+      showToast('Unable to update featured status.', true);
+    }
   };
 
   const createContentNotifications = async ({ type, title, message, link, contentId }) => {
@@ -154,6 +161,7 @@ export default function BlogManagement() {
       const publishedAt = blogForm.status === 'published'
         ? (blogForm.scheduled_for ? new Date(blogForm.scheduled_for).toISOString() : new Date().toISOString())
         : null;
+      const isFutureScheduled = Boolean(publishedAt && new Date(publishedAt).getTime() > new Date().getTime());
 
       const blogData = {
         title: blogForm.title.trim(),
@@ -165,6 +173,7 @@ export default function BlogManagement() {
         tags: tagsArray,
         status: blogForm.status,
         published_at: publishedAt,
+        featured: Boolean(blogForm.featured_post),
       };
 
       let result;
@@ -184,7 +193,7 @@ export default function BlogManagement() {
 
       if (result.error) throw result.error;
 
-      if (!editingBlog && savedBlogId && user?.id) {
+      if (!editingBlog && savedBlogId && user?.id && !isFutureScheduled) {
         const blogLink = `/info/user/blogs/${savedBlogId}`
         await createContentNotifications({
           type: 'blog',
@@ -210,7 +219,11 @@ export default function BlogManagement() {
         });
       }
 
-      showToast(editingBlog ? 'Blog updated successfully.' : 'Blog published successfully.');
+      showToast(editingBlog
+        ? 'Blog updated successfully.'
+        : isFutureScheduled
+          ? 'Blog scheduled successfully.'
+          : 'Blog published successfully.');
       await fetchBlogs();
       closeModal();
     } catch (err) {
@@ -243,11 +256,20 @@ export default function BlogManagement() {
     if (!selectedBlogs.length) return;
 
     try {
-      const requests = selectedBlogs.map((id) =>
-        supabase.from('info_blogs').update({ status }).eq('id', id)
-      );
-
-      await Promise.all(requests);
+      const payload = {
+        status,
+        published_at: status === 'published' ? new Date().toISOString() : null,
+      };
+      const results = await Promise.all(selectedBlogs.map((id) =>
+        supabase.from('info_blogs').update(payload).eq('id', id)
+      ));
+      const failures = results.filter((result) => result.error);
+      if (failures.length) {
+        console.error('Bulk blog status updates failed:', failures.map((result) => result.error));
+        await fetchBlogs();
+        showToast(`${failures.length} of ${selectedBlogs.length} updates failed. Review the selected posts and retry.`, true);
+        return;
+      }
       setSelectedBlogs([]);
       showToast(`Updated ${selectedBlogs.length} posts.`);
       await fetchBlogs();
@@ -261,11 +283,18 @@ export default function BlogManagement() {
     if (!selectedBlogs.length) return;
 
     try {
-      const requests = selectedBlogs.map((id) =>
-        supabase.from('info_blogs').update({ status: 'archived' }).eq('id', id)
-      );
-
-      await Promise.all(requests);
+      const results = await Promise.all(selectedBlogs.map((id) =>
+        supabase.from('info_blogs')
+          .update({ status: 'archived', published_at: null })
+          .eq('id', id)
+      ));
+      const failures = results.filter((result) => result.error);
+      if (failures.length) {
+        console.error('Bulk blog archive updates failed:', failures.map((result) => result.error));
+        await fetchBlogs();
+        showToast(`${failures.length} of ${selectedBlogs.length} archives failed. Review the selected posts and retry.`, true);
+        return;
+      }
       setSelectedBlogs([]);
       showToast(`Archived ${selectedBlogs.length} posts.`);
       await fetchBlogs();
@@ -295,7 +324,7 @@ export default function BlogManagement() {
       scheduled_for: blog.published_at ? new Date(blog.published_at).toISOString().slice(0, 16) : '',
       meta_title: '',
       meta_description: '',
-      featured_post: Boolean(featuredIds[blog.id]),
+      featured_post: Boolean(blog.featured),
     });
     setShowModal(true);
   };
@@ -462,7 +491,7 @@ export default function BlogManagement() {
           <div className="space-y-2">
             {filteredBlogs.map((blog) => {
               const category = getCategoryDisplay(blog.category);
-              const isFeatured = Boolean(featuredIds[blog.id]);
+              const isFeatured = Boolean(blog.featured);
               const isChecked = selectedBlogs.includes(blog.id);
 
               return (
@@ -497,7 +526,7 @@ export default function BlogManagement() {
                       </div>
 
                       <div className="flex flex-wrap gap-2 mt-3">
-                        <button onClick={() => toggleFeatured(blog.id)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-sm hover:bg-purple-100">
+                        <button onClick={() => toggleFeatured(blog)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-sm hover:bg-purple-100">
                           {isFeatured ? 'Unfeature' : 'Feature'}
                         </button>
                         <button onClick={() => openEditModal(blog)} className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl text-sm hover:bg-blue-100">Edit</button>

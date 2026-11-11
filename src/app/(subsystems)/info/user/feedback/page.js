@@ -219,6 +219,7 @@ export default function UserFeedbackPage() {
           title="Feedback & complaints"
           description="Tell us what is working, what is not, and what the Daet community needs next."
           emoji="📮"
+          hideMobileTitle
         >
           <span className="usr-section-counter">{stats.total} submission{stats.total === 1 ? '' : 's'}</span>
           <Link href="/info/user/notifications" className="usr-section-secondary">

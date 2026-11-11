@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { Heart } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AdminAvatar from '@/app/(subsystems)/info/components/admin/AdminAvatar';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
@@ -47,10 +48,10 @@ export default function ManageUsersPage() {
 
   // User Activity View
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [activityTab, setActivityTab] = useState('posts'); // posts, feedback, ratings
+  const [activityTab, setActivityTab] = useState('posts'); // posts, comments, hearts
   const [userPosts, setUserPosts] = useState([]);
-  const [userFeedback, setUserFeedback] = useState([]);
-  const [userRatings, setUserRatings] = useState([]);
+  const [userComments, setUserComments] = useState([]);
+  const [userHearts, setUserHearts] = useState([]);
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [moderationNotes, setModerationNotes] = useState('');
   const [showModerateModal, setShowModerateModal] = useState(false);
@@ -87,7 +88,7 @@ export default function ManageUsersPage() {
       const response = await fetch('/info/api/admin/users');
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load users');
-      const users = (data.users || []).filter((user) => user.user_type !== 'admin');
+      const users = (data.users || []).filter((user) => !['admin', 'administrator'].includes(String(user.user_type).toLowerCase()));
       setUsers(users);
       computeStats(users);
     } catch (err) {
@@ -145,112 +146,100 @@ export default function ManageUsersPage() {
     }
   };
 
-  const fetchUserFeedback = async (userId) => {
+  const fetchUserComments = async (userId) => {
     try {
       const { data, error } = await supabase
-        .from('info_feedback')
-        .select('*')
+        .from('content_comments')
+        .select('id, content_type, content_id, body, parent_id, status, created_at')
         .eq('user_id', userId)
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      
-      // Enrich feedback with target names
-      const enrichedFeedback = await Promise.all((data || []).map(async (fb) => {
-        let targetName = fb.target_id;
-        let targetTable = '';
-        
-        switch (fb.target_type) {
-          case 'event':
-            targetTable = 'info_events';
-            break;
-          case 'spot':
-            targetTable = 'info_tourist_spots';
-            break;
-          case 'blog':
-            targetTable = 'info_blogs';
-            break;
-        }
-        
-        if (targetTable) {
-          const { data: targetData } = await supabase
-            .from(targetTable)
-            .select('name, title')
-            .eq('id', fb.target_id)
-            .single();
-          
-          if (targetData) {
-            targetName = targetData.name || targetData.title || fb.target_id;
-          }
-        }
-        
-        return { ...fb, target_name: targetName };
-      }));
-      
-      setUserFeedback(enrichedFeedback);
+
+      const enrichedComments = await enrichActivityTargets(data || []);
+      setUserComments(enrichedComments);
     } catch (err) {
-      showToast('Failed to load feedback: ' + err.message, true);
+      showToast('Failed to load comments: ' + err.message, true);
     }
   };
 
-  const fetchUserRatings = async (userId) => {
+  const fetchUserHearts = async (userId) => {
     try {
       const { data, error } = await supabase
-        .from('info_feedback')
-        .select('*')
+        .from('content_reactions')
+        .select('id, content_type, content_id, reaction_type, created_at')
         .eq('user_id', userId)
-        .not('rating', 'is', null)
+        .eq('reaction_type', 'love')
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      
-      const enrichedRatings = await Promise.all((data || []).map(async (fb) => {
-        let targetName = fb.target_id;
-        let targetTable = '';
-        
-        switch (fb.target_type) {
-          case 'event':
-            targetTable = 'info_events';
-            break;
-          case 'spot':
-            targetTable = 'info_tourist_spots';
-            break;
-          case 'blog':
-            targetTable = 'info_blogs';
-            break;
-        }
-        
-        if (targetTable) {
-          const { data: targetData } = await supabase
-            .from(targetTable)
-            .select('name, title')
-            .eq('id', fb.target_id)
-            .single();
-          
-          if (targetData) {
-            targetName = targetData.name || targetData.title || fb.target_id;
-          }
-        }
-        
-        return { ...fb, target_name: targetName };
-      }));
-      
-      setUserRatings(enrichedRatings);
+
+      const enrichedHearts = await enrichActivityTargets(data || []);
+      setUserHearts(enrichedHearts);
     } catch (err) {
-      showToast('Failed to load ratings: ' + err.message, true);
+      showToast('Failed to load hearts: ' + err.message, true);
     }
+  };
+
+  const enrichActivityTargets = async (rows) => {
+    const targetTables = {
+      blog: ['info_blogs', 'title'],
+      event: ['info_events', 'title'],
+      announcement: ['info_announcements', 'title'],
+      forum_thread: ['forum_threads', 'title'],
+      forum_reply: ['forum_replies', 'content'],
+      user_post: ['info_user_posts', 'title'],
+      post: ['info_user_posts', 'title'],
+      tourist_spot: ['info_tourist_spots', 'name'],
+      comment: ['content_comments', 'body'],
+    };
+    const targetsByType = new Map();
+
+    for (const row of rows) {
+      const [table, labelColumn] = targetTables[row.content_type] || [];
+      if (!table) continue;
+      const key = `${table}:${labelColumn}`;
+      const target = targetsByType.get(key) || { table, labelColumn, ids: new Set() };
+      target.ids.add(row.content_id);
+      targetsByType.set(key, target);
+    }
+
+    const targetLabels = new Map();
+    await Promise.all([...targetsByType.entries()].map(async ([key, target]) => {
+      const { data, error } = await supabase
+        .from(target.table)
+        .select(`id, ${target.labelColumn}`)
+        .in('id', [...target.ids]);
+      if (error) throw error;
+      targetLabels.set(key, new Map((data || []).map((item) => [`${target.table}:${item.id}`, item[target.labelColumn]])));
+    }));
+
+    return rows.map((row) => {
+      const [table, labelColumn] = targetTables[row.content_type] || [];
+      const label = table
+        ? targetLabels.get(`${table}:${labelColumn}`)?.get(`${table}:${row.content_id}`)
+        : null;
+      const fallbackType = String(row.content_type || 'content').replaceAll('_', ' ');
+      return {
+        ...row,
+        target_name: label || `${fallbackType} (${String(row.content_id).slice(0, 8)})`,
+      };
+    });
   };
 
   const openActivityModal = async (user) => {
     setSelectedUser(user);
     setActivityTab('posts');
+    setUserPosts([]);
+    setUserComments([]);
+    setUserHearts([]);
     setShowActivityModal(true);
     setLoadingActivity(true);
     
     await Promise.all([
       fetchUserPosts(user.id),
-      fetchUserFeedback(user.id),
-      fetchUserRatings(user.id)
+      fetchUserComments(user.id),
+      fetchUserHearts(user.id)
     ]);
     
     setLoadingActivity(false);
@@ -293,22 +282,21 @@ export default function ManageUsersPage() {
     }
   };
 
-  const deleteFeedback = async (feedbackId) => {
-    if (!confirm('Are you sure you want to delete this feedback/rating?')) return;
+  const deleteUserComment = async (commentId) => {
+    if (!confirm('Are you sure you want to delete this comment? This action cannot be undone.')) return;
     
     try {
       const { error } = await supabase
-        .from('info_feedback')
+        .from('content_comments')
         .delete()
-        .eq('id', feedbackId);
+        .eq('id', commentId);
       
       if (error) throw error;
       
-      showToast('Feedback deleted successfully!');
-      await fetchUserFeedback(selectedUser.id);
-      await fetchUserRatings(selectedUser.id);
+      showToast('Comment deleted successfully!');
+      await fetchUserComments(selectedUser.id);
     } catch (err) {
-      showToast('Failed to delete feedback: ' + err.message, true);
+      showToast('Failed to delete comment: ' + err.message, true);
     }
   };
 
@@ -427,13 +415,26 @@ export default function ManageUsersPage() {
     if (!selectedUser) return;
     setSaving(true);
     try {
-      const { error } = await supabase.from('info_users').delete().eq('id', selectedUser.id);
-      if (error) throw error;
-      showToast(`"${selectedUser.full_name}" has been removed.`);
+      const response = await fetch('/info/api/admin/users', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedUser.id }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to schedule account deletion.')
+      }
+      const scheduledDate = formatDateTime(result.scheduledFor)
+      const emailStatus = result.emailNotificationSent
+        ? ' A notice was emailed to the user.'
+        : ' The deletion was scheduled, but the email notice could not be delivered.'
+      showToast(`"${selectedUser.full_name}" is deactivated and scheduled for deletion on ${scheduledDate}.${emailStatus}`)
       closeAllModals();
       await fetchUsers();
     } catch (err) {
-      showToast('Failed to delete user: ' + err.message, true);
+      showToast('Failed to schedule account deletion: ' + err.message, true);
     } finally {
       setSaving(false);
     }
@@ -532,6 +533,7 @@ export default function ManageUsersPage() {
       inactive: 'bg-gray-100 text-gray-600',
       suspended: 'bg-red-100 text-red-800',
       pending: 'bg-yellow-100 text-yellow-800',
+      pending_deletion: 'bg-orange-100 text-orange-800',
     };
     return map[status] || 'bg-gray-100 text-gray-800';
   };
@@ -547,25 +549,12 @@ export default function ManageUsersPage() {
   };
 
   const getStatusDot = (status) => {
-    const map = { active: 'bg-green-500', inactive: 'bg-gray-400', suspended: 'bg-red-500', pending: 'bg-yellow-400' };
+    const map = { active: 'bg-green-500', inactive: 'bg-gray-400', suspended: 'bg-red-500', pending: 'bg-yellow-400', pending_deletion: 'bg-orange-500' };
     return map[status] || 'bg-gray-400';
   };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
   const formatDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-
-  const renderStars = (rating) => {
-    return (
-      <div className="flex items-center gap-0.5">
-        {[1, 2, 3, 4, 5].map(star => (
-          <span key={star} className={star <= rating ? 'text-yellow-400' : 'text-gray-300'}>
-            ★
-          </span>
-        ))}
-        <span className="text-xs text-gray-500 ml-1">({rating})</span>
-      </div>
-    );
-  };
 
   if (loading) {
     return (
@@ -714,16 +703,27 @@ export default function ManageUsersPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusDot(u.status)}`}></span>
-                          <select
-                            value={u.status || 'active'}
-                            onChange={e => updateStatus(u.id, e.target.value)}
-                            className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${getStatusBadge(u.status)}`}
-                          >
-                            {userStatuses.map(s => (
-                              <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>
-                            ))}
-                          </select>
+                          {u.status === 'pending_deletion' ? (
+                            <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${getStatusBadge(u.status)}`}>
+                              Deletion scheduled
+                            </span>
+                          ) : (
+                            <select
+                              value={u.status || 'active'}
+                              onChange={e => updateStatus(u.id, e.target.value)}
+                              className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${getStatusBadge(u.status)}`}
+                            >
+                              {userStatuses.filter(s => s !== 'pending_deletion').map(s => (
+                                <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>
+                              ))}
+                            </select>
+                          )}
                         </div>
+                        {u.status === 'pending_deletion' && u.deletion_scheduled_for ? (
+                          <p className="mt-1 text-[11px] text-orange-700">
+                            Permanently deleted after {formatDateTime(u.deletion_scheduled_for)}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
@@ -752,11 +752,13 @@ export default function ManageUsersPage() {
                             title="Edit User"
                             className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm"
                           ><Icon name="edit" className="w-4 h-4" /></button>
-                          <button
-                            onClick={() => openDeleteModal(u)}
-                            title="Delete User"
-                            className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors text-sm"
-                          >🗑️</button>
+                          {u.status !== 'pending_deletion' && !['admin', 'administrator', 'moderator'].includes(String(u.user_type).toLowerCase()) ? (
+                            <button
+                              onClick={() => openDeleteModal(u)}
+                              title="Schedule account deletion"
+                              className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors text-sm"
+                            >🗑️</button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -827,8 +829,8 @@ export default function ManageUsersPage() {
             <div className="flex border-b border-gray-200 px-5 flex-shrink-0">
               {[
                 { id: 'posts', label: 'Posts', icon: 'edit', count: userPosts.length },
-                { id: 'feedback', label: 'Feedback', icon: 'feedback', count: userFeedback.length },
-                { id: 'ratings', label: 'Ratings', icon: '⭐', count: userRatings.filter(r => r.rating).length }
+                { id: 'comments', label: 'Comments', icon: 'feedback', count: userComments.length },
+                { id: 'hearts', label: 'Hearts', count: userHearts.length }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -839,7 +841,9 @@ export default function ManageUsersPage() {
                       : 'border-transparent text-gray-500 hover:text-gray-700'
                   }`}
                 >
-                  <span>{tab.icon}</span>
+                  {tab.id === 'hearts'
+                    ? <Heart className="h-4 w-4" aria-hidden="true" />
+                    : <Icon name={tab.icon} className="h-4 w-4" />}
                   <span>{tab.label}</span>
                   <span className={`text-xs px-1.5 py-0.5 rounded-full ${activityTab === tab.id ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500'}`}>
                     {tab.count}
@@ -907,76 +911,60 @@ export default function ManageUsersPage() {
                     </div>
                   )}
 
-                  {activityTab === 'feedback' && (
+                  {activityTab === 'comments' && (
                     <div className="space-y-4">
-                      {userFeedback.length === 0 ? (
+                      {userComments.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
                           <Icon name="feedback" className="w-10 h-10 block mb-2" />
-                          <p className="text-sm">No feedback from this user.</p>
+                          <p className="text-sm">No comments from this user.</p>
                         </div>
                       ) : (
-                        userFeedback.map(fb => (
-                          <div key={fb.id} className="border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 transition-colors">
+                        userComments.map(comment => (
+                          <div key={comment.id} className="border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 transition-colors">
                             <div className="flex items-start justify-between mb-2">
                               <div>
                                 <div className="flex items-center gap-2 flex-wrap mb-1">
                                   <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-                                    {fb.target_type}
+                                    {String(comment.content_type || 'content').replaceAll('_', ' ')}
                                   </span>
                                   <span className="text-sm font-medium text-gray-700">
-                                    on: {fb.target_name}
+                                    on: {comment.target_name}
                                   </span>
+                                  {comment.status && <span className="text-xs text-gray-400">{comment.status}</span>}
                                 </div>
-                                {fb.rating && renderStars(fb.rating)}
                               </div>
                               <button
-                                onClick={() => deleteFeedback(fb.id)}
+                                onClick={() => deleteUserComment(comment.id)}
                                 className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 text-sm"
-                                title="Delete Feedback"
+                                title="Delete Comment"
+                                aria-label="Delete comment"
                               >🗑️</button>
                             </div>
-                            {fb.comment && (
-                              <p className="text-sm text-gray-600 mt-2">{fb.comment}</p>
-                            )}
-                            <p className="text-xs text-gray-400 mt-2"><Icon name="events" className="w-3 h-3 inline-block mr-1" />{formatDateTime(fb.created_at)}</p>
+                            <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{comment.body}</p>
+                            {comment.parent_id && <p className="mt-2 text-xs text-gray-400">Reply to a comment</p>}
+                            <p className="text-xs text-gray-400 mt-2"><Icon name="events" className="w-3 h-3 inline-block mr-1" />{formatDateTime(comment.created_at)}</p>
                           </div>
                         ))
                       )}
                     </div>
                   )}
 
-                  {activityTab === 'ratings' && (
+                  {activityTab === 'hearts' && (
                     <div className="space-y-4">
-                      {userRatings.filter(r => r.rating).length === 0 ? (
+                      {userHearts.length === 0 ? (
                         <div className="text-center py-12 text-gray-400">
-                          <span className="text-4xl block mb-2">⭐</span>
-                          <p className="text-sm">No ratings from this user.</p>
+                          <Heart className="w-10 h-10 block mb-2 mx-auto" />
+                          <p className="text-sm">No hearts from this user.</p>
                         </div>
                       ) : (
-                        userRatings.filter(r => r.rating).map(rating => (
-                          <div key={rating.id} className="border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 transition-colors">
-                            <div className="flex items-start justify-between mb-2">
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap mb-1">
-                                  <span className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">
-                                    {rating.target_type}
-                                  </span>
-                                  <span className="text-sm font-medium text-gray-700">
-                                    {rating.target_name}
-                                  </span>
-                                </div>
-                                {renderStars(rating.rating)}
-                              </div>
-                              <button
-                                onClick={() => deleteFeedback(rating.id)}
-                                className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 text-sm"
-                                title="Delete Rating"
-                              >🗑️</button>
+                        userHearts.map(heart => (
+                          <div key={heart.id} className="border border-gray-200 rounded-2xl p-4 hover:bg-gray-50 transition-colors">
+                            <div className="flex items-center gap-2">
+                              <Heart className="h-4 w-4 fill-current text-rose-500" aria-hidden="true" />
+                              <span className="text-sm font-medium text-gray-700">Hearted {heart.content_type.replaceAll('_', ' ')}</span>
                             </div>
-                            {rating.comment && (
-                              <p className="text-sm text-gray-600 mt-2">{rating.comment}</p>
-                            )}
-                            <p className="text-xs text-gray-400 mt-2"><Icon name="events" className="w-3 h-3 inline-block mr-1" />{formatDateTime(rating.created_at)}</p>
+                            <p className="text-sm text-gray-600 mt-2">{heart.target_name}</p>
+                            <p className="text-xs text-gray-400 mt-2"><Icon name="events" className="w-3 h-3 inline-block mr-1" />{formatDateTime(heart.created_at)}</p>
                           </div>
                         ))
                       )}
@@ -1120,9 +1108,10 @@ export default function ManageUsersPage() {
                   <select
                     value={userForm.status}
                     onChange={e => setUserForm(p => ({ ...p, status: e.target.value }))}
+                    disabled={selectedUser?.status === 'pending_deletion'}
                     className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white"
                   >
-                    {userStatuses.map(s => <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>)}
+                    {userStatuses.filter(s => s !== 'pending_deletion' || selectedUser?.status === 'pending_deletion').map(s => <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>)}
                   </select>
                 </div>
               </div>
@@ -1158,15 +1147,15 @@ export default function ManageUsersPage() {
               <div className="bg-red-100 w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3">
                 <span className="text-3xl">🗑️</span>
               </div>
-              <h3 className="text-lg font-bold text-gray-800">Delete User?</h3>
+              <h3 className="text-lg font-bold text-gray-800">Schedule Account Deletion?</h3>
               <p className="text-sm text-gray-500 mt-2">
-                Are you sure you want to permanently delete <strong className="text-gray-700">{selectedUser.full_name || selectedUser.email}</strong>? This action cannot be undone.
+                <strong className="text-gray-700">{selectedUser.full_name || selectedUser.email}</strong> will lose access immediately. Their account and associated content will be permanently deleted after a 15-day grace period. They can restore the account before the scheduled deletion date.
               </p>
             </div>
             <div className="flex gap-3">
               <button onClick={closeAllModals} className="flex-1 px-4 py-2 border border-gray-300 rounded-full text-sm text-gray-600 hover:bg-gray-50">Cancel</button>
               <button onClick={deleteUser} disabled={saving} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-full text-sm hover:bg-red-700 disabled:opacity-50">
-                {saving ? 'Deleting...' : 'Yes, Delete'}
+                {saving ? 'Scheduling...' : 'Schedule Deletion'}
               </button>
             </div>
           </div>

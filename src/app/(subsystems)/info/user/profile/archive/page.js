@@ -96,6 +96,7 @@ export default function ProfileArchivePage() {
           title="Archive"
           description="Posts and reposts you hid from your profile stay here. Restore them anytime."
           emoji="🗂️"
+          hideMobileTitle
           backHref="/info/user/profile"
           backLabel="Your profile"
         >

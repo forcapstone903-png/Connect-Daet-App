@@ -149,11 +149,13 @@ function SearchContentView({ initialQuery }) {
             .from('info_events')
             .select('*')
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .or(`title.ilike.%${q}%,description.ilike.%${q}%,location.ilike.%${q}%`),
           supabase
             .from('info_blogs')
             .select('*')
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .or(`title.ilike.%${q}%,excerpt.ilike.%${q}%,content.ilike.%${q}%,category.ilike.%${q}%`),
           supabase
             .from('forum_threads')
@@ -215,8 +217,8 @@ function SearchContentView({ initialQuery }) {
         if (userIds.length) {
           const [userPostsRes, blogsByUserRes, eventsByUserRes, threadsByUserRes, commentsRes, mentionsRes] = await Promise.all([
             supabase.from('info_user_posts').select('id, user_id, title, content, created_at').in('user_id', userIds).eq('status', 'published').order('created_at', { ascending: false }),
-            supabase.from('info_blogs').select('id, created_by, title, excerpt, content, featured_image, created_at').in('created_by', userIds).eq('status', 'published').order('created_at', { ascending: false }),
-            supabase.from('info_events').select('id, created_by, title, description, featured_image, start_date, location').in('created_by', userIds).eq('status', 'published').order('start_date', { ascending: false }),
+            supabase.from('info_blogs').select('id, created_by, title, excerpt, content, featured_image, created_at').in('created_by', userIds).eq('status', 'published').eq('approval_status', 'approved').order('created_at', { ascending: false }),
+            supabase.from('info_events').select('id, created_by, title, description, featured_image, start_date, location').in('created_by', userIds).eq('status', 'published').eq('approval_status', 'approved').order('start_date', { ascending: false }),
             supabase.from('forum_threads').select('id, created_by, title, content, created_at').in('created_by', userIds).eq('status', 'published').order('created_at', { ascending: false }),
             supabase.from('content_comments').select('id, user_id, content_type, content_id, body, gif_url, sticker_url, created_at').in('user_id', userIds).eq('status', 'active').order('created_at', { ascending: false }),
             supabase.from('mentions').select('id, mentioned_user_id, content_type, content_id, mention_text, created_at').in('mentioned_user_id', userIds).order('created_at', { ascending: false }),

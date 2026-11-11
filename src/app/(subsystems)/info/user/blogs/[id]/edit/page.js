@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
-import { Eye, FilePenLine, Save, Send, Trash2 } from 'lucide-react'
+import { Eye, FilePenLine, MessageSquareText, Save, Send, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
@@ -21,7 +21,7 @@ const categories = [
   { value: 'announcement', label: 'Announcements' },
 ]
 
-const BASE_COLUMNS = 'title, excerpt, content, category, status, featured_image, images, videos, media_layout'
+const BASE_COLUMNS = 'title, excerpt, content, category, status, approval_status, submitted_at, reviewed_at, rejection_reason, featured_image, images, videos, media_layout'
 const LEGACY_COLUMNS = 'title, excerpt, content, category, status'
 
 const initialForm = {
@@ -31,6 +31,8 @@ const initialForm = {
   category: 'travel_guides',
   featured_image: '',
   status: 'draft',
+  approval_status: 'draft',
+  rejection_reason: '',
   media_layout: 'swipe',
 }
 
@@ -93,6 +95,8 @@ export default function EditBlogPage() {
           category: data.category || initialForm.category,
           featured_image: data.featured_image || '',
           status: data.status || 'draft',
+          approval_status: data.approval_status || 'draft',
+          rejection_reason: data.rejection_reason || '',
           media_layout: data.media_layout === 'grid' ? 'grid' : 'swipe',
         })
         setMediaItems(toMediaItems(data.images, data.videos))
@@ -117,6 +121,7 @@ export default function EditBlogPage() {
     setSaving(nextStatus || 'save')
     setError('')
     setNotice('')
+    const wasApproved = form.approval_status === 'approved'
 
     const payload = {
       title: form.title.trim(),
@@ -146,15 +151,24 @@ export default function EditBlogPage() {
 
       invalidateCachePrefix('feed:user:')
       invalidateCachePrefix('profile:user:')
-      setForm((current) => ({ ...current, status: result.blog?.status || current.status }))
+      setForm((current) => ({
+        ...current,
+        status: result.blog?.status || current.status,
+        approval_status: result.blog?.approval_status || current.approval_status,
+        rejection_reason: result.blog?.rejection_reason || '',
+      }))
 
-      if (nextStatus === 'published') {
-        setNotice('Story published. Opening your story...')
-        router.push(`/info/user/blogs/${id}`)
+      const submittedForApproval = nextStatus === 'published'
+        || (wasApproved && result.blog?.approval_status === 'pending')
+      if (submittedForApproval) {
+        setNotice('Submitted for administrator approval. Opening your blog posts...')
+        router.push('/info/user/blog-submissions')
         return
       }
 
-      setNotice(nextStatus === 'draft' ? 'Draft saved.' : 'Changes saved.')
+      setNotice(result.blog?.approval_status === 'pending'
+        ? 'Changes saved. This post is still pending administrator approval.'
+        : nextStatus === 'draft' ? 'Draft saved.' : 'Changes saved.')
     } catch (saveError) {
       console.error('Blog update failed:', saveError)
       setError('Unable to save this story right now.')
@@ -220,7 +234,14 @@ export default function EditBlogPage() {
     )
   }
 
-  const isPublished = form.status === 'published'
+  const isPublished = form.status === 'published' && form.approval_status === 'approved'
+  const approvalLabel = form.approval_status === 'pending'
+    ? 'Pending approval'
+    : form.approval_status === 'rejected'
+      ? 'Rejected'
+      : form.approval_status === 'changes_requested'
+        ? 'Changes requested'
+      : isPublished ? 'Published' : 'Draft'
 
   return (
     <main className="tourism-shell usr-section-page usr-editor usr-stories min-h-screen text-slate-900">
@@ -229,12 +250,13 @@ export default function EditBlogPage() {
         <UserSectionHeader
           eyebrow="Writing studio"
           title="Edit story"
-          description="Refine your draft, add media, then publish it to the community when it is ready."
+          description="Refine your story, then submit it for administrator approval before it can be published."
           emoji="📝"
+          hideMobileTitle
           backHref="/info/user/drafts"
           backLabel="Your drafts"
         >
-          <span className="usr-section-counter">{isPublished ? 'Published' : 'Draft'}</span>
+          <span className="usr-section-counter">{approvalLabel}</span>
           {isPublished ? (
             <Link href={`/info/user/blogs/${id}`} className="usr-section-secondary">
               <Eye className="h-4 w-4" />
@@ -265,6 +287,12 @@ export default function EditBlogPage() {
               className={`usr-inline-note ${error ? 'usr-inline-note-error' : 'usr-inline-note-success'}`}
             >
               {error || notice}
+            </p>
+          ) : null}
+          {['rejected', 'changes_requested'].includes(form.approval_status) && form.rejection_reason ? (
+            <p className={`usr-inline-note ${form.approval_status === 'changes_requested' ? 'border-blue-200 bg-blue-50 text-blue-800' : 'usr-inline-note-error'}`}>
+              {form.approval_status === 'changes_requested' ? <MessageSquareText className="mr-1 inline h-4 w-4" /> : null}
+              <strong>Administrator feedback:</strong> {form.rejection_reason}
             </p>
           ) : null}
 
@@ -379,7 +407,7 @@ export default function EditBlogPage() {
                 disabled={Boolean(saving) || deleting}
                 className="usr-section-primary disabled:opacity-60"
               >
-                {saving === 'published' ? 'Publishing…' : <><Send className="h-4 w-4" />Publish story</>}
+                {saving === 'published' ? 'Submitting…' : <><Send className="h-4 w-4" />Submit for approval</>}
               </button>
             )}
           </div>

@@ -2,26 +2,63 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
-import { notifyFollowers } from '@/lib/notificationAudience'
+import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  return url && key
+    ? createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+    : null
+}
+
+export async function GET(request) {
+  const userId = getServerSession(request)?.user_id
+  if (!userId) {
+    return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
+  }
+
+  const adminSupabase = getAdminClient()
+  if (!adminSupabase) {
+    return NextResponse.json({ success: false, message: 'Blog service is not configured.' }, { status: 500 })
+  }
+
+  const { data, error } = await adminSupabase
+    .from('info_blogs')
+    .select('id, title, excerpt, category, featured_image, status, approval_status, submitted_at, reviewed_at, rejection_reason, published_at, created_at, updated_at')
+    .eq('created_by', userId)
+    .order('updated_at', { ascending: false })
+
+  if (error) {
+    console.error('User blog list failed:', error.message)
+    return NextResponse.json({ success: false, message: 'Unable to load your blog posts.' }, { status: 500 })
+  }
+
+  return NextResponse.json({ success: true, blogs: data || [] }, {
+    headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
+  })
+}
+
 export async function POST(request) {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
   const userId = getServerSession(request)?.user_id
 
   if (!userId) {
     return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
   }
 
-  if (!supabaseUrl || !serviceRoleKey) {
+  const adminSupabase = getAdminClient()
+  if (!adminSupabase) {
     return NextResponse.json({ success: false, message: 'Blog service is not configured.' }, { status: 500 })
   }
 
   try {
     const body = await request.json()
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ success: false, message: 'A valid blog post is required.' }, { status: 400 })
+    }
     const title = String(body.title || '').trim()
     const content = sanitizeRichText(body.content).trim()
     const category = String(body.category || '').trim()
@@ -31,8 +68,11 @@ export async function POST(request) {
     if (!title || !content || !category) {
       return NextResponse.json({ success: false, message: 'Please add a title, category, and article content.' }, { status: 400 })
     }
+    if (body.status === 'published') {
+      const restriction = await getActivePublishingRestriction(adminSupabase, userId)
+      if (restriction) return NextResponse.json({ success: false, message: 'Your account is currently restricted from submitting posts.' }, { status: 403 })
+    }
 
-    const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
     const basePayload = {
       title,
       slug: body.slug,
@@ -41,9 +81,14 @@ export async function POST(request) {
       featured_image: body.featured_image || null,
       category,
       tags: Array.isArray(body.tags) ? body.tags : [],
-      status: body.status === 'published' ? 'published' : 'draft',
+      status: 'draft',
+      approval_status: body.status === 'published' ? 'pending' : 'draft',
+      submitted_at: body.status === 'published' ? new Date().toISOString() : null,
+      reviewed_at: null,
+      reviewed_by: null,
+      rejection_reason: null,
       created_by: userId,
-      published_at: body.status === 'published' ? new Date().toISOString() : null,
+      published_at: null,
       views: 0,
       likes: 0,
       comments_count: 0,
@@ -89,18 +134,6 @@ export async function POST(request) {
       const typedMessage = error.message || 'Unable to create your blog article.'
       console.error('Blog insert failed:', typedMessage)
       return NextResponse.json({ success: false, message: typedMessage }, { status: 500 })
-    }
-
-    if (basePayload.status === 'published') {
-      await notifyFollowers(adminSupabase, {
-        authorId: userId,
-        type: 'post',
-        link: `/info/user/blogs/${data.id}`,
-        postId: data.id,
-        title: 'New post from someone you follow',
-        actionText: 'published a new post',
-        subject: title,
-      })
     }
 
     const warning = omittedColumns.length

@@ -13,7 +13,7 @@ import useAdminMetrics, { countRows, resolveMetricEntries } from '@/lib/adminMet
 
 const DATA_TABS = {
   backups: '/info/admin/data/backups',
-  'import-export': '/info/admin/data/import-export',
+  'import-export': '/info/admin/data/backups',
   media: '/info/admin/data/media',
   retention: '/info/admin/data/retention',
 }
@@ -21,21 +21,15 @@ const DATA_TABS = {
 const DATA_DESTINATIONS = [
   {
     title: 'Media library',
-    description: 'Browse uploaded images, videos, and documents with storage details.',
+    description: 'Manage tracked public-site images and videos stored in Supabase Storage.',
     icon: 'image',
     href: '/info/admin/file-management',
   },
   {
-    title: 'Backups',
-    description: 'Create on-demand database snapshots and restore from a saved file.',
+    title: 'Backup & restore',
+    description: 'Create on-demand database snapshots and merge data from a saved file.',
     icon: 'save',
     href: '/info/admin/data/backups',
-  },
-  {
-    title: 'Import / Export',
-    description: 'Move attractions and events in or out as CSV and JSON.',
-    icon: 'data',
-    href: '/info/admin/data-management',
   },
   {
     title: 'Data retention',
@@ -61,7 +55,7 @@ export default function DataHubOverview() {
     <AdminShell
       eyebrow="Data"
       title="Data management"
-      description="Backups, media, imports, and retention policy for the records that power the tourism platform."
+      description="Database snapshots, media, and retention information for the records that power the tourism platform."
       headerIcon="data"
       roleLabel="Administrator"
       loadingLabel="Loading data console…"

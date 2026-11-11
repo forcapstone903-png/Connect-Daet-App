@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { parseMentionCandidates } from '@/lib/mentions'
+import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -19,6 +20,17 @@ export async function GET(request) {
   try {
     const viewerId = getServerSession(request)?.user_id || null
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const { data: blog, error: blogError } = await adminSupabase
+      .from('info_blogs')
+      .select('id')
+      .eq('id', blogId)
+      .eq('status', 'published')
+      .eq('approval_status', 'approved')
+      .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
+      .maybeSingle()
+    if (blogError) throw blogError
+    if (!blog) return NextResponse.json({ success: false, message: 'This blog is no longer available.' }, { status: 404 })
+
     let query = adminSupabase
       .from('info_comments')
       .select('*, info_users(full_name, email, profile_image_url)')
@@ -211,11 +223,17 @@ export async function POST(request) {
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const restriction = await getActivePublishingRestriction(adminSupabase, userId)
+    if (restriction) {
+      return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting comments.' }, { status: 403 })
+    }
     const { data: blog, error: blogError } = await adminSupabase
       .from('info_blogs')
       .select('id, title, status, created_by')
       .eq('id', blogId)
       .eq('status', 'published')
+      .eq('approval_status', 'approved')
+      .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
       .maybeSingle()
 
     if (blogError) throw blogError

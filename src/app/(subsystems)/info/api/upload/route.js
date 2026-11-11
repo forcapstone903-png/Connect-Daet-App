@@ -13,7 +13,8 @@ const bucketAliases = {
 
 export async function POST(request) {
   try {
-    const userId = getServerSession(request)?.user_id
+    const session = getServerSession(request)
+    const userId = session?.user_id
     if (!userId) return NextResponse.json({ error: 'User session is required.' }, { status: 401 })
 
     const formData = await request.formData()
@@ -43,6 +44,12 @@ export async function POST(request) {
     const folder = normalizedFolder
 
     if (!bucket || !folder) return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
+    if (
+      (folder === 'admin-library' || folder.startsWith('admin-library/'))
+      && !['admin', 'administrator'].includes(String(session.role || '').trim().toLowerCase())
+    ) {
+      return NextResponse.json({ error: 'Administrator access is required for the shared media library.' }, { status: 403 })
+    }
 
     if (!file || typeof file === 'string') {
       return NextResponse.json({ error: 'No file was provided.' }, { status: 400 })
@@ -117,7 +124,8 @@ export async function GET() {
 
 export async function DELETE(request) {
   try {
-    const userId = getServerSession(request)?.user_id
+    const session = getServerSession(request)
+    const userId = session?.user_id
     if (!userId) return NextResponse.json({ error: 'User session is required.' }, { status: 401 })
     if (!supabaseUrl || !supabaseServiceRoleKey) return NextResponse.json({ error: 'Storage is not configured.' }, { status: 500 })
 
@@ -146,7 +154,10 @@ export async function DELETE(request) {
       || objectPath.startsWith(`messages/${userId}/`)
       || objectPath.startsWith(`forum-replies/${userId}/`)
 
-    if (!allowedBuckets.has(normalizedBucket) || !ownedPath || !objectPath) {
+    const adminLibraryPath = objectPath.startsWith('admin-library/')
+    const isAdmin = ['admin', 'administrator'].includes(String(session.role || '').trim().toLowerCase())
+
+    if (!allowedBuckets.has(normalizedBucket) || !(ownedPath || (adminLibraryPath && isAdmin)) || !objectPath) {
       return NextResponse.json({ error: 'Invalid storage object.' }, { status: 400 })
     }
 

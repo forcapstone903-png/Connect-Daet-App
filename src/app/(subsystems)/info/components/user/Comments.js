@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp, CornerDownRight, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc, X } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, ChevronUp, ClipboardCopy, CornerDownRight, EyeOff, Flag, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { buildCommentThreads, sortCommentNodes } from '@/lib/commentThreads'
@@ -44,7 +44,38 @@ function countCommentLikes(comment) {
 const INITIAL_VISIBLE_COMMENTS = 3
 const EVENT_COMMENT_SORT_LABELS = { relevant: 'Most Relevant', newest: 'Newest', oldest: 'Oldest' }
 
-export default function Comments({ contentType, contentId, userId, contentOwnerId, contentTitle, onPinChange, sortBy = 'relevant', compact = false, sheetMode = false, focusCommentId = null, articleStyle = false, eventStyle = false }) {
+function Comment({ comment, depth = 0, focused = false, eventStyle = false, children }) {
+  return (
+    <div
+      id={`comment-${comment.id}`}
+      className={`event-comment scroll-mt-24 ${depth > 0 ? 'is-reply' : ''} ${!eventStyle && depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''} ${focused ? 'is-focused rounded-2xl ring-2 ring-sky-400 ring-offset-2' : ''}`}
+      data-depth={depth}
+    >
+      {children}
+    </div>
+  )
+}
+
+export default function Comments({
+  contentType,
+  contentId,
+  userId,
+  contentOwnerId,
+  contentTitle,
+  onPinChange,
+  sortBy = 'relevant',
+  compact = false,
+  sheetMode = false,
+  focusCommentId = null,
+  articleStyle = false,
+  eventStyle = false,
+  onClose,
+  onCommentCountChange,
+  onHeaderPointerDown,
+  onHeaderPointerMove,
+  onHeaderPointerUp,
+  closeButtonRef,
+}) {
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -62,12 +93,15 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   const [gifError, setGifError] = useState('')
   const [showAllComments, setShowAllComments] = useState(false)
   const [openMenuId, setOpenMenuId] = useState(null)
+  const [hiddenCommentIds, setHiddenCommentIds] = useState(() => new Set())
   const [editingCommentId, setEditingCommentId] = useState(null)
   const [editedCommentText, setEditedCommentText] = useState('')
   const [expandedReplyIds, setExpandedReplyIds] = useState({})
   const [focusedCommentId, setFocusedCommentId] = useState(null)
   const [reactionDetails, setReactionDetails] = useState(null)
   const [reactionDetailsLoading, setReactionDetailsLoading] = useState(false)
+  const commentBodyRef = useRef(null)
+  const commentInputRef = useRef(null)
 
   const loadComments = useCallback(async () => {
     if (!contentId) return
@@ -181,7 +215,18 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   const totalCommentCount = comments.length
   const totalReplyCount = comments.filter((comment) => comment.parent_id).length
   const totalLikeCount = comments.reduce((sum, comment) => sum + countCommentLikes(comment), 0)
-  const visibleThreads = showAllComments ? threads : threads.slice(0, compact ? 2 : INITIAL_VISIBLE_COMMENTS)
+  const visibleThreads = sheetMode || showAllComments ? threads : threads.slice(0, compact ? 2 : INITIAL_VISIBLE_COMMENTS)
+  const replyingToName = comments.find((comment) => comment.id === replyTo)?.info_users?.full_name || 'comment'
+
+  useEffect(() => {
+    onCommentCountChange?.(totalCommentCount)
+  }, [onCommentCountChange, totalCommentCount])
+
+  useEffect(() => {
+    if (!sheetMode || !replyTo) return undefined
+    const frame = window.requestAnimationFrame(() => commentInputRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [replyTo, sheetMode])
 
   const loadGifs = useCallback(async (query = gifQuery) => {
     setGifLoading(true)
@@ -263,6 +308,57 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     }
   }
 
+  const handleCopyComment = async (comment) => {
+    const text = [comment.body, comment.gif_url, comment.sticker_url].filter(Boolean).join('\n')
+    if (!text) {
+      alert('There is no comment content to copy.')
+      return
+    }
+
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.')
+      await navigator.clipboard.writeText(text)
+      setOpenMenuId(null)
+      alert('Comment copied.')
+    } catch (error) {
+      console.error('Failed to copy comment:', error)
+      alert('Unable to copy this comment. Check your browser clipboard permissions and try again.')
+    }
+  }
+
+  const handleReportComment = async (comment) => {
+    if (!userId || !comment?.id || comment.user_id === userId) return
+
+    const reason = window.prompt('Why are you reporting this comment?', 'Inappropriate content')?.trim()
+    if (!reason) return
+
+    try {
+      const response = await fetch('/info/api/reports', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportType: 'comment',
+          reason,
+          itemId: comment.id,
+          itemTable: 'content_comments',
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to submit this report.')
+      setOpenMenuId(null)
+      alert('Thanks. Your report was submitted for review.')
+    } catch (error) {
+      console.error('Comment report failed:', error)
+      alert('Unable to submit this report right now.')
+    }
+  }
+
+  const handleHideComment = (commentId) => {
+    setHiddenCommentIds((previous) => new Set(previous).add(commentId))
+    setOpenMenuId(null)
+  }
+
   const handleSubmit = async () => {
     if ((!body.trim() && !selectedGif && !selectedSticker)) return
 
@@ -312,6 +408,9 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           if (previous.some((comment) => comment.id === createdComment.id)) return previous
           return sortCommentNodes([...previous, createdComment], 'relevant', userId)
         })
+      }
+      if (sheetMode) {
+        window.requestAnimationFrame(() => commentBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' }))
       }
       void loadComments()
       window.dispatchEvent(new Event('daet-feed-refresh'))
@@ -388,6 +487,8 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
   }
 
   const renderComment = (comment, depth = 0) => {
+    if (hiddenCommentIds.has(comment.id)) return null
+
     const authorName = comment.info_users?.full_name || 'Community member'
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
     const isOwner = userId === comment.user_id
@@ -398,16 +499,16 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
     const isReplyExpanded = Boolean(expandedReplyIds[comment.id])
 
     return (
-      <div id={`comment-${comment.id}`} key={comment.id} className={`scroll-mt-24 ${focusedCommentId === String(comment.id) ? 'rounded-2xl ring-2 ring-sky-400 ring-offset-2' : ''} ${depth > 0 ? 'ml-4 border-l-2 border-slate-100 pl-3 sm:ml-6 sm:pl-4' : ''}`}>
-        <div className={`${articleStyle ? 'border-b border-slate-200 p-3 transition-colors hover:bg-slate-50' : 'rounded-[18px] border p-3 shadow-sm transition-all duration-200 hover:shadow-md'} ${comment.is_pinned ? 'border-amber-200 bg-amber-50/60' : articleStyle ? 'bg-white' : 'border-slate-200 bg-slate-50/80'}`}>
+      <Comment key={comment.id} comment={comment} depth={depth} focused={focusedCommentId === String(comment.id)} eventStyle={eventStyle}>
+        <div className={`event-comment-content ${eventStyle ? '' : `${articleStyle ? 'border-b border-slate-200 p-3 transition-colors hover:bg-slate-50' : 'rounded-[18px] border p-3 shadow-sm transition-all duration-200 hover:shadow-md'} ${comment.is_pinned ? 'border-amber-200 bg-amber-50/60' : articleStyle ? 'bg-white' : 'border-slate-200 bg-slate-50/80'}`}`}>
           {comment.is_pinned && (
             <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700">
               <Pin className="h-3 w-3" /> Pinned
             </div>
           )}
 
-          <div className="flex items-start gap-3">
-            <UserProfileLink user={authorProfileUser} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
+          <div className="event-comment-main-row flex items-start gap-3">
+            <UserProfileLink user={authorProfileUser} className={`event-comment-avatar flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 font-bold text-white active:scale-[0.98] ${eventStyle ? 'h-9 w-9 text-[10px]' : 'h-10 w-10 text-[10px] shadow-sm'}`}>
               {comment.info_users?.profile_image_url ? (
                 <img src={comment.info_users.profile_image_url} alt={authorName} className="h-full w-full object-cover" />
               ) : (
@@ -415,13 +516,13 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
               )}
             </UserProfileLink>
 
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="event-comment-body min-w-0 flex-1">
+              <div className="event-comment-header flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0 flex-1">
-                  <UserProfileLink user={authorProfileUser} className="inline-flex items-center text-sm font-bold text-slate-900 hover:text-sky-700 active:text-sky-700">
+                  <UserProfileLink user={authorProfileUser} className={`event-comment-author inline-flex items-center text-sm font-bold text-slate-900 hover:text-sky-700 active:text-sky-700 ${eventStyle ? 'font-semibold' : ''}`}>
                     {authorName}
                   </UserProfileLink>
-                  <span className="ml-2 text-xs text-slate-500">{formatRelativeTime(comment.created_at)}</span>
+                  <span className={`event-comment-time ml-2 text-xs text-slate-500 ${eventStyle ? 'ml-2' : ''}`}>{formatRelativeTime(comment.created_at)}</span>
                 </div>
 
                 <div className="relative flex shrink-0 items-center gap-2">
@@ -437,44 +538,76 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                     </button>
                   )}
 
-                  {isOwner && (
-                    <div className="relative">
+                  <div className="relative">
                       <button
                         type="button"
                         onClick={() => setOpenMenuId(isMenuOpen ? null : comment.id)}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+                        className={`event-comment-menu-button inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-600 transition ${eventStyle ? 'bg-transparent hover:bg-slate-100' : 'bg-slate-100 hover:bg-slate-200'}`}
                         aria-label="Comment options"
+                        aria-expanded={isMenuOpen}
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
 
                       {isMenuOpen && (
-                        <div className="absolute right-0 z-10 mt-2 w-32 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                        <div className="absolute right-0 z-10 mt-2 w-36 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingCommentId(comment.id)
-                              setEditedCommentText(comment.body || '')
-                              setOpenMenuId(null)
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                            onClick={() => handleCopyComment(comment)}
+                            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
                           >
-                            Edit
+                            <ClipboardCopy className="h-3.5 w-3.5" />
+                            Copy
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setOpenMenuId(null)
-                              handleDeleteComment(comment.id)
-                            }}
-                            className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
-                          >
-                            Delete
-                          </button>
+                          {isOwner ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingCommentId(comment.id)
+                                  setEditedCommentText(comment.body || '')
+                                  setOpenMenuId(null)
+                                }}
+                                className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuId(null)
+                                  handleDeleteComment(comment.id)
+                                }}
+                                className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
+                              >
+                                Delete
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              {userId && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReportComment(comment)}
+                                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  <Flag className="h-3.5 w-3.5" />
+                                  Report
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleHideComment(comment.id)}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                              >
+                                <EyeOff className="h-3.5 w-3.5" />
+                                Hide
+                              </button>
+                            </>
+                          )}
                         </div>
                       )}
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
 
@@ -515,12 +648,12 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                   </div>
                 </div>
               ) : (
-                <MentionText text={comment.body} mentions={comment.mention_data} className="mt-1.5 text-sm leading-relaxed text-slate-700" />
+                <MentionText text={comment.body} mentions={comment.mention_data} className={`event-comment-text text-sm leading-relaxed text-slate-700 ${eventStyle ? 'mt-1' : 'mt-1.5'}`} />
               )}
 
               {!isEditing && (
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <div className="min-w-42.5 max-w-full">
+                <div className={`event-comment-actions mt-3 flex flex-wrap items-center gap-2 ${eventStyle ? 'mt-2' : ''}`}>
+                  <div className={`event-comment-reactions max-w-full ${eventStyle ? '' : 'min-w-42.5'}`}>
                     <Reactions
                       contentType="comment"
                       contentId={comment.id}
@@ -529,6 +662,8 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                       contentTitle={contentTitle || contentType}
                       compact
                       label="reactions"
+                      eventComment={eventStyle}
+                      heartOnly={eventStyle}
                     />
                   </div>
 
@@ -555,18 +690,18 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                       setBody(`${name} `)
                       setMentionRefs([{ id: comment.user_id, displayName: name }])
                     }}
-                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+                    className={`event-comment-reply-button inline-flex items-center gap-1 font-semibold text-slate-600 transition ${eventStyle ? '' : 'rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] hover:bg-slate-200 active:scale-[0.98]'}`}
                   >
-                    <CornerDownRight className="h-3.5 w-3.5" />
+                    {!eventStyle && <CornerDownRight className="h-3.5 w-3.5" />}
                     {eventStyle ? 'Reply' : replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
                   </button>
                   {eventStyle && replyCount > 0 && (
                     <button
                       type="button"
                       onClick={() => setExpandedReplyIds((previous) => ({ ...previous, [comment.id]: !previous[comment.id] }))}
-                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200"
+                      className="event-comment-replies-toggle"
                     >
-                      {isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+                      {isReplyExpanded ? `▾ Hide replies (${replyCount})` : `▸ View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
                     </button>
                   )}
                 </div>
@@ -575,9 +710,9 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
           </div>
         </div>
 
-        {replyTo === comment.id && (
-          <div className="mt-2 ml-4 sm:ml-8">
-            <div className="rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm">
+        {replyTo === comment.id && !sheetMode && (
+          <div className={`event-comment-inline-reply mt-2 ${eventStyle ? '' : 'ml-4 sm:ml-8'}`}>
+            <div className={eventStyle ? '' : 'rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm'}>
               <div className="flex items-start gap-3">
                 <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-linear-to-br from-sky-500 to-violet-600 text-[9px] font-bold text-white active:scale-[0.98]">
                   {currentUser?.profile_image_url ? (
@@ -600,7 +735,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                   />
                 </div>
               </div>
-              <div className="mt-2 flex items-center justify-end gap-2">
+              <div className="event-comment-reply-composer-actions mt-2 flex items-center justify-end gap-2">
                 <button type="button" onClick={() => setReplyTo(null)} className="rounded-full px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-700">Cancel</button>
                 <button
                   type="button"
@@ -617,27 +752,60 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         )}
 
         {comment.children?.length > 0 && isReplyExpanded && (
-          <div className="mt-3">
+          <div className="event-comment-replies mt-3">
             {comment.children.map((child) => renderComment(child, depth + 1))}
           </div>
         )}
-      </div>
+      </Comment>
     )
   }
 
   return (
-    <div className={eventStyle ? 'event-detail-comment-panel flex flex-col' : sheetMode ? 'flex h-full min-h-0 flex-col overflow-hidden' : compact ? 'mt-3 border-t border-slate-100 pt-3' : articleStyle ? 'flex flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4' : 'flex max-h-[80vh] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
+    <div className={sheetMode && eventStyle ? 'event-detail-comment-panel event-comment-sheet-content flex h-full min-h-0 flex-col overflow-hidden' : eventStyle ? 'event-detail-comment-panel flex flex-col' : sheetMode ? 'flex h-full min-h-0 flex-col overflow-hidden' : compact ? 'mt-3 border-t border-slate-100 pt-3' : articleStyle ? 'flex flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4' : 'flex max-h-[80vh] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5'}>
+      {sheetMode && eventStyle && (
+        <header className="event-comment-sheet-header">
+          <div
+            className="event-comment-sheet-handle"
+            aria-hidden="true"
+            onPointerDown={onHeaderPointerDown}
+            onPointerMove={onHeaderPointerMove}
+            onPointerUp={onHeaderPointerUp}
+            onPointerCancel={onHeaderPointerUp}
+          />
+          <div className="event-comment-sheet-title-row">
+            <h2>Comments ({totalCommentCount})</h2>
+            <div className="event-comment-sheet-header-actions">
+              <label className="sr-only" htmlFor="event-comment-sort">Sort comments</label>
+              <select id="event-comment-sort" value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+                <option value="relevant">Most Relevant</option>
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+              </select>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                className="event-comment-sheet-close"
+                onClick={onClose}
+                aria-label="Close comments"
+              >
+                <X className="h-5 w-5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </header>
+      )}
+
       {!sheetMode && (
-        <div className={`${articleStyle ? 'order-2 mb-3 mt-3 border-t border-slate-200 pt-3' : compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
+        <div className={`${eventStyle ? 'order-0 mb-3 mt-0 border-0 p-0' : articleStyle ? 'order-2 mb-3 mt-3 border-t border-slate-200 pt-3' : compact ? 'mb-3' : 'mb-4'} flex flex-wrap items-center justify-between gap-3`}>
           <div>
             <h3 className={`flex items-center gap-2 font-bold text-slate-900 ${compact ? 'text-xs' : articleStyle ? 'text-lg' : 'text-base'}`}>
-              <MessageSquare className="h-4 w-4 text-sky-600" />
-              {compact ? `${totalCommentCount} ${totalCommentCount === 1 ? 'comment' : 'comments'}` : 'Comments'}
+              {!eventStyle && <MessageSquare className="h-4 w-4 text-sky-600" />}
+              {eventStyle ? `Comments (${totalCommentCount})` : compact ? `${totalCommentCount} ${totalCommentCount === 1 ? 'comment' : 'comments'}` : 'Comments'}
             </h3>
-            {!compact && <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>}
+            {!compact && !eventStyle && <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>}
           </div>
 
-          {!compact && (
+          {!compact && (!eventStyle || totalCommentCount >= 3) && (
             <div className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5 sm:w-auto sm:justify-end">
               <SortDesc className="h-3.5 w-3.5 shrink-0 text-slate-400" />
               {(eventStyle ? ['relevant', 'newest', 'oldest'] : ['relevant', 'newest', 'oldest', 'most_liked']).map((mode) => (
@@ -658,19 +826,25 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
       )}
 
       {threads.length > 0 ? (
-        <div className={`${articleStyle ? 'order-3' : ''} min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1`}>
+        <div
+          ref={sheetMode ? commentBodyRef : null}
+          className={`${sheetMode && eventStyle ? 'event-comment-sheet-body' : ''} ${eventStyle ? 'order-2' : articleStyle ? 'order-3' : ''} min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1`}
+        >
           <div className={articleStyle ? 'space-y-0' : 'space-y-3'}>
             {visibleThreads.map((comment) => renderComment(comment))}
           </div>
         </div>
       ) : !compact ? (
-        <div className={`${articleStyle ? 'order-3' : ''} min-h-0 flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center`}>
-          <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />
-          <p className="text-sm text-slate-500">No comments yet. Be the first to share your thoughts!</p>
+        <div
+          ref={sheetMode ? commentBodyRef : null}
+          className={`${sheetMode && eventStyle ? 'event-comment-sheet-body event-comment-sheet-empty' : ''} ${eventStyle ? 'order-3 p-0 text-left' : `${articleStyle ? 'order-3' : ''} min-h-0 flex-1 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center`}`}
+        >
+          {!eventStyle && <MessageSquare className="mx-auto mb-2 h-7 w-7 text-slate-400" />}
+          <p className="text-sm text-slate-500">{eventStyle && sheetMode ? 'No comments yet. Be the first to comment.' : eventStyle ? 'No comments yet.' : 'No comments yet. Be the first to share your thoughts!'}</p>
         </div>
       ) : null}
 
-      {!compact && threads.length > INITIAL_VISIBLE_COMMENTS && (
+      {!sheetMode && !compact && threads.length > INITIAL_VISIBLE_COMMENTS && (
         <div className={`${articleStyle ? 'order-4' : ''} mt-4 flex justify-center`}>
           <button
             type="button"
@@ -683,10 +857,22 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
         </div>
       )}
 
-      {(!eventStyle || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
-        {(articleStyle || eventStyle) && <p className="mb-2 text-sm font-bold text-slate-900">{eventStyle ? 'Write a comment' : 'Share Your Thoughts'}</p>}
-        <div className="flex items-start gap-3">
-          <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98]">
+      {(!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer order-1' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
+        {articleStyle && !eventStyle && <p className="mb-2 text-sm font-bold text-slate-900">Share Your Thoughts</p>}
+        {sheetMode && eventStyle && replyTo && (
+          <div className="event-comment-replying-to">
+            <span>Replying to <strong>{replyingToName}</strong></span>
+            <button
+              type="button"
+              onClick={() => { setReplyTo(null); setBody(''); setMentionRefs([]) }}
+              aria-label="Cancel reply"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        <div className={`event-comment-composer-main flex items-start gap-3 ${eventStyle ? 'gap-2' : ''}`}>
+          <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className={`event-comment-composer-avatar flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98] ${eventStyle ? 'h-9 w-9' : 'h-10 w-10'}`}>
             {currentUser?.profile_image_url ? (
               <img src={currentUser.profile_image_url} alt={currentUser.full_name || 'You'} className="h-full w-full object-cover" />
             ) : (
@@ -701,6 +887,7 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
               placeholder={eventStyle ? 'Write a comment...' : 'Write a comment…'}
               rows={compact ? 1 : 2}
               userId={userId}
+              inputRef={sheetMode ? commentInputRef : null}
               onMentionAdded={(user) => setMentionRefs((previous) => previous.some((item) => item.id === user.id)
                 ? previous
                 : [...previous, { id: user.id, displayName: user.full_name || 'User' }])}
@@ -722,19 +909,19 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
             </div>
             )}
 
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1">
+            <div className="event-comment-composer-actions mt-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => { setShowGifPicker(!showGifPicker); setShowStickerPicker(false) }}
-                  className="rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+                  className="event-comment-media-button rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
                 >
                   GIF
                 </button>
                 <button
                   type="button"
                   onClick={() => { setShowStickerPicker(!showStickerPicker); setShowGifPicker(false) }}
-                  className="rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+                  className="event-comment-media-button rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
                 >
                   Sticker
                 </button>
@@ -746,7 +933,8 @@ export default function Comments({ contentType, contentId, userId, contentOwnerI
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting || (!body.trim() && !selectedGif && !selectedSticker)}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-sky-600 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                data-empty={!body.trim() && !selectedGif && !selectedSticker}
+                className={`event-comment-submit inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold text-white transition disabled:cursor-not-allowed ${body.trim() || selectedGif || selectedSticker ? 'bg-sky-600 hover:bg-sky-700 disabled:opacity-100' : 'bg-sky-600 opacity-45 disabled:opacity-45'}`}
               >
                 <SendHorizontal className="h-3.5 w-3.5" />
                 {submitting ? 'Posting...' : 'Comment'}

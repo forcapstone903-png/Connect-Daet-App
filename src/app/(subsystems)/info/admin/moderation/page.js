@@ -11,8 +11,6 @@ import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
-const createModerationId = () => `${new Date().getTime()}-${Math.random().toString(16).slice(2)}`;
-
 const isUrgentInquiry = (inquiry) => {
   if (!inquiry?.created_at) return false;
   const cutoff = new Date();
@@ -57,7 +55,6 @@ export default function AdminModerationPage() {
   const [internalNote, setInternalNote] = useState('');
   const [showInternalNoteModal, setShowInternalNoteModal] = useState(false);
   const [selectedInquiryForNote, setSelectedInquiryForNote] = useState(null);
-  const [autoFlagKeywords, setAutoFlagKeywords] = useState(['spam', 'scam', 'offensive', 'inappropriate', 'xxx', 'adult']);
   const [bulkSelectMode, setBulkSelectMode] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState([]);
   const [blockedUsers, setBlockedUsers] = useState([]);
@@ -69,64 +66,88 @@ export default function AdminModerationPage() {
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
 
-  const loadModerationState = useCallback(() => {
-    const savedBlocks = JSON.parse(localStorage.getItem('moderation_blocked_users') || '[]');
-    const savedLog = JSON.parse(localStorage.getItem('moderation_log') || '[]');
-    const savedReports = JSON.parse(localStorage.getItem('moderation_reports') || '[]');
-    setBlockedUsers(savedBlocks);
-    setModerationLog(savedLog);
-    setReportQueue(savedReports);
+  const loadModerationState = useCallback(async () => {
+    const response = await fetch('/info/api/admin/moderation', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load moderation records.');
+    setBlockedUsers(result.blockedUsers || []);
+    setModerationLog(result.logs || []);
+    setReportQueue(result.reports || []);
   }, []);
 
-  const appendModerationLog = (actor, action, details, targetType = 'content') => {
-    const entry = {
-      id: createModerationId(),
-      actor: actor || 'System',
-      action,
-      targetType,
-      details,
-      created_at: new Date().toISOString(),
-    };
-
-    setModerationLog(prev => {
-      const next = [entry, ...prev].slice(0, 25);
-      localStorage.setItem('moderation_log', JSON.stringify(next));
-      return next;
-    });
+  const appendModerationLog = async (_actor, action, details, targetType = 'content') => {
+    try {
+      const response = await fetch('/info/api/admin/moderation', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'record-action', label: action, details, targetType }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to save the moderation log.');
+      await loadModerationState();
+      return true;
+    } catch (error) {
+      console.error('Moderation audit log save failed:', error);
+      return false;
+    }
   };
-
-  const containsProhibitedWords = useCallback((text = '') => {
-    const normalized = text.toLowerCase();
-    return autoFlagKeywords.some((keyword) => normalized.includes(keyword.toLowerCase()));
-  }, [autoFlagKeywords]);
 
   const blockUser = async (userId, reason = 'Content violation') => {
     if (!userId) return;
-    const nextBlocked = [
-      { userId, reason, blockedAt: new Date().toISOString() },
-      ...blockedUsers,
-    ].filter((item, index, arr) => arr.findIndex((entry) => entry.userId === item.userId) === index);
-
-    setBlockedUsers(nextBlocked);
-    localStorage.setItem('moderation_blocked_users', JSON.stringify(nextBlocked));
-    appendModerationLog(user?.full_name || 'Admin', 'Block User', `${reason}`, 'user');
-    showToast('User has been blocked from posting.');
+    try {
+      const response = await fetch('/info/api/admin/moderation', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'ban-user', userId, reason }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to block this user.');
+      await loadModerationState();
+      showToast('User has been blocked from publishing.');
+    } catch (error) {
+      showToast(error.message || 'Unable to block this user.', true);
+    }
   };
 
   const unblockUser = async (userId) => {
-    const nextBlocked = blockedUsers.filter((item) => item.userId !== userId);
-    setBlockedUsers(nextBlocked);
-    localStorage.setItem('moderation_blocked_users', JSON.stringify(nextBlocked));
-    appendModerationLog(user?.full_name || 'Admin', 'Unblock User', `User restored to active posting status`, 'user');
-    showToast('User has been unblocked.');
+    try {
+      const response = await fetch('/info/api/admin/moderation', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'unban-user', userId }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to unblock this user.');
+      await loadModerationState();
+      showToast('User has been unblocked.');
+    } catch (error) {
+      showToast(error.message || 'Unable to unblock this user.', true);
+    }
   };
 
   const resolveReport = async (reportId) => {
-    const nextReports = reportQueue.filter((report) => report.id !== reportId);
-    setReportQueue(nextReports);
-    localStorage.setItem('moderation_reports', JSON.stringify(nextReports));
-    appendModerationLog(user?.full_name || 'Admin', 'Resolve Report', `Report ${reportId} marked as resolved`, 'report');
-    showToast('Report marked as resolved.');
+    const reason = window.prompt('Resolution note:', 'Reviewed by a moderator.')?.trim();
+    if (!reason) return;
+    try {
+      const response = await fetch('/info/api/admin/moderation', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'resolve-report', reportId, reason }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to resolve this report.');
+      await loadModerationState();
+      showToast('Report marked as resolved.');
+    } catch (error) {
+      showToast(error.message || 'Unable to resolve this report.', true);
+    }
   };
 
   const calculateAvgResponseTime = (answeredInquiries) => {
@@ -245,22 +266,11 @@ export default function AdminModerationPage() {
         avgResponseTime: calculateAvgResponseTime(answered || [])
       });
 
-      const incomingReports = (flagged || []).map((post, index) => ({
-        id: post.id || `report-${index}`,
-        title: post.title || 'Flagged content',
-        reason: containsProhibitedWords(post.content || '') ? 'Prohibited content keyword flagged' : 'Manual review request',
-        reporter: post.user?.full_name || post.user?.email || 'System',
-        created_at: post.created_at,
-        status: 'open',
-      }));
-      setReportQueue(incomingReports);
-      localStorage.setItem('moderation_reports', JSON.stringify(incomingReports));
-      
     } catch (err) {
       console.error('Error fetching moderation data:', err);
       showToast('Failed to load moderation data', true);
     }
-  }, [containsProhibitedWords, showToast]);
+  }, [showToast]);
 
   // Fetch moderation data
   useEffect(() => {
@@ -276,9 +286,14 @@ export default function AdminModerationPage() {
         return;
       }
       setUser(userData);
-      loadModerationState();
-      await fetchModerationData();
-      setLoading(false);
+      try {
+        await Promise.all([loadModerationState(), fetchModerationData()]);
+      } catch (error) {
+        console.error('Moderation data load failed:', error);
+        showToast(error.message || 'Failed to load moderation data.', true);
+      } finally {
+        setLoading(false);
+      }
     };
     checkAuth();
   }, [fetchModerationData, loadModerationState, router]);
@@ -287,7 +302,7 @@ export default function AdminModerationPage() {
   const handleApprovePost = async (post) => {
     setProcessing(true);
     try {
-      const { error } = await supabase
+      const { data: updatedPost, error } = await supabase
         .from('info_user_posts')
         .update({
           status: 'approved',
@@ -295,15 +310,18 @@ export default function AdminModerationPage() {
           moderated_at: new Date(),
           moderation_notes: 'Approved by moderator'
         })
-        .eq('id', post.id);
+        .eq('id', post.id)
+        .select('id')
+        .maybeSingle();
       
       if (error) throw error;
-      
-      // Award points to user for approved post
-      await awardPointsToUser(post.user_id, 10, 'post_approved');
-      appendModerationLog(user?.full_name || 'Admin', 'Approve Content', `Approved content for ${post.user?.full_name || 'user'}`, 'content');
-      
-      showToast(`Post "${post.title}" approved! User earned 10 points.`, false);
+      if (!updatedPost) throw new Error('This post is no longer available for approval.');
+
+      const logged = await appendModerationLog(user?.full_name || 'Admin', 'Approve Content', `Approved content for ${post.user?.full_name || 'user'}`, 'content');
+      showToast(logged
+        ? `Post "${post.title}" approved.`
+        : `Post "${post.title}" approved, but its moderation log could not be saved.`,
+      !logged);
       await fetchModerationData();
     } catch (err) {
       console.error('Error approving post:', err);
@@ -343,11 +361,11 @@ export default function AdminModerationPage() {
         'warning'
       );
 
-      appendModerationLog(user?.full_name || 'Admin', 'Reject Content', `Rejected content with reason: ${rejectionReason}`, 'content');
-
-      appendModerationLog(user?.full_name || 'Admin', 'Reject Content', `Rejected content with reason: ${rejectionReason}`, 'content');
-      
-      showToast(`Post "${postToReject.title}" rejected`, false);
+      const logged = await appendModerationLog(user?.full_name || 'Admin', 'Reject Content', `Rejected content with reason: ${rejectionReason}`, 'content');
+      showToast(logged
+        ? `Post "${postToReject.title}" rejected.`
+        : `Post "${postToReject.title}" rejected, but its moderation log could not be saved.`,
+      !logged);
       setShowRejectionModal(false);
       setRejectionReason('');
       setPostToReject(null);
@@ -376,8 +394,11 @@ export default function AdminModerationPage() {
       
       if (error) throw error;
       
-      appendModerationLog(user?.full_name || 'Admin', 'Flag Content', `Flagged post for review: ${post.title}`, 'content');
-      showToast(`Post flagged for review`, false);
+      const logged = await appendModerationLog(user?.full_name || 'Admin', 'Flag Content', `Flagged post for review: ${post.title}`, 'content');
+      showToast(logged
+        ? 'Post flagged for review.'
+        : 'Post flagged, but its moderation log could not be saved.',
+      !logged);
       await fetchModerationData();
     } catch (err) {
       console.error('Error flagging post:', err);
@@ -396,24 +417,29 @@ export default function AdminModerationPage() {
     
     setProcessing(true);
     try {
-      for (const postId of selectedPosts) {
-        const post = pendingPosts.find(p => p.id === postId);
-        if (post) {
-          await supabase
-            .from('info_user_posts')
-            .update({
-              status: 'approved',
-              moderated_by: user?.id,
-              moderated_at: new Date(),
-              moderation_notes: 'Bulk approved'
-            })
-            .eq('id', postId);
-          
-          await awardPointsToUser(post.user_id, 10, 'post_approved');
-        }
+      const { data: approvedRows, error } = await supabase
+        .from('info_user_posts')
+        .update({
+          status: 'approved',
+          moderated_by: user?.id,
+          moderated_at: new Date(),
+          moderation_notes: 'Bulk approved'
+        })
+        .in('id', selectedPosts)
+        .eq('status', 'pending')
+        .select('id');
+
+      if (error) throw error;
+      const approvedCount = approvedRows?.length || 0;
+      if (approvedCount !== selectedPosts.length) {
+        await fetchModerationData();
+        setSelectedPosts([]);
+        setBulkSelectMode(false);
+        showToast(`Approved ${approvedCount} of ${selectedPosts.length} selected posts. The remaining posts may no longer be pending.`, true);
+        return;
       }
-      
-      showToast(`${selectedPosts.length} posts approved!`, false);
+
+      showToast(`${approvedCount} posts approved.`, false);
       setSelectedPosts([]);
       setBulkSelectMode(false);
       await fetchModerationData();
@@ -422,36 +448,6 @@ export default function AdminModerationPage() {
       showToast('Failed to bulk approve posts', true);
     } finally {
       setProcessing(false);
-    }
-  };
-
-  // Award points to user
-  const awardPointsToUser = async (userId, points, reason) => {
-    try {
-      const { data: userData } = await supabase
-        .from('info_users')
-        .select('points')
-        .eq('id', userId)
-        .single();
-      
-      const newPoints = (userData?.points || 0) + points;
-      
-      await supabase
-        .from('info_users')
-        .update({ points: newPoints })
-        .eq('id', userId);
-      
-      await supabase
-        .from('reward_history')
-        .insert({
-          user_id: userId,
-          subsystem_source: reason,
-          points_earned: points,
-          description: `Points earned from ${reason}`
-        });
-      
-    } catch (err) {
-      console.error('Error awarding points:', err);
     }
   };
 
@@ -705,6 +701,21 @@ export default function AdminModerationPage() {
               {stats.openInquiries > 0 && (
                 <span className="ml-2 bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">
                   {stats.openInquiries}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('reports')}
+              className={`px-6 py-3 font-medium text-sm transition-colors ${
+                activeTab === 'reports'
+                  ? 'text-blue-600 border-b-2 border-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Reports & restrictions
+              {reportQueue.length > 0 && (
+                <span className="ml-2 bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">
+                  {reportQueue.length}
                 </span>
               )}
             </button>
@@ -973,6 +984,91 @@ export default function AdminModerationPage() {
                 </div>
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'reports' && (
+          <div className="space-y-6">
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-gray-800">Open user reports</h2>
+              {reportQueue.length ? (
+                <div className="space-y-3">
+                  {reportQueue.map((report) => (
+                    <article key={report.id} className="rounded-xl border border-gray-200 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">{report.reason}</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {report.reporter?.full_name || report.reporter?.email || 'Unknown reporter'} · {report.report_type} · {new Date(report.created_at).toLocaleString()}
+                          </p>
+                          <p className="mt-2 text-sm text-gray-600">{report.description || 'No additional details provided.'}</p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Content: {report.reported_item_table || 'unknown'} · {report.reported_item_id || 'Unavailable'}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {report.reported_user_id && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const reason = window.prompt('Reason for restricting this user:', report.reason)?.trim();
+                                if (reason) void blockUser(report.reported_user_id, reason);
+                              }}
+                              className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700"
+                            >
+                              Restrict author
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => void resolveReport(report.id)}
+                            className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
+                          >
+                            Resolve
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-gray-500">No open reports.</p>}
+            </section>
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-gray-800">Restricted users</h2>
+              {blockedUsers.length ? (
+                <div className="space-y-2">
+                  {blockedUsers.map((entry) => (
+                    <div key={entry.user_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-50 p-3">
+                      <div>
+                        <p className="font-medium text-gray-800">{entry.user?.full_name || entry.user?.email || 'Account holder'}</p>
+                        <p className="text-xs text-gray-500">{entry.reason} · Restricted {new Date(entry.banned_at).toLocaleDateString()}</p>
+                      </div>
+                      <button type="button" onClick={() => void unblockUser(entry.user_id)} className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700">
+                        Restore publishing
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-gray-500">No users are currently restricted.</p>}
+            </section>
+
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h2 className="mb-4 text-lg font-semibold text-gray-800">Moderation history</h2>
+              {moderationLog.length ? (
+                <div className="divide-y divide-gray-100">
+                  {moderationLog.map((entry) => (
+                    <div key={entry.id} className="py-3">
+                      <p className="text-sm font-medium text-gray-800">{entry.action}</p>
+                      <p className="text-xs text-gray-500">
+                        {entry.actor?.full_name || entry.actor?.email || 'Moderator'} · {entry.table_name} · {new Date(entry.created_at).toLocaleString()}
+                      </p>
+                      {entry.changes?.details && <p className="mt-1 text-sm text-gray-600">{entry.changes.details}</p>}
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="text-sm text-gray-500">No moderation actions recorded yet.</p>}
+            </section>
           </div>
         )}
 

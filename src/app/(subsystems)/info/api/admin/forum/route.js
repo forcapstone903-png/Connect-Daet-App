@@ -24,7 +24,11 @@ export async function GET(request) {
     const search = searchParams.get('search')
     const status = searchParams.get('status')
 
-    let query = adminSupabase.from('forum_threads').select('id, title, content, created_by, created_at, updated_at, last_activity_at, reply_count, status').order('last_activity_at', { ascending: false })
+    let query = adminSupabase
+      .from('forum_threads')
+      .select('id, title, content, created_by, category_id, forum_categories(id, name), pinned, created_at, updated_at, last_activity_at, reply_count, status')
+      .order('pinned', { ascending: false })
+      .order('last_activity_at', { ascending: false })
 
     if (status) {
       query = query.eq('status', status)
@@ -38,7 +42,10 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, threads: data || [] })
+    return NextResponse.json({
+      success: true,
+      threads: (data || []).map((thread) => ({ ...thread, category: thread.forum_categories?.name || 'General' })),
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Forum list error:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to fetch forum threads' }, { status: 500 })
@@ -58,16 +65,26 @@ export async function POST(request) {
     const content = (body.content || '').trim()
     const created_by = actorId
     const status = body.status || 'published'
+    const categoryName = String(body.category || 'General').trim()
 
     if (!title || !content) {
       return NextResponse.json({ success: false, message: 'Title and content are required.' }, { status: 400 })
     }
+
+    const { data: category, error: categoryError } = await adminSupabase
+      .from('forum_categories')
+      .select('id')
+      .eq('name', categoryName)
+      .maybeSingle()
+    if (categoryError) return NextResponse.json({ success: false, message: categoryError.message }, { status: 500 })
+    if (!category) return NextResponse.json({ success: false, message: 'Choose an existing forum category.' }, { status: 400 })
 
     const now = new Date().toISOString()
     const item = {
       title,
       content,
       created_by,
+      category_id: category.id,
       status,
       created_at: now,
       updated_at: now,

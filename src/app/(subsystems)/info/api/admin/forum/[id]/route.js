@@ -22,7 +22,7 @@ export async function GET(request, { params }) {
   try {
     const { data, error } = await adminSupabase
       .from('forum_threads')
-      .select('id, title, content, created_by, created_at, updated_at, last_activity_at, reply_count, status')
+      .select('id, title, content, created_by, category_id, forum_categories(id, name), pinned, created_at, updated_at, last_activity_at, reply_count, status')
       .eq('id', threadId)
       .single()
 
@@ -30,7 +30,10 @@ export async function GET(request, { params }) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, thread: data })
+    return NextResponse.json({
+      success: true,
+      thread: { ...data, category: data.forum_categories?.name || 'General' },
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Forum thread detail error:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to load thread details' }, { status: 500 })
@@ -45,17 +48,33 @@ export async function PUT(request, { params }) {
 
   try {
     const body = await request.json()
-    const title = (body.title || '').trim()
-    const content = (body.content || '').trim()
-    const status = body.status || 'published'
-
-    if (!title || !content) {
-      return NextResponse.json({ success: false, message: 'Title and content are required.' }, { status: 400 })
+    const update = { updated_at: new Date().toISOString() }
+    if (Object.prototype.hasOwnProperty.call(body, 'title')) update.title = String(body.title || '').trim()
+    if (Object.prototype.hasOwnProperty.call(body, 'content')) update.content = String(body.content || '').trim()
+    if (Object.prototype.hasOwnProperty.call(body, 'status')) update.status = body.status
+    if (Object.prototype.hasOwnProperty.call(body, 'pinned')) update.pinned = Boolean(body.pinned)
+    if (Object.prototype.hasOwnProperty.call(body, 'category')) {
+      const { data: category, error: categoryError } = await adminSupabase
+        .from('forum_categories')
+        .select('id')
+        .eq('name', String(body.category || '').trim())
+        .maybeSingle()
+      if (categoryError) return NextResponse.json({ success: false, message: categoryError.message }, { status: 500 })
+      if (!category) return NextResponse.json({ success: false, message: 'Choose an existing forum category.' }, { status: 400 })
+      update.category_id = category.id
     }
+
+    if (update.title === '' || update.content === '') {
+      return NextResponse.json({ success: false, message: 'Title and content cannot be empty.' }, { status: 400 })
+    }
+    if (Object.keys(update).length === 1) {
+      return NextResponse.json({ success: false, message: 'No thread changes were provided.' }, { status: 400 })
+    }
+    if (update.title || update.content) update.last_activity_at = update.updated_at
 
     const { data, error } = await adminSupabase
       .from('forum_threads')
-      .update({ title, content, status, updated_at: new Date().toISOString(), last_activity_at: new Date().toISOString() })
+      .update(update)
       .eq('id', threadId)
       .select()
       .single()
@@ -64,7 +83,7 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ success: false, message: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, thread: data })
+    return NextResponse.json({ success: true, thread: data }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Forum thread update error:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to update thread' }, { status: 500 })

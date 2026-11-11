@@ -1,175 +1,169 @@
-// app/(subsystems)/info/admin/settings/page.js — Settings Overview
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
-import { Icon } from '@/app/(subsystems)/info/components/Icon';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import SettingsShell from './_components/SettingsShell';
 
-export default function AdminSettingsOverview() {
-  const router = useRouter();
-  const [systemHealth, setSystemHealth] = useState({
-    database: 'Healthy',
-    api: 'Healthy',
-    storage: 'Healthy',
-    weather: 'Healthy',
-    uptime: '99.98%'
-  });
-  const [databaseInfo, setDatabaseInfo] = useState({
-    size: '1.4 GB',
-    liveTables: 18,
-    optimized: true,
-    lastBackup: 'Today, 02:00 AM'
-  });
-  const [auditLogs, setAuditLogs] = useState([
-    { id: 1, actor: 'System', action: 'Backup created', timestamp: 'Today 02:00 AM' },
-    { id: 2, actor: 'Admin', action: 'Updated moderation settings', timestamp: 'Yesterday 04:12 PM' },
-    { id: 3, actor: 'Admin', action: 'Approved user submitted post', timestamp: 'Yesterday 10:39 AM' }
-  ]);
+const HEALTH_API = '/info/api/admin/system-health';
+const BACKUP_API = '/info/api/admin/data-management/backup';
 
-  // Pick up audit entries recorded since this page last opened (e.g. from the
-  // Maintenance Mode page recording an enable/disable event).
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`The server returned an invalid response (${response.status}).`);
+  }
+}
+
+export default function AdminSettingsOverview() {
+  const [health, setHealth] = useState(null);
+  const [healthLoading, setHealthLoading] = useState(true);
+  const [healthError, setHealthError] = useState('');
+  const [exporting, setExporting] = useState(false);
+
+  const requestHealth = useCallback(async () => {
+    const response = await fetch(HEALTH_API, { cache: 'no-store' });
+    const data = await readJsonResponse(response);
+    if (!response.ok || !data.success) {
+      throw new Error(data.message || `Unable to check system health (${response.status}).`);
+    }
+    return data;
+  }, []);
+
   useEffect(() => {
-    const load = () => {
+    let active = true;
+    const loadHealth = async () => {
       try {
-        const raw = localStorage.getItem('admin_audit_log');
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length) setAuditLogs(parsed);
+        const data = await requestHealth();
+        if (active) {
+          setHealth(data);
+          setHealthError('');
         }
-      } catch (err) {
-        console.error('Error loading audit log:', err);
+      } catch (error) {
+        if (active) {
+          setHealthError(error.message || 'Unable to check system health.');
+          setHealth(null);
+        }
+      } finally {
+        if (active) setHealthLoading(false);
       }
     };
-    load();
-  }, []);
+    loadHealth();
+    return () => {
+      active = false;
+    };
+  }, [requestHealth]);
+
+  const refreshHealth = async () => {
+    setHealthLoading(true);
+    try {
+      const data = await requestHealth();
+      setHealth(data);
+      setHealthError('');
+    } catch (error) {
+      setHealthError(error.message || 'Unable to check system health.');
+      setHealth(null);
+    } finally {
+      setHealthLoading(false);
+    }
+  };
 
   return (
     <SettingsShell
       title="System Settings"
-      subtitle="Overview of platform health, version, and data management"
+      subtitle="Current service connectivity, supported configuration, and data management."
     >
       {(showToast) => {
-        const clearCache = () => {
-          if (confirm('Clear all cached data? This will log out all users.')) {
-            localStorage.clear();
-            sessionStorage.clear();
-            showToast('Cache cleared. Users will need to log in again.');
-            setTimeout(() => {
-              router.push('/info/login');
-            }, 2000);
-          }
-        };
-
         const exportData = async () => {
+          setExporting(true);
           try {
-            const tables = ['info_users', 'info_events', 'info_tourist_spots', 'info_blogs', 'info_inquiries'];
-            const exportData = {};
-
-            for (const table of tables) {
-              const { data, error } = await supabase.from(table).select('*');
-              if (!error && data) {
-                exportData[table] = data;
-              }
+            const response = await fetch(BACKUP_API, { cache: 'no-store' });
+            if (!response.ok) {
+              const data = await readJsonResponse(response);
+              throw new Error(data.message || `Export failed (${response.status}).`);
             }
 
-            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const blob = await response.blob();
+            if (!blob.size) throw new Error('The server returned an empty snapshot; no export was downloaded.');
+
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `daet_tourism_export_${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-            showToast('Data exported successfully!');
-          } catch (err) {
-            console.error('Export error:', err);
-            showToast('Failed to export data', true);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = response.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/i)?.[1]
+              || `connect-daet-backup-${new Date().toISOString().slice(0, 10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+            showToast('Database snapshot downloaded. Store it in encrypted, access-restricted storage.');
+          } catch (error) {
+            console.error('Admin settings export failed:', error);
+            showToast(error.message || 'Failed to export database data.', true);
+          } finally {
+            setExporting(false);
           }
         };
+
+        const statusTone = (status) => status === 'Available' || status === 'Configured'
+          ? 'text-emerald-700'
+          : status === 'Unavailable' || status === 'Not configured'
+            ? 'text-amber-800'
+            : 'text-slate-700';
 
         return (
           <div className="space-y-6">
-{/* System Health */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <div className="mb-4 flex items-center justify-between">
-                <h3 className="text-lg font-bold text-gray-800">System Health</h3>
-                <button onClick={() => { setSystemHealth({ database: 'Healthy', api: 'Healthy', storage: 'Healthy', weather: 'Healthy', uptime: '99.98%' }); setDatabaseInfo({ size: '1.4 GB', liveTables: 18, optimized: true, lastBackup: 'Today, 02:00 AM' }); showToast('System health check completed.'); }} className="rounded-full bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">Check Now</button>
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-800">Live service checks</h2>
+                  <p className="mt-1 text-sm text-slate-600">Connectivity checks run against the database and storage service. Provider configuration is not a delivery test.</p>
+                </div>
+                <button type="button" onClick={refreshHealth} disabled={healthLoading} className="rounded-full bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-50">
+                  {healthLoading ? 'Checking…' : 'Check now'}
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-                {Object.entries(systemHealth).map(([label, value]) => (
-                  <div key={label} className="rounded-2xl border border-gray-200 bg-slate-50 p-4">
-                    <div className="text-xs uppercase tracking-[0.18em] text-slate-500">{label}</div>
-                    <div className="mt-2 text-lg font-bold text-slate-800">{value}</div>
+              {healthError && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">{healthError}</p>}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {Object.entries(health?.checks || {}).map(([key, check]) => (
+                  <div key={key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{key.replace(/([A-Z])/g, ' $1')}</p>
+                    <p className={`mt-2 font-bold ${statusTone(check.status)}`}>{check.status}</p>
+                    <p className="mt-1 text-xs text-slate-600">{check.detail}</p>
                   </div>
                 ))}
+                {!health && healthLoading && <p className="text-sm text-slate-500">Running connectivity checks…</p>}
               </div>
-            </div>
-{/* Version Information */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Version Information</h3>
-              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">System</div><div className="mt-2 font-bold text-slate-800">DAET Tourism</div></div>
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Version</div><div className="mt-2 font-bold text-slate-800">v2.4.1</div></div>
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Build</div><div className="mt-2 font-bold text-slate-800">2026.08</div></div>
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Status</div><div className="mt-2 font-bold text-emerald-700">Stable</div></div>
-              </div>
-            </div>
+              {health?.checkedAt && <p className="mt-3 text-xs text-slate-500">Checked {new Date(health.checkedAt).toLocaleString()}</p>}
+            </section>
 
-            {/* Database Management */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Database Management</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Database Size</div><div className="mt-2 font-bold text-slate-800">{databaseInfo.size}</div></div>
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Live Tables</div><div className="mt-2 font-bold text-slate-800">{databaseInfo.liveTables}</div></div>
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Optimization</div><div className="mt-2 font-bold text-emerald-700">{databaseInfo.optimized ? 'Optimized' : 'Needs review'}</div></div>
-                <div className="rounded-xl bg-slate-50 p-4"><div className="text-xs uppercase tracking-[0.18em] text-slate-500">Last Backup</div><div className="mt-2 font-bold text-slate-800">{databaseInfo.lastBackup}</div></div>
-              </div>
-              <button className="mt-6 rounded-full bg-emerald-600 px-6 py-2 text-white hover:bg-emerald-700">Optimize Tables</button>
-            </div>
-{/* Audit Log */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Audit Log</h3>
-              <div className="space-y-3">
-                {auditLogs.map((entry) => (
-                  <div key={entry.id} className="flex items-center justify-between rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-                    <div>
-                      <p className="font-medium text-slate-800">{entry.action}</p>
-                      <p className="text-xs text-slate-500">By {entry.actor}</p>
-                    </div>
-                    <span className="text-xs text-slate-400">{entry.timestamp}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <section className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+              <h2 className="text-lg font-bold text-amber-900">Provider-managed metrics</h2>
+              <p className="mt-2 text-sm text-amber-900">
+                Database size, uptime, live table count, optimization state, and last automated backup are not exposed by this application. They are unavailable here; view infrastructure metrics in the hosting and Supabase provider consoles.
+              </p>
+            </section>
 
-            {/* Export Data */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-2"><Icon name="data" className="inline-block w-5 h-5 mr-2" />Export Data</h3>
-              <p className="text-sm text-gray-500 mb-4">Export all platform data for backup or reporting purposes</p>
-              <button onClick={exportData} className="bg-green-600 text-white px-6 py-2 rounded-full hover:bg-green-700 flex items-center gap-2">
-                <Icon name="data" className="w-4 h-4" /> Export All Data (JSON)
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Export database snapshot</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                This uses the administrator-only versioned backup endpoint. Any failed table read stops the export instead of producing a partial snapshot.
+              </p>
+              <button type="button" onClick={exportData} disabled={exporting} className="mt-4 rounded-full bg-emerald-700 px-6 py-2 font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                {exporting ? 'Creating snapshot…' : 'Export database snapshot (JSON)'}
               </button>
-            </div>
+              <p className="mt-3 text-xs text-amber-800">
+                Snapshots may include private and personal records. The application does not encrypt downloaded files: store them only in encrypted, access-restricted storage, and remove unsecured copies.
+              </p>
+            </section>
 
-            {/* Clear Cache */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-2"><Icon name="delete" className="inline-block w-5 h-5 mr-2" />Clear Cache</h3>
-              <p className="text-sm text-gray-500 mb-4">Clear all cached data and force all users to log in again</p>
-              <button onClick={clearCache} className="bg-yellow-600 text-white px-6 py-2 rounded-full hover:bg-yellow-700 flex items-center gap-2">
-                <Icon name="delete" className="w-4 h-4" /> Clear Cache
-              </button>
-            </div>
-
-            {/* System Status */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-2">System Status</h3>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-full"></div><span className="text-sm text-gray-600">Database Connection: Connected</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-full"></div><span className="text-sm text-gray-600">Storage Service: Operational</span></div>
-                <div className="flex items-center gap-2"><div className="w-3 h-3 bg-green-500 rounded-full"></div><span className="text-sm text-gray-600">Weather API: Operational</span></div>
-              </div>
-            </div>
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Administrator activity</h2>
+              <p className="mt-2 text-sm text-slate-600">View recorded activity in the database-backed activity log. This overview does not display fabricated audit entries.</p>
+              <Link href="/info/admin/activity-logs" className="mt-4 inline-flex rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                Open activity logs
+              </Link>
+            </section>
           </div>
         );
       }}

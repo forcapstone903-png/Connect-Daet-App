@@ -359,7 +359,7 @@ function LoginContent() {
                 </div>
                 <div>
                   <Link href="/info/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
-                    ← Back to visitor page
+                    ‹ Back to visitor page
                   </Link>
                 </div>
               </div>

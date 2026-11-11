@@ -1,0 +1,17 @@
+BEGIN;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public'
+      AND tablename = 'info_blogs'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.info_blogs;
+  END IF;
+END;
+$$;
+
+COMMIT;

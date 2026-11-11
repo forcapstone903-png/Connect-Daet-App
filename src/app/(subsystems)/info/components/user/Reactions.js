@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Heart, ThumbsUp } from 'lucide-react'
+import { Heart, ThumbsDown, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { isValidUuid } from '@/lib/uuid'
@@ -15,7 +15,7 @@ const REACTION_TYPES = [
   { type: 'angry', label: 'Angry', color: 'text-red-600', bg: 'bg-red-50', emoji: '😡' },
 ]
 
-export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, onRequireAuth, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false, heartOnly = false, compactFeed = false }) {
+export default function Reactions({ contentType, contentId, userId, onReact, onCountClick, onRequireAuth, compact = false, label, contentTitle = '', fullWidth = false, breakdown = false, heartOnly = false, compactFeed = false, voteControls = false, eventComment = false }) {
   const [reactionCounts, setReactionCounts] = useState({})
   const [userReaction, setUserReaction] = useState(null)
   const [showPicker, setShowPicker] = useState(false)
@@ -204,6 +204,46 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   const activeReactionMeta = REACTION_TYPES.find((r) => r.type === userReaction)
   const visibleReactionTypes = REACTION_TYPES.filter((reaction) => (reactionCounts[reaction.type] || 0) > 0)
   const loveCount = reactionCounts.love || 0
+  const displayedHeartCount = eventComment ? totalCount : loveCount
+  if (voteControls) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => handleReact('like')}
+          disabled={loading}
+          aria-label={userReaction === 'like' ? 'Remove like' : 'Like reply'}
+          aria-pressed={userReaction === 'like'}
+          className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-50 ${
+            userReaction === 'like'
+              ? 'border-sky-200 bg-sky-50 text-sky-700'
+              : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+          }`}
+        >
+          <ThumbsUp className="h-4 w-4" aria-hidden="true" />
+          <span>Like</span>
+          <span className="tabular-nums">{reactionCounts.like || 0}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => handleReact('dislike')}
+          disabled={loading}
+          aria-label={userReaction === 'dislike' ? 'Remove dislike' : 'Dislike reply'}
+          aria-pressed={userReaction === 'dislike'}
+          className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-50 ${
+            userReaction === 'dislike'
+              ? 'border-rose-200 bg-rose-50 text-rose-700'
+              : 'border-slate-200 bg-white text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'
+          }`}
+        >
+          <ThumbsDown className="h-4 w-4" aria-hidden="true" />
+          <span>Dislike</span>
+          <span className="tabular-nums">{reactionCounts.dislike || 0}</span>
+        </button>
+      </div>
+    )
+  }
+
   const togglePicker = () => {
     if (!userId) {
       if (onRequireAuth) onRequireAuth()
@@ -214,21 +254,21 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   }
 
   return (
-    heartOnly ? (
+    heartOnly || eventComment ? (
       <div ref={pickerRef} className={`relative flex min-w-0 items-center ${compactFeed ? '' : 'w-full justify-center'}`}>
         <button
           type="button"
           onClick={() => handleReact('love')}
           disabled={loading}
-          aria-label={userReaction === 'love' ? `Unlike, ${loveCount} hearts` : `Like with heart, ${loveCount} hearts`}
+          aria-label={userReaction === 'love' ? `Unlike, ${displayedHeartCount} hearts` : `Like with heart, ${displayedHeartCount} hearts`}
           aria-pressed={userReaction === 'love'}
           title={userReaction === 'love' ? 'Unlike' : 'Like with heart'}
-          className={`usr-press usr-lift inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-1 py-1.5 text-sm font-medium transition ${compactFeed ? 'medium-home-heart-button' : 'w-full'} ${
+          className={`usr-press usr-lift event-comment-reaction-trigger inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-1 py-1.5 text-sm font-medium transition ${compactFeed ? 'medium-home-heart-button' : 'w-full'} ${
             userReaction === 'love' ? 'text-rose-600' : 'text-slate-600 hover:text-rose-600'
           }`}
         >
-          <Heart aria-hidden="true" className={`h-4 w-4 ${userReaction === 'love' ? 'fill-current' : ''}`} />
-          <span key={loveCount} className="usr-count-pop">{loveCount}</span>
+          <Heart aria-hidden="true" className={`${compactFeed ? 'h-[20px] w-[20px]' : 'h-4 w-4'} ${userReaction === 'love' ? 'fill-current' : ''}`} />
+          <span key={displayedHeartCount} className="usr-count-pop">{displayedHeartCount}</span>
         </button>
         {burstEmoji && <span aria-hidden="true" className="usr-emoji-burst">{burstEmoji}</span>}
       </div>
@@ -288,7 +328,7 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
           disabled={loading}
           aria-label={userReaction ? `${activeReactionMeta?.label || 'Reaction'} reaction, ${totalCount} total` : `React to this post, ${totalCount} total`}
           title="React to this post"
-          className={`inline-flex h-9 max-w-full items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition ${fullWidth ? 'w-full justify-center' : ''} ${
+          className={`inline-flex h-9 max-w-full items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-semibold transition ${eventComment ? 'event-comment-reaction-trigger' : ''} ${fullWidth ? 'w-full justify-center' : ''} ${
             activeReactionMeta
               ? `${activeReactionMeta.bg} ${activeReactionMeta.color}`
               : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -301,7 +341,9 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
             </>
           ) : (
             <>
-              <ThumbsUp aria-hidden="true" className="h-3.5 w-3.5" />
+              {eventComment
+                ? <Heart aria-hidden="true" className="h-3.5 w-3.5" />
+                : <ThumbsUp aria-hidden="true" className="h-3.5 w-3.5" />}
               {!compact && (label || 'React')}
             </>
           )}
@@ -336,15 +378,15 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
         )}
       </div>
 
-      {onCountClick && totalCount > 0 && (
+      {onCountClick && (totalCount > 0 || eventComment) && (
         <button
           type="button"
           onClick={onCountClick}
-          className="inline-flex min-w-0 shrink items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98]"
+          className={`inline-flex min-w-0 shrink items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 transition hover:bg-slate-200 active:scale-[0.98] ${eventComment ? 'event-comment-reaction-count' : ''}`}
           aria-label={`Show ${totalCount} ${label || 'reactions'}`}
         >
-          <span className="text-sm leading-none">{primaryReactionMeta?.emoji || '👍'}</span>
-          <span>{totalCount} {totalCount === 1 ? 'reaction' : (label || 'reactions')}</span>
+          {!eventComment && <span className="text-sm leading-none">{primaryReactionMeta?.emoji || '👍'}</span>}
+          <span>{eventComment ? totalCount : `${totalCount} ${totalCount === 1 ? 'reaction' : (label || 'reactions')}`}</span>
         </button>
       )}
 

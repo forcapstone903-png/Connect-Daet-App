@@ -7,15 +7,6 @@ import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
 
-const FORUM_CATEGORIES = [
-  'General',
-  'Local Tips',
-  'Travel Q&A',
-  'Safety',
-  'Announcements',
-  'Community',
-];
-
 export default function AdminForumPage() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -30,8 +21,7 @@ export default function AdminForumPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [pinnedThreads, setPinnedThreads] = useState([]);
-  const [customCategories, setCustomCategories] = useState(FORUM_CATEGORIES);
+  const [customCategories, setCustomCategories] = useState([]);
   const [newCategory, setNewCategory] = useState('');
 
   const showToast = (message, isError = false) => {
@@ -54,6 +44,18 @@ export default function AdminForumPage() {
     } catch (err) {
       console.error('Error fetching forum threads:', err);
       showToast(err.message, true);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch('/info/api/admin/forum/categories', { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load forum categories');
+      setCustomCategories((result.categories || []).map((category) => category.name));
+    } catch (error) {
+      console.error('Forum categories load failed:', error);
+      showToast(error.message || 'Unable to load forum categories.', true);
     }
   };
 
@@ -160,17 +162,39 @@ export default function AdminForumPage() {
     }
   };
 
-  const pinThread = (threadId) => {
-    setPinnedThreads((prev) =>
-      prev.includes(threadId) ? prev.filter((id) => id !== threadId) : [...prev, threadId]
-    );
+  const pinThread = async (thread) => {
+    try {
+      const response = await fetch(`/info/api/admin/forum/${thread.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned: !thread.pinned }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update pinned status');
+      showToast(thread.pinned ? 'Thread unpinned.' : 'Thread pinned.');
+      await fetchThreads();
+    } catch (error) {
+      showToast(error.message || 'Unable to update pinned status.', true);
+    }
   };
 
-  const addCategory = () => {
+  const addCategory = async () => {
     const value = newCategory.trim();
     if (!value) return;
-    setCustomCategories((prev) => [...prev, value]);
-    setNewCategory('');
+    try {
+      const response = await fetch('/info/api/admin/forum/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: value }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to add category');
+      setCustomCategories((previous) => [...previous, result.category.name]);
+      setNewCategory('');
+      showToast('Category added.');
+    } catch (error) {
+      showToast(error.message || 'Unable to add category.', true);
+    }
   };
 
   const openViewModal = (thread) => {
@@ -186,10 +210,10 @@ export default function AdminForumPage() {
       total: threads.length,
       active: threads.filter((thread) => thread.status === 'published').length,
       locked: threads.filter((thread) => thread.status === 'closed').length,
-      pinned: pinnedThreads.length,
+      pinned: threads.filter((thread) => thread.pinned).length,
       reports: reports.length,
     };
-  }, [threads, pinnedThreads, reports]);
+  }, [threads, reports]);
 
   const filteredThreads = useMemo(() => {
     return threads.filter((thread) => {
@@ -208,6 +232,7 @@ export default function AdminForumPage() {
       if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/info/admin/dashboard');
       setUser(sessionUser);
       await fetchThreads();
+      await fetchCategories();
       await fetchReports();
       setLoading(false);
     };
@@ -292,12 +317,12 @@ export default function AdminForumPage() {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h2 className="text-xl font-semibold text-gray-900">{thread.title}</h2>
-                      {pinnedThreads.includes(thread.id) && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700">Pinned</span>}
+                      {thread.pinned && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700">Pinned</span>}
                     </div>
                     <p className="mt-1 text-sm text-gray-500">{thread.reply_count || 0} replies · {thread.status} · {(thread.category || 'General')}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <button onClick={() => pinThread(thread.id)} className="rounded-full bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">{pinnedThreads.includes(thread.id) ? 'Unpin' : 'Pin'}</button>
+                    <button onClick={() => pinThread(thread)} className="rounded-full bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">{thread.pinned ? 'Unpin' : 'Pin'}</button>
                     <button onClick={() => openViewModal(thread)} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">View</button>
                     <button onClick={() => openEditModal(thread)} className="rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">Edit</button>
                     {thread.status !== 'archived' && <button onClick={() => archiveThread(thread)} className="rounded-full bg-yellow-50 px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-100">Archive</button>}

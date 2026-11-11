@@ -110,6 +110,7 @@ export default function ProfileConnectionsPage() {
           title="Connections"
           description="See who follows you, who you follow, and which connections are mutual friends."
           emoji="🤝"
+          hideMobileTitle
           backHref="/info/user/profile"
           backLabel="Your profile"
         >

@@ -60,6 +60,7 @@ export default function UserSavedPage() {
           .select('id, title, excerpt, featured_image, category, published_at')
           .in('id', blogIds)
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
         ;(data || []).forEach(item => results.push({ ...item, type: 'blog', typeLabel: 'Blog', href: `/info/user/blogs/${item.id}` }))
       }
 
@@ -69,6 +70,7 @@ export default function UserSavedPage() {
           .select('id, title, description, location, featured_image, category, start_date')
           .in('id', eventIds)
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
         ;(data || []).forEach(item => results.push({ ...item, type: 'event', typeLabel: 'Event', href: `/info/user/events/${item.id}` }))
       }
 
@@ -190,6 +192,7 @@ export default function UserSavedPage() {
           title="Saved items"
           description="Blogs, events, forum threads, and destinations you bookmarked for later."
           emoji="🔖"
+          hideMobileTitle
         >
           <span className="usr-section-counter">{savedItems.length} saved</span>
           <Link href="/info/user/dashboard" className="usr-section-secondary">Browse stories</Link>

@@ -25,6 +25,7 @@ import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
 import MentionsAutoSuggest from '@/app/(subsystems)/info/components/user/MentionsAutoSuggest'
@@ -231,8 +232,10 @@ export default function BlogDetailPage() {
 
         const { data: blogData, error: blogError } = await supabase
           .from('info_blogs')
-          .select('*, info_users(id, full_name, email, profile_image_url)')
+          .select('*, info_users(id, full_name, email, profile_image_url, user_type)')
           .eq('id', blogId)
+          .eq('status', 'published')
+          .eq('approval_status', 'approved')
           .single()
 
         if (blogError) {
@@ -414,6 +417,7 @@ export default function BlogDetailPage() {
             .from('info_blogs')
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .eq('created_by', articleAuthorId)
             .neq('id', articleId)
             .order('published_at', { ascending: false })
@@ -423,6 +427,7 @@ export default function BlogDetailPage() {
                 .from('info_blogs')
                 .select('id, title, excerpt, featured_image, published_at, category')
                 .eq('status', 'published')
+                .eq('approval_status', 'approved')
                 .eq('category', articleCategory)
                 .neq('id', articleId)
                 .neq('created_by', articleAuthorId)
@@ -433,6 +438,7 @@ export default function BlogDetailPage() {
             .from('info_blogs')
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .neq('id', articleId)
             .order('views', { ascending: false, nullsFirst: false })
             .limit(4),
@@ -456,6 +462,7 @@ export default function BlogDetailPage() {
               .from('info_blogs')
               .select('id, title, excerpt, featured_image, published_at, category')
               .eq('status', 'published')
+              .eq('approval_status', 'approved')
               .in('category', interestCategories)
               .neq('id', articleId)
               .neq('created_by', articleAuthorId)
@@ -788,18 +795,21 @@ export default function BlogDetailPage() {
     const reason = window.prompt('Why are you reporting this comment?', 'Inappropriate content')?.trim()
     if (!reason) return
 
-    const { error } = await supabase.from('info_moderation').insert({
-      report_type: 'comment',
-      reason,
-      reported_by: userId,
-      reported_user_id: comment.user_id,
-      reported_item_id: comment.id,
-      reported_item_table: 'info_comments',
-      status: 'pending',
+    const response = await fetch('/info/api/reports', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reportType: 'comment',
+        reason,
+        itemId: comment.id,
+        itemTable: 'info_comments',
+      }),
     })
 
-    if (error) {
-      console.error('Comment report failed:', error)
+    const result = await response.json()
+    if (!response.ok || !result.success) {
+      console.error('Comment report failed:', result.message)
       alert('Unable to submit this report right now.')
       return
     }
@@ -1089,14 +1099,17 @@ export default function BlogDetailPage() {
           <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
           <p className="mt-1 text-xs text-slate-500">This story may have been unpublished, archived, or removed by its author.</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
-            <Link href="/info/user/dashboard" className="usr-section-primary">Back to feed</Link>
+            <Link href="/info/user/dashboard" className="usr-section-primary hidden lg:inline-flex">Back to feed</Link>
           </div>
         </div>
       </main>
     )
   }
 
-  const authorName = blog.info_users?.full_name || blog.info_users?.email || 'Daet community member'
+  const authorName = getAuthorDisplayName(
+    { ...blog.info_users, name: blog.info_users?.email },
+    'Daet community member',
+  )
   const renderArticleCards = (items) => (
     <div className="medium-article-recommendation-grid">
       {items.map((item) => (

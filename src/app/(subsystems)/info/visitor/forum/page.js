@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Clock, Eye, Loader, MessageSquare, Pin, Search } from 'lucide-react'
+import { ChevronLeft, Clock, Eye, Loader, MessageSquare, Pin, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
@@ -108,7 +108,7 @@ export default function PublicForumPage() {
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
         <div className="mb-5 flex items-center justify-between gap-3">
           <Link href="/info/visitor" className="inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Visitor home
           </Link>
           <Link href="/info/login" className="inline-flex min-h-11 items-center rounded-full bg-blue-600 px-4 text-sm font-bold text-white hover:bg-blue-700">

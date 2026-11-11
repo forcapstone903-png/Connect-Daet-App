@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, Bookmark, Home, LogOut, Menu, MessageCircle, PlusCircle, Settings, Trophy, UserRound, X } from 'lucide-react'
+import { Bell, Bookmark, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, Trophy, UserRound, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -43,7 +43,6 @@ const navItems = [
   { href: '/info/user/blogs/new', labelKey: 'common.createPost', icon: PlusCircle, highlight: true },
   { href: '/info/user/dashboard', labelKey: 'common.home', icon: Home },
   { href: '/info/user/profile', labelKey: 'common.profile', icon: UserRound },
-  { href: '/info/user/messaging', labelKey: 'common.messages', icon: MessageCircle },
   { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
   { href: '/info/user/rewards', labelKey: 'common.rewards', icon: Trophy },
 ]
@@ -77,12 +76,9 @@ export default function MobileNav({ mobileOnly = false }) {
   }, [])
 
   useEffect(() => {
-    const openNavigation = () => setMobileDrawerOpen(true)
     const toggleDesktopNavigation = () => setMobileDrawerOpen((open) => !open)
-    window.addEventListener('daet-open-mobile-navigation', openNavigation)
     window.addEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
     return () => {
-      window.removeEventListener('daet-open-mobile-navigation', openNavigation)
       window.removeEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
     }
   }, [])
@@ -117,20 +113,59 @@ export default function MobileNav({ mobileOnly = false }) {
     if (!mobileDrawerOpen) return undefined
 
     const mobileViewport = window.matchMedia('(max-width: 1023px)')
-    const previousOverflow = document.body.style.overflow
-    const syncBodyOverflow = () => {
-      document.body.style.overflow = mobileViewport.matches ? 'hidden' : previousOverflow
+    const body = document.body
+    const documentElement = document.documentElement
+    const previousBodyStyles = {
+      overflow: body.style.overflow,
+      position: body.style.position,
+      top: body.style.top,
+      left: body.style.left,
+      right: body.style.right,
+      width: body.style.width,
+    }
+    const previousDocumentOverflow = documentElement.style.overflow
+    let lockedScrollY = 0
+    let scrollLocked = false
+
+    const unlockScroll = () => {
+      if (!scrollLocked) return
+      body.style.overflow = previousBodyStyles.overflow
+      body.style.position = previousBodyStyles.position
+      body.style.top = previousBodyStyles.top
+      body.style.left = previousBodyStyles.left
+      body.style.right = previousBodyStyles.right
+      body.style.width = previousBodyStyles.width
+      documentElement.style.overflow = previousDocumentOverflow
+      window.scrollTo(0, lockedScrollY)
+      scrollLocked = false
+    }
+    const syncScrollLock = () => {
+      if (!mobileViewport.matches) {
+        unlockScroll()
+        return
+      }
+      if (scrollLocked) return
+
+      lockedScrollY = window.scrollY
+      documentElement.style.overflow = 'hidden'
+      body.style.overflow = 'hidden'
+      body.style.position = 'fixed'
+      body.style.top = `-${lockedScrollY}px`
+      body.style.left = '0'
+      body.style.right = '0'
+      body.style.width = '100%'
+      scrollLocked = true
     }
     const closeOnEscape = (event) => {
       if (event.key === 'Escape') setMobileDrawerOpen(false)
     }
 
-    syncBodyOverflow()
-    mobileViewport.addEventListener('change', syncBodyOverflow)
+    syncScrollLock()
+    mobileViewport.addEventListener('change', syncScrollLock)
     document.addEventListener('keydown', closeOnEscape)
     return () => {
-      mobileViewport.removeEventListener('change', syncBodyOverflow)
-      document.body.style.overflow = previousOverflow
+      mobileViewport.removeEventListener('change', syncScrollLock)
+      unlockScroll()
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [mobileDrawerOpen])
@@ -196,8 +231,6 @@ export default function MobileNav({ mobileOnly = false }) {
   }, [userName, userAvatarUrl])
 
   useEffect(() => {
-    if (!mobileDrawerOpen) return undefined
-
     const userId = readStoredUserId()
     if (!userId || !supabase) return undefined
 
@@ -225,7 +258,7 @@ export default function MobileNav({ mobileOnly = false }) {
       active = false
       window.removeEventListener('daet-user-points-updated', updatePoints)
     }
-  }, [mobileDrawerOpen])
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -303,6 +336,10 @@ export default function MobileNav({ mobileOnly = false }) {
   }, [unreadAlerts, unreadMessages])
 
   useEffect(() => {
+    window.dispatchEvent(new CustomEvent('daet-user-points-updated', { detail: { points: userPoints } }))
+  }, [userPoints])
+
+  useEffect(() => {
     if (!showProfileMenu) return undefined
     const handleClickOutside = (event) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) setShowProfileMenu(false)
@@ -318,6 +355,15 @@ export default function MobileNav({ mobileOnly = false }) {
       setMobileDrawerOpen(false)
     }
   }
+
+  const isVisitor = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
+  const mobileNavigationItems = [
+    { href: isVisitor ? '/info/visitor' : '/info/user/dashboard', label: t('common.home'), icon: Home, isActive: isVisitor ? pathname === '/info/visitor' : pathname === '/info/user/dashboard' },
+    { href: isVisitor ? '/info/visitor/search' : '/info/user/search', label: t('common.search'), icon: Search, isActive: pathname.includes('/search') },
+    { href: '/info/user/blogs/new', label: t('common.create'), icon: Plus, isActive: pathname === '/info/user/blogs/new', isCreate: true },
+    { href: '/info/user/messaging', label: t('common.messages'), icon: MessageCircle, isActive: pathname.startsWith('/info/user/messaging'), unreadCount: unreadMessages },
+    { href: '/info/user/profile', label: t('common.profile'), icon: UserRound, isActive: pathname.startsWith('/info/user/profile') },
+  ]
 
   const openLogoutConfirm = () => {
     setMobileDrawerOpen(false)
@@ -338,11 +384,34 @@ export default function MobileNav({ mobileOnly = false }) {
 
   return (
     <>
+      {!mobileOnly && (
+        <nav className="usr-mobile-bottom-nav lg:hidden" aria-label="Primary navigation">
+          {mobileNavigationItems.map(({ href, label, icon: Icon, isActive, isCreate, unreadCount }) => (
+            <Link
+              key={href}
+              href={href}
+              aria-label={label}
+              aria-current={isActive ? 'page' : undefined}
+              className={`usr-mobile-bottom-nav-link${isActive ? ' is-active' : ''}${isCreate ? ' is-create' : ''}`}
+            >
+              <span className="usr-mobile-bottom-nav-icon">
+                <Icon aria-hidden="true" />
+                {unreadCount > 0 && (
+                  <span className="usr-mobile-bottom-nav-badge" aria-label={`${unreadCount} unread messages`}>
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </span>
+              <span className="usr-mobile-bottom-nav-label">{label}</span>
+            </Link>
+          ))}
+        </nav>
+      )}
       {!mobileOnly && <aside aria-label="Primary navigation" className="usr-desktop-sidebar fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-[6px_0_24px_rgba(15,23,42,0.12)]">
         <Link href="/info/user/dashboard" className="flex min-h-20 items-center gap-3 border-b border-slate-700 px-5">
           <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain" />
           <span className="min-w-0">
-            <span className="block truncate text-base font-black tracking-tight text-slate-100">Connect-Daet.ai</span>
+            <span className="block truncate text-base font-black tracking-tight text-slate-100">Connect Daet</span>
             <span className="mt-1 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
           </span>
         </Link>
@@ -364,11 +433,6 @@ export default function MobileNav({ mobileOnly = false }) {
               >
                 <Icon className="h-5 w-5 shrink-0" />
                 <span className="flex-1">{t(labelKey)}</span>
-                {labelKey === 'common.messages' && unreadMessages > 0 && (
-                  <span className="usr-badge flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                    {unreadMessages > 9 ? '9+' : unreadMessages}
-                  </span>
-                )}
                 {labelKey === 'common.rewards' && (
                   <span className="shrink-0 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${userPoints} points`}>
                     {userPoints.toLocaleString()} pts
@@ -425,7 +489,7 @@ export default function MobileNav({ mobileOnly = false }) {
               <Link href="/info/user/dashboard" onClick={() => setMobileDrawerOpen(false)} className="-ml-1 flex min-w-0 items-center gap-2">
                 <img src="/logo.png" alt="" className="h-9 w-8 shrink-0 object-contain" />
                 <span className="min-w-0">
-                  <span className="block truncate text-base font-black tracking-tight">Connect-Daet.ai</span>
+                  <span className="block truncate text-base font-black tracking-tight">Connect Daet</span>
                   <span className="mt-0.5 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
                 </span>
               </Link>
@@ -448,11 +512,6 @@ export default function MobileNav({ mobileOnly = false }) {
                   >
                     <Icon className="h-5 w-5 shrink-0" />
                     <span className="flex-1 text-sm">{t(labelKey)}</span>
-                    {labelKey === 'common.messages' && unreadMessages > 0 && (
-                      <span className="usr-badge flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
-                        {unreadMessages > 9 ? '9+' : unreadMessages}
-                      </span>
-                    )}
                     {labelKey === 'common.rewards' && (
                       <span className="shrink-0 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${userPoints} points`}>
                         {userPoints.toLocaleString()} pts

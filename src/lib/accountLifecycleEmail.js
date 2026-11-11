@@ -32,7 +32,7 @@ function escapeHtml(value) {
     .replaceAll("'", '&#039;')
 }
 
-export async function sendAccountLifecycleEmail(email, event, scheduledFor) {
+export async function sendAccountLifecycleEmail(email, event, scheduledFor, options = {}) {
   const content = EMAIL_CONTENT[event]
   if (!content) throw new Error('Unsupported account lifecycle email event.')
 
@@ -48,7 +48,7 @@ export async function sendAccountLifecycleEmail(email, event, scheduledFor) {
       }) + ' UTC'
     : ''
   const message = event === 'requested'
-    ? `Your account is scheduled for permanent deletion on ${date}. You can cancel this request within 30 days by signing in through the account recovery page.`
+    ? `Your account is scheduled for permanent deletion on ${date}. You can cancel this request within ${options.gracePeriodDays || 30} days by signing in through the account recovery page.`
     : event === 'cancelled'
       ? 'Your account deletion request was cancelled and your account is active again.'
       : event === 'reminder7' || event === 'reminder1'

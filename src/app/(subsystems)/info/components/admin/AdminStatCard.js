@@ -18,7 +18,6 @@ export default function AdminStatCard({
 
   const content = (
     <>
-      <span className="admin-stat-accent" aria-hidden="true" />
       <div className="admin-stat-head">
         <p className="admin-stat-label">{label}</p>
         {icon ? (

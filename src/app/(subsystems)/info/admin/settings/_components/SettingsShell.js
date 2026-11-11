@@ -1,13 +1,10 @@
-// Shared layout for the admin Settings section. Each settings page (Overview,
-// General, Email & Notifications, Security, Maintenance Mode) renders through
-// this shell so auth, the admin sidebar, the page header, and toasts stay
-// consistent. Children are rendered as a function that receives { showToast }.
+// Shared layout for admin settings pages so auth, navigation, headers, and
+// toasts stay consistent. Children may receive { showToast } as a function.
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { AdminLoadingScreen, AdminShell } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
@@ -56,33 +53,19 @@ export default function SettingsShell({ title, subtitle, children }) {
   }, [router]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="admin-loading">
-          <span className="admin-loading-ring" aria-hidden="true" />
-          <p className="text-sm">Loading settings…</p>
-        </div>
-      </div>
-    );
+    return <AdminLoadingScreen label="Loading settings…" />;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AdminSidebar user={user} roleLabel="Admin Console" />
-
-      {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
-        <AdminPageHeader
-          eyebrow="Configuration"
-          title={title}
-          description={subtitle}
-          icon="settings"
-        />
-
-        {typeof children === 'function' ? children(showToast) : children}
-      </div>
-
-      {/* Toast */}
+    <AdminShell
+      user={user}
+      roleLabel="Admin Console"
+      eyebrow="Configuration"
+      title={title}
+      description={subtitle}
+      headerIcon="settings"
+    >
+      {typeof children === 'function' ? children(showToast) : children}
       {toastMessage && (
         <div
           className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}
@@ -92,6 +75,6 @@ export default function SettingsShell({ title, subtitle, children }) {
           {toastMessage.message}
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

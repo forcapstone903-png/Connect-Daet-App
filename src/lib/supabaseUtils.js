@@ -191,7 +191,8 @@ export async function getEvents(filters = {}) {
     let query = supabase
       .from('info_events')
       .select('*')
-      .eq('status', 'published');
+      .eq('status', 'published')
+      .eq('approval_status', 'approved');
 
     if (filters.category) {
       query = query.eq('category', filters.category);
@@ -220,6 +221,8 @@ export async function getEventById(id) {
       .from('info_events')
       .select('*')
       .eq('id', id)
+      .in('status', ['published', 'cancelled', 'completed'])
+      .eq('approval_status', 'approved')
       .single();
 
     if (error) throw error;
@@ -289,7 +292,8 @@ export async function getBlogs(filters = {}) {
     let query = supabase
       .from('info_blogs')
       .select('id, title, slug, excerpt, featured_image, category, created_at, published_at, views, likes')
-      .eq('status', 'published');
+      .eq('status', 'published')
+      .eq('approval_status', 'approved');
 
     if (filters.category) {
       query = query.eq('category', filters.category);
@@ -320,6 +324,7 @@ export async function getBlogBySlug(slug) {
       `)
       .eq('slug', slug)
       .eq('status', 'published')
+      .eq('approval_status', 'approved')
       .single();
 
     if (error) throw error;
@@ -345,7 +350,10 @@ export async function createBlog(blogData, userId) {
       .insert([{
         ...blogData,
         created_by: userId,
-        published_at: blogData.status === 'published' ? new Date().toISOString() : null
+        status: 'draft',
+        approval_status: blogData.status === 'published' ? 'pending' : 'draft',
+        submitted_at: blogData.status === 'published' ? new Date().toISOString() : null,
+        published_at: null,
       }])
       .select()
       .single();

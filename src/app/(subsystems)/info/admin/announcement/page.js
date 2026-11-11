@@ -695,16 +695,20 @@ export default function AdminAnnouncementPage() {
               return (
                 <div
                   key={announcement.id}
-                  className={`flex min-h-[280px] flex-col rounded-[1.8rem] border bg-white transition-all hover:shadow-md ${
-                    announcement.severity === 'critical' ? 'border-red-200 bg-red-50/30' :
-                    announcement.severity === 'warning' ? 'border-yellow-200 bg-yellow-50/30' :
-                    'border-sky-100'
+                  className={`flex min-h-[280px] flex-col rounded-[1.8rem] border border-l-4 bg-white transition-all hover:shadow-md ${
+                    announcement.severity === 'critical' ? 'border-red-200 border-l-red-500 bg-red-50/30' :
+                    announcement.severity === 'warning' ? 'border-yellow-200 border-l-yellow-500 bg-yellow-50/30' :
+                    'border-sky-100 border-l-blue-500 bg-blue-50/20'
                   }`}
                 >
                   <div className="flex flex-1 flex-col p-5">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3 flex-wrap">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                          announcement.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                          announcement.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
                           <Icon name={getTypeIcon(announcement.announcement_type)} className="w-5 h-5" />
                         </div>
                         <div>

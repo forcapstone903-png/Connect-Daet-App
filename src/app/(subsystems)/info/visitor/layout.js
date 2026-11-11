@@ -6,7 +6,7 @@ export default function VisitorLayout({ children }) {
     <>
       <MobileNav />
       <UserTopHeader desktopOnly homeHref="/info/visitor" />
-      <div className="visitor-layout-content min-h-screen lg:pt-16 lg:pl-[302px]">
+      <div className="visitor-layout-content min-h-screen pb-[calc(76px+env(safe-area-inset-bottom))] lg:pb-0 lg:pt-16 lg:pl-[302px]">
         {children}
       </div>
     </>

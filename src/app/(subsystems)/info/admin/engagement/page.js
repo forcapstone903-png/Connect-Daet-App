@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { MessageCircle, Repeat2, Search, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -134,8 +134,10 @@ export default function AdminEngagementPage() {
         router.push('/info/admin/dashboard')
         return
       }
-      setAdminUser(user)
-      loadEngagement()
+      startTransition(() => {
+        setAdminUser(user)
+        void loadEngagement()
+      })
     } catch (authError) {
       console.error('Engagement auth failed:', authError)
       router.push('/info/login')

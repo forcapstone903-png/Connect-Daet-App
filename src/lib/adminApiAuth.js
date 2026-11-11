@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { getAdminAuthorizationStatus } from '@/lib/adminRolePolicy.mjs'
 
 export function authorizeAdminApi(request) {
   const session = getServerSession(request)
+  const status = getAdminAuthorizationStatus(session)
 
-  if (!session?.user_id) {
+  if (status === 401) {
     return {
       session: null,
       response: NextResponse.json(
@@ -14,8 +16,7 @@ export function authorizeAdminApi(request) {
     }
   }
 
-  const role = String(session.role || '').trim().toLowerCase()
-  if (role !== 'admin' && role !== 'administrator') {
+  if (status === 403) {
     return {
       session: null,
       response: NextResponse.json(

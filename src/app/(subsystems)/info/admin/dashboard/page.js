@@ -4,9 +4,24 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Bell, MessageSquare } from 'lucide-react';
+import {
+  Activity,
+  ArrowUpRight,
+  Bell,
+  BookOpen,
+  CalendarDays,
+  CheckCircle2,
+  CircleAlert,
+  FilePlus2,
+  MapPinned,
+  Megaphone,
+  MessageSquare,
+  Newspaper,
+  Users,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import '@/app/(subsystems)/info/components/admin/AdminCalendar.css';
+import './AdminDashboard.css';
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
@@ -124,6 +139,18 @@ export default function AdminDashboard() {
     totalUsers: 0, totalTourists: 0, totalBusinesses: 0, totalModerators: 0, onlineUsers: 0,
     totalEvents: 0, totalSpots: 0, totalBlogs: 0, totalAnnouncements: 0, totalForumThreads: 0,
   });
+  const [visitorMetrics, setVisitorMetrics] = useState({
+    daily: [],
+    loading: true,
+    error: '',
+    popularDestinations: [],
+    popularDestinationsLoading: true,
+    popularDestinationsError: '',
+  });
+  const [blogModerationStats, setBlogModerationStats] = useState(null);
+  const [latestBlogSubmission, setLatestBlogSubmission] = useState(null);
+  const [systemHealth, setSystemHealth] = useState({ loading: true, checks: null });
+  const [notificationsAvailable, setNotificationsAvailable] = useState(null);
   const [dailyFeedbackQuestion, setDailyFeedbackQuestion] = useState(null);
   const [dailyFeedbackVotes, setDailyFeedbackVotes] = useState([]);
   const [dailyFeedbackDraft, setDailyFeedbackDraft] = useState('');
@@ -164,6 +191,47 @@ export default function AdminDashboard() {
 
   const unreadNotificationCount = notifications.filter((notification) => !notification.read).length;
 
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let active = true;
+    const loadVisitorMetrics = async () => {
+      try {
+        const response = await fetch('/info/api/analytics/visits', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success || !Array.isArray(result.metrics?.daily)) {
+          throw new Error(result.message || 'Unable to load visitor statistics.');
+        }
+        if (active) setVisitorMetrics({
+          daily: result.metrics.daily,
+          loading: false,
+          error: '',
+          popularDestinations: Array.isArray(result.popularDestinations) ? result.popularDestinations : [],
+          popularDestinationsLoading: false,
+          popularDestinationsError: Array.isArray(result.popularDestinations)
+            ? ''
+            : 'Destination view analytics are unavailable.',
+        });
+      } catch (error) {
+        console.error('Admin dashboard visitor statistics load failed:', error);
+        if (active) setVisitorMetrics({
+          daily: [],
+          loading: false,
+          error: 'Visitor statistics are unavailable.',
+          popularDestinations: [],
+          popularDestinationsLoading: false,
+          popularDestinationsError: 'Destination view analytics are unavailable.',
+        });
+      }
+    };
+
+    void loadVisitorMetrics();
+    return () => { active = false; };
+  }, [user]);
+
   const calendarRef = useRef(null);
   const eventsRef = useRef([]);
   const eventElListenersRef = useRef(new Map());
@@ -175,6 +243,58 @@ export default function AdminDashboard() {
     tables: ['info_announcements', 'info_events', 'info_tourist_spots', 'forum_threads', 'forum_replies'],
     enabled: Boolean(user),
   })
+
+  useEffect(() => {
+    if (!user?.user_id && !user?.id) return undefined
+
+    let active = true
+    const loadBlogModerationStats = async () => {
+      try {
+        const response = await fetch('/info/api/admin/blogs?status=all&pageSize=1', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to load blog moderation statistics.')
+        }
+        if (active) {
+          setBlogModerationStats(result.stats)
+          setLatestBlogSubmission(result.posts?.[0] || null)
+        }
+      } catch (error) {
+        console.error('Blog moderation statistics load failed:', error)
+      }
+    }
+
+    void loadBlogModerationStats()
+    return () => { active = false }
+  }, [user?.id, user?.user_id])
+
+  useEffect(() => {
+    if (!user) return undefined
+
+    let active = true
+    const loadSystemHealth = async () => {
+      try {
+        const response = await fetch('/info/api/admin/system-health', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success || !result.checks) {
+          throw new Error(result.message || 'System health checks are unavailable.')
+        }
+        if (active) setSystemHealth({ loading: false, checks: result.checks })
+      } catch (error) {
+        console.error('Admin dashboard system health check failed:', error)
+        if (active) setSystemHealth({ loading: false, checks: null })
+      }
+    }
+
+    void loadSystemHealth()
+    return () => { active = false }
+  }, [user?.id, user?.user_id])
 
   useEffect(() => {
     if (!showWeatherDetails && !showNotifications) return undefined;
@@ -561,10 +681,6 @@ export default function AdminDashboard() {
     } else {
       setWeather(prev => ({ ...prev, alert: null }));
     }
-  };
-
-  const getWeatherIcon = (condition) => {
-    return null
   };
 
   const getWeatherRecommendation = (condition, temp) => {
@@ -973,7 +1089,8 @@ export default function AdminDashboard() {
       const { count, error } = await supabase
         .from('info_blogs')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'published');
+        .eq('status', 'published')
+        .eq('approval_status', 'approved');
       
       if (error) throw error;
       setStats(prev => ({ ...prev, totalBlogs: count || 0 }));
@@ -1015,6 +1132,7 @@ export default function AdminDashboard() {
 
       const { data: users, error } = usersResult;
 
+      setNotificationsAvailable(!notificationsResult.error)
       if (error) throw error;
       const list = users || [];
       setStats(prev => ({
@@ -1226,49 +1344,59 @@ export default function AdminDashboard() {
     }
   };
   
-  const getNotificationColor = (type) => {
-    switch(type) {
-      case 'success': return 'bg-emerald-50 border-emerald-200';
-      case 'warning': return 'bg-amber-50 border-amber-200';
-      case 'error': return 'bg-rose-50 border-rose-200';
-      case 'weather': return 'bg-sky-50 border-sky-200';
-      case 'event': return 'bg-violet-50 border-violet-200';
-      case 'user': return 'bg-indigo-50 border-indigo-200';
-      default: return 'bg-slate-50 border-slate-200';
-    }
-  };
-
   const getUpcomingEvents = () => {
     const now = new Date();
     now.setHours(0, 0, 0, 0);
+    const thirtyDaysLater = new Date(now);
+    thirtyDaysLater.setDate(now.getDate() + 30);
 
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-    return events.filter(ev => {
-      const evDate = new Date(ev.start);
-      return ev.status === 'published' && evDate >= now && evDate >= monthStart && evDate <= monthEnd;
-    }).sort((a, b) => new Date(a.start) - new Date(b.start));
+    return events
+      .filter((ev) => {
+        const evDate = new Date(ev.start);
+        return ev.status === 'published' && evDate >= now && evDate <= thirtyDaysLater;
+      })
+      .sort((a, b) => new Date(a.start) - new Date(b.start))
+      .slice(0, 8);
   };
 
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const visitorsToday = visitorMetrics.daily.find((day) => day.date === todayUtc)?.uniqueVisitors;
+  const dailyVisitorStats = visitorMetrics.daily.slice(-7);
+  const maxDailyVisitors = Math.max(...dailyVisitorStats.map((day) => Number(day.uniqueVisitors) || 0), 1);
   const quickStats = [
-    { label: 'Total Attractions', value: stats.totalSpots || 0, tone: 'sky', icon: 'attractions' },
-    { label: 'Events', value: calendarStats.totalEvents || 0, tone: 'emerald', icon: 'events' },
-    { label: 'Announcements', value: stats.totalAnnouncements || 0, tone: 'violet', icon: 'notifications' },
-    { label: 'Forum Topics', value: stats.totalForumThreads || 0, tone: 'amber', icon: 'forum' },
-    { label: 'Users', value: stats.totalUsers || 0, tone: 'amber', icon: 'users' },
-    { label: 'Complaints', value: unreadInquiries.length || 0, tone: 'rose', icon: 'warning' },
+    {
+      label: 'Total Visitors',
+      value: visitorMetrics.loading ? '…' : visitorMetrics.error ? '—' : Number(visitorsToday || 0).toLocaleString(),
+      meta: visitorMetrics.error ? 'Live count unavailable' : 'Unique visitors today · UTC',
+      status: visitorMetrics.error ? 'Unavailable' : 'Today',
+      icon: Activity,
+    },
+    {
+      label: 'Events',
+      value: calendarStats.totalEvents.toLocaleString(),
+      meta: 'Published in the event calendar',
+      status: 'Published',
+      icon: CalendarDays,
+    },
+    {
+      label: 'Tourist Attractions',
+      value: stats.totalSpots.toLocaleString(),
+      meta: 'Active destinations',
+      status: 'Active',
+      icon: MapPinned,
+    },
+    {
+      label: 'Pending Approvals',
+      value: blogModerationStats ? Number(blogModerationStats.pendingApprovals || 0).toLocaleString() : '—',
+      meta: 'Blog posts awaiting review',
+      status: blogModerationStats?.pendingApprovals ? 'Needs review' : 'Review queue',
+      icon: Newspaper,
+    },
   ];
 
-  const popularAttractions = [
-    { name: 'Bagasbas Beach', value: 92 },
-    { name: 'Calaguas', value: 86 },
-    { name: 'Parang Beach', value: 74 },
-    { name: 'Daet Plaza', value: 68 },
-    { name: 'Capitol Park', value: 58 },
-  ];
+  const popularAttractions = visitorMetrics.popularDestinations;
+  const maxDestinationViews = Math.max(...popularAttractions.map((item) => Number(item.pageViews) || 0), 1);
 
-  const visitorStats = [52, 70, 88, 76, 92, 108, 114];
   const feedbackTotal = dailyFeedbackVotes.length;
   const feedbackTrend = [
     { label: 'Positive', pct: feedbackTotal ? Math.round((dailyFeedbackVotes.filter((vote) => vote.response === 'positive').length / feedbackTotal) * 100) : 0, color: 'bg-emerald-500' },
@@ -1277,74 +1405,79 @@ export default function AdminDashboard() {
   ];
 
   const systemStatus = useMemo(() => {
-    const websiteState = weather?.error ? 'Offline' : 'Online';
-    const websiteColor = weather?.error ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700';
-
-    const supabaseState = supabase ? 'Healthy' : 'Unhealthy';
-    const supabaseColor = supabase ? 'bg-sky-100 text-sky-700' : 'bg-rose-100 text-rose-700';
-
-    const weatherState = weather?.error ? 'Disconnected' : 'Connected';
-    const weatherColor = weather?.error ? 'bg-rose-100 text-rose-700' : 'bg-violet-100 text-violet-700';
-
-    const notificationsState = notifications.length ? 'Active' : 'Idle';
-    const notificationsColor = notifications.length ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-700';
-
     return [
-      { name: 'Website', status: websiteState, color: websiteColor },
-      { name: 'Supabase', status: supabaseState, color: supabaseColor },
-      { name: 'Weather API', status: weatherState, color: weatherColor },
-      { name: 'Notifications', status: notificationsState, color: notificationsColor },
+      {
+        name: 'Website',
+        status: systemHealth.loading ? 'Checking' : systemHealth.checks?.api?.status === 'Available' ? 'Online' : 'Unavailable',
+        detail: systemHealth.checks?.api?.detail || 'The health endpoint did not return a result.',
+      },
+      {
+        name: 'Supabase',
+        status: systemHealth.loading ? 'Checking' : systemHealth.checks?.database?.status === 'Available' ? 'Healthy' : 'Unavailable',
+        detail: systemHealth.checks?.database?.detail || 'Database connectivity could not be verified.',
+      },
+      {
+        name: 'Weather API',
+        status: weather.loading ? 'Checking' : weather.current ? 'Connected' : 'Unavailable',
+        detail: weather.current ? 'Live provider data loaded successfully.' : weather.error || 'Weather provider status is not available.',
+      },
+      {
+        name: 'Notifications',
+        status: notificationsAvailable === null ? 'Checking' : notificationsAvailable ? 'Active' : 'Unavailable',
+        detail: notificationsAvailable
+          ? 'The administrator notification inbox responded successfully.'
+          : 'Notification inbox availability could not be verified.',
+      },
     ];
-  }, [weather?.error, notifications.length, supabase]);
+  }, [systemHealth, weather.loading, weather.current, weather.error, notificationsAvailable]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      <div className="admin-command-center flex min-h-screen items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">Loading dashboard...</p>
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-blue-500"></div>
+          <p className="mt-4 font-medium text-slate-300">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
+    <div className="admin-command-center">
       <AdminSidebar user={user} roleLabel="System Administrator" />
 
       {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
+      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page admin-command-main">
         {/* Header */}
-        <div className="admin-page-header">
+        <div className="admin-command-header">
           <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="min-w-0">
-              <p className="admin-eyebrow">Dashboard Home</p>
-              <h1>Administrator Command Center</h1>
-              <p className="admin-subtitle">Welcome back, {user?.full_name || user?.user_name || 'Administrator'} — here’s a live view of your Daet tourism operations.</p>
+              <p className="dc-eyebrow">Dashboard Home</p>
+              <h1 className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Administrator Command Center</h1>
+              <p className="dc-muted mt-1 text-xs">Welcome back, Daet Tourism Admin — here’s a live view of your Daet tourism operations.</p>
             </div>
 
-            <div className="flex items-center gap-3">
-              <button onClick={() => setShowQuickPublishModal(true)} className="rounded-full bg-gradient-to-r from-sky-600 to-emerald-500 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_15px_30px_rgba(14,165,233,0.25)] transition hover:-translate-y-0.5">
+            <div className="admin-command-header-actions flex items-center gap-2">
+              <button onClick={() => setShowQuickPublishModal(true)} className="dc-action dc-action-primary">
+                <FilePlus2 className="h-4 w-4" aria-hidden="true" />
                 Quick Publish
               </button>
 
               {/* Weather Widget */}
               <div ref={weatherPopoverRef} className="relative">
-                <button onClick={() => setShowWeatherDetails(!showWeatherDetails)} className="bg-white p-2 rounded-2xl shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 border border-gray-200">
+                <button onClick={() => setShowWeatherDetails(!showWeatherDetails)} className="dc-action" aria-label="Show current weather">
                   {weather.loading ? (
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
                   ) : weather.current ? (
                     <>
                       <img src={`https://openweathermap.org/img/wn/${weather.current.icon}@2x.png`} alt={weather.current.condition} className="w-6 h-6" />
-                      <span className="font-semibold text-gray-700">{weather.current.temp}°C</span>
-                      <span className="text-gray-400">|</span>
-                      <span className="text-gray-600">{getWeatherIcon(weather.current.condition)}</span>
+                      <span className="font-semibold text-slate-200">{weather.current.temp}°C</span>
                     </>
                   ) : (<span className="text-gray-400">Weather</span>)}
                 </button>
 
                 {showWeatherDetails && (
-                  <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
+                  <div className="absolute right-0 mt-2 w-[min(24rem,calc(100vw-2rem))] rounded-2xl border border-slate-700 bg-slate-900 text-slate-100 shadow-lg z-50 overflow-hidden">
                     <div className="flex items-center justify-between bg-blue-600 px-4 py-3 text-white">
                       <div><h3 className="font-bold">Daet Weather Center</h3><p className="text-blue-100 text-xs">Live conditions & forecasts</p></div>
                       <button onClick={() => setShowWeatherDetails(false)} className="text-white/80 hover:text-white" aria-label="Close weather details"><Icon name="close" className="w-4 h-4" /></button>
@@ -1368,7 +1501,7 @@ export default function AdminDashboard() {
                       <div className="p-4">
                         <div className="flex items-center justify-between mb-4">
                           <div className="flex items-center gap-3">
-                            <img src={`https://openweathermap.org/img/wn/${weather.current.icon}@4x.png`} className="w-14 h-14" />
+                            <img src={`https://openweathermap.org/img/wn/${weather.current.icon}@4x.png`} alt={weather.current.description} className="w-14 h-14" />
                             <div>
                               <div className="text-2xl font-bold text-gray-800">{weather.current.temp}°C</div>
                               <div className="text-gray-500 capitalize text-sm">{weather.current.description}</div>
@@ -1406,7 +1539,7 @@ export default function AdminDashboard() {
                                 <p className="text-xs font-medium text-gray-600">
                                   {new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' })}
                                 </p>
-                                <img src={`https://openweathermap.org/img/wn/${day.icon}.png`} className="w-8 h-8 mx-auto" />
+                                <img src={`https://openweathermap.org/img/wn/${day.icon}.png`} alt={day.condition} className="w-8 h-8 mx-auto" />
                                 <p className="text-xs font-semibold">{Math.round(day.temp)}°C</p>
                                 <p className="text-xs text-gray-500 capitalize">{day.condition}</p>
                                 <p className="text-xs text-gray-400">{Math.round(day.temp_min)}°/{Math.round(day.temp_max)}°</p>
@@ -1446,13 +1579,13 @@ export default function AdminDashboard() {
 
               {/* Notification Bell */}
               <div ref={notificationsPopoverRef} className="relative">
-                <button type="button" onClick={() => setShowNotifications(!showNotifications)} className="relative flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
+                <button type="button" onClick={() => setShowNotifications(!showNotifications)} className="dc-action relative h-9 w-9 justify-center p-0" aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}>
                   <Bell className="h-5 w-5 stroke-[2.25]" />
                   {unreadNotificationCount > 0 && (<span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-black leading-none text-white shadow-sm">{unreadNotificationCount > 9 ? '9+' : unreadNotificationCount}</span>)}
                 </button>
                 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-slate-200 bg-white shadow-2xl z-50 overflow-hidden">
+                  <div className="absolute right-0 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl z-50 overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
                       <div className="flex items-center gap-2">
                         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12"><Icon name="notifications" className="w-4 h-4" /></span>
@@ -1463,7 +1596,7 @@ export default function AdminDashboard() {
                         {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="text-xs font-bold text-rose-200 hover:text-white">Clear all</button>}
                       </div>
                     </div>
-                    <div className="max-h-[22rem] overflow-y-auto bg-slate-50">
+                    <div className="max-h-[22rem] overflow-y-auto bg-slate-900">
                       {notifications.length === 0 ? (
                         <div className="flex flex-col items-center justify-center gap-2 py-8 text-slate-400">
                           <Icon name="notifications" className="w-6 h-6" />
@@ -1471,15 +1604,15 @@ export default function AdminDashboard() {
                         </div>
                       ) : (
                         notifications.map(notif => (
-                          <div key={notif.id} className={`border-b border-slate-100 px-4 py-3 cursor-pointer transition ${!notif.read ? 'bg-sky-50/70' : 'bg-white'} ${getNotificationColor(notif.type)}`} onClick={() => openNotification(notif)}>
+                          <div key={notif.id} className={`border-b border-slate-700 px-4 py-3 cursor-pointer transition ${!notif.read ? 'bg-slate-800' : 'bg-slate-900'}`} onClick={() => openNotification(notif)}>
                             <div className="flex items-start gap-3">
                               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-black text-white">{getNotificationIcon(notif.type).slice(0, 2).toUpperCase()}</span>
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-2">
-                                  <h4 className="font-black text-sm text-slate-900">{notif.title}</h4>
+                                  <h4 className="font-black text-sm text-slate-100">{notif.title}</h4>
                                   <button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="rounded-full px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600">Remove</button>
                                 </div>
-                                <p className="mt-1 text-xs leading-5 text-slate-600">{notif.message}</p>
+                                <p className="mt-1 text-xs leading-5 text-slate-300">{notif.message}</p>
                                 <p className="mt-2 text-[11px] font-semibold text-slate-400">{notif.timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
                               </div>
                               {!notif.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sky-600"></span>}
@@ -1491,75 +1624,251 @@ export default function AdminDashboard() {
                   </div>
                 )}
               </div>
+              <Link
+                href="/info/admin/account"
+                className="dc-action h-9 w-9 justify-center p-0"
+                aria-label={`Administrator account${user?.full_name || user?.user_name ? `: ${user.full_name || user.user_name}` : ''}`}
+                title="Administrator account"
+              >
+                <AdminAvatar user={user} size={28} />
+              </Link>
             </div>
           </div>
         </div>
 
-        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
-        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <nav className="dc-actions" aria-label="Dashboard quick actions">
+          <Link href="/info/admin/blogs?status=pending" className="dc-action"><Newspaper className="h-3.5 w-3.5" />Review approvals</Link>
+          <Link href="/info/admin/blog" className="dc-action"><BookOpen className="h-3.5 w-3.5" />Create post</Link>
+          <Link href="/info/admin/tourist-spots" className="dc-action"><MapPinned className="h-3.5 w-3.5" />Add tourist spot</Link>
+          <button type="button" onClick={() => openCreateModal(new Date().toISOString().slice(0, 10))} className="dc-action"><CalendarDays className="h-3.5 w-3.5" />Create event</button>
+          <Link href="/info/admin/announcement" className="dc-action"><Megaphone className="h-3.5 w-3.5" />Send announcement</Link>
+        </nav>
+
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
+        <section className="dc-section" aria-labelledby="overview-heading">
+          <div className="dc-section-heading">
+            <div>
+              <p className="dc-section-label">Overview</p>
+              <h2 id="overview-heading">Tourism performance at a glance</h2>
+            </div>
+          </div>
+          <div className="dc-grid">
           {quickStats.map((stat) => (
-            <div key={stat.label} className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
+            <div key={stat.label} className="dc-panel dc-kpi dc-span-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{stat.label}</p>
-                  <p className="mt-3 text-3xl font-black text-slate-900">{stat.value}</p>
+                  <p className="dc-kpi-label">{stat.label}</p>
+                  <p className="dc-kpi-value">{stat.value}</p>
+                  <p className="dc-kpi-note">{stat.meta}</p>
                 </div>
-                <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${stat.tone === 'sky' ? 'bg-sky-100 text-sky-700' : stat.tone === 'emerald' ? 'bg-emerald-100 text-emerald-700' : stat.tone === 'amber' ? 'bg-amber-100 text-amber-700' : stat.tone === 'violet' ? 'bg-violet-100 text-violet-700' : 'bg-rose-100 text-rose-700'}`}>
-                  <Icon name={stat.icon} className="w-5 h-5" />
+                <div className="dc-kpi-icon">
+                  <stat.icon className="h-4 w-4" aria-hidden="true" />
                 </div>
               </div>
+              <span className={`mt-2 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.1em] ${stat.status === 'Needs review' ? 'text-amber-300' : stat.status === 'Unavailable' ? 'text-rose-300' : 'text-emerald-300'}`}>
+                {['Needs review', 'Unavailable'].includes(stat.status)
+                  ? <CircleAlert className="h-3 w-3" />
+                  : <CheckCircle2 className="h-3 w-3" />}
+                {stat.status}
+              </span>
             </div>
           ))}
-        </div>
+          </div>
+        </section>
 
-        <div className="mb-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+        <section className="dc-section" aria-labelledby="needs-attention-heading">
+          <div className="dc-section-heading">
+            <div>
+              <p className="dc-section-label">Needs attention</p>
+              <h2 id="needs-attention-heading">Publication approvals</h2>
+            </div>
+          </div>
+          <div className="dc-panel dc-attention">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="dc-panel-title">Blog moderation queue</p>
+                <p className="dc-muted mt-1 text-xs">Review user-submitted posts before they appear publicly.</p>
+              </div>
+              <Link href="/info/admin/blogs?status=pending" className="dc-action dc-action-primary">
+                Review pending posts <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+            <div className="dc-approval-grid">
+            {[
+              { label: 'Total posts', value: blogModerationStats?.totalPosts, href: '/info/admin/blogs?status=all' },
+              { label: 'Pending approvals', value: blogModerationStats?.pendingApprovals, href: '/info/admin/blogs?status=pending', pending: true },
+              { label: 'Approved posts', value: blogModerationStats?.approvedPosts, href: '/info/admin/blogs?status=approved' },
+              { label: 'Rejected posts', value: blogModerationStats?.rejectedPosts, href: '/info/admin/blogs?status=rejected' },
+              { label: 'Reported posts', value: blogModerationStats?.reportedPosts, href: '/info/admin/moderation' },
+            ].map((item) => (
+              <Link key={item.label} href={item.href} className={`dc-approval-cell ${item.pending ? 'dc-approval-pending' : ''}`}>
+                <span>{item.label}</span>
+                <span className="dc-approval-value">{item.value ?? '—'}</span>
+              </Link>
+            ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="dc-section" aria-labelledby="analytics-heading">
+        <div className="dc-section-heading">
+          <div>
+            <p className="dc-section-label">Analytics</p>
+            <h2 id="analytics-heading">Tourism performance and audience activity</h2>
+          </div>
+          <Link href="/info/admin/analytics/reports" className="dc-action">Export reports <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+        </div>
+        <div className="dc-grid">
+          <div className="dc-panel dc-panel-pad dc-chart dc-span-6">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Popular Attractions</p>
-                <h3 className="mt-2 text-xl font-black text-slate-900">Most viewed destinations</h3>
+                <p className="dc-section-label">Popular content</p>
+                <h3 className="dc-panel-title mt-1">Most viewed attractions</h3>
               </div>
+              <Link href="/info/admin/analytics/content" className="dc-muted inline-flex items-center gap-1 text-xs hover:text-blue-300">View report <ArrowUpRight className="h-3.5 w-3.5" /></Link>
             </div>
-            <div className="flex h-56 items-end gap-3 border-b border-slate-100 pb-8">
-              {popularAttractions.map((item) => (
-                <div key={item.name} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-                  <div className="w-full max-w-16 rounded-t-[1rem] bg-gradient-to-t from-sky-600 to-emerald-400 shadow-[0_8px_18px_rgba(14,165,233,0.18)]" style={{ height: `${Math.max(24, Math.round((item.value / 100) * 150))}px` }} />
-                  <span className="line-clamp-2 text-center text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">{item.name}</span>
-                </div>
+            <p className="dc-muted mb-3 text-[11px]">Consented detail-page views in the last 30 days</p>
+            {visitorMetrics.popularDestinationsError ? (
+              <p className="dc-muted flex h-48 items-center justify-center text-sm text-rose-300" role="status">
+                {visitorMetrics.popularDestinationsError}
+              </p>
+            ) : visitorMetrics.popularDestinationsLoading ? (
+              <p className="dc-muted flex h-48 items-center justify-center text-sm" role="status">
+                Loading destination views…
+              </p>
+            ) : popularAttractions.length ? (
+              <div className="dc-chart-bars flex items-end gap-3 border-b border-slate-700 pb-8">
+                {popularAttractions.map((item) => {
+                  const value = Number(item.pageViews) || 0;
+                  return (
+                    <div key={item.id} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2" title={`${item.name}: ${value.toLocaleString()} detail-page views from ${Number(item.uniqueVisitors || 0).toLocaleString()} estimated visitors`}>
+                      <span className="text-[10px] font-semibold text-slate-300">{value.toLocaleString()}</span>
+                      <div className={`w-full max-w-16 rounded-t-md ${value ? 'bg-blue-600' : 'bg-slate-700'}`} style={{ height: `${value ? Math.max(4, Math.round((value / maxDestinationViews) * 130)) : 2}px` }} />
+                      <span className="line-clamp-2 text-center text-[9px] font-semibold uppercase tracking-wide text-slate-400">{item.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="dc-muted flex h-48 items-center justify-center text-center text-sm" role="status">
+                No consented destination views recorded in the last 30 days.
+              </p>
+            )}
+          </div>
+
+          <div className="dc-panel dc-panel-pad dc-chart dc-span-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="dc-section-label">Visitor statistics</p>
+                <h3 className="dc-panel-title mt-1">Daily unique visitors</h3>
+              </div>
+              <Link href="/info/admin/analytics/visitors" className="dc-muted inline-flex items-center gap-1 text-xs hover:text-blue-300">View details <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+            </div>
+            <p className="dc-muted mb-3 text-[11px]">Estimated distinct visitors per day · UTC</p>
+            {visitorMetrics.error ? (
+              <p className="dc-muted flex h-56 items-center justify-center text-sm text-rose-300" role="status">{visitorMetrics.error}</p>
+            ) : visitorMetrics.loading ? (
+              <p className="dc-muted flex h-56 items-center justify-center text-sm" role="status">Loading visitor statistics…</p>
+            ) : dailyVisitorStats.length ? (
+              <div className="dc-chart-bars flex items-end gap-3 border-b border-slate-700 pb-8">
+                {dailyVisitorStats.map((day) => {
+                  const value = Number(day.uniqueVisitors) || 0;
+                  const date = new Date(`${day.date}T00:00:00Z`);
+                  const label = Number.isNaN(date.getTime()) ? day.date : date.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+                  return (
+                    <div key={day.date} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2" title={`${day.date}: ${value} unique visitors`}>
+                      <span className="text-[10px] font-semibold text-slate-300">{value.toLocaleString()}</span>
+                      <div className={`w-full max-w-10 rounded-t-md ${value ? 'bg-amber-500' : 'bg-slate-700'}`} style={{ height: `${value ? Math.max(4, Math.round((value / maxDailyVisitors) * 130)) : 2}px` }} />
+                      <span className="text-[10px] font-medium text-slate-400">{label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="dc-muted flex h-56 items-center justify-center text-sm" role="status">No visitor data recorded yet.</p>
+            )}
+          </div>
+        </div>
+        </section>
+
+        <section className="dc-section" aria-labelledby="operations-heading">
+          <div className="dc-section-heading">
+            <div>
+              <p className="dc-section-label">Operations</p>
+              <h2 id="operations-heading">Content and event management</h2>
+            </div>
+          </div>
+          <div className="dc-panel dc-panel-pad">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="dc-section-label">Content overview</p>
+                <h3 className="dc-panel-title mt-1">Publishing workspace</h3>
+              </div>
+              <Link href="/info/admin/content" className="dc-action">Open content overview <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+            </div>
+            <div className="dc-content-summary">
+              {[
+                { label: 'Blog posts', value: stats.totalBlogs, href: '/info/admin/blogs' },
+                { label: 'Tourist spots', value: stats.totalSpots, href: '/info/admin/tourist-spots' },
+                { label: 'Published events', value: calendarStats.totalEvents, href: '/info/admin/events' },
+                { label: 'Announcements', value: stats.totalAnnouncements, href: '/info/admin/announcement' },
+                { label: 'Pending review', value: blogModerationStats?.pendingApprovals ?? '—', href: '/info/admin/blogs?status=pending' },
+              ].map((item) => (
+                <Link key={item.label} href={item.href} className="dc-content-metric transition hover:border-blue-500">
+                  <strong>{item.value}</strong>
+                  <span>{item.label}</span>
+                </Link>
               ))}
+            </div>
+            <nav className="flex flex-wrap gap-2" aria-label="Content actions">
+              <Link href="/info/admin/blog" className="dc-action"><BookOpen className="h-3.5 w-3.5" />Create post</Link>
+              <Link href="/info/admin/tourist-spots" className="dc-action"><MapPinned className="h-3.5 w-3.5" />Add tourist spot</Link>
+              <button type="button" onClick={() => openCreateModal(new Date().toISOString().slice(0, 10))} className="dc-action"><CalendarDays className="h-3.5 w-3.5" />Create event</button>
+              <Link href="/info/admin/announcement" className="dc-action"><Megaphone className="h-3.5 w-3.5" />Create announcement</Link>
+            </nav>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-700 pt-3">
+              <div className="min-w-0">
+                <p className="dc-section-label">Latest blog submission</p>
+                {latestBlogSubmission ? (
+                  <p className="mt-1 truncate text-xs font-semibold text-slate-200">
+                    {latestBlogSubmission.title}
+                    <span className="dc-muted ml-2 font-normal">
+                      {formatActivityTime(latestBlogSubmission.submitted_at || latestBlogSubmission.created_at)}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="dc-muted mt-1 text-xs">No recent blog submissions.</p>
+                )}
+              </div>
+              {latestBlogSubmission ? (
+                <Link
+                  href={`/info/admin/blogs?status=${latestBlogSubmission.approval_status || 'all'}`}
+                  className={`dc-status-badge ${
+                    latestBlogSubmission.approval_status === 'approved'
+                      ? 'dc-status-online'
+                      : latestBlogSubmission.approval_status === 'rejected'
+                        ? 'dc-status-offline'
+                        : 'dc-status-warning'
+                  }`}
+                >
+                  {latestBlogSubmission.approval_status || 'Unknown'}
+                </Link>
+              ) : null}
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-amber-700">Visitor Statistics</p>
-                <h3 className="mt-2 text-xl font-black text-slate-900">Traffic overview</h3>
-              </div>
-            </div>
-            <div className="flex h-56 items-end gap-3 border-b border-slate-100 pb-8">
-              {visitorStats.map((value, index) => (
-                <div key={index} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end gap-2">
-                  <div className="w-full max-w-10 rounded-t-[1rem] bg-gradient-to-t from-amber-500 to-orange-300 shadow-[0_8px_18px_rgba(245,158,11,0.18)]" style={{ height: `${Math.max(24, Math.round((value / 114) * 150))}px` }} />
-                  <span className="text-[10px] font-medium text-slate-500">{['M','T','W','T','F','S','S'][index]}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Calendar and Upcoming Events Side by Side (moved up under analytics) */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] items-start gap-6 mb-6">
+        {/* Event calendar and upcoming published events */}
+        <div className="dc-grid mt-4">
           {/* Calendar Section */}
-          <div className="admin-events-calendar admin-panel min-w-0 p-3 sm:p-5">
+          <div className="admin-events-calendar dc-panel dc-panel-pad dc-calendar dc-calendar-panel dc-span-9">
             <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">Calendar</p>
-                <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                <p className="dc-section-label">Event management</p>
+                <h2 className="dc-panel-title mt-1 flex items-center gap-2">
                   Event Calendar
                 </h2>
               </div>
-              <div className="text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full">
+              <div className="dc-muted rounded-lg border border-slate-700 px-3 py-1.5 text-[10px]">
                 Click any date to create event • Drag to reschedule
               </div>
             </div>
@@ -1584,7 +1893,7 @@ export default function AdminDashboard() {
               scrollTime="07:00:00"
               slotEventOverlap={false}
               eventTimeFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }}
-              height={850}
+              height={620}
               select={(info) => openCreateModal(info.startStr, info.endStr, info.allDay)}
               eventClick={(info) => {
                 // Look up the canonical event record (real inclusive start/end
@@ -1649,14 +1958,15 @@ export default function AdminDashboard() {
           </div>
 
           {/* Upcoming Events Widget */}
-          <div className="admin-panel min-w-0 p-3 sm:p-5 admin-upcoming-panel">
+          <div className="dc-panel dc-panel-pad dc-upcoming-panel dc-span-3">
             <div className="flex justify-between items-center mb-3">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Upcoming</p>
-                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-                  <><Icon name="events" className="inline-block w-4 h-4 mr-2" />Upcoming Events</>
+                <p className="dc-section-label">Scheduled</p>
+                <h3 className="dc-panel-title mt-1 flex items-center gap-2">
+                  <Icon name="events" className="inline-block w-4 h-4" />Upcoming Events
                 </h3>
               </div>
+              <Link href="/info/admin/events" className="dc-muted text-xs hover:text-blue-300">View all</Link>
             </div>
             <div className="space-y-2 max-h-[500px] overflow-y-auto">
               {getUpcomingEvents().length > 0 ? (
@@ -1670,19 +1980,21 @@ export default function AdminDashboard() {
                   else if (daysDiff <= 3) badgeColor = 'bg-yellow-100 text-yellow-700';
                   
                   return (
-                    <div key={ev.id} className="p-3 bg-gray-50 rounded-2xl hover:bg-gray-100 transition-colors">
+                    <div key={ev.id} className="dc-upcoming-item">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <p className="font-semibold text-gray-800 text-sm">{ev.title}</p>
-                          <p className="text-xs text-gray-500 mt-1">
+                          <p className="text-sm font-semibold text-slate-100">{ev.title}</p>
+                          <p className="dc-muted mt-1 text-xs">
                             {eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                           </p>
                           {ev.location && (
-                            <p className="text-xs text-gray-400 mt-0.5">Location: {ev.location}</p>
+                            <p className="dc-muted mt-0.5 text-xs">Location: {ev.location}</p>
                           )}
                           {ev.image_url && (
-                            <img src={ev.image_url} alt={ev.title} className="w-full h-24 object-cover rounded-xl mt-2" />
+                            <img src={ev.image_url} alt={`${ev.title} event`} className="mt-2 h-24 w-full rounded-lg object-cover" />
                           )}
+                          {ev.category && <span className="mt-2 inline-flex rounded-full bg-slate-800 px-2 py-0.5 text-[9px] font-semibold capitalize text-slate-300">{ev.category}</span>}
+                          <span className="mt-2 inline-flex rounded-full bg-emerald-950 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-300">{ev.status}</span>
                         </div>
                         <div className="text-right">
                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${badgeColor}`}>
@@ -1708,7 +2020,7 @@ export default function AdminDashboard() {
                   );
                 })
               ) : (
-                <div className="text-center py-8 text-gray-400">
+                <div className="dc-muted py-8 text-center">
                   <p className="mt-2 text-sm">No upcoming events</p>
                   <p className="text-xs">Click on any date in the calendar to create one</p>
                 </div>
@@ -1716,116 +2028,172 @@ export default function AdminDashboard() {
             </div>
           </div>
         </div>
+        </section>
 
-        <div className="mb-6 grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-            <div className="mb-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Feedback Trends</p>
-              <h3 className="mt-2 text-xl font-black text-slate-900">Visitor sentiment</h3>
-              <p className="mt-1 text-xs text-slate-500">{dailyFeedbackQuestion ? dailyFeedbackQuestion.question : 'No daily question published'} · {feedbackTotal} responses</p>
+        <section className="dc-section" aria-labelledby="community-heading">
+          <div className="dc-section-heading">
+            <div>
+              <p className="dc-section-label">Community</p>
+              <h2 id="community-heading">Forum activity and user engagement</h2>
             </div>
-            <div className="space-y-3">
-              {feedbackTrend.map((item) => (
-                <div key={item.label}>
-                  <div className="mb-1 flex items-center justify-between text-sm text-slate-600">
-                    <span>{item.label}</span>
-                    <span className="font-semibold">{item.pct}%</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-slate-100">
-                    <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-5 border-t border-slate-100 pt-4">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-500" htmlFor="daily-feedback-question">Daily question</label>
-              <div className="mt-2 flex gap-2">
-                <input id="daily-feedback-question" value={dailyFeedbackDraft} onChange={(event) => setDailyFeedbackDraft(event.target.value)} placeholder="Ask visitors a question..." className="min-w-0 flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-300" />
-                <button type="button" onClick={saveDailyFeedbackQuestion} disabled={publishingFeedback} className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">{publishingFeedback ? 'Publishing...' : 'Publish'}</button>
-              </div>
-            </div>
+            <Link href="/info/admin/community" className="dc-action">View community <ArrowUpRight className="h-3.5 w-3.5" /></Link>
           </div>
-
-          <section className="rounded-[2rem] border border-sky-100 bg-white p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-sky-700">System Status</p>
-                <h3 className="mt-2 text-xl font-black text-slate-900">Operational health</h3>
-              </div>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {systemStatus.map((item) => (
-                <div key={item.name} className="flex min-h-[84px] items-center justify-between rounded-[1.25rem] border border-slate-200 bg-slate-50 px-4 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{item.name}</p>
-                    <p className="text-xs text-slate-500">Status</p>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.14em] ${item.color}`}>{item.status}</span>
+          <div className="dc-grid">
+            {[
+              { label: 'Forum topics', value: stats.totalForumThreads, detail: 'Published discussions', href: '/info/admin/forum' },
+              { label: 'Users online', value: `${stats.onlineUsers} / ${stats.totalUsers}`, detail: 'Current user presence', href: '/info/admin/engagement' },
+              { label: 'Feedback', value: feedbackTotal, detail: 'Daily question responses', href: '/info/admin/feedback' },
+              { label: 'Reported content', value: blogModerationStats?.reportedPosts ?? '—', detail: 'Reported blog posts', href: '/info/admin/moderation' },
+            ].map((item) => (
+              <Link key={item.label} href={item.href} className="dc-panel dc-community-metric dc-span-3 transition hover:border-blue-500">
+                <div>
+                  <p className="dc-muted text-[11px] font-semibold">{item.label}</p>
+                  <p className="dc-muted mt-1 text-[10px]">{item.detail}</p>
                 </div>
-              ))}
-            </div>
-          </section>
-        </div>
-
-        
-
-        {/* Recent Users Table */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
-              <><Icon name="users" className="inline-block w-4 h-4 mr-2" />Recent Registrations</>
-            </h3>
-            <Link href="/info/admin/users" className="text-xs text-blue-600 hover:underline font-medium">View all users <Icon name="arrow" className="inline-block w-4 h-4 ml-1" /></Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-gray-50 rounded-2xl">
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Email</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Type</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Joined</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {recentUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <AdminAvatar user={u} />
-                        <span className="text-sm font-medium text-gray-900">{u.full_name || u.user_name || 'Unnamed user'}</span>
+                <span className="dc-community-value">{item.value}</span>
+              </Link>
+            ))}
+            <div className="dc-panel dc-panel-pad dc-span-12">
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div>
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="dc-section-label">Visitor sentiment</p>
+                      <h3 className="dc-panel-title mt-1">Daily feedback</h3>
+                      <p className="dc-muted mt-1 text-[11px]">{dailyFeedbackQuestion?.question || 'No daily question published'} · {feedbackTotal} responses</p>
+                    </div>
+                    <Link href="/info/admin/feedback" className="dc-muted inline-flex items-center gap-1 text-xs hover:text-blue-300">Feedback <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {feedbackTrend.map((item) => (
+                      <div key={item.label} className="dc-sentiment-card rounded-lg border border-slate-700 bg-slate-800/60 p-2.5">
+                        <div className="dc-sentiment-label mb-1 flex justify-between text-[10px] text-slate-300"><span>{item.label}</span><span>{item.pct}%</span></div>
+                        <div className="dc-sentiment-track h-1.5 rounded-full bg-slate-700"><div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.pct}%` }} /></div>
                       </div>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{u.email}</td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                        u.user_type === 'tourist' ? 'bg-blue-100 text-blue-800' : 
-                        u.user_type === 'business' ? 'bg-yellow-100 text-yellow-800' :
-                        u.user_type === 'moderator' ? 'bg-purple-100 text-purple-800' :
-                        u.user_type === 'admin' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {u.user_type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                        u.status === 'active' ? 'bg-green-100 text-green-800' : 
-                        u.status === 'suspended' ? 'bg-red-100 text-red-800' :
-                        u.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {u.status || 'active'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(u.created_at).toLocaleDateString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="dc-section-label" htmlFor="daily-feedback-question">Publish daily question</label>
+                  <div className="mt-2 flex gap-2">
+                    <input id="daily-feedback-question" value={dailyFeedbackDraft} onChange={(event) => setDailyFeedbackDraft(event.target.value)} placeholder="Ask visitors a question..." className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none focus:border-blue-500" />
+                    <button type="button" onClick={saveDailyFeedbackQuestion} disabled={publishingFeedback} className="dc-action dc-action-primary disabled:cursor-not-allowed disabled:opacity-60">{publishingFeedback ? 'Publishing...' : 'Publish'}</button>
+                  </div>
+                  <nav className="mt-3 flex flex-wrap gap-2" aria-label="Community destinations">
+                    <Link href="/info/admin/forum" className="dc-action">Forum</Link>
+                    <Link href="/info/admin/engagement" className="dc-action">Engagement</Link>
+                    <Link href="/info/admin/users" className="dc-action"><Users className="h-3.5 w-3.5" />User management</Link>
+                    <Link href="/info/admin/feedback" className="dc-action"><MessageSquare className="h-3.5 w-3.5" />Open inquiries ({unreadInquiries.length})</Link>
+                    <Link href="/info/admin/activity-logs" className="dc-action">Activity logs</Link>
+                  </nav>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
+
+        <section className="dc-section" aria-labelledby="system-status-heading">
+          <div className="dc-section-heading">
+            <div>
+              <p className="dc-section-label">System status</p>
+              <h2 id="system-status-heading">Operational health</h2>
+            </div>
+            <p>Current checks · administrator platform</p>
+          </div>
+          <div className="dc-grid">
+            {systemStatus.map((item) => (
+              <div key={item.name} className="dc-status-item dc-span-3" title={item.detail}>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-100">{item.name}</p>
+                  <p className="dc-muted mt-1 truncate text-[10px]">{item.detail}</p>
+                </div>
+                <span className={`dc-status-badge ${['Online', 'Healthy', 'Connected', 'Active'].includes(item.status) ? 'dc-status-online' : item.status === 'Checking' ? 'dc-status-warning' : 'dc-status-offline'}`}>{item.status}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="dc-section" aria-labelledby="recent-activity-heading">
+          <div className="dc-section-heading">
+            <div>
+              <p className="dc-section-label">Recent activity</p>
+              <h2 id="recent-activity-heading">Recent community activity and registrations</h2>
+            </div>
+            <Link href="/info/admin/activity-logs" className="dc-action">View all activity <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+          </div>
+          <div className="dc-activity-layout">
+            <div className="dc-panel dc-panel-pad">
+              <div className="mb-1 flex items-center gap-2">
+                <Activity className="h-4 w-4 text-blue-400" />
+                <h3 className="dc-panel-title">Community activity</h3>
+              </div>
+              {activityFeed.slice(0, 6).map((activity) => (
+                <div key={activity.id} className="dc-activity-row">
+                  <span className="dc-activity-dot" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold text-slate-100">{activity.title}</p>
+                    <p className="dc-muted mt-1 text-[11px]">{activity.detail}</p>
+                  </div>
+                  <span className="dc-muted shrink-0 text-[10px]">{activity.time}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="dc-panel dc-panel-pad min-w-0">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4 w-4 text-blue-400" />
+                  <h3 className="dc-panel-title">Recent registrations</h3>
+                </div>
+                <Link href="/info/admin/users" className="dc-muted inline-flex items-center gap-1 text-xs hover:text-blue-300">View all users <ArrowUpRight className="h-3.5 w-3.5" /></Link>
+              </div>
+              <div className="dc-registration-desktop overflow-x-auto">
+                <table className="dc-registration-table">
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Type</th>
+                      <th>Status</th>
+                      <th>Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentUsers.length ? recentUsers.map((u) => (
+                      <tr key={u.id}>
+                        <td>{u.full_name || u.user_name || 'Unnamed user'}</td>
+                        <td>{u.email}</td>
+                        <td className="capitalize">{u.user_type}</td>
+                        <td className="capitalize">{u.status || 'active'}</td>
+                        <td>{new Date(u.created_at).toLocaleDateString()}</td>
+                      </tr>
+                    )) : (
+                      <tr><td colSpan={5} className="dc-muted py-6 text-center">No registrations available.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <div className="dc-registration-mobile">
+                {recentUsers.map((u) => (
+                  <div key={u.id} className="rounded-lg border border-slate-700 bg-slate-800/60 p-3">
+                    <div className="flex items-center gap-2">
+                      <AdminAvatar user={u} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-slate-100">{u.full_name || u.user_name || 'Unnamed user'}</p>
+                        <p className="truncate text-[10px] text-slate-400">{u.email}</p>
+                      </div>
+                      <span className="rounded-full bg-blue-950 px-2 py-1 text-[9px] font-bold capitalize text-blue-300">{u.user_type}</span>
+                    </div>
+                    <div className="mt-2 flex justify-between text-[10px] text-slate-400">
+                      <span className="capitalize">{u.status || 'active'}</span>
+                      <span>{new Date(u.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
 
       </div>
 

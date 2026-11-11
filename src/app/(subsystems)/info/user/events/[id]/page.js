@@ -54,7 +54,7 @@ export default function EventDetailPage() {
 
   return (
     <div>
-      <EventDetailsView key={String(eventId)} eventId={eventId} userId={userId} backHref="/info/user/dashboard" />
+      <EventDetailsView key={String(eventId)} eventId={eventId} userId={userId} backHref="/info/user/events" />
     </div>
   )
 }

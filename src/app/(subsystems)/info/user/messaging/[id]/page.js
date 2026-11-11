@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, ArrowLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Pin, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { Archive, ChevronLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Pin, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
@@ -968,7 +968,7 @@ export default function ConversationPage() {
       <div className="conversation-shell flex h-full min-h-0 w-full flex-col overflow-hidden">
         <header className="conversation-header relative flex flex-[0_0_auto] items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
           <button type="button" onClick={() => router.replace('/info/user/messaging')} aria-label="Back to messages" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-600 transition hover:bg-slate-100">
-            <ArrowLeft className="h-5 w-5" />
+            <ChevronLeft className="h-5 w-5" />
           </button>
           {otherUser && (
             <UserProfileLink user={otherUser} className="flex min-w-0 items-center gap-3">

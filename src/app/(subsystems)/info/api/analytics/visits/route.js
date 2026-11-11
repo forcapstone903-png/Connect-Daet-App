@@ -47,10 +47,20 @@ export async function GET(request) {
   }
 
   try {
-    const { data, error } = await adminSupabase.rpc('get_site_visit_metrics', { p_days: 30 })
-    if (error) throw error
+    const [visitorResult, destinationResult] = await Promise.all([
+      adminSupabase.rpc('get_site_visit_metrics', { p_days: 30 }),
+      adminSupabase.rpc('get_popular_tourist_spots', { p_days: 30 }),
+    ])
+    if (visitorResult.error) throw visitorResult.error
+    if (destinationResult.error) {
+      console.error('Popular destination analytics read failed:', destinationResult.error)
+    }
 
-    return response({ success: true, metrics: data })
+    return response({
+      success: true,
+      metrics: visitorResult.data,
+      popularDestinations: destinationResult.error ? null : destinationResult.data,
+    })
   } catch (error) {
     console.error('Site visit analytics read failed:', error)
     return response({ success: false, message: 'Unable to load visitor statistics.' }, 500)

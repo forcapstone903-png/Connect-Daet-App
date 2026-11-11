@@ -11,19 +11,24 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'forum_thread',
   'announcement',
   'user_post',
+  'tourist_spot',
 ])
 
 function normalizeContentType(value) {
   const type = String(value || '').trim().toLowerCase()
-  return type === 'forum' ? 'forum_thread' : type === 'post' ? 'user_post' : type
+  if (type === 'forum') return 'forum_thread'
+  if (type === 'post') return 'user_post'
+  if (type === 'spot') return 'tourist_spot'
+  return type
 }
 
 const ORIGINAL_TABLES = {
   blog: { table: 'info_blogs', authorColumn: 'created_by', select: 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, status' },
-  event: { table: 'info_events', authorColumn: 'created_by', select: 'id, created_by, title, description, featured_image, images, start_date, created_at, status' },
+  event: { table: 'info_events', authorColumn: 'created_by', select: 'id, created_by, title, description, featured_image, images, start_date, created_at, status, approval_status' },
   forum_thread: { table: 'forum_threads', authorColumn: 'created_by', select: 'id, created_by, title, content, created_at, status' },
   announcement: { table: 'info_announcements', authorColumn: 'created_by', select: 'id, created_by, title, content, image_url, video_url, published_at, created_at, status' },
   user_post: { table: 'info_user_posts', authorColumn: 'user_id', select: 'id, user_id, title, content, created_at, updated_at, status' },
+  tourist_spot: { table: 'info_tourist_spots', authorColumn: 'created_by', select: 'id, created_by, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_at, status' },
 }
 
 const ORIGINAL_ROUTES = {
@@ -32,6 +37,7 @@ const ORIGINAL_ROUTES = {
   forum_thread: 'forums',
   announcement: 'announcements',
   user_post: 'posts',
+  tourist_spot: 'visitor/tourist-spots',
 }
 
 function isMissingRepostStatusColumnError(error) {
@@ -96,12 +102,16 @@ async function getOriginalContent(adminSupabase, contentType, contentId) {
 
   let query = adminSupabase.from(definition.table).select(definition.select).eq('id', contentId)
   if (contentType === 'user_post' || contentType === 'forum_thread') query = query.in('status', ['active', 'published'])
-  else if (contentType === 'event') query = query.in('status', ['published', 'cancelled', 'completed'])
+  else if (contentType === 'event') query = query.in('status', ['published', 'cancelled', 'completed']).eq('approval_status', 'approved')
   else if (contentType === 'blog' || contentType === 'announcement') query = query.eq('status', 'published')
+  else if (contentType === 'tourist_spot') query = query.eq('status', 'active')
 
   const { data, error } = await query.maybeSingle()
   const authorId = data?.[definition.authorColumn] || null
-  if (!authorId) return { data, error, authorId }
+  const originalData = contentType === 'tourist_spot' && data
+    ? { ...data, title: data.name, content: data.description, excerpt: data.description }
+    : data
+  if (!authorId) return { data: originalData, error, authorId }
 
   const { data: author, error: authorError } = await adminSupabase
     .from('info_users')
@@ -109,7 +119,7 @@ async function getOriginalContent(adminSupabase, contentType, contentId) {
     .eq('id', authorId)
     .maybeSingle()
 
-  return { data: data ? { ...data, author: author || null } : data, error: error || authorError, authorId }
+  return { data: originalData ? { ...originalData, author: author || null } : originalData, error: error || authorError, authorId }
 }
 
 // The reposter is the acting user, never the original author. Clients use this
@@ -150,7 +160,7 @@ export async function POST(request) {
   if (originalResult.error) {
     return NextResponse.json({ success: false, message: originalResult.error.message || 'Unable to load the original content.' }, { status: 400 })
   }
-  if (!originalResult.data || !originalResult.authorId) {
+  if (!originalResult.data || (!originalResult.authorId && contentType !== 'tourist_spot')) {
     return NextResponse.json({ success: false, message: 'The original content is unavailable.' }, { status: 404 })
   }
 
@@ -212,7 +222,9 @@ export async function POST(request) {
       is_read: false,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      link: `/info/user/${ORIGINAL_ROUTES[contentType]}/${contentId}`,
+      link: contentType === 'tourist_spot'
+        ? `/info/visitor/tourist-spots/${contentId}`
+        : `/info/user/${ORIGINAL_ROUTES[contentType]}/${contentId}`,
       post_id: contentId,
       post_owner_id: originalResult.authorId,
       actor_id: userId,

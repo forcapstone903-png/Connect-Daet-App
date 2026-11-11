@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import './AdminAvatar.css';
 
-export default function AdminAvatar({ user }) {
+export default function AdminAvatar({ user, size = 36 }) {
   const [failedSrc, setFailedSrc] = useState(null);
   const src = user?.profile_image_url?.trim() || user?.avatar_url?.trim() || '';
   const name = user?.full_name?.trim() || user?.user_name?.trim() || user?.email || 'User';
@@ -11,7 +11,7 @@ export default function AdminAvatar({ user }) {
     .map(part => part[0].toUpperCase()).join('') || 'U';
 
   return (
-    <span className="admin-user-avatar rounded-full" aria-hidden="true">
+    <span className="admin-user-avatar rounded-full" style={{ '--admin-avatar-size': `${size}px` }} aria-hidden="true">
       {src && src !== failedSrc ? (
         // Direct profile URLs retain existing browser caching; failures use local initials.
         // eslint-disable-next-line @next/next/no-img-element

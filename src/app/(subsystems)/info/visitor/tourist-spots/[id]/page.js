@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  ArrowLeft,
   Bookmark,
   Bell,
   Camera,
@@ -18,15 +17,13 @@ import {
   MessageCircle,
   MoreHorizontal,
   Share2,
-  ThumbsDown,
-  ThumbsUp,
   X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { getCache, getCacheKey, setCache } from '@/lib/cache'
+import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
-import RatingsReviews from '@/app/(subsystems)/info/components/user/RatingsReviews'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -84,7 +81,6 @@ export default function TouristSpotDetailPage() {
   const [reaction, setReaction] = useState('')
   const [likeCount, setLikeCount] = useState(0)
   const [commentCount, setCommentCount] = useState(0)
-  const [ratingSummary, setRatingSummary] = useState({ average_rating: null, total_count: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -186,7 +182,7 @@ export default function TouristSpotDetailPage() {
         const [authorResult, authorProfileResult, relatedResult] = await Promise.all([
           data.created_by
             ? supabase.from('info_users')
-              .select('id, full_name, email, profile_image_url')
+              .select('id, full_name, email, profile_image_url, user_type')
               .eq('id', data.created_by)
               .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
@@ -215,7 +211,7 @@ export default function TouristSpotDetailPage() {
           }
           setSpotAuthor({
             ...authorResult.data,
-            full_name: authorProfileResult.data?.full_name?.trim() || authorResult.data?.full_name,
+            full_name: authorResult.data?.full_name?.trim() || authorProfileResult.data?.full_name?.trim(),
             profile_image_url: authorProfileResult.data?.profile_image_url || authorResult.data?.profile_image_url,
           })
         }
@@ -406,11 +402,12 @@ export default function TouristSpotDetailPage() {
     return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-loading"><LoaderCircle className="animate-spin" />Loading destination…</div></main></>
   }
   if (error || !spot) {
-    return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><Link href="/info/visitor/tourist-spots">Back to destinations</Link></div></main></>
+    return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><Link href="/info/visitor/tourist-spots" className="tourist-detail-error-back">Back to destinations</Link></div></main></>
   }
 
   const heroImage = images[0]
   const description = String(spot.description || spot.about || '').trim()
+  const spotAuthorName = spotAuthor ? getAuthorDisplayName(spotAuthor, 'Daet Tourism Admin') : ''
   const showDescriptionToggle = description.length > 420
 
   return (
@@ -420,7 +417,7 @@ export default function TouristSpotDetailPage() {
         <header className="event-detail-header">
           <div className="event-detail-header-inner">
             <Link href="/info/visitor" className="event-detail-brand">
-              <img src="/logo.png" alt="" /><span>Connect-Daet.ai</span>
+              <img src="/logo.png" alt="" /><span>Connect Daet</span>
             </Link>
             <div className="event-detail-header-actions">
               <Link href="/info/user/notifications" aria-label="Notifications" className="tourist-header-icon"><Bell size={18} />{unreadCount > 0 && <span className="tourist-unread-dot">{unreadCount > 9 ? '9+' : unreadCount}</span>}</Link>
@@ -438,7 +435,7 @@ export default function TouristSpotDetailPage() {
         <div className="tourist-detail-content">
           <section className="tourist-detail-intro">
             <Link href="/info/visitor" className="tourist-home-back">
-              <ArrowLeft size={17} aria-hidden="true" />
+              <ChevronLeft size={17} aria-hidden="true" />
               <span>Back to home</span>
             </Link>
             <div className="tourist-detail-kickers">
@@ -448,29 +445,23 @@ export default function TouristSpotDetailPage() {
             <h1>{spot.name}</h1>
             {description && <p className="tourist-detail-deck">{description.slice(0, 220)}{description.length > 220 ? '…' : ''}</p>}
             {address && <p className="tourist-detail-byline"><MapPin size={16} aria-hidden="true" />{address}</p>}
-            {spotAuthor?.full_name && <Link href={`/info/user/profile/${spotAuthor.id}`} className="tourist-author-byline">
+            {spotAuthor && <Link href={`/info/user/profile/${spotAuthor.id}`} className="tourist-author-byline">
               {spotAuthor.profile_image_url
                 ? <img src={spotAuthor.profile_image_url} alt="" />
-                : <span>{getInitials(spotAuthor.full_name)}</span>}
-              <span>Posted by <strong>{spotAuthor.full_name}</strong></span>
+                : <span>{getInitials(spotAuthorName)}</span>}
+              <span>Posted by <strong>{spotAuthorName}</strong></span>
             </Link>}
           </section>
 
           <nav className="event-detail-engagement tourist-engagement" aria-label="Destination interactions">
             <div className="event-detail-engagement-group">
-              <a href="#ratings-reviews" className="tourist-engagement-rating" aria-label="Read ratings and reviews">
-                <Heart size={16} className="fill-rose-500 text-rose-500" />
-                <strong>{ratingSummary.average_rating == null ? '—' : Number(ratingSummary.average_rating).toFixed(1)}</strong>
-                <span>({ratingSummary.total_count})</span>
-              </a>
-              <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'}>
-                <ThumbsUp size={17} /><span>{likeCount}</span><span className="tourist-action-label">Like</span>
+              <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'} aria-label={reaction === 'like' ? 'Unlike destination' : 'Like destination'}>
+                <Heart size={17} className={reaction === 'like' ? 'fill-rose-500 text-rose-500' : ''} /><span>{likeCount}</span><span className="tourist-action-label">Like</span>
               </button>
               <button type="button" onClick={scrollToComments}><MessageCircle size={17} /><span>{commentCount}</span><span className="tourist-action-label">Comment</span></button>
               <button type="button" onClick={openShareComposer}><Share2 size={17} /><span className="tourist-action-label">Share</span></button>
             </div>
             <div className="event-detail-engagement-group event-detail-engagement-end">
-              <button type="button" onClick={() => toggleReaction('dislike')} disabled={busy} aria-pressed={reaction === 'dislike'} aria-label="Dislike destination"><ThumbsDown size={17} /></button>
               <button type="button" onClick={toggleFavorite} disabled={busy} aria-pressed={isSaved} aria-label={isSaved ? 'Remove bookmark' : 'Bookmark destination'}><Bookmark size={17} className={isSaved ? 'fill-current' : ''} /></button>
               <div className="relative" ref={menuRef}>
                 <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="More options" aria-expanded={moreOpen}><MoreHorizontal size={19} /></button>
@@ -529,10 +520,6 @@ export default function TouristSpotDetailPage() {
                   {mapDestination && <a href={directionsUrl} target="_blank" rel="noreferrer">Get directions <ExternalLink size={14} /></a>}
                   {mapDestination && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapDestination)}`} target="_blank" rel="noreferrer">Open in Google Maps <ExternalLink size={14} /></a>}
                 </div>
-              </section>
-
-              <section className="event-detail-section tourist-rating-section">
-                <RatingsReviews attractionId={spot.id} userId={userId} onRatingSummaryChange={setRatingSummary} />
               </section>
 
               <section className="event-detail-section tourist-comments-section" id="tourist-comments">

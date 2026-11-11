@@ -103,7 +103,7 @@ export default function PushNotificationPrompt() {
           <div className="min-w-0">
             <p className="text-sm font-bold text-slate-900">Enable mobile notifications</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-600">
-              On iPhone or iPad, tap Share, choose Add to Home Screen, open CONNECT-Daet from the new icon, then tap Enable notifications.
+              On iPhone or iPad, tap Share, choose Add to Home Screen, open Connect Daet from the new icon, then tap Enable notifications.
             </p>
           </div>
           <button

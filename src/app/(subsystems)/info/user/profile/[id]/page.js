@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft,
+  ChevronLeft,
   BadgeCheck,
   Briefcase,
   Check,
@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import ProfileFeedActions from "@/app/(subsystems)/info/components/user/ProfileFeedActions";
 import PostMediaGallery from "@/app/(subsystems)/info/components/user/PostMediaGallery";
+import QuoteRepostCard from "@/app/(subsystems)/info/components/user/QuoteRepostCard";
 import { getPostImages } from "@/lib/postMedia";
 import { getPostPreview } from "@/lib/postContent";
 import UserTopHeader from "@/app/(subsystems)/info/components/user/UserTopHeader";
@@ -177,6 +178,7 @@ function buildPostList(content) {
         href: `${meta.href}${post.original_content_id}`,
         isRepost: true,
         repostQuote: post.repost_quote,
+        repost_quote: post.repost_quote,
         originalAuthor: post.original_author,
         original_post: post.original_post,
       };
@@ -340,6 +342,60 @@ export default function PublicProfilePage() {
     setError("");
     setLoading(true);
     setReloadKey((value) => value + 1);
+  };
+
+  const updatePublicRepost = async (post, action, quoteText) => {
+    if (!post?.repost_id || post.reposted_by !== viewerId) return;
+
+    const isNoteUpdate = action === "note";
+    try {
+      const response = await fetch(`/info/api/reposts/${encodeURIComponent(post.repost_id)}`, {
+        method: action === "delete" ? "DELETE" : "PATCH",
+        credentials: "same-origin",
+        headers: action === "delete" ? undefined : { "Content-Type": "application/json" },
+        body: action === "delete"
+          ? undefined
+          : JSON.stringify(isNoteUpdate ? { quoteText } : { status: "archived" }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to update this repost.");
+      }
+
+      invalidateCachePrefix("profile:user:");
+      if (viewerId) invalidateCachePrefix(`feed:user:${viewerId}`);
+      if (isNoteUpdate) {
+        const nextQuote = result.repost?.quote_text ?? null;
+        setPosts((previous) => previous.map((item) => item.repost_id === post.repost_id
+          ? { ...item, repostQuote: nextQuote, repost_quote: nextQuote }
+          : item));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("daet-repost-created", {
+            detail: {
+              action: "updated",
+              repost: result.repost,
+              original: post.original_post,
+              contentType: post.original_content_type,
+              contentId: post.original_content_id,
+              userId: viewerId,
+            },
+          }));
+        }
+        showNotice("Repost note updated.");
+        return;
+      }
+
+      setPosts((previous) => previous.filter((item) => item.repost_id !== post.repost_id));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("daet-repost-visibility-changed", {
+          detail: { action, repost: result.repost },
+        }));
+      }
+      showNotice(action === "delete" ? "Repost deleted." : "Repost archived.");
+    } catch (repostError) {
+      console.error("Public profile repost update failed:", repostError);
+      showNotice(repostError?.message || "Unable to update this repost.", "error");
+    }
   };
 
   const toggleFollow = async () => {
@@ -544,7 +600,7 @@ export default function PublicProfilePage() {
             title={fromComments ? "Back to comments" : "Back to reactions"}
             className="usr-section-secondary mb-4"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             {fromComments ? "Back to comments" : "Back to reactions"}
           </button>
         )}
@@ -809,19 +865,7 @@ export default function PublicProfilePage() {
                   <p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p>
                   <h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2>
                 </div>
-                {isOwnProfile ? (
-                  <div className="profile-create-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                    <Link href="/info/user/blogs/new" className="usr-section-primary min-w-0 flex-1 sm:flex-none">
-                      <FileText className="h-4 w-4" /> Create Post
-                    </Link>
-                    <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
-                      <FileText className="h-4 w-4" /> Write blog
-                    </Link>
-                    <Link href="/info/visitor/forum" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
-                      <MessageSquareText className="h-4 w-4" /> Start forum
-                    </Link>
-                  </div>
-                ) : (!profile.is_private || isFollowing) ? (
+                {!isOwnProfile && (!profile.is_private || isFollowing) ? (
                   <Link
                     href={`/info/user/messaging/${encodeURIComponent(profile.id)}`}
                     className="usr-section-secondary min-w-0 flex-1 sm:flex-none"
@@ -964,6 +1008,25 @@ export default function PublicProfilePage() {
               {visiblePosts.map((post) => {
                 const mediaList = getPostImages(post);
 
+                if (post.isRepost) {
+                  return (
+                    <article key={`${post.type}-${post.id}`} className="usr-card feed-card profile-repost-card">
+                      <QuoteRepostCard
+                        item={{ ...post, repost_quote: post.repost_quote ?? post.repostQuote, reposted_at: post.date, created_at: post.date }}
+                        reposter={{ ...profile, full_name: displayName }}
+                        reposterName={displayName}
+                        userId={viewerId}
+                        compactFeed
+                        profileStyle
+                        onEdit={(quoteText) => void updatePublicRepost(post, "note", quoteText)}
+                        onRemoveNote={() => void updatePublicRepost(post, "note", null)}
+                        onArchive={() => void updatePublicRepost(post, "archive")}
+                        onDelete={() => void updatePublicRepost(post, "delete")}
+                      />
+                    </article>
+                  );
+                }
+
                 return (
                   <article
                     key={`${post.type}-${post.id}`}
@@ -985,7 +1048,7 @@ export default function PublicProfilePage() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-slate-500">
                           <p className="truncate font-bold text-slate-900">
-                            {post.isRepost ? `${displayName} 🔄 reposted` : displayName}
+                            {displayName}
                           </p>
                           {profile.user_type === "admin" && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Verified organization" />}
                           <span aria-hidden="true">·</span>
@@ -995,21 +1058,6 @@ export default function PublicProfilePage() {
                         </div>
                       </div>
                     </div>
-
-                    {post.isRepost && post.repostQuote ? (
-                      <p className="mt-3 border-l-2 border-teal-200 pl-3 text-[13px] leading-6 text-slate-700">
-                        {post.repostQuote}
-                      </p>
-                    ) : null}
-
-                    {post.isRepost && post.originalAuthor ? (
-                      <p className="mt-2 text-xs text-slate-500">
-                        Originally shared by{" "}
-                        <span className="font-bold text-slate-700">
-                          {post.originalAuthor.full_name || "Community member"}
-                        </span>
-                      </p>
-                    ) : null}
 
                     {post.title ? (
                       <Link href={post.href} className="profile-post-title mt-4 block">

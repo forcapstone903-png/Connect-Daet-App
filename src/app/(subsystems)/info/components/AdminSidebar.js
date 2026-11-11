@@ -1,152 +1,242 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { Suspense, useState, useEffect } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { usePathname, useRouter } from 'next/navigation'
-import { Menu, X } from 'lucide-react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { ChevronDown, Menu, X } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
 import { Icon } from './Icon'
 import ConfirmationModal from './ConfirmationModal'
 
-// Hub & Spoke Navigation Structure
-const navigationHubs = [
+const navigationSections = [
   {
-    id: 'dashboard',
-    label: 'Dashboard',
-    iconName: 'dashboard',
-    href: '/info/admin/dashboard',
-    badge: null,
-    requiredRoles: ['admin'],
-  },
-  {
-    id: 'content',
-    label: 'Content Management',
-    iconName: 'content',
-    badge: null,
-    requiredRoles: ['admin', 'content_manager'],
-    items: [
-      { href: '/info/admin/content', label: 'Content Overview', iconName: 'content', badge: null },
-      { href: '/info/admin/tourist-spots', label: 'Tourist Spots', iconName: 'attractions', badge: null },
-      { href: '/info/admin/events', label: 'Events', iconName: 'events', badge: null },
-      { href: '/info/admin/blog', label: 'Blogs & Articles', iconName: 'blog', badge: null },
-      { href: '/info/admin/announcement', label: 'Announcements', iconName: 'notifications', badge: null },
+    id: 'main',
+    label: 'Main',
+    modules: [
+      { id: 'dashboard', label: 'Dashboard', iconName: 'dashboard', href: '/info/admin/dashboard', requiredRoles: ['admin'] },
     ],
   },
   {
-    id: 'community',
-    label: 'Community',
-    iconName: 'community',
-    badge: 0,
-    requiredRoles: ['admin', 'moderator'],
-    items: [
-      { href: '/info/admin/forum', label: 'Forums', iconName: 'forum', badge: null },
-      { href: '/info/admin/engagement', label: 'Engagement', iconName: 'analytics', badge: null },
-      { href: '/info/admin/feedback', label: 'Feedback', iconName: 'feedback', badge: 0 },
-      { href: '/info/admin/users', label: 'Users', iconName: 'users', badge: null },
-      { href: '/info/admin/moderation', label: 'Moderation Queue', iconName: 'moderation', badge: 0 },
+    id: 'tourism',
+    label: 'Tourism Management',
+    modules: [
+      {
+        id: 'blogs',
+        label: 'Blog',
+        iconName: 'blog',
+        badgeKey: 'pendingApprovals',
+        requiredRoles: ['admin'],
+        href: '/info/admin/blogs?status=all',
+      },
+      {
+        id: 'tourist-spots',
+        label: 'Tourist Spots',
+        iconName: 'attractions',
+        requiredRoles: ['admin', 'content_manager'],
+        href: '/info/admin/tourist-spots',
+      },
+      {
+        id: 'events',
+        label: 'Events',
+        iconName: 'events',
+        requiredRoles: ['admin', 'content_manager'],
+        items: [
+          { href: '/info/admin/events', label: 'All Events', iconName: 'events', exact: true },
+          { href: '/info/admin/event-approvals', label: 'Event Approvals', iconName: 'moderation' },
+          { href: '/info/admin/events?action=create', label: 'Add Event', iconName: 'plus', exact: true },
+        ],
+      },
+      {
+        id: 'announcements',
+        label: 'Announcements',
+        iconName: 'notifications',
+        requiredRoles: ['admin'],
+        href: '/info/admin/announcement',
+      },
+      {
+        id: 'forum',
+        label: 'Forum',
+        iconName: 'forum',
+        requiredRoles: ['admin', 'moderator'],
+        items: [
+          { href: '/info/admin/forum', label: 'Topics', iconName: 'forum', exact: true },
+          { href: '/info/admin/engagement', label: 'Engagement', iconName: 'analytics' },
+          { href: '/info/admin/moderation', label: 'Reported Content', iconName: 'moderation' },
+        ],
+      },
+      {
+        id: 'feedback',
+        label: 'Feedback',
+        iconName: 'feedback',
+        requiredRoles: ['admin', 'moderator'],
+        href: '/info/admin/feedback',
+      },
+    ],
+  },
+  {
+    id: 'people',
+    label: 'People',
+    modules: [
+      { id: 'users', label: 'Users', iconName: 'users', href: '/info/admin/users', requiredRoles: ['admin', 'moderator'] },
+      { id: 'people-engagement', label: 'User Engagement', iconName: 'analytics', href: '/info/admin/engagement', requiredRoles: ['admin', 'moderator'] },
+      { id: 'activity-logs', label: 'Activity Logs', iconName: 'analytics', href: '/info/admin/activity-logs', requiredRoles: ['admin'] },
     ],
   },
   {
     id: 'analytics',
     label: 'Analytics',
-    iconName: 'analytics',
-    badge: null,
-    requiredRoles: ['admin', 'analyst'],
-    items: [
-      { href: '/info/admin/analytics/visitors', label: 'Visitor Statistics', iconName: 'analytics' },
-      { href: '/info/admin/analytics/content', label: 'Popular Content', iconName: 'analytics' },
-      { href: '/info/admin/analytics/engagement', label: 'User Engagement', iconName: 'analytics' },
-      { href: '/info/admin/analytics/reports', label: 'Export Reports', iconName: 'analytics' },
+    modules: [
+      { id: 'visitor-statistics', label: 'Visitor Statistics', iconName: 'analytics', href: '/info/admin/analytics/visitors', requiredRoles: ['admin', 'analyst'] },
+      { id: 'popular-content', label: 'Popular Content', iconName: 'analytics', href: '/info/admin/analytics/content', requiredRoles: ['admin', 'analyst'] },
+      { id: 'analytics-engagement', label: 'User Engagement', iconName: 'analytics', href: '/info/admin/analytics/engagement', requiredRoles: ['admin', 'analyst'] },
+      { id: 'export-reports', label: 'Export Reports', iconName: 'data', href: '/info/admin/analytics/reports', requiredRoles: ['admin', 'analyst'] },
     ],
   },
   {
-    id: 'settings',
-    label: 'Settings',
-    iconName: 'settings',
-    badge: null,
-    requiredRoles: ['admin'],
-    items: [
-      { href: '/info/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
-      { href: '/info/admin/settings/email', label: 'Email & Notifications', iconName: 'settings', exact: true },
-      { href: '/info/admin/settings/security', label: 'Security', iconName: 'settings', exact: true },
-      { href: '/info/admin/settings/maintenance', label: 'Maintenance Mode', iconName: 'settings', exact: true },
+    id: 'system',
+    label: 'System',
+    modules: [
+      {
+        id: 'notifications',
+        label: 'Notifications',
+        iconName: 'notifications',
+        requiredRoles: ['admin'],
+        items: [
+          { href: '/info/admin/notifications/send', label: 'Send Announcement', iconName: 'notifications' },
+          { href: '/info/admin/notifications/history', label: 'History', iconName: 'clock' },
+        ],
+      },
+      { id: 'media-library', label: 'Media Library', iconName: 'image', href: '/info/admin/file-management', requiredRoles: ['admin'] },
+      {
+        id: 'data',
+        label: 'Data',
+        iconName: 'data',
+        requiredRoles: ['admin'],
+        items: [
+          { href: '/info/admin/data/retention', label: 'Data Retention', iconName: 'warning', warning: true },
+          { href: '/info/admin/data/backups', label: 'Backup & Restore', iconName: 'data', warning: true },
+        ],
+      },
     ],
   },
   {
-    id: 'data',
-    label: 'Data',
-    iconName: 'data',
-    badge: null,
-    requiredRoles: ['admin'],
-    items: [
-      { href: '/info/admin/file-management', label: 'Media Library', iconName: 'data' },
-      { href: '/info/admin/data/backups', label: 'Backups', iconName: 'data' },
-      { href: '/info/admin/data/import-export', label: 'Import / Export', iconName: 'data' },
-      { href: '/info/admin/data/retention', label: 'Data Retention', iconName: 'data' },
-    ],
-  },
-  {
-    id: 'notifications',
-    label: 'Notifications',
-    iconName: 'notifications',
-    badge: 0,
-    requiredRoles: ['admin'],
-    items: [
-      { href: '/info/admin/notifications/send', label: 'Send Announcement', iconName: 'notifications' },
-      { href: '/info/admin/notifications/scheduled', label: 'Scheduled', iconName: 'notifications' },
-      { href: '/info/admin/notifications/history', label: 'History', iconName: 'notifications' },
+    id: 'administration',
+    label: 'Administration',
+    modules: [
+      {
+        id: 'settings',
+        label: 'Settings',
+        iconName: 'settings',
+        requiredRoles: ['admin'],
+        items: [
+          { href: '/info/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
+          { href: '/info/admin/settings/email', label: 'Email & Notifications', iconName: 'notifications', exact: true },
+          { href: '/info/admin/settings/security', label: 'Security', iconName: 'lock', exact: true },
+          { href: '/info/admin/settings/maintenance', label: 'Maintenance Mode', iconName: 'warning', exact: true },
+          { href: '/info/admin/settings/appearance', label: 'Appearance', iconName: 'image', exact: true },
+          { href: '/info/admin/settings/rewards', label: 'Rewards & Points', iconName: 'analytics', exact: true },
+        ],
+      },
     ],
   },
   {
     id: 'account',
-    label: 'My Account',
-    iconName: 'profile',
-    badge: null,
-    requiredRoles: ['admin', 'content_manager', 'moderator', 'analyst'],
-    items: [
-      { href: '/info/admin/account?tab=password', label: 'Change Password', iconName: 'settings' },
-      { href: '/info/admin/account?tab=2fa', label: '2FA Settings', iconName: 'settings' },
-      { href: '/info/admin/account?tab=sessions', label: 'Sessions', iconName: 'settings' },
+    label: 'Account',
+    modules: [
+      {
+        id: 'my-account',
+        label: 'My Account',
+        iconName: 'profile',
+        requiredRoles: ['admin', 'content_manager', 'moderator', 'analyst'],
+        href: '/info/admin/account',
+      },
     ],
   },
 ]
 
-export default function AdminSidebar({ user, roleLabel = 'System Administrator', onLogout, userRole = 'admin' }) {
+export default function AdminSidebar(props) {
+  return (
+    <Suspense fallback={<div className="admin-sidebar-drawer fixed inset-y-0 left-0 z-30 w-72 bg-slate-950" aria-hidden="true" />}>
+      <AdminSidebarContent {...props} />
+    </Suspense>
+  )
+}
+
+function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogout, userRole = 'admin' }) {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const router = useRouter()
-  const [expandedItems, setExpandedItems] = useState({
-    content: false,
-    community: false,
-    analytics: false,
-    settings: false,
-    data: false,
-    notifications: false,
-    account: false,
-  })
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
-
-  const filteredNavigation = navigationHubs.filter((hub) =>
-    hub.requiredRoles.includes(userRole)
+  const [openGroups, setOpenGroups] = useState(() =>
+    Object.fromEntries(
+      navigationSections.flatMap((section) =>
+        section.modules.filter((module) => module.items).map((module) => [module.id, false])
+      )
+    )
   )
+  const [pendingApprovals, setPendingApprovals] = useState(null)
+
+  const filteredSections = navigationSections
+    .map((section) => ({
+      ...section,
+      modules: section.modules
+        .filter((module) => module.requiredRoles.includes(userRole))
+        .map((module) => ({
+          ...module,
+          items: module.items?.filter((item) => !item.requiredRoles || item.requiredRoles.includes(userRole)),
+        }))
+        .filter((module) => !module.items || module.items.length > 0),
+    }))
+    .filter((section) => section.modules.length > 0)
 
   const normalizeHref = (href) => href.split('?')[0]
   const isActive = (href) => normalizeHref(pathname) === normalizeHref(href) || normalizeHref(pathname).startsWith(`${normalizeHref(href)}/`)
-  const isItemActive = (item) => (item.exact ? normalizeHref(pathname) === normalizeHref(item.href) : isActive(item.href))
+  const isItemActive = (item) => {
+    const itemPath = normalizeHref(item.href)
+    if (item.exact && pathname !== itemPath) return false
+    if (!item.exact && !isActive(item.href)) return false
 
-  const toggleItem = (id) => {
-    if (isCollapsed) {
-      setIsCollapsed(false)
-      setExpandedItems((prev) => ({ ...prev, [id]: true }))
-      return
+    const expectedParams = new URLSearchParams(item.href.split('?')[1] || '')
+    for (const [key, value] of expectedParams) {
+      const actualValue = searchParams.get(key)
+      if (actualValue !== value && !(actualValue === null && item.defaultParams?.[key] === value)) return false
     }
-    setExpandedItems((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }))
+    const expectedPresentParams = [...expectedParams].filter(([key, value]) => (
+      !(searchParams.get(key) === null && item.defaultParams?.[key] === value)
+    )).length
+    if (item.exact && searchParams.size !== expectedPresentParams) return false
+    return true
   }
+  const isModuleActive = (module) => module.items
+    ? module.items.some(isItemActive)
+    : isActive(module.href)
+
+  useEffect(() => {
+    if (userRole !== 'admin') return undefined
+
+    let active = true
+    fetch('/info/api/admin/blogs?status=all&pageSize=1', {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        const result = await response.json()
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to load pending blog approvals.')
+        }
+        if (active) setPendingApprovals(Number(result.stats?.pendingApprovals) || 0)
+      })
+      .catch((error) => {
+        console.error('Unable to load the pending approval sidebar badge:', error)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [userRole])
 
   const handleLogoutClick = () => {
     setShowLogoutConfirm(true)
@@ -165,47 +255,8 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
   }
 
   const sidebarWidth = isCollapsed ? 'w-20' : 'w-72'
-
-  useEffect(() => {
-    const openHubByPath = () => {
-      const nextExpanded = {
-        content: false,
-        community: false,
-        analytics: false,
-        settings: false,
-        data: false,
-        notifications: false,
-        account: false,
-      }
-
-      const route = normalizeHref(pathname)
-      if (['/info/admin/tourist-spots', '/info/admin/events', '/info/admin/blog', '/info/admin/announcement'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.content = true
-      }
-      if (['/info/admin/forum', '/info/admin/engagement', '/info/admin/feedback', '/info/admin/users', '/info/admin/moderation'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.community = true
-      }
-      if (['/info/admin/analytics'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.analytics = true
-      }
-      if (['/info/admin/settings/general', '/info/admin/settings/email', '/info/admin/settings/security', '/info/admin/settings/maintenance'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.settings = true
-      }
-      if (['/info/admin/file-management', '/info/admin/data', '/info/admin/data-management'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.data = true
-      }
-      if (['/info/admin/announcement', '/info/admin/announcement-settings'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.notifications = true
-      }
-      if (['/info/admin/account'].some((entry) => route.startsWith(entry))) {
-        nextExpanded.account = true
-      }
-
-      setExpandedItems((previous) => ({ ...previous, ...nextExpanded }))
-    }
-
-    openHubByPath()
-  }, [pathname])
+  const userName = user?.full_name || user?.user_name || 'Daet Tourism Admin'
+  const initials = userName.split(/\s+/).slice(0, 2).map((part) => part.charAt(0)).join('') || 'A'
 
   useEffect(() => {
     const applyWidth = () => {
@@ -243,15 +294,15 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
         />
       )}
 
-      <div id="admin-navigation-drawer" className={`fixed left-0 top-0 z-30 flex h-dvh ${sidebarWidth} max-lg:w-72 max-lg:max-w-[calc(100vw-2rem)] flex-col border-r border-slate-200/60 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.06)] transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div id="admin-navigation-drawer" className={`admin-sidebar-drawer fixed left-0 top-0 z-30 flex h-dvh min-h-0 ${sidebarWidth} max-lg:w-[min(22rem,calc(100vw-1rem))] max-lg:max-w-[calc(100vw-1rem)] flex-col border-r transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         {/* Brand */}
-        <div className="border-b border-slate-200/60 px-4 py-4">
+        <div className="admin-sidebar-brand border-b px-4 py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-teal-700 to-emerald-500 shadow-lg shadow-teal-900/20">
+              <div className="admin-sidebar-logo flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl">
                 <Image
                   src="/logo.png"
-                  alt="DAET Tourism logo"
+                  alt="Connect Daet logo"
                   width={40}
                   height={40}
                   className="h-full w-full object-contain p-1"
@@ -259,10 +310,8 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
               </div>
               {!isCollapsed && (
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold tracking-[0.08em] text-slate-900">DAET TOURISM</p>
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                    Admin Console
-                  </p>
+                  <p className="truncate text-sm font-bold tracking-[0.04em]">Connect Daet</p>
+                  <p className="admin-sidebar-kicker truncate text-[10px] font-semibold uppercase tracking-[0.18em]">Admin Console</p>
                 </div>
               )}
             </div>
@@ -270,7 +319,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
-                className="flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 lg:hidden"
+                className="admin-sidebar-icon-button flex-shrink-0 rounded-lg p-1.5 transition-all lg:hidden"
                 aria-label="Close navigation menu"
               >
                 <X className="h-4 w-4" />
@@ -278,7 +327,7 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
               <button
                 type="button"
                 onClick={() => setIsCollapsed(!isCollapsed)}
-                className="hidden flex-shrink-0 rounded-lg p-1.5 text-slate-400 transition-all hover:bg-slate-100 hover:text-slate-600 lg:block"
+                className="admin-sidebar-icon-button hidden flex-shrink-0 rounded-lg p-1.5 transition-all lg:block"
                 title={isCollapsed ? 'Expand' : 'Collapse'}
                 aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
               >
@@ -287,122 +336,132 @@ export default function AdminSidebar({ user, roleLabel = 'System Administrator',
             </div>
           </div>
 
-          {/* Signed-in operator */}
+          {/* Signed-in administrator */}
           {!isCollapsed && (
-            <div className="mt-4 flex items-center gap-2.5 rounded-lg border border-slate-200 bg-slate-50/80 px-3 py-2.5">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-700 to-emerald-500 text-xs font-bold uppercase text-white shadow-sm">
-                {user?.full_name?.charAt(0) || user?.user_name?.charAt(0) || 'A'}
+            <div className="admin-sidebar-operator mt-4 flex min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5">
+              <div className="admin-sidebar-avatar flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold uppercase">
+                {initials}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-bold text-slate-700">{user?.full_name || user?.user_name || 'Admin'}</p>
-                <p className="truncate text-[10px] font-medium uppercase tracking-[0.1em] text-slate-400">{roleLabel}</p>
+                <p className="admin-sidebar-name truncate text-xs font-bold">{userName}</p>
+                <p className="admin-sidebar-role truncate text-[10px] font-medium uppercase tracking-[0.1em]" title={roleLabel}>{roleLabel}</p>
               </div>
-              <span className="h-2.5 w-2.5 flex-shrink-0 rounded-full bg-emerald-500 shadow-sm" title="Signed in" aria-hidden="true" />
+              <span className="admin-sidebar-online h-2.5 w-2.5 flex-shrink-0 rounded-full" title="Online" aria-label="Online" />
             </div>
           )}
         </div>
 
-      {/* Main Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3" aria-label="Admin navigation">
-        {/* Dashboard - Direct Link with active state */}
-        <Link
-          href="/info/admin/dashboard"
-          onClick={() => setMobileOpen(false)}
-          className="admin-nav-item"
-          data-active={isActive('/info/admin/dashboard')}
-          title={isCollapsed ? 'Dashboard' : undefined}
-        >
-          <Icon name="dashboard" className="h-5 w-5 flex-shrink-0" />
-          {!isCollapsed && <span className="flex-1 truncate">Dashboard</span>}
-        </Link>
-
-        {!isCollapsed && <p className="admin-nav-section mt-5">Workspaces</p>}
-
-        {/* Other Hubs with Dropdowns */}
-        {filteredNavigation.filter((hub) => hub.items).map((hub) => (
-          <div key={hub.id} className="mt-1">
-            <button
-              type="button"
-              onClick={() => toggleItem(hub.id)}
-              aria-expanded={!isCollapsed && Boolean(expandedItems[hub.id])}
-              aria-controls={`admin-navigation-${hub.id}`}
-              className="admin-nav-group"
-              title={isCollapsed ? hub.label : undefined}
-            >
-              <span className="flex min-w-0 flex-1 items-center gap-3">
-                <Icon name={hub.iconName} className="h-5 w-5 flex-shrink-0" />
-                {!isCollapsed && <span className="truncate">{hub.label}</span>}
-              </span>
-              {!isCollapsed && hub.badge !== null && hub.badge > 0 && (
-                <span className="admin-nav-badge">{hub.badge}</span>
-              )}
-              {!isCollapsed && (
-                <Icon
-                  name="arrow"
-                  className={`h-3.5 w-3.5 flex-shrink-0 transition-transform duration-200 ${
-                    expandedItems[hub.id] ? 'rotate-180' : ''
-                  }`}
-                />
-              )}
-            </button>
-
-            {!isCollapsed && expandedItems[hub.id] && hub.items && (
-              <div id={`admin-navigation-${hub.id}`} className="admin-nav-sub">
-                {hub.items.map((item) => {
-                  const active = isItemActive(item)
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => {
-                        setExpandedItems((prev) => ({ ...prev, [hub.id]: true }))
-                        setMobileOpen(false)
-                      }}
-                      className="admin-nav-item"
-                      data-active={active}
-                    >
-                      <Icon
-                        name={item.iconName}
-                        className={`h-4 w-4 flex-shrink-0 ${active ? '' : 'opacity-60'}`}
-                      />
-                      <span className="flex-1 truncate">{item.label}</span>
-                      {item.badge !== null && item.badge > 0 && (
-                        <span className="admin-nav-badge">{item.badge}</span>
-                      )}
-                    </Link>
-                  )
-                })}
-              </div>
+      <nav className="admin-sidebar-nav min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3" aria-label="Admin navigation">
+        {filteredSections.map((section, sectionIndex) => (
+          <section key={section.id} className={`admin-nav-section-group admin-nav-section-${section.id}`}>
+            {!isCollapsed && (
+              <p className={`admin-nav-section ${sectionIndex === 0 ? 'mt-1' : 'mt-4'}`}>{section.label}</p>
             )}
-          </div>
+            {section.modules.map((module) => {
+              const active = isModuleActive(module)
+              const expanded = Boolean(openGroups[module.id] || active && module.items)
+              const badge = module.badgeKey === 'pendingApprovals' ? pendingApprovals : module.badge
+
+              return (
+                <div key={module.id} className={`admin-nav-entry ${module.items ? 'admin-nav-entry-group' : ''}`}>
+                  {module.items ? (
+                    <>
+                      <button
+                        type="button"
+                        className="admin-nav-group"
+                        data-active={active}
+                        data-open={expanded}
+                        title={isCollapsed ? module.label : undefined}
+                        aria-label={isCollapsed ? `${module.label}${active ? ', current section' : ''}` : undefined}
+                        aria-expanded={isCollapsed ? false : expanded}
+                        aria-controls={`admin-nav-${module.id}`}
+                        onClick={() => {
+                          if (isCollapsed) {
+                            setIsCollapsed(false)
+                            setOpenGroups((current) => ({ ...current, [module.id]: true }))
+                            return
+                          }
+                          setOpenGroups((current) => ({ ...current, [module.id]: !expanded }))
+                        }}
+                      >
+                        <Icon name={module.iconName} className="h-[18px] w-[18px] flex-shrink-0" />
+                        {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{module.label}</span>}
+                        {badge > 0 && <span className="admin-nav-badge" aria-label={`${badge} pending approvals`}>{badge}</span>}
+                        {!isCollapsed && (
+                          <ChevronDown className={`admin-nav-chevron h-4 w-4 flex-shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} aria-hidden="true" />
+                        )}
+                      </button>
+                      {!isCollapsed && expanded && (
+                        <div id={`admin-nav-${module.id}`} className="admin-nav-sub">
+                          {module.items.map((item) => {
+                            const itemActive = isItemActive(item)
+                            const itemBadge = item.badgeKey === 'pendingApprovals' ? pendingApprovals : item.badge
+                            return (
+                              <Link
+                                key={item.href}
+                                href={item.href}
+                                onClick={() => setMobileOpen(false)}
+                                className={`admin-nav-item ${item.warning ? 'admin-nav-item-warning' : ''}`}
+                                data-active={itemActive}
+                                aria-current={itemActive ? 'page' : undefined}
+                                title={isCollapsed ? item.label : undefined}
+                              >
+                                <Icon name={item.iconName} className={`h-4 w-4 flex-shrink-0 ${itemActive ? '' : 'opacity-60'}`} />
+                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                {itemBadge > 0 && (
+                                  <span className="admin-nav-badge admin-nav-badge-pending">{itemBadge}</span>
+                                )}
+                              </Link>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <Link
+                      href={module.href}
+                      onClick={() => setMobileOpen(false)}
+                      className={`admin-nav-item ${module.id === 'dashboard' ? 'admin-nav-dashboard' : ''}`}
+                      data-active={active}
+                      aria-current={active ? 'page' : undefined}
+                      title={isCollapsed ? module.label : undefined}
+                    >
+                      <Icon name={module.iconName} className="h-[18px] w-[18px] flex-shrink-0" />
+                      {!isCollapsed && <span className="flex-1 truncate">{module.label}</span>}
+                      {badge > 0 && <span className="admin-nav-badge admin-nav-badge-pending" aria-label={`${badge} pending approvals`}>{badge}</span>}
+                    </Link>
+                  )}
+                </div>
+              )
+            })}
+          </section>
         ))}
-
-        {/* Account Section */}
-        {!isCollapsed && <p className="admin-nav-section mt-5">Account</p>}
-
-        <Link
-          href="/info/admin/account"
-          onClick={() => setMobileOpen(false)}
-          className="admin-nav-item"
-          data-active={isActive('/info/admin/account')}
-          title={isCollapsed ? 'Account & settings' : undefined}
-        >
-          <Icon name="settings" className="h-5 w-5 flex-shrink-0" />
-          {!isCollapsed && <span className="flex-1 truncate">Account &amp; Settings</span>}
-        </Link>
       </nav>
 
-      {/* Footer - Logout */}
-      <div className="border-t border-slate-200/60 p-3">
+      <div className="admin-sidebar-footer shrink-0 border-t p-3">
+        <div className={`admin-sidebar-account flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
+          <div className="admin-sidebar-avatar flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold uppercase" title={isCollapsed ? userName : undefined}>
+            {initials}
+          </div>
+          {!isCollapsed && (
+            <div className="min-w-0 flex-1">
+              <p className="admin-sidebar-name truncate text-xs font-semibold">{userName}</p>
+              <p className="admin-sidebar-status flex items-center gap-1.5 text-[10px]">
+                <span className="admin-sidebar-online h-1.5 w-1.5 rounded-full" aria-hidden="true" />
+                Online
+              </p>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={handleLogoutClick}
-          className="admin-btn admin-btn-ghost admin-nav-logout w-full"
+          className="admin-nav-logout mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold"
           title={isCollapsed ? 'Logout' : undefined}
           aria-label="Logout"
         >
-          <Icon name="logout" className="h-4 w-4 flex-shrink-0" />
-          {!isCollapsed && <span>Logout</span>}
+          <Icon name="logout" className="h-[18px] w-[18px] flex-shrink-0" />
+          {!isCollapsed && <span className="flex-1 text-left">Logout</span>}
         </button>
       </div>
     </div>

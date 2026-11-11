@@ -87,14 +87,6 @@ export async function POST(request) {
       )
     }
 
-    const { data: existingSupabaseUser, error: existingAuthError } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 })
-    if (!existingAuthError && existingSupabaseUser?.users?.some((user) => user.email?.toLowerCase() === normalizedEmail)) {
-      return NextResponse.json(
-        { success: false, message: 'This email is already registered. Please log in or reset your password.' },
-        { status: 409 }
-      )
-    }
-
     console.log('📝 Attempting to register user:', maskEmail(normalizedEmail))
 
     if (!adminSupabase) {

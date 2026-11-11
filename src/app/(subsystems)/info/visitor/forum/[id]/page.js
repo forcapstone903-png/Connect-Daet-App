@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
-  ArrowLeft,
+  ChevronLeft,
   Bell,
   Clock,
   Eye,
@@ -340,7 +340,7 @@ export default function PublicThreadDetailPage() {
             href="/info/visitor/forum"
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Back
           </Link>
 

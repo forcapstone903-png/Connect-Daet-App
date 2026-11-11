@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { normalizeMentionName, parseMentionCandidates } from '@/lib/mentions'
+import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -54,6 +55,7 @@ async function resolveOwnerId(adminSupabase, contentType, contentId) {
     post: ['info_user_posts', 'user_id'],
     forum_thread: ['forum_threads', 'created_by'],
     forum: ['forum_threads', 'created_by'],
+    tourist_spot: ['info_tourist_spots', 'created_by'],
   }
 
   const map = tableMap[String(contentType || '').toLowerCase()]
@@ -204,6 +206,7 @@ function routeForEntity(entityType, entityId) {
     event: `/info/user/events/${entityId}`,
     forum: `/info/user/forums/${entityId}`,
     forum_thread: `/info/user/forums/${entityId}`,
+    tourist_spot: `/info/visitor/tourist-spots/${entityId}`,
     post: `/info/user/posts/${entityId}`,
     user_post: `/info/user/posts/${entityId}`,
     announcement: `/info/user/announcements/${entityId}`,
@@ -218,6 +221,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'forum_reply',
   'announcement',
   'user_post',
+  'tourist_spot',
   'rating',
   'poll',
 ])
@@ -290,6 +294,10 @@ export async function POST(request) {
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const restriction = await getActivePublishingRestriction(adminSupabase, session.user_id)
+    if (restriction) {
+      return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting comments.' }, { status: 403 })
+    }
     const replyTo = body.replyTo ? String(body.replyTo) : null
     const gifUrl = typeof body.gifUrl === 'string' && body.gifUrl.trim().length > 0 ? body.gifUrl.trim() : null
     const stickerUrl = typeof body.stickerUrl === 'string' && body.stickerUrl.trim().length > 0 ? body.stickerUrl.trim() : null

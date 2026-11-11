@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Archive, ArrowLeft, RotateCcw } from 'lucide-react'
+import { Archive, ChevronLeft, RotateCcw } from 'lucide-react'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
@@ -36,8 +36,8 @@ export default function ArchivedMessagesPage() {
     <main className="usr-section-page usr-inbox min-h-screen text-slate-900">
       <UserTopHeader spacer={false} homeHref="/info/user/messaging" />
       <div className="usr-section-container mx-auto w-full max-w-[900px] px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
-        <UserSectionHeader eyebrow="A quieter inbox" title="Archived messages" description="Conversations you have put away. Restore one whenever you are ready to reconnect." emoji="📬">
-          <Link href="/info/user/messaging" className="usr-section-secondary"><ArrowLeft className="h-4 w-4" />Back to messages</Link>
+        <UserSectionHeader eyebrow="A quieter inbox" title="Archived messages" description="Conversations you have put away. Restore one whenever you are ready to reconnect." emoji="📬" hideMobileTitle>
+          <Link href="/info/user/messaging" className="usr-section-secondary hidden lg:inline-flex"><ChevronLeft className="h-4 w-4" />Back to messages</Link>
         </UserSectionHeader>
         <section className="usr-card overflow-hidden">
           {loading ? <div className="p-6 text-sm text-slate-500">Loading archived conversations...</div> : conversations.length ? conversations.map((conversation) => {

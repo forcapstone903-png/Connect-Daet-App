@@ -4,19 +4,16 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import {
-  ArrowLeft,
+  ChevronLeft,
+  Bell,
+  Copy,
+  MoreHorizontal,
   MessageSquare,
-  ThumbsDown,
-  ThumbsUp,
-  Flag,
-  Clock,
-  User,
   Lock,
   Archive,
   Pin,
   Tag,
   Eye,
-  MoreHorizontal,
   Pencil,
   Trash2,
   Plus,
@@ -176,6 +173,7 @@ export default function ThreadDetailPage() {
   const [pollVoteIndex, setPollVoteIndex] = useState(null)
   const [pollVoteCounts, setPollVoteCounts] = useState({})
   const [votingPoll, setVotingPoll] = useState(false)
+  const [showThreadMenu, setShowThreadMenu] = useState(false)
   const [pollNow, setPollNow] = useState(() => Date.now())
   const [reportTarget, setReportTarget] = useState(null)
   const [reportReason, setReportReason] = useState('Spam or misleading content')
@@ -369,6 +367,30 @@ export default function ThreadDetailPage() {
     }
   }
 
+  const copyThreadLink = async () => {
+    try {
+      const link = window.location.href
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link)
+      } else {
+        const input = document.createElement('textarea')
+        input.value = link
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        const copied = document.execCommand('copy')
+        input.remove()
+        if (!copied) throw new Error('Clipboard access is unavailable.')
+      }
+      setShowThreadMenu(false)
+      alert('Link copied to clipboard.')
+    } catch (error) {
+      console.error('Forum thread link copy failed:', error)
+      alert('Unable to copy the discussion link.')
+    }
+  }
+
   const resetReplyComposer = () => {
     setReplyContent('')
     setReplyMedia({ image_url: '', video_url: '' })
@@ -506,18 +528,20 @@ export default function ThreadDetailPage() {
 
     setSubmittingReport(true)
     try {
-      const { error } = await supabase.from('info_moderation').insert({
-        report_type: 'forum_reply',
-        reason: reportReason,
-        description: reportDescription.trim() || null,
-        reported_by: userId,
-        reported_user_id: reportTarget.user_id || null,
-        reported_item_id: reportTarget.id,
-        reported_item_table: 'forum_replies',
-        severity: 'medium',
-        status: 'pending',
+      const response = await fetch('/info/api/reports', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportType: 'forum_reply',
+          reason: reportReason,
+          description: reportDescription.trim(),
+          itemId: reportTarget.id,
+          itemTable: 'forum_replies',
+        }),
       })
-      if (error) throw error
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to submit this report.')
       setReportTarget(null)
       setReportReason('Spam or misleading content')
       setReportDescription('')
@@ -578,18 +602,18 @@ export default function ThreadDetailPage() {
     const isReplyingToThis = Boolean(replyTarget && replyTarget.id === reply.id)
 
     return (
-      <div key={reply.id} className={`feed-card mb-3 rounded-2xl border ${reply.is_best_answer ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'} shadow-sm ${depth > 0 ? 'ml-4 border-l-4 border-l-sky-100 pl-4' : ''} p-4 sm:p-5`}>
+      <article key={reply.id} className={`forum-view-reply feed-card ${reply.is_best_answer ? 'is-best-answer' : ''} ${depth > 0 ? 'is-nested' : ''}`}>
         {reply.is_best_answer && (
-          <div className="mb-3 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+          <div className="forum-view-best-answer">
             ✓ Best Answer
           </div>
         )}
 
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="forum-view-reply-header">
+          <div className="forum-view-reply-author">
             <Link
               href={reply.user_id ? `/info/user/profile/${encodeURIComponent(reply.user_id)}` : '/info/user/profile'}
-              className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-700 hover:ring-2 hover:ring-sky-300"
+              className="forum-view-reply-avatar"
               aria-label={`View ${reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}'s profile`}
             >
               {reply.info_users?.profile_image_url ? (
@@ -601,16 +625,15 @@ export default function ThreadDetailPage() {
             <div className="min-w-0">
               <Link
                 href={reply.user_id ? `/info/user/profile/${encodeURIComponent(reply.user_id)}` : '/info/user/profile'}
-                className="block truncate text-sm font-semibold text-slate-900 hover:text-sky-700"
+                className="forum-view-reply-author-name"
               >
                 {reply.info_users?.full_name || reply.info_users?.email || 'Anonymous'}
               </Link>
-              <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
+              <time className="forum-view-reply-time" dateTime={reply.created_at}>{formatDate(reply.created_at)}</time>
             </div>
           </div>
           {!isOwnReply && (
             <div className="flex items-center gap-1">
-              <button type="button" onClick={() => setReplyTarget(reply)} className="inline-flex h-8 items-center justify-center rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Reply</button>
               {userId && <button type="button" onClick={() => setReportTarget(reply)} className="inline-flex h-8 items-center justify-center rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Report</button>}
             </div>
           )}
@@ -622,18 +645,31 @@ export default function ThreadDetailPage() {
           )}
         </div>
 
-        {editingReplyId === reply.id ? <div className="mt-3"><textarea value={editingReplyContent} onChange={(event) => setEditingReplyContent(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 p-2 text-sm outline-none" /><div className="mt-2 flex gap-2"><button type="button" onClick={() => saveReplyEdit(reply.id)} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Save</button><button type="button" onClick={() => setEditingReplyId(null)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button></div></div> : <p className="mt-3 whitespace-pre-wrap text-sm text-slate-700">{reply.content}</p>}
+        {editingReplyId === reply.id ? <div className="forum-view-reply-edit"><textarea value={editingReplyContent} onChange={(event) => setEditingReplyContent(event.target.value)} rows={3} className="w-full rounded-lg border border-slate-200 p-2 text-sm outline-none" /><div className="mt-2 flex gap-2"><button type="button" onClick={() => saveReplyEdit(reply.id)} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Save</button><button type="button" onClick={() => setEditingReplyId(null)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button></div></div> : <p className="forum-view-reply-content">{reply.content}</p>}
         {reply.image_url && <img src={reply.image_url} alt="Comment attachment" className="mt-3 max-h-64 rounded-xl object-cover" />}
         {reply.video_url && <video src={reply.video_url} controls className="mt-3 max-h-64 rounded-xl" />}
         {reply.gif_url && <img src={reply.gif_url} alt="GIF" className="mt-3 max-h-48 rounded-xl" />}
         {reply.sticker_url && <span className="mt-2 block text-3xl">{reply.sticker_url}</span>}
 
-        <div className="mt-4 inline-flex min-h-9 items-center rounded-full border border-slate-100 bg-slate-50 px-2 text-xs">
-          <Reactions contentType="forum_reply" contentId={reply.id} userId={userId} compact label="" />
+        <div className="forum-view-reply-actions">
+          <Reactions contentType="forum_reply" contentId={reply.id} userId={userId} voteControls />
+          <button
+            type="button"
+            onClick={() => setReplyTarget(isReplyingToThis ? null : reply)}
+            aria-expanded={isReplyingToThis}
+            className={`forum-view-reply-action ${
+              isReplyingToThis
+                ? 'border-sky-200 bg-sky-50 text-sky-700'
+                : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700'
+            }`}
+          >
+            <MessageSquare className="h-4 w-4" aria-hidden="true" />
+            Reply
+          </button>
         </div>
 
         {isReplyingToThis && (
-          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="forum-view-nested-composer">
             <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">Replying to {reply.info_users?.full_name || 'this reply'}</p>
             <MentionsAutoSuggest value={replyContent} onChange={setReplyContent} placeholder="Write a reply to this comment..." rows={2} userId={userId} onMentionAdded={(mention) => setReplyMentionRefs((current) => [...current.filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }])} />
             <div className="mt-2 flex items-center justify-end gap-2">
@@ -644,11 +680,11 @@ export default function ThreadDetailPage() {
         )}
 
         {reply.children?.length > 0 && (
-          <div className="mt-4 space-y-3">
+          <div className="forum-view-reply-children">
             {reply.children.map((child) => renderReplyTree(child, depth + 1))}
           </div>
         )}
-      </div>
+      </article>
     )
   }
 
@@ -692,111 +728,113 @@ export default function ThreadDetailPage() {
   ])]
 
   return (
-    <main className="tourism-shell usr-section-page usr-detail min-h-screen text-slate-900">
-      <div className="usr-section-container mx-auto w-full max-w-[1280px] px-3 pb-24 pt-3 sm:px-5 lg:px-6 lg:pb-10">
-        {/* Header */}
-        <div className="usr-card mb-4 flex items-center justify-between px-3 py-3 sm:px-4">
+    <main className="tourism-shell usr-section-page usr-detail forum-thread-view min-h-screen text-slate-900">
+      <div className="usr-section-container forum-thread-view-container mx-auto w-full max-w-2xl px-3 pb-24 pt-3 sm:px-5 lg:px-6 lg:pb-10">
+        <div className="forum-view-topbar">
           <Link
             href="/info/user/dashboard"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="forum-view-back"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
+            <span>Back</span>
           </Link>
-
-          <div className="flex items-center gap-2">
-            <ShareRepost contentType="forum_thread" contentId={threadId} userId={userId} />
-          </div>
-        </div>
-
-        <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-5">
-        <div>
-        {/* Thread */}
-        <div className="tourism-panel mb-3 rounded-[18px] border border-slate-200 bg-white p-4 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                {thread.pinned && <Pin className="h-4 w-4 text-amber-600 flex-shrink-0" />}
-                {editingThread ? <input value={threadDraft.title} onChange={(event) => setThreadDraft((current) => ({ ...current, title: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xl font-black outline-none" /> : <h1 className="text-2xl font-black leading-tight tracking-tight text-slate-950 break-words">{thread.title}</h1>}
-              </div>
-
-              <div className="mt-2 text-sm text-slate-600">
-                {thread.forum_categories && (
-                  <span className="inline-block rounded-full bg-sky-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">
-                    {thread.forum_categories.name}
-                  </span>
-                )}
-              </div>
-
-              {/* Tags */}
-              {thread.tags && thread.tags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {thread.tags.map((tag, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                      <Tag className="h-3 w-3" />
-                      {tag}
-                    </span>
-                  ))}
+          <div className="forum-view-top-actions">
+            <button type="button" onClick={handleSubscribe} className={`forum-view-icon ${isSubscribed ? 'is-active' : ''}`} title={isSubscribed ? 'Unsubscribe' : 'Subscribe'} aria-label={isSubscribed ? 'Turn off notifications' : 'Turn on notifications'}>
+              <Bell className={`h-4 w-4 ${isSubscribed ? 'fill-current' : ''}`} />
+            </button>
+            <button type="button" onClick={copyThreadLink} className="forum-view-icon" title="Copy discussion link" aria-label="Copy discussion link"><Copy className="h-4 w-4" /></button>
+            <div className="forum-view-menu-wrap">
+              <button type="button" onClick={() => setShowThreadMenu((open) => !open)} className="forum-view-icon" aria-label="Discussion options" aria-haspopup="menu" aria-expanded={showThreadMenu}>
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {showThreadMenu && (
+                <div className="forum-view-menu" role="menu">
+                  <ShareRepost contentType="forum_thread" contentId={threadId} userId={userId} />
+                  {isThreadOwner && (
+                    <>
+                      <button type="button" role="menuitem" onClick={() => { setEditingThread(true); setShowThreadMenu(false) }}><Pencil className="h-4 w-4" />Edit discussion</button>
+                      <button type="button" role="menuitem" onClick={() => { setShowPollForm((value) => !value); setShowThreadMenu(false) }}><Plus className="h-4 w-4" />Add poll</button>
+                      <button type="button" role="menuitem" onClick={() => { setShowThreadMenu(false); unpublishThread() }}><Archive className="h-4 w-4" />Unpublish</button>
+                    </>
+                  )}
+                  <button type="button" role="menuitem" onClick={copyThreadLink}><Copy className="h-4 w-4" />Copy link</button>
                 </div>
               )}
             </div>
+          </div>
+        </div>
 
-            <div className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold flex-shrink-0 ${getStatusColor(thread.status)}`}>
-              {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status === 'active' ? 'published' : thread.status}
+        {/* Thread */}
+        <article className="forum-view-thread tourism-panel">
+          <div className="forum-view-thread-heading">
+            <div className="min-w-0 flex-1">
+              <div className="forum-view-title-row">
+                {thread.pinned && <Pin className="h-4 w-4 text-amber-600 flex-shrink-0" />}
+                {editingThread ? <input value={threadDraft.title} onChange={(event) => setThreadDraft((current) => ({ ...current, title: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xl font-black outline-none" /> : <h1>{thread.title}</h1>}
+                <div className={`forum-view-status ${getStatusColor(thread.status)}`} aria-label={`Thread status: ${thread.status}`}>
+                  {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'}
+                </div>
+              </div>
+
+              <div className="forum-view-author-row">
+                <span className="forum-view-author-avatar">
+                  {thread.info_users?.profile_image_url
+                    ? <img src={thread.info_users.profile_image_url} alt="" />
+                    : (thread.info_users?.full_name || thread.info_users?.email || 'A').charAt(0).toUpperCase()}
+                </span>
+                <span className="forum-view-author-name">{thread.info_users?.full_name || thread.info_users?.email || 'Anonymous'}</span>
+                <span aria-hidden="true">·</span>
+                <time dateTime={thread.created_at}>{formatDate(thread.created_at)}</time>
+                {thread.forum_categories?.name && <span className="forum-view-category">{thread.forum_categories.name}</span>}
+              </div>
             </div>
           </div>
 
-          {editingThread ? <textarea value={threadDraft.content} onChange={(event) => setThreadDraft((current) => ({ ...current, content: event.target.value }))} rows={5} className="mt-5 w-full rounded-lg border border-slate-200 p-3 text-[15px] leading-7 outline-none" /> : <div className="mt-5 whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">{parsedThreadContent.text}</div>}
-          {thread.location && <p className="mt-3 text-sm font-medium text-slate-500">📍 {thread.location}</p>}
+          {thread.tags && thread.tags.length > 0 && (
+            <div className="forum-view-tags">
+              {thread.tags.map((tag, idx) => (
+                <span key={idx}><Tag className="h-3 w-3" />{tag}</span>
+              ))}
+            </div>
+          )}
+
+          {editingThread ? <textarea value={threadDraft.content} onChange={(event) => setThreadDraft((current) => ({ ...current, content: event.target.value }))} rows={5} className="forum-view-content-edit" /> : <div className="forum-view-content">{parsedThreadContent.text}</div>}
+          {thread.location && <p className="forum-view-location">📍 {thread.location}</p>}
           {threadAttachments.length > 0 && (
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="forum-view-attachments">
               {threadAttachments.map((url, index) => (
-                <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-xl border border-slate-200">
+                <a key={`${url}-${index}`} href={url} target="_blank" rel="noreferrer">
                   {isImageAttachment(url)
-                    ? <img src={url} alt={`Discussion attachment ${index + 1}`} className="h-36 w-full object-cover transition hover:scale-[1.02]" />
-                    : <span className="block truncate px-3 py-4 text-sm font-semibold text-sky-700">Open attachment {index + 1}</span>}
+                    ? <img src={url} alt={`Discussion attachment ${index + 1}`} />
+                    : <span>Open attachment {index + 1}</span>}
                 </a>
               ))}
             </div>
           )}
 
-          {isThreadOwner && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
-            {editingThread ? <><button type="button" onClick={saveThread} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Save changes</button><button type="button" onClick={() => setEditingThread(false)} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">Cancel</button></> : <button type="button" onClick={() => setEditingThread(true)} className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700"><Pencil className="h-3.5 w-3.5" /> Edit</button>}
-            {!editingThread && <button type="button" onClick={unpublishThread} className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">Unpublish</button>}
-            <button type="button" onClick={() => setShowPollForm((value) => !value)} className="inline-flex items-center gap-1 rounded-lg bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700"><Plus className="h-3.5 w-3.5" /> Add poll</button>
+          {isThreadOwner && editingThread && <div className="forum-view-owner-actions">
+            <button type="button" onClick={saveThread} className="forum-view-owner-primary">Save changes</button>
+            <button type="button" onClick={() => setEditingThread(false)}>Cancel</button>
           </div>}
 
           {isThreadOwner && showPollForm && <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3"><input value={pollDraft.question} onChange={(event) => setPollDraft((current) => ({ ...current, question: event.target.value }))} placeholder="Poll question" className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" /><label className="mt-2 block text-xs font-semibold text-slate-600">Poll deadline<input required type="datetime-local" value={pollDraft.endsAt} min={new Date(pollNow + 60000 - new Date(pollNow + 60000).getTimezoneOffset() * 60000).toISOString().slice(0, 16)} onChange={(event) => setPollDraft((current) => ({ ...current, endsAt: event.target.value }))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" /></label><div className="mt-2 space-y-2">{pollDraft.options.map((option, index) => <div key={index} className="flex items-center gap-2"><input value={option} onChange={(event) => setPollDraft((current) => ({ ...current, options: current.options.map((item, itemIndex) => itemIndex === index ? event.target.value : item) }))} placeholder={`Option ${index + 1}`} className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none" />{pollDraft.options.length > 2 && <button type="button" onClick={() => setPollDraft((current) => ({ ...current, options: current.options.filter((_, itemIndex) => itemIndex !== index) }))} className="rounded-lg px-2 py-1 text-xs font-bold text-red-600 hover:bg-red-50" aria-label={`Remove option ${index + 1}`}>Remove</button>}</div>)}</div><div className="mt-2 flex flex-wrap gap-2"><button type="button" onClick={() => setPollDraft((current) => ({ ...current, options: [...current.options, ''] }))} className="rounded-lg bg-white px-3 py-1.5 text-xs font-bold text-sky-700 ring-1 ring-slate-200 hover:bg-sky-50">Add choice</button><button type="button" onClick={createPoll} className="rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-bold text-white">Create poll</button></div></div>}
           {poll && <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4"><p className="font-bold text-slate-900">{poll.question}</p>{poll.ends_at ? <p className={`mt-1 text-xs font-semibold ${pollExpired ? 'text-red-600' : 'text-slate-500'}`}>{pollExpired ? 'Voting closed' : `Voting ends ${new Date(poll.ends_at).toLocaleString()}`}</p> : null}<p className="mt-1 text-xs text-slate-500">{pollExpired ? 'This poll has ended.' : pollVoteIndex === null ? 'Choose one option to vote.' : 'Your vote has been recorded.'}</p><div className="mt-3 space-y-2">{(poll.options || []).map((option, index) => <button key={`${option}-${index}`} type="button" onClick={() => voteInPoll(index)} disabled={pollExpired || pollVoteIndex !== null || votingPoll} className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${pollVoteIndex === index ? 'border-sky-500 bg-sky-50 text-sky-800' : 'border-slate-200 bg-white text-slate-700 hover:border-sky-300'} disabled:cursor-not-allowed disabled:opacity-60`}><span>{option}</span><span className="text-xs text-slate-400">{pollVoteCounts[index] || 0} votes</span></button>)}</div><p className="mt-3 text-right text-xs font-semibold text-slate-500">{Object.values(pollVoteCounts).reduce((total, count) => total + count, 0)} total votes</p></div>}
 
-          {/* Thread Meta */}
-          <div className="mt-5 border-t border-slate-200 pt-4">
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1">
-                <User className="h-3.5 w-3.5" />
-                {thread.info_users?.full_name || thread.info_users?.email || 'Anonymous'}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                {formatDate(thread.created_at)}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                {(thread.views || 0) + 1} views
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <MessageSquare className="h-3.5 w-3.5" />
-                {replies.length} replies
-              </span>
-            </div>
+          <div className="forum-view-thread-actions">
+            <Reactions contentType="forum_thread" contentId={thread.id} userId={userId} compact />
+            <a href="#forum-replies" className="forum-view-replies-action"><MessageSquare className="h-4 w-4" />{replies.length}</a>
+            <ShareRepost contentType="forum_thread" contentId={threadId} userId={userId} />
+            <span className="forum-view-views"><Eye className="h-4 w-4" />{(thread.views || 0) + 1}</span>
+            {thread.status === 'locked' && <span className="forum-view-locked"><Lock className="h-4 w-4" />Locked</span>}
           </div>
-        </div>
+        </article>
 
         {/* Reply Form */}
         {thread.status !== 'locked' && thread.status !== 'archived' && (
-          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <h3 className="mb-3 text-sm font-bold text-slate-900">Share Your Reply</h3>
+            <div className="forum-view-composer mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <h3 className="forum-view-composer-title mb-3 text-sm font-bold text-slate-900">Share Your Reply</h3>
 
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-2">
+              <div className="forum-view-composer-field rounded-2xl border border-slate-200 bg-slate-50 p-2">
               <MentionsAutoSuggest value={replyContent} onChange={setReplyContent} placeholder="Share your thoughts, links, or mention someone..." rows={3} userId={userId} onMentionAdded={(mention) => setReplyMentionRefs((current) => [...current.filter((item) => item.id !== mention.id), { id: mention.id, displayName: mention.mentionToken || mention.full_name }])} />
               <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200/80 pt-2">
                 <div className="flex items-center gap-1">
@@ -816,20 +854,17 @@ export default function ThreadDetailPage() {
           </div>
         )}
 
-        </div>
-
-        {/* Replies */}
-        <div className="mt-3 space-y-0 lg:sticky lg:top-3 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
+        <section id="forum-replies" className="forum-view-replies mt-3 space-y-0 lg:mt-0">
+          <h2 className="forum-view-replies-heading"><MessageSquare className="h-4 w-4" />{replies.length} {replies.length === 1 ? 'Reply' : 'Replies'}</h2>
           {replies.length > 0 ? (
             buildReplyTree(replies).map((reply) => renderReplyTree(reply))
           ) : (
-            <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
+            <div className="forum-view-empty-replies rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
               <MessageSquare className="mx-auto mb-3 h-8 w-8 text-slate-400" />
               <p className="text-sm text-slate-500">No replies yet. Be the first to reply!</p>
             </div>
           )}
-        </div>
-        </div>
+        </section>
       </div>
 
       {reportTarget && (

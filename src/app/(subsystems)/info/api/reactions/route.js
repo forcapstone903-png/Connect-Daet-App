@@ -175,7 +175,7 @@ async function writeReaction(request, method) {
     const contentId = String(body.contentId || '').trim()
     const reactionType = String(body.reactionType || '').trim()
 
-    if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !ALLOWED_REACTION_TYPES.has(reactionType) || (reactionType === 'dislike' && !['event', 'tourist_spot'].includes(contentType))) {
+    if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !ALLOWED_REACTION_TYPES.has(reactionType) || (reactionType === 'dislike' && !['event', 'tourist_spot', 'forum_reply'].includes(contentType))) {
       return NextResponse.json({ success: false, message: 'Invalid reaction payload.' }, { status: 400 })
     }
 

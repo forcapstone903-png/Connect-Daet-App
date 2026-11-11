@@ -112,6 +112,13 @@ test('event reposts link to the event route and retain event type', () => {
   assert.equal(item.href, '/info/user/events/post-456')
 })
 
+test('tourist spot reposts link to the visitor destination route and retain type', () => {
+  const item = buildRepostItem({}, { original_content_type: 'tourist_spot' })
+
+  assert.equal(item.type, 'tourist_spot')
+  assert.equal(item.href, '/info/visitor/tourist-spots/post-456')
+})
+
 test('reposter falls back to the acting user when the API omits their profile', () => {
   const item = buildRepostFeedItem({
     repost: { id: 'repost-9', user_id: 'user-9', original_content_type: 'user_post', original_content_id: 'post-9' },

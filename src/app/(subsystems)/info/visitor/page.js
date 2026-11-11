@@ -279,6 +279,7 @@ export default function VisitorPage() {
           .from('info_events')
           .select('*')
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
           .eq('featured', true)
           .or(`end_date.gte.${new Date().toISOString().slice(0, 10)},start_date.gte.${new Date().toISOString().slice(0, 10)}`)
           .order('start_date', { ascending: true })
@@ -295,6 +296,7 @@ export default function VisitorPage() {
           .from('info_events')
           .select('id, title, description, location, venue, start_date, end_date, start_time, category, featured_image, is_free, ticket_price')
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
           .or(`end_date.gte.${today},start_date.gte.${today}`)
           .order('start_date', { ascending: true })
           .limit(MAX_VISITOR_ITEMS)
@@ -308,7 +310,7 @@ export default function VisitorPage() {
 
         const { data: noticeData, error: noticeError } = await supabase
           .from('info_announcements')
-          .select('id, title, content, announcement_type, audience, priority, image_url, published_at, expires_at')
+          .select('id, title, content, announcement_type, severity, audience, priority, image_url, published_at, expires_at')
           .eq('status', 'published')
           .in('audience', ['all', 'tourists'])
           .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
@@ -366,11 +368,13 @@ export default function VisitorPage() {
           supabase
             .from('info_blogs')
             .select('id', { count: 'exact', head: true })
-            .eq('status', 'published'),
+            .eq('status', 'published')
+            .eq('approval_status', 'approved'),
           supabase
             .from('info_blogs')
             .select('id', { count: 'exact', head: true })
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .ilike('category', 'travel_guides'),
         ])
         reportError('story counts', storyCountError)
@@ -532,10 +536,22 @@ export default function VisitorPage() {
                 ) : announcements.length > 0 ? announcements.map((notice, index) => (
                   <article
                     key={notice.id}
-                    className={`rounded-2xl border p-4 ${index === 0 ? 'border-amber-300 bg-amber-50 shadow-sm' : 'border-slate-200 bg-white'}`}
+                    className={`rounded-2xl border border-l-4 p-4 ${
+                      notice.severity === 'critical' || notice.announcement_type === 'urgent'
+                        ? 'border-red-200 border-l-red-500 bg-red-50'
+                        : notice.severity === 'warning' || notice.announcement_type === 'important'
+                          ? 'border-yellow-200 border-l-yellow-500 bg-yellow-50'
+                          : 'border-blue-200 border-l-blue-500 bg-blue-50'
+                    } ${index === 0 ? 'shadow-sm' : ''}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${index === 0 ? 'bg-amber-200 text-amber-950' : 'bg-slate-100 text-slate-700'}`}>
+                      <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+                        notice.severity === 'critical' || notice.announcement_type === 'urgent'
+                          ? 'bg-red-100 text-red-800'
+                          : notice.severity === 'warning' || notice.announcement_type === 'important'
+                            ? 'bg-yellow-100 text-yellow-900'
+                            : 'bg-blue-100 text-blue-800'
+                      }`}>
                         {index === 0 ? 'Latest · ' : ''}{notice.announcement_type || 'Info'}
                       </span>
                       <time dateTime={notice.published_at || undefined} className="text-[11px] text-slate-500">
@@ -587,7 +603,7 @@ export default function VisitorPage() {
                   <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-xl object-cover" />
                 </div>
                 <div>
-                  <p className="text-[10px] font-black tracking-[0.12em] text-white/90 sm:text-sm">Connect-Daet.ai</p>
+                  <p className="text-[10px] font-black tracking-[0.12em] text-white/90 sm:text-sm">Connect Daet</p>
                   <p className="text-[9px] font-medium leading-tight text-sky-100/90 sm:text-[10px]">Subsystem 1: Daet Information, Engagement, & Management System</p>
                 </div>
                 <button

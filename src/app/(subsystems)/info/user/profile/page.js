@@ -5,10 +5,9 @@ import Link from 'next/link'
 import {
   Briefcase,
   FilePenLine,
-  FileText,
+  LogOut,
   Mail,
   MapPin,
-  MessageSquareText,
   MoreHorizontal,
   ShieldCheck,
   Star,
@@ -16,11 +15,15 @@ import {
   Wand2,
 } from 'lucide-react'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import ProfilePhotoCropper from '@/app/(subsystems)/info/components/user/ProfilePhotoCropper'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import ProfileFeedActions from '@/app/(subsystems)/info/components/user/ProfileFeedActions'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import PostTimestamp from '@/app/(subsystems)/info/components/user/PostTimestamp'
+import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
+import { performLogout } from '@/lib/clientLogout'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import { filterValidUuidValues } from '@/lib/uuid'
@@ -28,6 +31,7 @@ import { getLevelFromPoints } from '@/lib/gamification'
 import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
 import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
 import { getPostImages } from '@/lib/postMedia'
+import { isImageAttachment, parsePostContent } from '@/lib/postContent'
 import { useUserSettings } from '@/components/UserSettingsProvider'
 import {
   createDefaultSettings,
@@ -46,18 +50,6 @@ function readStoredSession() {
   } catch {
     return null
   }
-}
-
-function formatDate(value) {
-  if (!value) return 'Recently'
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Recently'
-
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-  })
 }
 
 function getInitials(name) {
@@ -142,6 +134,8 @@ export default function UserProfilePage() {
     created_at: new Date().toISOString(),
   })
   const [profileActionsOpen, setProfileActionsOpen] = useState(false)
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [loggingOut, setLoggingOut] = useState(false)
   const [followers, setFollowers] = useState([])
   const [following, setFollowing] = useState([])
   const [badges, setBadges] = useState([])
@@ -158,6 +152,17 @@ export default function UserProfilePage() {
     points: 0,
   })
   const [saving, setSaving] = useState(false)
+  const handleLogout = async () => {
+    setLoggingOut(true)
+    try {
+      await performLogout()
+    } catch (error) {
+      console.error('Logout failed:', error)
+    } finally {
+      window.location.assign('/info/login')
+    }
+  }
+
   const levelName = `Level ${profile.level || 1}`
   const travelDestinations = useMemo(() => {
     const destinations = new Map()
@@ -260,6 +265,8 @@ export default function UserProfilePage() {
             .from('info_blogs')
             .select('*')
             .eq('created_by', fallbackUserId)
+            .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .order('created_at', { ascending: false }),
           supabase
             .from('forum_threads')
@@ -271,6 +278,7 @@ export default function UserProfilePage() {
             .select('*')
             .eq('created_by', fallbackUserId)
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .order('start_date', { ascending: false }),
           fetch(`/info/api/users/${fallbackUserId}`, { credentials: 'same-origin' }).then(async (response) => {
             const result = await response.json()
@@ -374,6 +382,10 @@ export default function UserProfilePage() {
             type: 'Forum',
             title: thread.title || 'Community discussion',
             content: thread.content || 'Started a new discussion.',
+            images: [...new Set([
+              ...(Array.isArray(thread.image_urls) ? thread.image_urls : []),
+              ...parsePostContent(thread.content).attachments.filter(isImageAttachment),
+            ])],
             created_at: thread.created_at,
             category: thread.tags?.[0] || 'Community',
             href: `/info/user/forums/${thread.id}`,
@@ -399,6 +411,7 @@ export default function UserProfilePage() {
               blog: { type: 'Blog', category: repost.category || 'Story', href: `/info/user/blogs/${repost.original_content_id}`, accent: 'bg-sky-100 text-sky-700', content: repost.excerpt || repost.content || 'Shared a new story.' },
               forum_thread: { type: 'Forum', category: 'Community', href: `/info/user/forums/${repost.original_content_id}`, accent: 'bg-cyan-100 text-cyan-700', content: repost.content || 'Started a new discussion.' },
               event: { type: 'Event', category: repost.category || 'Event', href: `/info/user/events/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.description || 'Shared an upcoming event.' },
+              tourist_spot: { type: 'Destination', category: repost.category || 'Travel', href: `/info/visitor/tourist-spots/${repost.original_content_id}`, accent: 'bg-emerald-100 text-emerald-700', content: repost.description || 'Shared a destination.' },
               user_post: { type: 'Post', category: 'Community', href: `/info/user/posts/${repost.original_content_id}`, accent: 'bg-amber-100 text-amber-700', content: repost.content || 'Shared a community post.' },
             }
             const mapped = typeMap[repost.original_content_type] || typeMap.user_post
@@ -410,7 +423,7 @@ export default function UserProfilePage() {
               original_content_id: repost.original_content_id,
               original_content_type: repost.original_content_type,
               type: mapped.type,
-              title: repost.title || 'Shared content',
+              title: repost.title || repost.name || 'Shared content',
               content: mapped.content,
               created_at: repost.created_at,
               category: mapped.category,
@@ -423,6 +436,7 @@ export default function UserProfilePage() {
               accent: mapped.accent,
               isRepost: true,
               repostQuote: repost.repost_quote,
+              repost_quote: repost.repost_quote,
               originalAuthor: repost.original_author,
               original_post: repost.original_post,
             }
@@ -528,6 +542,14 @@ export default function UserProfilePage() {
         return
       }
 
+      if (detail.action === 'updated') {
+        setUserPosts((previous) => previous.map((post) => post.repost_id === detail.repost?.id
+          ? { ...post, repostQuote: detail.repost.quote_text, repost_quote: detail.repost.quote_text }
+          : post))
+        invalidateCachePrefix('profile:user:')
+        return
+      }
+
       const original = detail.original
       const repost = detail.repost
       if (!original || !repost?.id) return
@@ -535,6 +557,7 @@ export default function UserProfilePage() {
         blog: { type: 'Blog', category: 'Story', href: `/info/user/blogs/${repost.original_content_id}`, content: original.excerpt || original.content || 'Shared a new story.' },
         forum_thread: { type: 'Forum', category: 'Community', href: `/info/user/forums/${repost.original_content_id}`, content: original.content || 'Started a new discussion.' },
         event: { type: 'Event', category: 'Event', href: `/info/user/events/${repost.original_content_id}`, content: original.description || 'Shared an upcoming event.' },
+        tourist_spot: { type: 'Destination', category: original.category || 'Travel', href: `/info/visitor/tourist-spots/${repost.original_content_id}`, content: original.description || 'Shared a destination.' },
         user_post: { type: 'Post', category: 'Community', href: `/info/user/posts/${repost.original_content_id}`, content: original.content || 'Shared a community post.' },
       }
       const mapped = typeMap[repost.original_content_type] || typeMap.user_post
@@ -546,7 +569,7 @@ export default function UserProfilePage() {
         original_content_id: repost.original_content_id,
         original_content_type: repost.original_content_type,
         type: mapped.type,
-        title: original.title || 'Shared content',
+        title: original.title || original.name || 'Shared content',
         content: mapped.content,
         created_at: repost.created_at,
         reposted_at: repost.created_at,
@@ -560,6 +583,7 @@ export default function UserProfilePage() {
         accent: 'bg-amber-100 text-amber-700',
         isRepost: true,
         repostQuote: repost.quote_text,
+        repost_quote: repost.quote_text,
         originalAuthor: original.author || null,
         original_post: { ...original, author: original.author || null },
       }
@@ -587,14 +611,50 @@ export default function UserProfilePage() {
   const visiblePosts = useMemo(() => filterProfilePosts(userPosts, profileTab), [userPosts, profileTab])
   const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
 
-  const updateProfilePost = async (post, action) => {
+  const updateProfileRepostNote = async (post, quoteText) => {
+    if (!post?.repost_id || post.reposted_by !== userId) return
+
+    try {
+      const response = await fetch(`/info/api/reposts/${encodeURIComponent(post.repost_id)}`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteText }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update your repost note.')
+
+      const nextQuote = result.repost?.quote_text ?? null
+      setUserPosts((previous) => previous.map((item) => item.repost_id === post.repost_id
+        ? { ...item, repostQuote: nextQuote, repost_quote: nextQuote }
+        : item))
+      invalidateCachePrefix('profile:user:')
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('daet-repost-created', {
+          detail: {
+            action: 'updated',
+            repost: result.repost,
+            original: post.original_post,
+            contentType: post.original_content_type,
+            contentId: post.original_content_id,
+            userId,
+          },
+        }))
+      }
+    } catch (error) {
+      console.error('Profile repost note update failed:', error)
+      setSaveNotice(error?.message || 'Unable to update your repost note.')
+    }
+  }
+
+  const updateProfilePost = async (post, action, alreadyConfirmed = false) => {
     const isRepost = Boolean(post?.isRepost)
     const endpoint = isRepost ? `/info/api/reposts/${post.repost_id}` : `/info/api/posts/${post.id}`
     const isDelete = action === 'delete'
     const confirmation = isDelete
       ? (isRepost ? 'Delete repost?\n\nThis removes only your repost.' : 'Delete post?\n\nThis permanently removes your post.')
       : (isRepost ? 'Archive repost?\n\nThis hides the repost from your profile and feed. You can restore it from Archive.' : 'Archive post?\n\nThis hides the post until you restore it from Archive.')
-    if (!window.confirm(confirmation)) return
+    if (!alreadyConfirmed && !window.confirm(confirmation)) return
     const response = await fetch(endpoint, {
       method: isDelete ? 'DELETE' : 'PATCH',
       credentials: 'same-origin',
@@ -742,17 +802,38 @@ export default function UserProfilePage() {
     }
   }
 
+  const renderProfileActions = (placement) => (
+    <div className={`profile-actions-menu ${placement}`}>
+      <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} aria-haspopup="menu" className="usr-press inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/40 bg-slate-950/35 text-white shadow-sm backdrop-blur-sm transition hover:bg-slate-950/55">
+        <MoreHorizontal className="h-5 w-5" />
+      </button>
+      {profileActionsOpen && (
+        <div role="menu" className="usr-pop-in absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-left text-slate-700 shadow-xl">
+          <Link role="menuitem" href="/info/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
+          <Link role="menuitem" href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
+          <Link role="menuitem" href="/info/user/drafts" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><FilePenLine className="h-4 w-4" />Drafts</Link>
+          <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
+          <div className="my-1 border-t border-slate-100" role="separator" />
+          <button role="menuitem" type="button" onClick={() => { setProfileActionsOpen(false); setShowLogoutConfirm(true) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
+        </div>
+      )}
+    </div>
+  )
+
   return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
       <UserTopHeader />
+      {renderProfileActions('profile-actions-menu-mobile')}
       <div className="usr-section-container mx-auto w-full max-w-5xl px-3 pb-24 pt-0 sm:px-4 lg:px-6 lg:pb-10">
-        <div className="usr-enter mb-5">
+        <div className="usr-enter relative mb-5">
           <div className="profile-cover-frame h-40 bg-gradient-to-r from-sky-800 via-cyan-800 to-slate-900 sm:h-56">
             {profile.cover_photo_url ? (
               <img src={profile.cover_photo_url} alt="Cover photo" className="profile-cover-image" />
             ) : null}
             <div className="absolute inset-0 z-10 bg-gradient-to-t from-slate-950/45 via-slate-950/10 to-transparent" />
           </div>
+
+          {renderProfileActions('profile-actions-menu-desktop absolute right-3 top-3 z-30')}
 
           <div className="profile-identity-strip border-b border-slate-200 px-3 pb-4 sm:px-5 sm:pb-5">
             <div className="flex flex-col gap-4 pt-4 sm:flex-row sm:items-center sm:justify-between">
@@ -770,20 +851,9 @@ export default function UserProfilePage() {
                 </div>
               </div>
               <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                <Link href="/info/user/blog-submissions" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />My blog posts</Link>
                 <Link href="/info/user/blogs/new" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />Create Post</Link>
                 <Link href="/info/user/profile/edit" className="usr-section-primary"><Wand2 className="h-4 w-4" />Edit Profile</Link>
-                <div className="relative">
-                  <button type="button" onClick={() => setProfileActionsOpen((value) => !value)} aria-label="Open profile actions" aria-expanded={profileActionsOpen} className="usr-press inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50">
-                    <MoreHorizontal className="h-5 w-5" />
-                  </button>
-                  {profileActionsOpen && (
-                    <div className="usr-pop-in absolute right-0 top-12 z-20 w-44 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                      <Link href="/info/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
-                      <Link href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
-                      <Link href="/info/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
           </div>
@@ -826,17 +896,6 @@ export default function UserProfilePage() {
             <section className="profile-content-main min-w-0 space-y-4">
               <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div><p className="text-[10px] font-black uppercase tracking-[0.18em] text-teal-700">Wall</p><h2 className="mt-1 text-lg font-black text-slate-900">Shared content</h2></div>
-                  <div className="profile-create-actions flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                    <Link href="/info/user/blogs/new" className="usr-section-primary min-w-0 flex-1 sm:flex-none">
-                      <FilePenLine className="h-4 w-4" /> Create Post
-                    </Link>
-                    <Link href="/info/user/blogs/new" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
-                      <FileText className="h-4 w-4" /> Write blog
-                    </Link>
-                    <Link href="/info/visitor/forum" className="usr-section-secondary min-w-0 flex-1 sm:flex-none">
-                      <MessageSquareText className="h-4 w-4" /> Start forum
-                    </Link>
-                  </div>
                 </div>
 
                 <div className="profile-tabs" role="tablist" aria-label="Profile content">
@@ -1002,7 +1061,7 @@ export default function UserProfilePage() {
 
                 <div className="space-y-1.5">
                     {visiblePosts.length ? visiblePosts.map((post) => post.isRepost ? (
-                      <div key={`${post.type}-${post.id}`} className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:p-4">
+                      <article key={`${post.type}-${post.id}`} className="usr-card feed-card profile-repost-card">
                         <QuoteRepostCard
                           item={post}
                           reposter={{
@@ -1012,10 +1071,14 @@ export default function UserProfilePage() {
                           }}
                           reposterName={profile.full_name}
                           userId={userId}
-                          onArchive={() => void updateProfilePost(post, 'archive')}
-                          onDelete={() => void updateProfilePost(post, 'delete')}
+                          compactFeed
+                          profileStyle
+                          onEdit={(quoteText) => void updateProfileRepostNote(post, quoteText)}
+                          onRemoveNote={() => void updateProfileRepostNote(post, null)}
+                          onArchive={() => void updateProfilePost(post, 'archive', true)}
+                          onDelete={() => void updateProfilePost(post, 'delete', true)}
                         />
-                      </div>
+                      </article>
                     ) : (
                       <article key={`${post.type}-${post.id}`} className="usr-card usr-content-card feed-card profile-post-card overflow-hidden">
                         <div className="profile-post-card-inner">
@@ -1028,14 +1091,14 @@ export default function UserProfilePage() {
                               <p className="truncate font-bold text-slate-900">{profile.full_name}</p>
                               {profile.user_type === 'admin' && <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Verified organization" />}
                               <span aria-hidden="true">·</span>
-                              <time dateTime={post.created_at || undefined}>{formatDate(post.created_at)}</time>
+                              <PostTimestamp value={post.created_at} />
                             </div>
                           </div>
                         </div>
 
                         <Link href={post.href} className="profile-post-title mt-4 block"><h3>{post.title}</h3></Link>
-                        <p className="profile-post-description">{post.content}</p>
-                        {(post.images?.length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                        <p className="profile-post-description">{post.type === 'Forum' ? parsePostContent(post.content).text : post.content}</p>
+                        {(getPostImages(post).length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
                           {getPostImages(post).length > 0 && <PostMediaGallery images={getPostImages(post)} detailHref={post.href} />}
                           {(post.videos?.length ? post.videos : (post.video_url ? [post.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
                         </div>}
@@ -1138,14 +1201,11 @@ export default function UserProfilePage() {
                   <div id="privacy" className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <p className="mb-2 text-sm font-medium text-slate-700">Avatar</p>
-                      <MediaUpload
-                        bucket="profile-media"
-                        folder={`users/${userId || 'me'}`}
-                        mediaType="image"
-                        existingMediaUrl={profileForm.avatar_url}
-                        buttonText="Upload avatar"
+                      <ProfilePhotoCropper
+                        userId={userId}
+                        imageUrl={profileForm.avatar_url}
                         onUploadComplete={(url) => setProfileForm((previous) => ({ ...previous, avatar_url: url }))}
-                        onUploadError={(message) => setSaveNotice(message)}
+                        onUploadError={setSaveNotice}
                       />
                     </div>
                     <div>
@@ -1230,6 +1290,16 @@ export default function UserProfilePage() {
           </div>
         ) : null}
       </div>
+      <ConfirmationModal
+        isOpen={showLogoutConfirm}
+        title="Confirm Logout"
+        message="Are you sure you want to logout?"
+        confirmText={loggingOut ? 'Logging out...' : 'Log out'}
+        cancelText="Cancel"
+        isDangerous
+        onConfirm={handleLogout}
+        onCancel={() => setShowLogoutConfirm(false)}
+      />
     </main>
   )
 }

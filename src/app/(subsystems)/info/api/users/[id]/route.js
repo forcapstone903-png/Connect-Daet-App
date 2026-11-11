@@ -127,6 +127,8 @@ export async function GET(request, { params }) {
         .select('id, title, excerpt, content, featured_image, images, videos, created_at, published_at, category, slug')
         .eq('created_by', profileId)
         .eq('status', 'published')
+        .eq('approval_status', 'approved')
+        .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
         .order('published_at', { ascending: false })
         .limit(20),
       adminSupabase
@@ -141,6 +143,7 @@ export async function GET(request, { params }) {
         .select('id, title, description, featured_image, images, start_date, created_at, status')
         .eq('created_by', profileId)
         .eq('status', 'published')
+        .eq('approval_status', 'approved')
         .order('start_date', { ascending: false })
         .limit(20),
       adminSupabase
@@ -199,13 +202,16 @@ export async function GET(request, { params }) {
       ['user_post', 'info_user_posts', 'id, user_id, title, content, created_at, updated_at, visibility', 'created_at'],
       ['blog', 'info_blogs', 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, category', 'published_at'],
       ['forum_thread', 'forum_threads', 'id, created_by, title, content, created_at, category_id', 'created_at'],
-      ['event', 'info_events', 'id, created_by, title, description, featured_image, images, start_date, created_at, category, status', 'start_date'],
+      ['event', 'info_events', 'id, created_by, title, description, featured_image, images, start_date, created_at, category, status, approval_status', 'start_date'],
+      ['tourist_spot', 'info_tourist_spots', 'id, created_by, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_at, status', 'created_at'],
     ].map(async ([type, table, fields, orderField]) => {
       const ids = repostIdsByType(type)
       if (!ids.length) return [type, []]
       const query = adminSupabase.from(table).select(fields).in('id', ids)
       if (!archivedOnly && (type === 'user_post' || type === 'forum_thread')) query.in('status', ['active', 'published'])
       if (!archivedOnly && (type === 'blog' || type === 'event')) query.eq('status', 'published')
+      if (type === 'blog' || type === 'event') query.eq('approval_status', 'approved')
+      if (!archivedOnly && type === 'tourist_spot') query.eq('status', 'active')
       const { data } = await query.order(orderField, { ascending: false })
       return [type, data || []]
     })
@@ -275,6 +281,8 @@ export async function GET(request, { params }) {
       const originalAuthorId = original.user_id || original.created_by
       return {
         ...original,
+        title: original.title || original.name,
+        content: original.content || original.description,
         id: repost.id,
         repost_id: repost.id,
         reposted_by: repost.user_id,
@@ -286,6 +294,8 @@ export async function GET(request, { params }) {
         original_author: repostAuthorsById.get(originalAuthorId) || { id: originalAuthorId, full_name: 'Community member' },
         original_post: {
           ...original,
+          title: original.title || original.name,
+          content: original.content || original.description,
           author: repostAuthorsById.get(originalAuthorId) || { id: originalAuthorId, full_name: 'Community member' },
         },
       }

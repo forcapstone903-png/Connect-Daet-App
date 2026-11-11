@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
-import { notifyFollowers } from '@/lib/notificationAudience'
+import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,14 +23,16 @@ export async function GET(request, { params }) {
 
   const { data, error } = await adminSupabase
     .from('info_blogs')
-    .select('id, created_by, title, slug, excerpt, content, category, tags, status, featured_image, images, videos, media_layout, location, updated_at')
+    .select('id, created_by, title, slug, excerpt, content, category, tags, status, approval_status, submitted_at, reviewed_at, rejection_reason, featured_image, images, videos, media_layout, location, updated_at')
     .eq('id', blogId)
     .eq('created_by', userId)
     .maybeSingle()
 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
-  return NextResponse.json({ success: true, blog: data })
+  return NextResponse.json({ success: true, blog: data }, {
+    headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
+  })
 }
 
 export async function PATCH(request, { params }) {
@@ -41,7 +43,15 @@ export async function PATCH(request, { params }) {
   const adminSupabase = getAdminClient()
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Blog service is not configured.' }, { status: 500 })
 
-  const body = await request.json().catch(() => ({}))
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ success: false, message: 'A valid blog update is required.' }, { status: 400 })
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ success: false, message: 'A valid blog update is required.' }, { status: 400 })
+  }
   const updatePayload = { updated_at: new Date().toISOString() }
   const mediaPayload = {}
   if (Object.prototype.hasOwnProperty.call(body, 'title')) updatePayload.title = String(body.title || '').trim()
@@ -55,27 +65,61 @@ export async function PATCH(request, { params }) {
   if (Array.isArray(body.videos)) mediaPayload.videos = body.videos.filter(Boolean)
   if (Object.prototype.hasOwnProperty.call(body, 'media_layout')) mediaPayload.media_layout = body.media_layout === 'grid' ? 'grid' : 'swipe'
   if (Object.prototype.hasOwnProperty.call(body, 'location')) mediaPayload.location = String(body.location || '').trim() || null
-  if (body.status === 'published' || body.status === 'draft' || body.status === 'archived') updatePayload.status = body.status
-  if (updatePayload.status === 'published') updatePayload.published_at = new Date().toISOString()
+  const isSubmission = body.status === 'published'
+  if (body.status === 'draft') {
+    updatePayload.status = 'draft'
+    updatePayload.approval_status = 'draft'
+    updatePayload.submitted_at = null
+    updatePayload.reviewed_at = null
+    updatePayload.reviewed_by = null
+    updatePayload.rejection_reason = null
+    updatePayload.published_at = null
+  }
+  if (body.status === 'archived') {
+    updatePayload.status = 'archived'
+    updatePayload.published_at = null
+  }
 
   if ((updatePayload.title !== undefined && !updatePayload.title) || (updatePayload.content !== undefined && !updatePayload.content)) {
     return NextResponse.json({ success: false, message: 'Title and content cannot be empty.' }, { status: 400 })
   }
   if (Object.keys(updatePayload).length === 1 && Object.keys(mediaPayload).length === 0) return NextResponse.json({ success: false, message: 'Invalid blog update.' }, { status: 400 })
 
-  const selectColumns = 'id, created_by, title, excerpt, content, category, status, published_at, updated_at'
-  let wasPublished = true
-  if (updatePayload.status === 'published') {
-    const { data: existingBlog, error: existingBlogError } = await adminSupabase
-      .from('info_blogs')
-      .select('status')
-      .eq('id', blogId)
-      .eq('created_by', userId)
-      .maybeSingle()
-    if (existingBlogError) return NextResponse.json({ success: false, message: existingBlogError.message }, { status: 400 })
-    if (!existingBlog) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
-    wasPublished = existingBlog.status === 'published'
+  const { data: existingBlog, error: existingBlogError } = await adminSupabase
+    .from('info_blogs')
+    .select('id, status, approval_status')
+    .eq('id', blogId)
+    .eq('created_by', userId)
+    .maybeSingle()
+  if (existingBlogError) return NextResponse.json({ success: false, message: existingBlogError.message }, { status: 400 })
+  if (!existingBlog) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
+
+  const contentWasEdited = ['title', 'content', 'excerpt', 'category', 'tags', 'slug'].some((key) => (
+    Object.prototype.hasOwnProperty.call(updatePayload, key)
+  )) || Object.keys(mediaPayload).length > 0
+  const editingApproved = existingBlog.approval_status === 'approved' && contentWasEdited
+
+  if (isSubmission || (editingApproved && body.status !== 'archived')) {
+    updatePayload.status = 'draft'
+    updatePayload.approval_status = 'pending'
+    updatePayload.submitted_at = new Date().toISOString()
+    updatePayload.reviewed_at = null
+    updatePayload.reviewed_by = null
+    updatePayload.rejection_reason = null
+    updatePayload.published_at = null
   }
+  if (isSubmission || editingApproved) {
+    let restriction
+    try {
+      restriction = await getActivePublishingRestriction(adminSupabase, userId)
+    } catch (error) {
+      console.error('Blog restriction lookup failed:', error.message)
+      return NextResponse.json({ success: false, message: 'Unable to verify your posting permissions.' }, { status: 500 })
+    }
+    if (restriction) return NextResponse.json({ success: false, message: 'Your account is currently restricted from submitting posts.' }, { status: 403 })
+  }
+
+  const selectColumns = 'id, created_by, title, excerpt, content, category, status, approval_status, submitted_at, reviewed_at, rejection_reason, published_at, updated_at'
 
   const applyUpdate = (payload) => adminSupabase
     .from('info_blogs')
@@ -104,17 +148,6 @@ export async function PATCH(request, { params }) {
 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
-  if (data.status === 'published' && !wasPublished) {
-    await notifyFollowers(adminSupabase, {
-      authorId: userId,
-      type: 'post',
-      link: `/info/user/blogs/${data.id}`,
-      postId: data.id,
-      title: 'New post from someone you follow',
-      actionText: 'published a new post',
-      subject: data.title,
-    })
-  }
   const warning = omittedColumns.length
     ? `The story was updated, but these optional fields need a database migration: ${[...new Set(omittedColumns)].join(', ')}.`
     : undefined

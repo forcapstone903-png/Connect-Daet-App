@@ -14,7 +14,7 @@ const PRIVACY_OPTIONS = [
 
 const privacyLabel = (value) => PRIVACY_OPTIONS.find((option) => option.value === value)?.label || 'Public'
 
-export default function PostActionMenu({ isRepost = false, visibility = 'public', contentType, contentId, userId, contentTitle, shareUrl, onEdit, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink, isSaved = false, onToggleSave }) {
+export default function PostActionMenu({ isRepost = false, visibility = 'public', contentType, contentId, userId, contentTitle, shareUrl, onEdit, onRemoveNote, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink, isSaved = false, onToggleSave }) {
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -135,12 +135,13 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
     <div className="relative inline-flex items-center z-30">
       {onPrivacyChange && <span className="mr-1 inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400" title={`Visible to ${privacyLabel(currentVisibility)}`} aria-label={`Visible to ${privacyLabel(currentVisibility)}`}><PrivacyIcon className="h-3.5 w-3.5" /></span>}
       <button ref={buttonRef} type="button" aria-label="Post options" aria-expanded={open} title="Post options" onClick={toggleMenu} className="relative z-10 inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-50 text-slate-500 transition hover:bg-slate-100 hover:text-slate-800">
-        <MoreHorizontal className="h-4 w-4" />
+        <MoreHorizontal className="h-[18px] w-[18px]" />
       </button>
 
       {open && (
         <div ref={menuRef} className="absolute right-0 top-full z-[120] mt-2 max-h-[calc(100vh-16px)] w-52 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_42px_rgba(15,23,42,0.18)]" role="menu">
-          {onEdit && <button type="button" onClick={() => chooseAction(onEdit)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Pencil className="h-4 w-4 text-sky-600" />Edit</button>}
+          {onEdit && <button type="button" onClick={() => chooseAction(onEdit)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Pencil className="h-4 w-4 text-sky-600" />{isRepost ? 'Edit note' : 'Edit'}</button>}
+          {isRepost && onRemoveNote && <button type="button" onClick={() => chooseAction(onRemoveNote)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><X className="h-4 w-4 text-slate-500" />Remove note</button>}
           {onPrivacyChange && <button type="button" onClick={() => { setOpen(false); setPrivacyOpen(true) }} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><PrivacyIcon className="h-4 w-4 text-slate-600" />Edit Privacy</button>}
           {onRestore && <button type="button" onClick={() => chooseAction(onRestore)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-emerald-700 hover:bg-emerald-50" role="menuitem"><Archive className="h-4 w-4" />Restore</button>}
           {onArchive && <button type="button" onClick={() => chooseAction(onArchive)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-amber-700 hover:bg-amber-50" role="menuitem"><Archive className="h-4 w-4" />Archive</button>}

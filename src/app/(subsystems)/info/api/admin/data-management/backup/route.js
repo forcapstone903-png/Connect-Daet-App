@@ -8,6 +8,13 @@ const MAX_BACKUP_BYTES = 50 * 1024 * 1024
 const PAGE_SIZE = 1000
 const WRITE_BATCH_SIZE = 500
 
+function restoreError(message, restoredRows, restoredTables) {
+  const error = new Error(message)
+  error.restoredRows = restoredRows
+  error.restoredTables = restoredTables
+  return error
+}
+
 const BACKUP_TABLES = [
   'info_users',
   'system_categories',
@@ -273,7 +280,11 @@ async function mergeBackup(backup) {
 
       const { error } = await adminSupabase.from(table).upsert(batch, { onConflict: 'id' })
       if (error) {
-        throw new Error(`Restore partially completed at "${table}" after ${restoredRows} rows: ${error.message}`)
+        throw restoreError(
+          `Restore stopped at "${table}" after merging ${restoredRows} rows: ${error.message}`,
+          restoredRows,
+          restoredTables
+        )
       }
       restoredRows += batch.length
     }
@@ -286,7 +297,11 @@ async function mergeBackup(backup) {
       const batch = rows.slice(offset, offset + WRITE_BATCH_SIZE)
       const { error } = await adminSupabase.from(table).upsert(batch, { onConflict: 'id' })
       if (error) {
-        throw new Error(`Restore merged ${restoredRows} rows but could not restore ${fields.join(', ')} in "${table}": ${error.message}`)
+        throw restoreError(
+          `Restore merged ${restoredRows} rows but could not restore ${fields.join(', ')} in "${table}": ${error.message}`,
+          restoredRows,
+          restoredTables
+        )
       }
     }
   }
@@ -357,6 +372,11 @@ export async function POST(request) {
     return jsonResponse({
       success: false,
       message: error.message || 'Unable to restore the database snapshot.',
+      ...(Number.isInteger(error.restoredRows) ? {
+        partialRestore: error.restoredRows > 0,
+        restoredRows: error.restoredRows,
+        restoredTables: error.restoredTables,
+      } : {}),
     }, 500)
   }
 }

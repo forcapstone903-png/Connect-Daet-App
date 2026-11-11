@@ -64,9 +64,7 @@ export default function DataStorageSection({
         <PrimaryButton onClick={onResetSettings} disabled={resetPending} tone="danger">{t('common.reset')}</PrimaryButton>
       </ActionRow>
 
-      <ActionRow icon={Smartphone} label={t('settings.data.install')} hint={t('settings.data.installHint')}>
-        <span className="max-w-[220px] text-right text-xs font-semibold text-slate-500">{t('settings.data.installReady')}</span>
-      </ActionRow>
+      <ActionRow icon={Smartphone} label={t('settings.data.install')} hint={t('settings.data.installHint')} />
 
       {cacheCleared ? <StatusBanner tone="success">{t('settings.data.cleared')}</StatusBanner> : null}
 

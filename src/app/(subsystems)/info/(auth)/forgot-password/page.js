@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, KeyRound, MailCheck } from 'lucide-react'
+import { ChevronLeft, KeyRound, MailCheck } from 'lucide-react'
 import '../auth.css'
 
 export default function ForgotPasswordPage() {
@@ -40,7 +40,7 @@ export default function ForgotPasswordPage() {
     <main className="auth-page min-h-dvh bg-gradient-to-br from-[#edf2f9] via-[#f7f9fc] to-[#e7effb] px-4 py-8 text-slate-900">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-md flex-col justify-center">
         <Link href="/info/login" className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-semibold text-blue-700 transition hover:text-blue-800">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Back to sign in
         </Link>
 

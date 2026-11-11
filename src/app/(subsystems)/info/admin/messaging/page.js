@@ -7,62 +7,6 @@ import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
-const buildInitialMessages = () => {
-  if (typeof window === 'undefined') return [];
-
-  try {
-    const savedMessages = JSON.parse(localStorage.getItem(STORAGE_KEYS.messages) || 'null');
-    if (Array.isArray(savedMessages) && savedMessages.length > 0) return savedMessages;
-  } catch {
-    // ignore parse errors and fall back to defaults
-  }
-
-  const initialMessages = [
-    {
-      id: 'm-1',
-      recipientId: 'u-1001',
-      recipientName: 'Maria Santos',
-      subject: 'Upcoming Festival Check-In',
-      category: 'Announcement',
-      body: 'We are excited to share the final festival schedule for this weekend.',
-      status: 'Sent',
-      sentAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-      readAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-      replies: 2,
-      attachmentName: 'festival-map.pdf',
-    },
-    {
-      id: 'm-2',
-      recipientId: 'u-1004',
-      recipientName: 'Daniel Reyes',
-      subject: 'Operator Briefing',
-      category: 'Service',
-      body: 'Please review the updated tourist service response guidelines for this month.',
-      status: 'Scheduled',
-      sentAt: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
-      readAt: null,
-      replies: 0,
-      attachmentName: '',
-    },
-    {
-      id: 'm-3',
-      recipientId: 'all',
-      recipientName: 'All users',
-      subject: 'Maintenance Notice',
-      category: 'Alert',
-      body: 'The tourism portal will undergo maintenance tonight from 11:00 PM to 1:00 AM.',
-      status: 'Sent',
-      sentAt: new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString(),
-      readAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-      replies: 8,
-      attachmentName: '',
-    },
-  ];
-
-  localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(initialMessages));
-  return initialMessages;
-};
-
 const buildInitialTemplates = () => {
   if (typeof window === 'undefined') return DEFAULT_TEMPLATES;
 
@@ -75,7 +19,6 @@ const buildInitialTemplates = () => {
 };
 
 const STORAGE_KEYS = {
-  messages: 'daet_admin_messages',
   templates: 'daet_admin_message_templates',
 };
 
@@ -89,14 +32,6 @@ const readStoredSession = () => {
     return null;
   }
 };
-
-const USER_LIST = [
-  { id: 'u-1001', name: 'Maria Santos', role: 'Tourist' },
-  { id: 'u-1002', name: 'Rico Dela Cruz', role: 'Artisan' },
-  { id: 'u-1003', name: 'Alyssa Gomez', role: 'Tourist' },
-  { id: 'u-1004', name: 'Daniel Reyes', role: 'Operator' },
-  { id: 'u-1005', name: 'Liza Ramos', role: 'Tourist' },
-];
 
 const DEFAULT_TEMPLATES = [
   { id: 1, name: 'Event Reminder', category: 'Announcement', subject: 'Upcoming Event Reminder', body: 'Hello {{firstName}}, this is a reminder about the upcoming event in Daet. Please check the details and confirm your attendance.' },
@@ -118,15 +53,36 @@ export default function AdminMessagingPage() {
     category: 'Announcement',
     body: '',
     scheduleAt: '',
-    attachmentName: '',
   });
-  const [messages, setMessages] = useState(() => buildInitialMessages());
+  const [messages, setMessages] = useState([]);
+  const [recipients, setRecipients] = useState([]);
   const [templates, setTemplates] = useState(() => buildInitialTemplates());
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, isError = false) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 2600);
+  };
+
+  const loadMessagingData = async () => {
+    const response = await fetch('/info/api/admin/messages', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load message data.');
+    setRecipients(result.users || []);
+    setMessages((result.messages || []).map((message) => ({
+      ...message,
+      recipientName: message.recipient?.full_name || message.recipient?.email || 'Account holder',
+      sentAt: message.sent_at || message.scheduled_for || message.created_at,
+      readAt: message.read_at,
+      status: message.status === 'scheduled' || message.status === 'sending'
+        ? 'Scheduled'
+        : message.status === 'delivered'
+          ? 'Sent'
+          : 'Failed',
+    })));
   };
 
   useEffect(() => {
@@ -137,12 +93,13 @@ export default function AdminMessagingPage() {
 
     if (!hasAdminAccess(user.role)) {
       router.push('/info/admin/dashboard');
+      return;
     }
+    void Promise.resolve().then(() => loadMessagingData()).catch((error) => {
+      console.error('Admin messaging load failed:', error);
+      showToast(error.message || 'Unable to load message data.', true);
+    });
   }, [router, user]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(messages));
-  }, [messages]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.templates, JSON.stringify(templates));
@@ -165,36 +122,42 @@ export default function AdminMessagingPage() {
     read: messages.filter((m) => m.readAt).length,
   }), [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!messageForm.subject || !messageForm.body) {
       showToast('Please fill in the subject and message body.', true);
       return;
     }
 
-    const recipients = bulkTarget === 'all' ? [{ id: 'all', name: 'All users' }] : selectedRecipient ? USER_LIST.filter((userItem) => userItem.id === selectedRecipient) : [];
+    if (bulkTarget === 'group' && !selectedRecipient) {
+      showToast('Choose a recipient.', true);
+      return;
+    }
 
-    const finalRecipients = recipients.length ? recipients : [{ id: 'all', name: 'All users' }];
-
-    const newMessages = finalRecipients.map((recipient) => ({
-      id: `m-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
-      recipientId: recipient.id,
-      recipientName: recipient.name,
-      subject: messageForm.subject,
-      category: messageForm.category,
-      body: messageForm.body,
-      status: messageForm.scheduleAt ? 'Scheduled' : 'Sent',
-      sentAt: messageForm.scheduleAt ? new Date(messageForm.scheduleAt).toISOString() : new Date().toISOString(),
-      readAt: messageForm.scheduleAt ? null : new Date().toISOString(),
-      replies: 0,
-      attachmentName: messageForm.attachmentName || '',
-      scheduledFor: messageForm.scheduleAt || null,
-    }));
-
-    setMessages((prev) => [...newMessages, ...prev]);
-    setMessageForm({ subject: '', category: 'Announcement', body: '', scheduleAt: '', attachmentName: '' });
-    setSelectedRecipient('');
-    setBulkTarget('all');
-    showToast(messageForm.scheduleAt ? 'Message scheduled successfully.' : 'Message sent successfully.');
+    try {
+      const response = await fetch('/info/api/admin/messages', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          allRecipients: bulkTarget === 'all',
+          recipientIds: bulkTarget === 'group' ? [selectedRecipient] : undefined,
+          subject: messageForm.subject,
+          category: messageForm.category,
+          body: messageForm.body,
+          scheduleAt: messageForm.scheduleAt || null,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send message.');
+      setMessageForm({ subject: '', category: 'Announcement', body: '', scheduleAt: '' });
+      setSelectedRecipient('');
+      setBulkTarget('all');
+      showToast(result.message || 'Message delivered.');
+      await loadMessagingData();
+    } catch (error) {
+      console.error('Admin message send failed:', error);
+      showToast(error.message || 'Unable to send message.', true);
+    }
   };
 
   const handleTemplateUse = (template) => {
@@ -221,33 +184,32 @@ export default function AdminMessagingPage() {
     showToast('Template saved successfully.');
   };
 
-  const handleReply = (messageId) => {
+  const handleReply = async (messageId) => {
     const target = messages.find((item) => item.id === messageId);
     if (!target) return;
 
-    const replyText = `Reply to: ${target.subject}\n\nThanks for your response. We will review this and follow up shortly.`;
-    const newReply = {
-      id: `r-${Date.now()}`,
-      recipientId: target.recipientId,
-      recipientName: target.recipientName,
-      subject: `Re: ${target.subject}`,
-      category: target.category,
-      body: replyText,
-      status: 'Sent',
-      sentAt: new Date().toISOString(),
-      readAt: new Date().toISOString(),
-      replies: 0,
-      attachmentName: '',
-      scheduledFor: null,
-    };
-
-    setMessages((prev) => [newReply, ...prev]);
-    showToast('Reply sent successfully.');
-  };
-
-  const handleReadReceipt = (messageId) => {
-    setMessages((prev) => prev.map((item) => item.id === messageId ? { ...item, readAt: new Date().toISOString(), status: 'Sent' } : item));
-    showToast('Read receipt recorded.');
+    const replyText = window.prompt(`Reply to ${target.recipientName}:`);
+    if (!replyText?.trim()) return;
+    try {
+      const response = await fetch('/info/api/admin/messages', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          replyToId: target.id,
+          subject: `Re: ${target.subject}`,
+          category: target.category,
+          body: replyText.trim(),
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to send reply.');
+      showToast(result.message || 'Reply delivered.');
+      await loadMessagingData();
+    } catch (error) {
+      console.error('Admin message reply failed:', error);
+      showToast(error.message || 'Unable to send reply.', true);
+    }
   };
 
   if (!user) {
@@ -318,8 +280,8 @@ export default function AdminMessagingPage() {
                     <label className="mb-1 block text-sm font-medium text-slate-700">Select recipient</label>
                     <select value={selectedRecipient} onChange={(e) => setSelectedRecipient(e.target.value)} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
                       <option value="">Choose a user</option>
-                      {USER_LIST.map((entry) => (
-                        <option key={entry.id} value={entry.id}>{entry.name} ({entry.role})</option>
+                      {recipients.map((entry) => (
+                        <option key={entry.id} value={entry.id}>{entry.full_name || entry.email} ({entry.user_type || 'User'})</option>
                       ))}
                     </select>
                   </div>
@@ -349,11 +311,6 @@ export default function AdminMessagingPage() {
               <div className="mt-4">
                 <label className="mb-1 block text-sm font-medium text-slate-700">Message</label>
                 <textarea value={messageForm.body} onChange={(e) => setMessageForm((prev) => ({ ...prev, body: e.target.value }))} rows="6" className="w-full resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" placeholder="Write your message here..." />
-              </div>
-
-              <div className="mt-4">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Attachment</label>
-                <input type="text" value={messageForm.attachmentName} onChange={(e) => setMessageForm((prev) => ({ ...prev, attachmentName: e.target.value }))} className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" placeholder="Optional attachment name or file label" />
               </div>
 
               <div className="mt-6 flex flex-wrap gap-3">
@@ -402,7 +359,7 @@ export default function AdminMessagingPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="rounded-full bg-blue-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-blue-700">{message.category}</span>
-                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${message.status === 'Scheduled' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>{message.status}</span>
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${message.status === 'Scheduled' ? 'bg-amber-100 text-amber-700' : message.status === 'Failed' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>{message.status}</span>
                       </div>
                     </div>
 
@@ -410,13 +367,10 @@ export default function AdminMessagingPage() {
 
                     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">
                       <div className="flex flex-wrap gap-3">
-                        <span>{message.attachmentName ? `Attachment: ${message.attachmentName}` : 'No attachment'}</span>
-                        <span>Replies: {message.replies}</span>
                         <span>Read receipt: {message.readAt ? new Date(message.readAt).toLocaleString() : 'Pending'}</span>
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={() => handleReadReceipt(message.id)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100">Mark as read</button>
-                        <button onClick={() => handleReply(message.id)} className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">Reply</button>
+                        {message.status === 'Sent' && <button onClick={() => handleReply(message.id)} className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700">Reply</button>}
                       </div>
                     </div>
                   </div>
@@ -459,7 +413,7 @@ export default function AdminMessagingPage() {
                       <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-700">Scheduled</span>
                     </div>
                     <p className="text-sm text-slate-600">To: {message.recipientName}</p>
-                    <p className="mt-2 text-xs text-slate-500">Deliver on {new Date(message.scheduledFor || message.sentAt).toLocaleString()}</p>
+                    <p className="mt-2 text-xs text-slate-500">Deliver on {new Date(message.scheduled_for || message.sentAt).toLocaleString()}</p>
                   </div>
                 ))
               )}

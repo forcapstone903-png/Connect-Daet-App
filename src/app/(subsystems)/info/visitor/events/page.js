@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, CalendarDays, Loader, MapPin, Search } from 'lucide-react'
+import { ChevronLeft, CalendarDays, Loader, MapPin, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
@@ -63,6 +63,7 @@ export default function EventsIndexPage() {
           .from('info_events')
           .select('id, title, description, location, venue, start_date, end_date, start_time, category, featured_image, is_free, ticket_price')
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
           .gte('end_date', today)
           .order('start_date', { ascending: true })
 
@@ -124,7 +125,7 @@ export default function EventsIndexPage() {
             href="/info/visitor"
             className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Back to Home
           </Link>
         </div>

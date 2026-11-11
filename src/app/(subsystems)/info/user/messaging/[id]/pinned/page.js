@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { ArrowLeft, Image as ImageIcon, Pin, Play, Video } from 'lucide-react'
+import { ChevronLeft, Image as ImageIcon, Pin, Play, Video } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -75,7 +75,7 @@ export default function PinnedMessagesPage() {
     <main className="min-h-screen bg-[#f4f8f6] text-slate-900">
       <div className="mx-auto min-h-screen w-full max-w-2xl bg-white shadow-sm sm:my-4 sm:min-h-[calc(100vh-2rem)] sm:rounded-2xl sm:border sm:border-slate-200">
         <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-slate-200 bg-white px-4 py-4 sm:rounded-t-2xl">
-          <button type="button" onClick={() => router.replace(`/info/user/messaging/${encodeURIComponent(otherUserId)}`)} aria-label="Back to conversation" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><ArrowLeft className="h-5 w-5" /></button>
+          <button type="button" onClick={() => router.replace(`/info/user/messaging/${encodeURIComponent(otherUserId)}`)} aria-label="Back to conversation" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"><ChevronLeft className="h-5 w-5" /></button>
           <div className="min-w-0 flex-1">
             <h1 className="text-lg font-black text-slate-950">Pinned Messages</h1>
             <p className="text-xs font-medium text-slate-500">Shared in this conversation</p>

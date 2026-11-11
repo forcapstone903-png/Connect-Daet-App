@@ -1,12 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import { Archive, Mail, Plus, Search, Send, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { getStoredSession, getStoredSessionObject } from '@/lib/authCookies'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
-import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
+import { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
@@ -245,9 +244,6 @@ export default function UserMessagingPage() {
     <main className="tourism-shell usr-section-page usr-inbox min-h-screen">
       <UserTopHeader spacer={false} />
       <div className="usr-section-container mx-auto w-full max-w-225 px-3 pb-28 pt-3 sm:px-5 sm:pb-10 lg:px-8">
-        <UserSectionHeader title="Messages" description="Keep the conversation going. Catch up with friends and make new connections." emoji="💬">
-          <Link href="/info/user/messaging/archived" className="usr-section-secondary"><Archive className="h-4 w-4" />Archived</Link>
-        </UserSectionHeader>
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
 
         {composeOpen && (

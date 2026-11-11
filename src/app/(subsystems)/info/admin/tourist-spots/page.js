@@ -1,7 +1,7 @@
 // app/(subsystems)/info/admin/tourist-spots/page.js
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { startTransition, useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
@@ -291,7 +291,7 @@ export default function TouristSpotsManagement() {
     }
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = useCallback(() => {
     setEditingSpot(null);
     setGalleryUrls([]);
     setSpotForm({
@@ -312,7 +312,7 @@ export default function TouristSpotsManagement() {
       view_count: 0
     });
     setShowModal(true);
-  };
+  }, []);
 
   const openEditModal = (spot) => {
     setEditingSpot(spot);
@@ -475,6 +475,12 @@ export default function TouristSpotsManagement() {
   }, [spots]);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('action') !== 'create') return undefined
+    const frame = window.requestAnimationFrame(() => openCreateModal())
+    return () => window.cancelAnimationFrame(frame)
+  }, [openCreateModal])
+
+  useEffect(() => {
     let isActive = true;
 
     const checkAuth = async () => {
@@ -495,7 +501,6 @@ export default function TouristSpotsManagement() {
 
         if (!isActive) return;
         setUser(userData);
-        await fetchSpots();
       } catch (error) {
         console.error('Error loading admin user session:', error);
         if (isActive) {
@@ -515,11 +520,13 @@ export default function TouristSpotsManagement() {
     };
   }, [router]);
 
-  // Refetch spots when filters/search change
+  // Filters are applied in the request; pagination is clamped when results arrive.
   useEffect(() => {
-    setCurrentSpotPage(1);
-    fetchSpots();
-  }, [fetchSpots, searchTerm, categoryFilter, statusFilter]);
+    if (!user) return;
+    startTransition(() => {
+      void fetchSpots();
+    });
+  }, [fetchSpots, searchTerm, categoryFilter, statusFilter, user]);
 
   if (loading) {
     return (
@@ -603,13 +610,13 @@ export default function TouristSpotsManagement() {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-center">
             <div className="flex-1 min-w-50">
-              <input type="text" placeholder="Search by name or location..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full px-4 py-2 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500" />
+              <input type="text" placeholder="Search by name or location..." value={searchTerm} onChange={(e) => { setCurrentSpotPage(1); setSearchTerm(e.target.value); }} className="w-full px-4 py-2 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500" />
             </div>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="px-4 py-2 border border-gray-200 rounded-2xl">
+            <select value={categoryFilter} onChange={(e) => { setCurrentSpotPage(1); setCategoryFilter(e.target.value); }} className="px-4 py-2 border border-gray-200 rounded-2xl">
               <option value="all">All Categories</option>
               {(spotCategories || []).map(cat => (<option key={cat.value} value={cat.value}>{cat.label}</option>))}
             </select>
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-4 py-2 border border-gray-200 rounded-2xl">
+            <select value={statusFilter} onChange={(e) => { setCurrentSpotPage(1); setStatusFilter(e.target.value); }} className="px-4 py-2 border border-gray-200 rounded-2xl">
               <option value="all">All Status</option>
               {(spotStatuses || []).map((status) => (
                 <option key={status.value} value={status.value}>{status.label}</option>

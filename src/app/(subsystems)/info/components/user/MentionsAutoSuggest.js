@@ -71,7 +71,7 @@ function createMentionNode(user, router) {
   return mentionNode
 }
 
-export default function MentionsAutoSuggest({ value, onChange, placeholder, rows = 3, onMentionAdded, userId, initialMention = null }) {
+export default function MentionsAutoSuggest({ value, onChange, placeholder, rows = 3, onMentionAdded, userId, initialMention = null, inputRef = null }) {
   const router = useRouter()
   const editorRef = useRef(null)
   const suggestionRef = useRef(null)
@@ -289,7 +289,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
   return (
     <div className="relative">
       <div
-        ref={editorRef}
+        ref={inputRef || editorRef}
         contentEditable
         role="textbox"
         aria-label={placeholder}

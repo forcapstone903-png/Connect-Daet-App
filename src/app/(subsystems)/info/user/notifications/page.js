@@ -129,6 +129,7 @@ export default function UserNotificationsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingHistory, setDeletingHistory] = useState(false)
   const [actionNotice, setActionNotice] = useState('')
+  const [approvingFollowRequestId, setApprovingFollowRequestId] = useState(null)
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [commentsSheetVisible, setCommentsSheetVisible] = useState(false)
   const sheetTouchStartY = useRef(null)
@@ -794,6 +795,46 @@ export default function UserNotificationsPage() {
     }
   }
 
+  const approveFollowRequest = async (notification) => {
+    const requesterId = getNotificationActorId(notification)
+    if (!requesterId || !userId) {
+      setActionNotice('Unable to identify this follow request. Please refresh and try again.')
+      return
+    }
+
+    setApprovingFollowRequestId(notification.id)
+    setActionNotice('')
+    try {
+      const response = await fetch('/info/api/user/follow-requests', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requesterId, action: 'approve', notificationId: notification.id }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to approve this follow request.')
+      }
+
+      setNotifications((previous) => {
+        const next = previous.map((item) => item.id === notification.id
+          ? { ...item, title: 'New follower', message: 'is now following you.', type: 'follow', is_read: true }
+          : item)
+        syncUnreadBadge(next)
+        return next
+      })
+      invalidateCache(notificationsCacheKey)
+      if (result.notificationUpdated === false) {
+        setActionNotice('Follow request approved, but its notification could not be updated.')
+      }
+    } catch (error) {
+      console.error('Follow request approval failed:', error)
+      setActionNotice(error.message || 'Unable to approve this follow request.')
+    } finally {
+      setApprovingFollowRequestId(null)
+    }
+  }
+
   const openNotification = async (notification) => {
     const href = getNotificationHref(notification)
     if (!notification.is_read) await markAsRead(notification.id)
@@ -956,6 +997,7 @@ export default function UserNotificationsPage() {
                     const actorName = getNotificationActorName(notification)
                     const actorProfileHref = getActorProfileHref(notification)
                     const isFollowType = String(notification.type || '').toLowerCase() === 'follow'
+                    const isFollowRequest = String(notification.type || '').toLowerCase() === 'follow_request'
                     const messageText = getNotificationMessageText(notification, actorName)
                     const isFollowBack = isFollowType && messageText.toLowerCase().includes('followed you back')
                     const isStartedFollowing = isFollowType && messageText.toLowerCase().includes('started following you')
@@ -995,7 +1037,19 @@ export default function UserNotificationsPage() {
                               </div>
                             </div>
 
-                            {isFollowType && isFollowBack ? (
+                            {isFollowRequest ? (
+                              <div className="mt-2 flex items-center justify-between gap-3">
+                                <span className="text-xs text-slate-500">{relativeTime}</span>
+                                <button
+                                  type="button"
+                                  onClick={(event) => { event.stopPropagation(); void approveFollowRequest(notification) }}
+                                  disabled={approvingFollowRequestId === notification.id}
+                                  className="rounded-full bg-sky-700 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-sky-800 disabled:cursor-wait disabled:opacity-60"
+                                >
+                                  {approvingFollowRequestId === notification.id ? 'Approving…' : 'Approve'}
+                                </button>
+                              </div>
+                            ) : isFollowType && isFollowBack ? (
                               <div className="mt-2 flex items-center justify-between gap-3">
                                 <div className="text-xs text-slate-500">{relativeTime}</div>
                                 <div className="flex shrink-0 items-center gap-2">

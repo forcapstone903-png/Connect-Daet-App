@@ -3,19 +3,20 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 36px;
-  width: 36px;
-  height: 36px;
-  min-width: 36px;
+  flex: 0 0 var(--admin-avatar-size, 36px);
+  width: var(--admin-avatar-size, 36px);
+  height: var(--admin-avatar-size, 36px);
+  min-width: var(--admin-avatar-size, 36px);
   overflow: hidden;
-  border-radius: 50%;
+  border-radius: 50% !important;
   background: var(--admin-primary-soft, #e0f2fe);
   color: var(--admin-primary-ink, #0369a1);
-  font-size: 12px;
+  font-size: calc(var(--admin-avatar-size, 36px) / 3);
   font-weight: 700;
   line-height: 1;
   vertical-align: middle;
 }
+
 .admin-user-avatar > img {
   display: block;
   width: 100%;

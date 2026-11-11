@@ -70,6 +70,8 @@ const AUTH_INDEPENDENT_API_PATHS = new Set([
   '/info/api/auth/confirm-email',
 ])
 
+const MAINTENANCE_LOOKUP_TIMEOUT_MS = 3000
+
 async function isSessionVersionCurrent(session) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -108,6 +110,37 @@ async function isSessionVersionCurrent(session) {
   }
 }
 
+async function isAccountDeletionPending(userId) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) return false
+
+  try {
+    const url = new URL('/rest/v1/info_users', supabaseUrl)
+    url.searchParams.set('select', 'status')
+    url.searchParams.set('id', `eq.${userId}`)
+    const response = await fetch(url, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3000),
+    })
+
+    if (!response.ok) {
+      console.error('Account deletion status lookup failed with HTTP status:', response.status)
+      return false
+    }
+
+    const accounts = await response.json()
+    return Array.isArray(accounts) && accounts[0]?.status === 'pending_deletion'
+  } catch (error) {
+    console.error('Account deletion status lookup failed:', error)
+    return false
+  }
+}
+
 async function getMaintenanceSettings() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -126,7 +159,7 @@ async function getMaintenanceSettings() {
         Authorization: `Bearer ${serviceRoleKey}`,
       },
       cache: 'no-store',
-      signal: AbortSignal.timeout(1500),
+      signal: AbortSignal.timeout(MAINTENANCE_LOOKUP_TIMEOUT_MS),
     })
 
     if (!response.ok) {
@@ -147,7 +180,11 @@ async function getMaintenanceSettings() {
         : 'We are currently performing scheduled maintenance. Please check back soon.',
     }
   } catch (error) {
-    console.error('Maintenance status lookup failed; allowing the request through:', error)
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      console.warn(`Maintenance status lookup timed out after ${MAINTENANCE_LOOKUP_TIMEOUT_MS}ms; allowing the request through.`)
+    } else {
+      console.error('Maintenance status lookup failed; allowing the request through:', error)
+    }
     return null
   }
 }
@@ -261,6 +298,7 @@ export async function proxy(request) {
     ) {
       response = NextResponse.next()
     } else {
+      const deletionPending = await isAccountDeletionPending(serverSession.user_id)
       const loginUrl = new URL(deletionPending ? '/info/account-recovery' : '/info/login', request.url)
       if (!deletionPending) loginUrl.searchParams.set('message', 'Your session has expired. Please sign in again.')
       response = NextResponse.redirect(loginUrl)
@@ -274,8 +312,9 @@ export async function proxy(request) {
   const isAdmin = loggedIn && (role === 'admin' || role === 'administrator')
   const isAdminRoute = pathname === '/info/admin' || pathname.startsWith('/info/admin/')
   const isVisitorRoute = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
+  const isVisitorTouristSpotDetailRoute = /^\/info\/visitor\/tourist-spots\/[^/]+$/.test(normalizedPathname)
 
-  if (loggedIn && isVisitorRoute) {
+  if (loggedIn && isVisitorRoute && !isVisitorTouristSpotDetailRoute) {
     return NextResponse.redirect(
       new URL(isAdmin ? '/info/admin/dashboard' : '/info/user/dashboard', request.url)
     )

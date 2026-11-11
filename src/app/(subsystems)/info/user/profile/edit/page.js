@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
+import ProfilePhotoCropper from '@/app/(subsystems)/info/components/user/ProfilePhotoCropper'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -119,6 +120,7 @@ export default function EditProfilePage() {
           title="Edit profile"
           description="Update how the Daet community sees you across stories, forums, and events."
           emoji="✏️"
+          hideMobileTitle
           backHref="/info/user/profile"
           backLabel="Your profile"
         >
@@ -137,11 +139,10 @@ export default function EditProfilePage() {
             <div className="mb-6"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">Public profile</p><h2 className="mt-1 text-2xl font-black text-slate-900">Tell people about you</h2><p className="mt-2 text-sm leading-6 text-slate-500">Keep your profile clear and personal so the Daet community knows what you enjoy.</p></div>
             <div className="space-y-5">
               <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-                <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Profile photo</span>{form.avatar_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><MediaUpload bucket="profile-media" folder={`users/${userId}`} mediaType="image" existingMediaUrl={form.avatar_url} buttonText="Add / change photo" maxSizeMB={5} onUploadComplete={(url) => setForm((previous) => ({ ...previous, avatar_url: url || '' }))} onUploadError={setNotice} /></div>
+                <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Profile photo</span>{form.avatar_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><ProfilePhotoCropper userId={userId} imageUrl={form.avatar_url} onUploadComplete={(url) => setForm((previous) => ({ ...previous, avatar_url: url || '' }))} onUploadError={setNotice} /></div>
                 <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Cover photo</span>{form.cover_photo_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" trimLetterbox existingMediaUrl={form.cover_photo_url} previewClassName="h-32 w-full aspect-[3/1]" buttonText="Add / change cover" maxSizeMB={8} onUploadComplete={(url) => setForm((previous) => ({ ...previous, cover_photo_url: url || '' }))} onUploadError={setNotice} /></div>
               </div>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Display name</span><input value={form.full_name} onChange={(event) => setForm((previous) => ({ ...previous, full_name: event.target.value }))} placeholder="Your name" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
-              <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Username</span><div className="flex items-center rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-sky-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-sky-100"><span className="text-sm text-slate-400">@</span><input value={form.username} onChange={(event) => setForm((previous) => ({ ...previous, username: event.target.value.toLowerCase() }))} placeholder="yourname" maxLength={30} autoCapitalize="none" autoCorrect="off" className="w-full border-0 bg-transparent px-2 py-3 text-sm outline-none" /></div><span className="mt-1 block text-xs text-slate-500">3–30 characters; letters, numbers, dots, and underscores.</span></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Location</span><input value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} placeholder="Daet, Camarines Norte, Philippines" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Bio</span><textarea rows={6} value={form.bio} onChange={(event) => setForm((previous) => ({ ...previous, bio: event.target.value }))} placeholder="Share what kind of places, stories, or experiences you love." className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /><span className="mt-1 block text-right text-[11px] text-slate-400">{form.bio.length} characters</span></label>
             </div>

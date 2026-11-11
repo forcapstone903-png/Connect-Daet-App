@@ -3,7 +3,10 @@ const assert = require('node:assert/strict')
 const {
   ANNOUNCEMENT_PIN_DURATION_MS,
   getPinnedAnnouncement,
+  isHiddenByFeedPreferences,
   prioritizeAnnouncement,
+  prioritizeNewestCommunityPost,
+  prioritizeOwnerFeedItems,
   prioritizePinnedFeedItems,
 } = require('./feedOrdering')
 
@@ -64,4 +67,61 @@ test('expired, future, and non-admin announcements are not pinned', () => {
   ]
 
   assert.equal(getPinnedAnnouncement(feed, now), null)
+})
+
+test('owner posts are newest-first and stay ahead of pinned announcements', () => {
+  const ownerId = 'account-owner-id'
+  const items = [
+    { type: 'post', id: 'community', created_by: 'another-account' },
+    { type: 'announcement', id: 'notice', published_at: '2026-11-10T00:00:00Z' },
+    { type: 'post', id: 'owner-old', user_id: ownerId, published_at: '2026-11-09T00:00:00Z' },
+    { type: 'post', id: 'owner-new', created_by: ownerId, published_at: '2026-11-11T00:00:00Z' },
+  ]
+
+  const ordered = prioritizeOwnerFeedItems(items, ownerId, 'notice')
+
+  assert.deepEqual(ordered.map((item) => item.id), ['owner-new', 'owner-old', 'notice', 'community'])
+})
+
+test('the newest community post stays at the top after feed ranking', () => {
+  const items = [
+    { type: 'post', id: 'ranked-first', published_at: '2026-11-09T00:00:00Z' },
+    { type: 'announcement', id: 'notice', published_at: '2026-11-11T00:00:00Z' },
+    { type: 'post', id: 'newest', published_at: '2026-11-10T00:00:00Z' },
+    { type: 'post', id: 'repost', is_repost: true, published_at: '2026-11-12T00:00:00Z' },
+  ]
+
+  assert.deepEqual(
+    prioritizeNewestCommunityPost(items).map((item) => item.id),
+    ['newest', 'ranked-first', 'notice', 'repost'],
+  )
+})
+
+test('reposts are not treated as original owner posts', () => {
+  const ownerId = 'account-owner-id'
+  const items = [
+    { type: 'post', id: 'community', created_by: 'another-account' },
+    { type: 'post', id: 'owner-repost', user_id: ownerId, is_repost: true },
+    { type: 'post', id: 'owner-post', user_id: ownerId, published_at: '2026-11-11T00:00:00Z' },
+  ]
+
+  const ordered = prioritizeOwnerFeedItems(items, ownerId)
+
+  assert.deepEqual(ordered.map((item) => item.id), ['owner-post', 'community', 'owner-repost'])
+})
+
+test('owner posts are not hidden by the owner’s local feed preferences', () => {
+  const ownerId = 'account-owner-id'
+  const ownPost = {
+    type: 'blog',
+    id: 'my-post',
+    created_by: ownerId,
+    category: 'Travel',
+    author: { id: ownerId },
+  }
+  const hiddenPosts = new Set(['blog-my-post'])
+  const notInterestedTopics = new Set([`author:${ownerId}`, 'category:travel'])
+
+  assert.equal(isHiddenByFeedPreferences(ownPost, ownerId, hiddenPosts, notInterestedTopics), false)
+  assert.equal(isHiddenByFeedPreferences({ ...ownPost, id: 'other-post', created_by: 'another-account' }, ownerId, hiddenPosts, notInterestedTopics), true)
 })

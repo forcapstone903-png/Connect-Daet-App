@@ -1,164 +1,173 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
-import { hasAdminAccess } from '@/lib/adminRoles'
+import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
 
-const STORAGE_KEY = 'daet_file_library';
+const MEDIA_API = '/info/api/admin/media';
 
-const readStoredSession = () => {
+function readStoredSession() {
   if (typeof window === 'undefined') return null;
-
   try {
     const session = getStoredSession();
     return session ? JSON.parse(session) : null;
   } catch {
     return null;
   }
-};
+}
 
-const defaultFiles = [
-  { id: 1, name: 'bagasbas-banner.jpg', type: 'image/jpeg', category: 'Marketing', size: '1.2 MB', uploadedAt: '2026-08-01', folder: 'Campaigns', optimized: true, previewUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=900&q=80' },
-  { id: 2, name: 'event-guide.pdf', type: 'application/pdf', category: 'Documents', size: '842 KB', uploadedAt: '2026-08-04', folder: 'Reports', optimized: false, previewUrl: '' },
-  { id: 3, name: 'heritage-video.mp4', type: 'video/mp4', category: 'Media', size: '8.6 MB', uploadedAt: '2026-08-06', folder: 'Videos', optimized: true, previewUrl: '' },
-  { id: 4, name: 'plaza-rizal.png', type: 'image/png', category: 'Places', size: '2.4 MB', uploadedAt: '2026-08-08', folder: 'Tourism Spots', optimized: true, previewUrl: 'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?auto=format&fit=crop&w=900&q=80' },
-];
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`The server returned an invalid response (${response.status}).`);
+  }
+}
+
+function formatSize(bytes) {
+  if (!Number.isFinite(bytes)) return 'Size unavailable';
+  return bytes >= 1024 * 1024
+    ? `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
 
 export default function FileManagementPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [files, setFiles] = useState(() => {
-    if (typeof window === 'undefined') return defaultFiles;
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      return Array.isArray(saved) && saved.length > 0 ? saved : defaultFiles;
-    } catch {
-      return defaultFiles;
-    }
-  });
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
   const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('All');
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [dragActive, setDragActive] = useState(false);
+  const [kind, setKind] = useState('All');
   const [toast, setToast] = useState(null);
 
-  const showToast = (msg, isError = false) => {
-    setToast({ msg, isError });
-    setTimeout(() => setToast(null), 2500);
-  };
+  const showToast = useCallback((message, isError = false) => {
+    setToast({ message, isError });
+    window.setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  const loadFiles = useCallback(async () => {
+    try {
+      const response = await fetch(MEDIA_API, { cache: 'no-store' });
+      const data = await readJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `Unable to load media (${response.status}).`);
+      }
+      setFiles(data.files || []);
+    } catch (error) {
+      showToast(error.message || 'Unable to load media.', true);
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
 
   useEffect(() => {
-    // Browser-only session hydration is required here to avoid mismatch between
-    // server and client renders. The page intentionally renders a skeleton until
-    // the client has resolved the authenticated user.
-    const sessionUser = readStoredSession();
+    // Resolve the browser-held session after hydration.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setUser(sessionUser);
+    setUser(readStoredSession());
     setIsHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!isHydrated) return;
-
     if (!user) {
       router.push('/info/login');
       return;
     }
-
     if (!hasAdminAccess(user.role)) {
       router.push('/info/admin/dashboard');
+      return;
     }
-  }, [router, user, isHydrated]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(files));
-  }, [files]);
+    let active = true;
+    const load = async () => {
+      try {
+        const response = await fetch(MEDIA_API, { cache: 'no-store' });
+        const data = await readJsonResponse(response);
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Unable to load media (${response.status}).`);
+        }
+        if (active) setFiles(data.files || []);
+      } catch (error) {
+        if (active) showToast(error.message || 'Unable to load media.', true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, [isHydrated, router, showToast, user]);
 
   const filteredFiles = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const query = search.trim().toLowerCase();
     return files.filter((file) => {
-      const matchesSearch = !q || [file.name, file.type, file.category, file.folder].join(' ').toLowerCase().includes(q);
-      const matchesCategory = category === 'All' || file.category === category;
-      return matchesSearch && matchesCategory;
+      const matchesSearch = !query || [file.name, file.type, file.objectPath].join(' ').toLowerCase().includes(query);
+      const matchesKind = kind === 'All' || (kind === 'Images' ? file.type.startsWith('image/') : file.type.startsWith('video/'));
+      return matchesSearch && matchesKind;
     });
-  }, [category, files, search]);
+  }, [files, kind, search]);
 
-  const totalSize = useMemo(() => {
-    const sizeMap = {
-      KB: 1024,
-      MB: 1024 * 1024,
-      GB: 1024 * 1024 * 1024,
-    };
+  const uploadFiles = async (incoming) => {
+    const selected = Array.from(incoming || []);
+    if (!selected.length) return;
 
-    return files.reduce((sum, file) => {
-      const match = file.size.match(/([0-9.]+)\s*([KMG]?B)/i);
-      if (!match) return sum;
-      const value = Number(match[1]);
-      const unit = match[2].toUpperCase();
-      return sum + value * (sizeMap[unit] || 1);
-    }, 0);
-  }, [files]);
+    setUploading(true);
+    let uploaded = 0;
+    const failures = [];
+    for (const file of selected) {
+      try {
+        const formData = new FormData();
+        formData.set('file', file);
+        const response = await fetch(MEDIA_API, { method: 'POST', body: formData });
+        const data = await readJsonResponse(response);
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Upload failed (${response.status}).`);
+        }
+        uploaded += 1;
+      } catch (error) {
+        failures.push(`${file.name}: ${error.message || 'upload failed'}`);
+      }
+    }
+    if (uploaded) await loadFiles();
+    setUploading(false);
 
-  const storagePercent = Math.min((totalSize / (20 * 1024 * 1024)) * 100, 100);
-
-  const handleFiles = (incomingFiles) => {
-    const list = Array.from(incomingFiles).map((file, index) => ({
-      id: Date.now() + index,
-      name: file.name,
-      type: file.type || 'application/octet-stream',
-      category: file.type.startsWith('image/') ? 'Marketing' : 'Documents',
-      size: `${(file.size / (1024 * 1024)).toFixed(2)} MB`,
-      uploadedAt: new Date().toISOString().split('T')[0],
-      folder: 'Uploads',
-      optimized: file.type.startsWith('image/'),
-      previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : '',
-    }));
-
-    setFiles((prev) => [...list, ...prev]);
-    showToast(`${list.length} file(s) uploaded.`);
+    if (failures.length) {
+      showToast(`${uploaded} file(s) uploaded; ${failures.length} failed. ${failures.slice(0, 2).join(' ')}`, true);
+    } else {
+      showToast(`${uploaded} file(s) uploaded to shared storage.`);
+    }
   };
 
-  const handleDelete = (fileId) => {
-    setFiles((prev) => prev.filter((item) => item.id !== fileId));
-    if (selectedFile && selectedFile.id === fileId) setSelectedFile(null);
-    showToast('File deleted.');
+  const deleteFile = async (file) => {
+    try {
+      const response = await fetch(MEDIA_API, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ objectPath: file.objectPath }),
+      });
+      const data = await readJsonResponse(response);
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `Unable to delete media (${response.status}).`);
+      }
+      setFiles((current) => current.filter((entry) => entry.objectPath !== file.objectPath));
+      showToast('Media object deleted from storage.');
+    } catch (error) {
+      showToast(error.message || 'Unable to delete media.', true);
+    }
   };
 
-  const toggleOptimization = (fileId) => {
-    setFiles((prev) => prev.map((item) => item.id === fileId ? { ...item, optimized: !item.optimized } : item));
-    showToast('Image optimization updated.');
-  };
-
-  const imageActions = (file) => {
-    if (!file || !file.previewUrl) return;
-    return (
-      <div className="flex gap-2">
-        <button onClick={() => setSelectedFile(file)} className="rounded-full bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-700">Preview</button>
-        <button onClick={() => toggleOptimization(file.id)} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">{file.optimized ? 'Optimize on' : 'Optimize off'}</button>
-      </div>
-    );
-  };
-
-  const categories = ['All', ...new Set(files.map((file) => file.category))];
+  const totalBytes = files.reduce((total, file) => total + (Number(file.size) || 0), 0);
 
   if (!isHydrated || !user) {
     return (
       <div className="min-h-screen bg-slate-50" aria-busy="true">
-        <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
-          <div className="animate-pulse space-y-4">
-            <div className="h-8 w-72 rounded bg-slate-200" />
-            <div className="grid gap-4 md:grid-cols-4">
-              {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="h-24 rounded-2xl bg-slate-200" />
-              ))}
-            </div>
-          </div>
-        </div>
+        <div className="admin-loading"><span className="admin-loading-ring" aria-hidden="true" /><p className="text-sm">Loading media library…</p></div>
       </div>
     );
   }
@@ -166,145 +175,67 @@ export default function FileManagementPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <AdminSidebar user={user} roleLabel="File Manager" />
-
       <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         <AdminPageHeader
           eyebrow="Content"
           title="Media library"
-          description="Upload, preview, and organise the images, videos, and documents used across the tourism site."
+          description="Manage administrator uploads stored in Supabase Storage."
           icon="image"
         />
 
+        <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          Uploads are durably stored in the public media bucket and can be viewed by anyone with the URL. Upload only approved public-site images or videos; upload and delete operations require an administrator session. Automatic image optimization is not available.
+        </div>
+
         <AdminStatGrid>
-          <AdminStatCard label="Files" value={files.length} icon="data" tone="info" meta="All uploaded assets" />
-          <AdminStatCard
-            label="Images"
-            value={files.filter((file) => file.type.startsWith('image/')).length}
-            icon="image"
-            tone="violet"
-            meta="Photos and graphics"
-          />
-          <AdminStatCard
-            label="Storage used"
-            value={`${(totalSize / (1024 * 1024)).toFixed(1)} MB`}
-            icon="save"
-            tone="success"
-            meta="Total size on record"
-          />
-          <AdminStatCard
-            label="Capacity used"
-            value={`${storagePercent.toFixed(0)}%`}
-            icon="analytics"
-            tone="warning"
-            meta="Of available storage"
-          />
+          <AdminStatCard label="Files" value={files.length} icon="data" tone="info" meta="Tracked administrator uploads" />
+          <AdminStatCard label="Images" value={files.filter((file) => file.type.startsWith('image/')).length} icon="image" tone="violet" meta="Stored image assets" />
+          <AdminStatCard label="Videos" value={files.filter((file) => file.type.startsWith('video/')).length} icon="events" tone="brand" meta="Stored video assets" />
+          <AdminStatCard label="Tracked size" value={formatSize(totalBytes)} icon="save" tone="success" meta="Size recorded at upload time" />
         </AdminStatGrid>
 
-        <div className="mb-6 grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="relative w-full max-w-md">
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search files by name, type, or folder" className="w-full rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none" />
-              </div>
-              <select value={category} onChange={(e) => setCategory(e.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                {categories.map((option) => (
-                  <option key={option} value={option}>{option}</option>
-                ))}
-              </select>
-            </div>
-
-            <label
-              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
-              onDragLeave={() => setDragActive(false)}
-              onDrop={(e) => { e.preventDefault(); setDragActive(false); handleFiles(e.dataTransfer.files); }}
-              className={`mb-5 flex cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center transition ${dragActive ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50'}`}
-            >
-              <input type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-              <div>
-                <div className="text-2xl">Upload</div>
-                <p className="mt-2 text-sm font-medium text-slate-700">Drag and drop files here or click to upload</p>
-              </div>
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search uploaded files" className="min-w-[220px] flex-1 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none" />
+            <select value={kind} onChange={(event) => setKind(event.target.value)} className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+              <option>All</option>
+              <option>Images</option>
+              <option>Videos</option>
+            </select>
+            <label className={`cursor-pointer rounded-full bg-blue-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-800 ${uploading ? 'pointer-events-none opacity-50' : ''}`}>
+              {uploading ? 'Uploading…' : 'Upload media'}
+              <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/quicktime,video/webm" multiple className="sr-only" disabled={uploading} onChange={(event) => { uploadFiles(event.target.files); event.target.value = ''; }} />
             </label>
+            <button type="button" onClick={() => { setLoading(true); loadFiles(); }} disabled={loading} className="rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loading && files.length === 0 ? (
+            <p className="py-12 text-center text-sm text-slate-500">Loading stored media…</p>
+          ) : filteredFiles.length ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {filteredFiles.map((file) => (
-                <div key={file.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-3 overflow-hidden rounded-xl bg-white">
-                    {file.previewUrl ? (
-                      <Image src={file.previewUrl} alt={file.name} width={500} height={220} className="h-32 w-full object-cover" />
-                    ) : (
-                      <div className="flex h-32 items-center justify-center bg-slate-200 text-sm text-gray-600">{file.type.includes('pdf') ? 'PDF' : file.type.includes('video') ? 'Video' : 'File'}</div>
-                    )}
+                <article key={file.objectPath} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <p className="truncate font-semibold text-slate-800" title={file.name}>{file.name}</p>
+                  <p className="mt-1 text-xs text-slate-500">{file.type} · {formatSize(Number(file.size))}</p>
+                  <p className="mt-1 text-xs text-slate-500">Uploaded {new Date(file.uploadedAt).toLocaleString()}</p>
+                  <div className="mt-4 flex gap-2">
+                    <a href={file.url} target="_blank" rel="noreferrer" className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 ring-1 ring-slate-200 hover:bg-blue-50">Open file</a>
+                    <button type="button" onClick={() => deleteFile(file)} className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700">Delete</button>
                   </div>
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-semibold text-slate-800">{file.name}</p>
-                    <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-600">{file.category}</span>
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    <p>{file.folder}</p>
-                    <p>{file.size}</p>
-                    <p>{file.uploadedAt}</p>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between gap-2">
-                    {imageActions(file)}
-                    <button onClick={() => handleDelete(file.id)} className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700">Delete</button>
-                  </div>
-                </div>
+                </article>
               ))}
             </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-3 text-lg font-bold text-slate-800">Storage Usage</h3>
-              <div className="mb-3 h-3 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" style={{ width: `${storagePercent}%` }} />
-              </div>
-              <div className="flex items-center justify-between text-sm text-slate-600">
-                <span>20 MB limit</span>
-                <span>{(totalSize / (1024 * 1024)).toFixed(1)} MB used</span>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-3 text-lg font-bold text-slate-800">Folders</h3>
-              <div className="space-y-2 text-sm text-slate-600">
-                <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Campaigns</span><span>4</span></div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Reports</span><span>2</span></div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Tourism Spots</span><span>5</span></div>
-                <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span>Videos</span><span>3</span></div>
-              </div>
-            </div>
-          </div>
-        </div>
+          ) : (
+            <p className="py-12 text-center text-sm text-slate-500">{files.length ? 'No files match your search.' : 'No administrator media uploads have been recorded.'}</p>
+          )}
+        </section>
       </div>
 
-      {selectedFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-3xl rounded-3xl bg-white p-5 shadow-2xl">
-              <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-xl font-bold text-slate-800">File Preview</h3>
-              <button onClick={() => setSelectedFile(null)} className="text-sm text-slate-400 hover:text-slate-600">Close</button>
-            </div>
-
-            {selectedFile.previewUrl ? (
-              <Image src={selectedFile.previewUrl} alt={selectedFile.name} width={1200} height={900} className="max-h-[60vh] w-full rounded-2xl object-contain" />
-              ) : (
-              <div className="flex h-64 items-center justify-center rounded-2xl bg-slate-100 text-sm text-gray-600">File</div>
-            )}
-
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
-              <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Name</p><p className="mt-1 text-sm font-medium text-slate-800">{selectedFile.name}</p></div>
-              <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Type</p><p className="mt-1 text-sm font-medium text-slate-800">{selectedFile.type}</p></div>
-              <div className="rounded-xl bg-slate-50 p-3"><p className="text-xs uppercase tracking-wide text-slate-500">Uploaded</p><p className="mt-1 text-sm font-medium text-slate-800">{selectedFile.uploadedAt}</p></div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {toast && (
-        <div className={`fixed bottom-5 right-5 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-600' : 'bg-emerald-600'}`}>
-          {toast.msg}
+        <div role={toast.isError ? 'alert' : 'status'} className={`fixed bottom-5 right-5 max-w-xl rounded-2xl px-4 py-3 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-700' : 'bg-emerald-700'}`}>
+          {toast.message}
         </div>
       )}
     </div>

@@ -39,7 +39,7 @@ export default function LegalSection({ t, appVersion = '0.1.0' }) {
         <Link href="/info/user/feedback" className="text-xs font-bold text-sky-700">{t('settings.legal.support')}</Link>
       </ActionRow>
 
-      <p className="pt-1 text-center text-xs text-slate-400">CONNECT-Daet · v{appVersion}</p>
+      <p className="pt-1 text-center text-xs text-slate-400">Connect Daet · v{appVersion}</p>
     </SettingsCard>
   )
 }

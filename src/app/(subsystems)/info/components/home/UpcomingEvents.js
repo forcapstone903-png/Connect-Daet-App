@@ -10,7 +10,8 @@ export default function UpcomingEvents() {
     const load = async () => {
       try {
         const now = new Date().toISOString()
-        const { data } = await supabase.from('info_events').select('*').gte('start_date', now).order('start_date', { ascending: true }).limit(6)
+        const { data, error } = await supabase.from('info_events').select('*').eq('status', 'published').eq('approval_status', 'approved').gte('start_date', now).order('start_date', { ascending: true }).limit(6)
+        if (error) throw error
         setEvents(data || [])
       } catch (e) {
         console.error('Error loading events', e)

@@ -2,6 +2,14 @@ function normalizeUserType(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+const DEFAULT_ADMIN_DISPLAY_NAME = 'Daet Tourism Admin'
+const GENERIC_ADMIN_NAMES = new Set([
+  'admin',
+  'administrator',
+  'system administrator',
+  'daet tourism administrator',
+])
+
 function getAuthorDisplayName(author = {}, fallback = 'Community member') {
   if (!author || typeof author !== 'object') {
     return fallback
@@ -11,7 +19,9 @@ function getAuthorDisplayName(author = {}, fallback = 'Community member') {
   const directName = String(author.full_name || author.name || '').trim()
 
   if (normalizedType === 'admin') {
-    return directName || 'Administrator'
+    return directName && !GENERIC_ADMIN_NAMES.has(directName.toLowerCase())
+      ? directName
+      : DEFAULT_ADMIN_DISPLAY_NAME
   }
 
   return directName || fallback

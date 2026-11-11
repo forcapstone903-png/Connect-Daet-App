@@ -77,13 +77,15 @@ export async function GET(request) {
   if (scope === 'recent' && !isAdmin) {
     return NextResponse.json({ success: false, message: 'Administrator access is required.' }, { status: 403 })
   }
+  const requestedLimit = Number.parseInt(new URL(request.url).searchParams.get('limit') || '', 10)
+  const recentLimit = Number.isInteger(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 8
 
   try {
     let query = adminSupabase
       .from('user_activity_log')
       .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)')
       .order('created_at', { ascending: false })
-      .limit(scope === 'recent' ? 8 : 20)
+      .limit(scope === 'recent' ? recentLimit : 20)
 
     if (scope !== 'recent') {
       query = query
@@ -93,7 +95,9 @@ export async function GET(request) {
 
     const { data, error } = await query
     if (error) throw error
-    return NextResponse.json({ success: true, activities: data || [] })
+    return NextResponse.json({ success: true, activities: data || [] }, {
+      headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
+    })
   } catch (error) {
     console.error('Activity read error:', error)
     return NextResponse.json({ success: false, message: error.message || 'Unable to load activity.' }, { status: 500 })

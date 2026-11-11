@@ -54,7 +54,7 @@ export async function GET(request) {
       adminSupabase
         .from('reposts')
         .select('id, user_id, original_content_type, original_content_id, quote_text, created_at, status, visibility')
-        .in('original_content_type', ['user_post', 'blog', 'event'])
+        .in('original_content_type', ['user_post', 'blog', 'event', 'tourist_spot'])
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(50),
@@ -77,11 +77,13 @@ export async function GET(request) {
     const postIds = repostIdsByType('user_post')
     const blogIds = repostIdsByType('blog')
     const eventIds = repostIdsByType('event')
+    const touristSpotIds = repostIdsByType('tourist_spot')
 
     const [
       { data: repostedPosts, error: repostedPostsError },
       { data: repostedBlogs, error: repostedBlogsError },
       { data: repostedEvents, error: repostedEventsError },
+      { data: repostedTouristSpots, error: repostedTouristSpotsError },
     ] = await Promise.all([
       postIds.length
         ? adminSupabase
@@ -96,6 +98,8 @@ export async function GET(request) {
           .select('id, created_by, title, excerpt, content, category, featured_image, images, videos, media_layout, published_at, created_at, status')
           .in('id', blogIds)
           .eq('status', 'published')
+          .eq('approval_status', 'approved')
+          .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
         : Promise.resolve({ data: [], error: null }),
       eventIds.length
         ? adminSupabase
@@ -103,19 +107,35 @@ export async function GET(request) {
           .select('id, created_by, title, description, featured_image, images, start_date, start_time, category, location, venue, created_at, status')
           .in('id', eventIds)
           .in('status', ['published', 'cancelled', 'completed'])
+          .eq('approval_status', 'approved')
+        : Promise.resolve({ data: [], error: null }),
+      touristSpotIds.length
+        ? adminSupabase
+          .from('info_tourist_spots')
+          .select('id, created_by, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_at, status')
+          .in('id', touristSpotIds)
+          .eq('status', 'active')
         : Promise.resolve({ data: [], error: null }),
     ])
     if (repostedPostsError) throw repostedPostsError
     if (repostedBlogsError) throw repostedBlogsError
     if (repostedEventsError) throw repostedEventsError
+    if (repostedTouristSpotsError) throw repostedTouristSpotsError
 
     const postsById = new Map((repostedPosts || []).map((post) => [post.id, post]))
     const blogsById = new Map((repostedBlogs || []).map((blog) => [blog.id, blog]))
     const eventsById = new Map((repostedEvents || []).map((event) => [event.id, event]))
+    const touristSpotsById = new Map((repostedTouristSpots || []).map((spot) => [spot.id, {
+      ...spot,
+      title: spot.name,
+      content: spot.description,
+      excerpt: spot.description,
+    }]))
     const originalForRepost = (repost) => {
       if (repost.original_content_type === 'user_post') return postsById.get(repost.original_content_id)
       if (repost.original_content_type === 'blog') return blogsById.get(repost.original_content_id)
       if (repost.original_content_type === 'event') return eventsById.get(repost.original_content_id)
+      if (repost.original_content_type === 'tourist_spot') return touristSpotsById.get(repost.original_content_id)
       return null
     }
 
@@ -125,6 +145,7 @@ export async function GET(request) {
       ...(repostedPosts || []).map((post) => post.user_id),
       ...(repostedBlogs || []).map((blog) => blog.created_by),
       ...(repostedEvents || []).map((event) => event.created_by),
+      ...(repostedTouristSpots || []).map((spot) => spot.created_by),
     ].filter(Boolean))]
     const { data: profiles, error: profilesError } = accountIds.length
       ? await adminSupabase
@@ -166,6 +187,15 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('Personalized feed content lookup failed:', error)
+    if (
+      ['42703', 'PGRST204'].includes(error?.code)
+      && /approval_status/i.test(`${error?.message || ''} ${error?.details || ''}`)
+    ) {
+      return errorResponse(
+        'The blog moderation database update is not available yet. Apply migration 080_blog_admin_approval.sql, then retry.',
+        503
+      )
+    }
     return errorResponse('Unable to load feed content right now.')
   }
 }

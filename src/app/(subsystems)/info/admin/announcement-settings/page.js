@@ -7,7 +7,7 @@ import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
-const STORAGE_KEY = 'daet_announcement_settings';
+const SETTINGS_API = '/info/api/admin/settings';
 
 const defaultCategories = [
   { id: 1, name: 'General', color: 'blue', enabled: true },
@@ -61,18 +61,13 @@ const readStoredSession = () => {
 export default function AnnouncementSettingsPage() {
   const router = useRouter();
   const [user] = useState(() => readStoredSession());
-  const [settings, setSettings] = useState(() => {
-    if (typeof window === 'undefined') return defaultState;
-    try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-      return saved || defaultState;
-    } catch {
-      return defaultState;
-    }
-  });
+  const [settings, setSettings] = useState(defaultState);
   const [newCategory, setNewCategory] = useState('');
   const [templateForm, setTemplateForm] = useState({ name: '', type: 'announcement', subject: '', body: '' });
   const [toast, setToast] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!user) {
@@ -86,12 +81,61 @@ export default function AnnouncementSettingsPage() {
   }, [router, user]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-  }, [settings]);
+    if (!user || !hasAdminAccess(user.role)) return undefined;
+    let active = true;
+    const loadSettings = async () => {
+      try {
+        const response = await fetch(SETTINGS_API, { cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Unable to load saved notification settings (${response.status}).`);
+        }
+        const saved = data.settings?.announcement;
+        if (active && saved) {
+          setSettings({
+            ...defaultState,
+            ...saved,
+            pushSettings: { ...defaultState.pushSettings, ...saved.pushSettings },
+            emailDigest: { ...defaultState.emailDigest, ...saved.emailDigest },
+            emergencyProtocol: { ...defaultState.emergencyProtocol, ...saved.emergencyProtocol },
+          });
+        }
+      } catch (error) {
+        if (active) setLoadError(error.message || 'Unable to load notification settings.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadSettings();
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   const showToast = (msg, isError = false) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 2600);
+  };
+
+  const saveSettings = async () => {
+    setSaving(true);
+    try {
+      const response = await fetch(SETTINGS_API, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'announcement', value: settings }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || `Unable to save notification settings (${response.status}).`);
+      }
+      setLoadError('');
+      showToast('Notification settings and templates saved to the database.');
+    } catch (error) {
+      showToast(error.message || 'Unable to save notification settings.', true);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const addCategory = () => {
@@ -105,7 +149,7 @@ export default function AnnouncementSettingsPage() {
       categories: [...prev.categories, { id: Date.now(), name: newCategory.trim(), color: 'blue', enabled: true }],
     }));
     setNewCategory('');
-    showToast('Category added successfully.');
+    showToast('Category added. Save changes to persist it.');
   };
 
   const toggleCategory = (id) => {
@@ -113,7 +157,7 @@ export default function AnnouncementSettingsPage() {
       ...prev,
       categories: prev.categories.map((category) => category.id === id ? { ...category, enabled: !category.enabled } : category),
     }));
-    showToast('Category status updated.');
+    showToast('Category updated. Save changes to persist it.');
   };
 
   const addTemplate = () => {
@@ -127,7 +171,7 @@ export default function AnnouncementSettingsPage() {
       notificationTemplates: [{ id: Date.now(), ...templateForm, name: templateForm.name.trim() }, ...prev.notificationTemplates],
     }));
     setTemplateForm({ name: '', type: 'announcement', subject: '', body: '' });
-    showToast('Template saved successfully.');
+    showToast('Template added. Save changes to persist it.');
   };
 
   if (!user) return null;
@@ -140,9 +184,20 @@ export default function AnnouncementSettingsPage() {
         <AdminPageHeader
           eyebrow="Notifications"
           title="Announcement & alert settings"
-          description="Configure categories, priorities, notification channels, and emergency protocols."
+          description="Persist shared notification templates and preferences for administrators."
           icon="settings"
         />
+
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Templates and preferences are stored in the administrator database. Scheduled digests, push quiet hours, announcement expiration, and emergency escalation are not currently executed by the application.
+        </div>
+        {loadError && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{loadError}</p>}
+        <div className="mb-6 flex items-center justify-between gap-3">
+          <p className="text-sm text-slate-600">{loading ? 'Loading saved settings…' : 'Changes remain local until saved.'}</p>
+          <button type="button" onClick={saveSettings} disabled={loading || saving || Boolean(loadError)} className="rounded-full bg-blue-700 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
+            {saving ? 'Saving…' : 'Save all settings'}
+          </button>
+        </div>
 
         <div className="mb-6 grid gap-4 md:grid-cols-4">
           <div className="rounded-2xl bg-gradient-to-r from-sky-600 to-cyan-600 p-4 text-white shadow-sm">
@@ -280,7 +335,7 @@ export default function AnnouncementSettingsPage() {
                   <textarea value={templateForm.body} onChange={(e) => setTemplateForm((prev) => ({ ...prev, body: e.target.value }))} rows="4" className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
                 </div>
 
-                <button onClick={addTemplate} className="rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700">Save Template</button>
+                <button onClick={addTemplate} disabled={loading || saving} className="rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50">Add Template</button>
               </div>
 
               <div className="mt-5 space-y-3">

@@ -79,15 +79,9 @@ export default function AdminEventsPage() {
   const [stats, setStats] = useState({
     total: 0, published: 0, draft: 0, cancelled: 0, completed: 0, upcoming: 0
   });
-  const [registrationsByEvent, setRegistrationsByEvent] = useState(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      return JSON.parse(localStorage.getItem('event_registrations_cache') || '{}');
-    } catch (error) {
-      return {};
-    }
-  });
-  const [newRegistrant, setNewRegistrant] = useState({ name: '', email: '', status: 'confirmed' });
+  const [registrationsByEvent, setRegistrationsByEvent] = useState({});
+  const [registrationSaving, setRegistrationSaving] = useState(false);
+  const [reminderSending, setReminderSending] = useState(false);
   
   const [filters, setFilters] = useState({
     status: 'all',
@@ -119,23 +113,19 @@ export default function AdminEventsPage() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const saveRegistrationsCache = useCallback((nextMap) => {
-    setRegistrationsByEvent(nextMap);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('event_registrations_cache', JSON.stringify(nextMap));
-    }
+  const fetchRegistrations = useCallback(async () => {
+    const response = await fetch('/info/api/admin/events/registrations', {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load registrations.');
+    setRegistrationsByEvent(result.registrationsByEvent || {});
   }, []);
 
-  const getRegistrationsForEvent = useCallback((eventId) => {
-    const eventRegistrations = registrationsByEvent[eventId] || [];
-    return eventRegistrations.map((registration) => ({
-      id: registration.id || `${eventId}-${Date.now()}-${Math.random()}`,
-      name: registration.name || 'Guest',
-      email: registration.email || 'noreply@local',
-      status: registration.status || 'confirmed',
-      created_at: registration.created_at || new Date().toISOString()
-    }));
-  }, [registrationsByEvent]);
+  const getRegistrationsForEvent = useCallback((eventId) => (
+    registrationsByEvent[eventId] || []
+  ), [registrationsByEvent]);
 
   const addNotification = (title, message, type = 'info') => {
     const notifications = JSON.parse(localStorage.getItem('admin_notifications') || '[]');
@@ -553,7 +543,7 @@ export default function AdminEventsPage() {
   // info.endStr), which uses an EXCLUSIVE end date (the day after the last
   // highlighted cell). Shift it back one day so the form's end_date matches
   // the actual last day the admin highlighted.
-  const openCreateModal = (startStr = null, endStr = null, allDay = true) => {
+  const openCreateModal = useCallback((startStr = null, endStr = null, allDay = true) => {
     setSelectedEvent(null);
     setSelectedEventDetails(null);
     setEventDetailsSearch('');
@@ -572,7 +562,7 @@ export default function AdminEventsPage() {
     try {
       calendarRef.current?.getApi()?.unselect();
     } catch (err) {}
-  };
+  }, []);
 
   const openEditModal = (eventObj) => {
     setSelectedEvent(eventObj);
@@ -684,66 +674,41 @@ export default function AdminEventsPage() {
     setSelectedEventDetails(null);
   };
 
-  const addRegistration = (eventId) => {
-    const trimmedName = newRegistrant.name.trim();
-    const trimmedEmail = newRegistrant.email.trim();
-    if (!trimmedName || !trimmedEmail) {
-      showToast('Please enter attendee name and email', true);
-      return;
-    }
-
-    const eventRegistrations = getRegistrationsForEvent(eventId);
-    const nextList = [
-      ...eventRegistrations,
-      {
-        id: `reg-${Date.now()}`,
-        name: trimmedName,
-        email: trimmedEmail,
-        status: newRegistrant.status || 'confirmed',
-        created_at: new Date().toISOString(),
-      }
-    ];
-
-    const nextMap = {
-      ...registrationsByEvent,
-      [eventId]: nextList,
-    };
-
-    saveRegistrationsCache(nextMap);
-    setNewRegistrant({ name: '', email: '', status: 'confirmed' });
-    if (selectedEventDetails && selectedEventDetails.id === eventId) {
-      setSelectedEventDetails({
-        ...selectedEventDetails,
-        current_attendees: nextList.length,
+  const updateRegistrationStatus = async (eventId, registrationId, nextStatus) => {
+    setRegistrationSaving(true);
+    try {
+      const response = await fetch(`/info/api/admin/events/${encodeURIComponent(eventId)}/registrations`, {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registrationId, status: nextStatus }),
       });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update registration.');
+      await fetchRegistrations();
+      showToast(`Registration marked as ${nextStatus}.`);
+    } catch (error) {
+      showToast(error.message || 'Unable to update registration.', true);
+    } finally {
+      setRegistrationSaving(false);
     }
-    showToast('Attendee added successfully', false);
   };
 
-  const updateRegistrationStatus = (eventId, registrationId, nextStatus) => {
-    const nextMap = {
-      ...registrationsByEvent,
-      [eventId]: (registrationsByEvent[eventId] || []).map((registration) =>
-        registration.id === registrationId ? { ...registration, status: nextStatus } : registration
-      )
-    };
-    saveRegistrationsCache(nextMap);
-    if (selectedEventDetails && selectedEventDetails.id === eventId) {
-      setSelectedEventDetails({
-        ...selectedEventDetails,
-        current_attendees: (nextMap[eventId] || []).length,
+  const sendReminder = async (eventId) => {
+    setReminderSending(true);
+    try {
+      const response = await fetch(`/info/api/admin/events/${encodeURIComponent(eventId)}/reminders`, {
+        method: 'POST',
+        credentials: 'same-origin',
       });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Some reminders could not be delivered.');
+      showToast(result.message || 'Event reminders sent.');
+    } catch (error) {
+      showToast(error.message || 'Unable to send event reminders.', true);
+    } finally {
+      setReminderSending(false);
     }
-    showToast(`Registration marked as ${nextStatus}`, false);
-  };
-
-  const sendReminder = (eventId) => {
-    const event = events.find((item) => item.id === eventId);
-    const registrations = getRegistrationsForEvent(eventId);
-    const reminderCount = registrations.length;
-
-    addNotification('Reminder Sent', `${event?.title || 'Event'} reminder was sent to ${reminderCount} attendee${reminderCount === 1 ? '' : 's'}.`, 'info');
-    showToast(`Reminder sent to ${reminderCount} attendee${reminderCount === 1 ? '' : 's'}`, false);
   };
 
   const toggleSelectEvent = (eventId) => {
@@ -886,6 +851,12 @@ export default function AdminEventsPage() {
   }, []);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('action') !== 'create') return undefined
+    const frame = window.requestAnimationFrame(() => openCreateModal())
+    return () => window.cancelAnimationFrame(frame)
+  }, [openCreateModal])
+
+  useEffect(() => {
     const checkAuth = async () => {
       const session = getStoredSession();
       if (!session) { router.push('/info/login'); return; }
@@ -894,11 +865,16 @@ export default function AdminEventsPage() {
       if (!userData.id && userData.user_id) userData.id = userData.user_id;
       if (!hasAdminAccess(userData.role)) { router.push('/info/admin/dashboard'); return; }
       setUser(userData);
+      try {
+        await fetchRegistrations();
+      } catch (error) {
+        showToast(error.message || 'Unable to load event registrations.', true);
+      }
       await fetchEvents();
       setLoading(false);
     };
     checkAuth();
-  }, [router, fetchEvents]);
+  }, [router, fetchEvents, fetchRegistrations]);
 
   if (loading) {
     return (
@@ -1384,7 +1360,7 @@ export default function AdminEventsPage() {
                 <div className="flex justify-between items-center mb-2">
                   <p className="text-xs uppercase tracking-wide text-gray-400">Capacity</p>
                   <span className="text-xs font-medium text-gray-600">
-                    {getRegistrationsForEvent(selectedEventDetails.id).filter((entry) => entry.status === 'confirmed').length}/{selectedEventDetails.max_attendees || 0} filled
+                    {getRegistrationsForEvent(selectedEventDetails.id).filter((entry) => entry.status === 'confirmed').length}/{selectedEventDetails.max_attendees || 'Unlimited'} filled
                   </span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-gray-200 overflow-hidden">
@@ -1397,9 +1373,10 @@ export default function AdminEventsPage() {
                 </div>
                 <button
                   onClick={() => sendReminder(selectedEventDetails.id)}
+                  disabled={reminderSending}
                   className="mt-3 w-full bg-blue-600 text-white rounded-full px-3 py-1.5 text-xs font-medium hover:bg-blue-700"
                 >
-                  Send reminder to {getRegistrationsForEvent(selectedEventDetails.id).length} attendees
+                  {reminderSending ? 'Sending reminders…' : `Email reminder to ${getRegistrationsForEvent(selectedEventDetails.id).filter((entry) => entry.status === 'confirmed').length} confirmed attendees`}
                 </button>
               </div>
 
@@ -1427,10 +1404,10 @@ export default function AdminEventsPage() {
                         <select
                           value={registration.status}
                           onChange={(e) => updateRegistrationStatus(selectedEventDetails.id, registration.id, e.target.value)}
+                          disabled={registrationSaving}
                           className="px-1.5 py-1 border border-gray-200 rounded-full text-[10px] bg-white"
                         >
                           <option value="confirmed">Confirmed</option>
-                          <option value="pending">Pending</option>
                           <option value="cancelled">Cancelled</option>
                         </select>
                         <button
@@ -1446,28 +1423,6 @@ export default function AdminEventsPage() {
                   )}
                 </div>
 
-                <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    value={newRegistrant.name}
-                    onChange={(e) => setNewRegistrant((prev) => ({ ...prev, name: e.target.value }))}
-                    className="px-2 py-1.5 border border-gray-200 rounded-full text-xs"
-                  />
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    value={newRegistrant.email}
-                    onChange={(e) => setNewRegistrant((prev) => ({ ...prev, email: e.target.value }))}
-                    className="px-2 py-1.5 border border-gray-200 rounded-full text-xs"
-                  />
-                  <button
-                    onClick={() => addRegistration(selectedEventDetails.id)}
-                    className="bg-emerald-600 text-white rounded-full px-3 py-1.5 text-xs font-medium hover:bg-emerald-700"
-                  >
-                    Add
-                  </button>
-                </div>
               </div>
 
               {/* Tags */}

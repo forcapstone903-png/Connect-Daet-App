@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import Form from 'next/form'
 import { usePathname, useRouter } from 'next/navigation'
-import { Bell, LogOut, Menu, Search, Settings, Sparkles, UserRound } from 'lucide-react'
+import { Archive, Bell, ChevronLeft, FilePenLine, LogOut, Menu, MessageCircle, Search, Settings, Sparkles, Trophy, UserRound } from 'lucide-react'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
@@ -38,8 +38,62 @@ function formatNotificationTime(value) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+function getMobileNavigationTitle(pathname) {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  const titles = {
+    '/info/user/announcements': 'Announcements',
+    '/info/user/blog-submissions': 'My blog posts',
+    '/info/user/drafts': 'Drafts',
+    '/info/user/feedback': 'Feedback',
+    '/info/user/messaging': 'Messages',
+    '/info/user/messaging/archived': 'Archived messages',
+    '/info/user/notifications': 'Notifications',
+    '/info/user/profile': 'Profile',
+    '/info/user/profile/archive': 'Archive',
+    '/info/user/profile/connections': 'Connections',
+    '/info/user/profile/edit': 'Edit profile',
+    '/info/user/rewards': 'Rewards',
+    '/info/user/saved': 'Saved items',
+    '/info/user/search': 'Search',
+    '/info/user/settings': 'Settings',
+    '/info/visitor/events': 'Events',
+    '/info/visitor/forum': 'Forums',
+    '/info/visitor/search': 'Search',
+    '/info/visitor/tourist-spots': 'Tourist spots',
+  }
+  if (titles[path]) return titles[path]
+  if (/^\/info\/user\/blogs\/new$/.test(path)) return 'Create post'
+  if (/^\/info\/user\/blogs\/[^/]+\/edit$/.test(path)) return 'Edit post'
+  if (/^\/info\/user\/blogs\/[^/]+$/.test(path) || /^\/info\/visitor\/blog\/[^/]+$/.test(path)) return 'Blog post'
+  if (/^\/info\/user\/forums\/[^/]+$/.test(path) || /^\/info\/visitor\/forum\/[^/]+$/.test(path)) return 'Forum'
+  if (/^\/info\/user\/events\/[^/]+$/.test(path) || /^\/info\/visitor\/events\/[^/]+$/.test(path)) return 'Event'
+  if (/^\/info\/visitor\/tourist-spots\/[^/]+$/.test(path)) return 'Tourist spot'
+  if (/^\/info\/user\/posts\/[^/]+$/.test(path)) return 'Post'
+  if (/^\/info\/user\/profile\/[^/]+$/.test(path)) return 'Profile'
+  if (/^\/info\/user\/messaging\/[^/]+\/pinned$/.test(path)) return 'Pinned messages'
+  if (/^\/info\/user\/messaging\/[^/]+$/.test(path)) return 'Conversation'
+  if (/^\/info\/user\/announcements\/[^/]+$/.test(path)) return 'Announcement'
+  return 'Connect Daet'
+}
+
+function getMobileBackHref(pathname) {
+  const path = pathname.replace(/\/+$/, '') || '/'
+  if (path === '/info/visitor/search') return '/info/visitor'
+  if (path.startsWith('/info/visitor/events/')) return '/info/visitor/events'
+  if (path.startsWith('/info/visitor/tourist-spots/')) return '/info/visitor/tourist-spots'
+  if (path.startsWith('/info/visitor/forum/')) return '/info/visitor/forum'
+  if (path.startsWith('/info/visitor/blog/')) return '/info/visitor'
+  if (path.startsWith('/info/visitor/')) return '/info/visitor'
+  if (/^\/info\/user\/messaging\/[^/]+\/pinned$/.test(path)) return path.replace(/\/pinned$/, '')
+  if (path.startsWith('/info/user/messaging/')) return '/info/user/messaging'
+  if (path.startsWith('/info/user/profile/')) return '/info/user/profile'
+  if (/^\/info\/user\/blogs\/[^/]+\/edit$/.test(path)) return path.replace(/\/edit$/, '')
+  return '/info/user/dashboard'
+}
+
 export default function UserTopHeader({
   detailMode = false,
+  showMobileHeader = true,
   spacer = true,
   homeHref = '/info/user/dashboard',
   standaloneNavigation = false,
@@ -51,7 +105,13 @@ export default function UserTopHeader({
   const { settings, resolvedTheme, t, updateSettings } = useUserSettings()
   const pathname = usePathname()
   const router = useRouter()
+  const isMobileHome = pathname === '/info/user/dashboard' || pathname === '/info/user' || pathname === '/info/visitor'
+  const isMobileInbox = pathname === '/info/user/messaging'
+  const mobileNavigationTitle = getMobileNavigationTitle(pathname)
+  const mobileBackHref = getMobileBackHref(pathname)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
+  const [unreadMessages, setUnreadMessages] = useState(0)
+  const [userPoints, setUserPoints] = useState(() => Number(getStoredSessionObject()?.points) || 0)
   const [desktopNotifications, setDesktopNotifications] = useState([])
   const [desktopNotificationsOpen, setDesktopNotificationsOpen] = useState(false)
   const [desktopNotificationsLoading, setDesktopNotificationsLoading] = useState(false)
@@ -74,7 +134,6 @@ export default function UserTopHeader({
   const [appearanceDraft, setAppearanceDraft] = useState(null)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
-  const profileMenuRef = useRef(null)
   const desktopProfileMenuRef = useRef(null)
   const desktopNotificationsRef = useRef(null)
   const desktopSearchInputRef = useRef(null)
@@ -262,14 +321,22 @@ export default function UserTopHeader({
     // its values here instead of hitting /info/api/notifications twice.
     const handleSharedCounts = (event) => {
       const alerts = Number(event?.detail?.unreadAlerts)
+      const messages = Number(event?.detail?.unreadMessages)
       if (Number.isFinite(alerts)) setUnreadAlerts(alerts)
+      if (Number.isFinite(messages)) setUnreadMessages(messages)
+    }
+    const handlePointsUpdate = (event) => {
+      const points = Number(event?.detail?.points)
+      if (Number.isFinite(points)) setUserPoints(points)
     }
     window.addEventListener('daet-unread-counts', handleSharedCounts)
+    window.addEventListener('daet-user-points-updated', handlePointsUpdate)
     return () => {
       active = false
       window.clearTimeout(timer)
       window.removeEventListener('daet-notifications-updated', handleUpdate)
       window.removeEventListener('daet-unread-counts', handleSharedCounts)
+      window.removeEventListener('daet-user-points-updated', handlePointsUpdate)
       window.removeEventListener('daet-user-identity', handleIdentityUpdate)
     }
   }, [desktopNotificationsOpen])
@@ -329,7 +396,6 @@ export default function UserTopHeader({
       if (
         profileMenuOpen
         && !desktopProfileMenuRef.current?.contains(event.target)
-        && !profileMenuRef.current?.contains(event.target)
       ) setProfileMenuOpen(false)
     }
     const closeOnEscape = (event) => {
@@ -350,9 +416,7 @@ export default function UserTopHeader({
     if (!profileMenuOpen) return undefined
 
     const closeOnOutsideClick = (event) => {
-      const inMobileMenu = profileMenuRef.current?.contains(event.target)
-      const inDesktopMenu = desktopProfileMenuRef.current?.contains(event.target)
-      if (!inMobileMenu && !inDesktopMenu) setProfileMenuOpen(false)
+      if (!desktopProfileMenuRef.current?.contains(event.target)) setProfileMenuOpen(false)
     }
     const closeOnEscape = (event) => {
       if (event.key === 'Escape') setProfileMenuOpen(false)
@@ -376,6 +440,11 @@ export default function UserTopHeader({
     }
   }
 
+  const unreadActivityCount = unreadAlerts + unreadMessages
+  const profileButtonLabel = unreadActivityCount > 0
+    ? `${t('common.profile')}, ${unreadActivityCount} unread messages or notifications`
+    : t('common.profile')
+
   return (
     <>
       {standaloneNavigation && !desktopOnly && <MobileNav mobileOnly />}
@@ -392,9 +461,8 @@ export default function UserTopHeader({
         )}
         <Link href={homeHref} className="usr-press flex shrink-0 items-center gap-2">
           <img src="/logo.png" alt="" className="h-10 w-8 shrink-0 object-contain" />
-          <span className="min-w-0">
-            <span className="usr-desktop-header-brand-title block font-serif text-[23px] font-bold leading-none tracking-tight">Connect-Daet.ai</span>
-            <span className="usr-desktop-header-brand-subtitle mt-1 block whitespace-nowrap text-[8px] font-medium leading-none">Subsystem 1: Daet Tourist Information, Engagement &amp; Management System</span>
+          <span className="min-w-0 text-left">
+            <span className="usr-desktop-header-brand-title block font-serif text-[23px] font-bold leading-none tracking-tight">Connect Daet</span>
           </span>
         </Link>
         <Form
@@ -646,12 +714,19 @@ export default function UserTopHeader({
             <button
               type="button"
               onClick={() => setProfileMenuOpen((open) => !open)}
-              aria-label={t('common.profile')}
+              aria-label={profileButtonLabel}
               aria-haspopup="menu"
               aria-expanded={profileMenuOpen}
-              className="usr-press flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-slate-700 text-sm font-bold text-white transition hover:border-sky-300"
+              className="usr-header-profile-trigger usr-press relative flex h-10 w-10 items-center justify-center overflow-visible rounded-full border border-white/20 bg-slate-700 text-sm font-bold text-white transition hover:border-sky-300"
             >
-              {identity.avatarUrl ? <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(identity.name)}
+              <span className="usr-header-profile-image absolute inset-0 flex items-center justify-center overflow-hidden rounded-full">
+                {identity.avatarUrl ? <img src={identity.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" /> : getInitials(identity.name)}
+              </span>
+              {unreadActivityCount > 0 && (
+                <span aria-hidden="true" className="absolute -right-1 -top-1 z-10 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-[#171717] bg-red-600 px-1 text-[9px] font-bold leading-none text-white">
+                  {unreadActivityCount > 99 ? '99+' : unreadActivityCount}
+                </span>
+              )}
             </button>
             {profileMenuOpen && (
               <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl">
@@ -665,6 +740,19 @@ export default function UserTopHeader({
                   </span>
                 </Link>
                 <div className="border-b border-slate-200 py-2">
+                  <Link role="menuitem" href="/info/user/messaging" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                    <MessageCircle className={`h-4 w-4 ${unreadMessages > 0 ? 'text-sky-600' : 'text-slate-500'}`} />
+                    <span className="flex-1">{t('common.messages')}</span>
+                    {unreadMessages > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">{unreadMessages > 99 ? '99+' : unreadMessages}</span>}
+                  </Link>
+                  <Link role="menuitem" href="/info/user/drafts" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                    <FilePenLine className="h-4 w-4 text-slate-500" />
+                    <span>Drafts</span>
+                  </Link>
+                  <Link role="menuitem" href="/info/user/blog-submissions" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                    <FilePenLine className="h-4 w-4 text-blue-600" />
+                    <span>My blog posts</span>
+                  </Link>
                   <button
                     ref={appearanceTriggerRef}
                     role="menuitem"
@@ -700,102 +788,72 @@ export default function UserTopHeader({
           </div>
         </div>
       </header>}
-      {!desktopOnly && <header className={`usr-fade-in fixed z-50 ${detailMode ? 'inset-x-0 top-0 content-detail-mobile-header px-2' : edgeToEdgeMobile ? 'inset-x-0 top-0 usr-mobile-header px-3 py-0' : 'inset-x-1 top-1 usr-mobile-header px-3 py-1'} lg:hidden`}>
-        <div className={`mx-auto flex w-full max-w-none items-center gap-1 ${detailMode ? 'h-[88px] pl-1' : 'h-[90px]'}`}>
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('daet-open-mobile-navigation'))}
-            aria-label="Open navigation"
-            className="usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-200 transition hover:bg-white/10 hover:text-white"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <Link href={homeHref} className="usr-press flex min-w-0 flex-1 items-center gap-2">
-            <img src="/logo.png" alt="Daet tourism logo" className={`shrink-0 object-contain ${detailMode ? 'content-detail-brand-logo h-10 w-10' : 'h-9 w-9'}`} />
-            <div className="min-w-0 flex-1">
-              <strong className={`usr-mobile-header-brand-title truncate font-black tracking-tight ${detailMode ? 'text-xl' : 'text-sm sm:text-base'}`}>Connect-Daet.ai</strong>
-              {!detailMode && <span className="usr-mobile-header-brand-subtitle line-clamp-2 block text-[9px] font-medium leading-[1.15] sm:text-[10px]">Subsystem 1: Daet Tourist Information, Engagement &amp; Management System</span>}
-            </div>
-          </Link>
-
-          <div className="flex shrink-0 items-center gap-0.5">
-            <Link href={pathname === '/info/visitor' || pathname.startsWith('/info/visitor/') ? '/info/visitor/search' : '/info/user/search'} aria-label={t('common.search')} title={t('common.search')} className="usr-mobile-search-trigger usr-press flex h-10 w-10 items-center justify-center rounded-full transition hover:bg-slate-100 dark:hover:bg-white/10">
-              <Search className="h-4 w-4" />
+      {!desktopOnly && showMobileHeader && (isMobileHome ? (
+        <header className={`usr-fade-in fixed z-50 ${edgeToEdgeMobile ? 'inset-x-0 top-0 usr-mobile-header px-3 py-0' : 'inset-x-1 top-1 usr-mobile-header px-3 py-1'} lg:hidden`}>
+          <div className="mx-auto flex h-[90px] w-full max-w-none items-center gap-1">
+            <Link href={homeHref} className="usr-press flex min-w-0 flex-1 items-center gap-2">
+              <img src="/logo.png" alt="Daet tourism logo" className="h-9 w-9 shrink-0 object-contain" />
+              <div className="min-w-0 flex-1 text-left">
+                <strong className="usr-mobile-header-brand-title truncate text-sm font-black tracking-tight sm:text-base">Connect Daet</strong>
+              </div>
             </Link>
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                type="button"
-                onClick={() => setProfileMenuOpen((open) => !open)}
-                aria-label={t('common.profile')}
-                aria-haspopup="menu"
-                aria-expanded={profileMenuOpen}
-                className={`usr-press flex items-center justify-center overflow-hidden rounded-full border border-slate-500 bg-slate-700 text-sm font-bold text-white transition hover:border-sky-300 ${detailMode ? 'h-11 w-11' : 'h-10 w-10'}`}
-              >
-                {identity.avatarUrl
-                  ? <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
-                  : getInitials(identity.name)}
-              </button>
-              {profileMenuOpen && (
-                <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl">
-                  <Link
-                    role="menuitem"
-                    href="/info/user/profile"
-                    onClick={() => setProfileMenuOpen(false)}
-                    className="flex items-center gap-3 border-b border-slate-200 px-4 py-4 transition hover:bg-slate-100"
-                  >
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-sm font-bold text-slate-700">
-                      {identity.avatarUrl
-                        ? <img src={identity.avatarUrl} alt="" className="h-full w-full object-cover" />
-                        : getInitials(identity.name)}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold text-slate-900">{identity.name || t('common.profile')}</span>
-                      <span className="mt-1 block text-xs text-slate-500">{t('navigation.profile.view')}</span>
-                    </span>
-                  </Link>
-                  <div className="border-b border-slate-200 py-2">
-                    <Link role="menuitem" href="/info/user/notifications" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
-                      <Bell className={`h-4 w-4 ${unreadAlerts > 0 ? 'text-sky-600' : 'text-slate-500'}`} />
-                      <span className="flex-1">{t('common.notifications')}</span>
-                      {unreadAlerts > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold leading-none text-white">{unreadAlerts > 99 ? '99+' : unreadAlerts}</span>}
-                    </Link>
-                    <button
-                      ref={appearanceTriggerRef}
-                      role="menuitem"
-                      type="button"
-                      onClick={openAppearance}
-                      aria-haspopup="dialog"
-                      className="flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm transition hover:bg-slate-100"
-                    >
-                      <Sparkles className="h-4 w-4 text-slate-500" />
-                      <span className="flex-1">{t('settings.nav.appearance')}</span>
-                    </button>
-                    <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
-                      <Settings className="h-4 w-4 text-slate-500" />
-                      <span>{t('common.settings')}</span>
-                    </Link>
-                  </div>
-                  <div className="p-2">
-                    <button
-                      role="menuitem"
-                      type="button"
-                      onClick={() => {
-                        setProfileMenuOpen(false)
-                        setShowLogoutConfirm(true)
-                      }}
-                      className="flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left text-sm text-slate-700 transition hover:bg-slate-100 hover:text-slate-900"
-                    >
-                      <LogOut className="h-4 w-4 text-slate-500" />
-                      {t('common.logOut')}
-                    </button>
-                  </div>
-                </div>
+            <div className="flex shrink-0 items-center gap-1">
+            <Link
+              href="/info/user/notifications"
+              aria-label={unreadAlerts > 0 ? `${t('common.notifications')}, ${unreadAlerts} unread` : t('common.notifications')}
+              title={t('common.notifications')}
+              className="usr-press relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-300"
+            >
+              <Bell className="h-[19px] w-[19px]" strokeWidth={1.8} aria-hidden="true" />
+              {unreadAlerts > 0 && (
+                <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[9px] font-bold leading-none text-white">
+                  {unreadAlerts > 99 ? '99+' : unreadAlerts}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/info/user/rewards"
+              aria-label={`${t('common.rewards')}: ${userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} points`}
+              title={t('common.rewards')}
+              className="usr-mobile-rewards-trigger usr-press flex h-9 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+            >
+              <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
+              <span className="text-[11px] font-extrabold tabular-nums">{userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts</span>
+            </Link>
+            </div>
+          </div>
+        </header>
+      ) : (
+        <header className={`usr-fade-in usr-mobile-page-header fixed inset-x-0 top-0 z-50 usr-mobile-header px-3 ${detailMode ? 'content-detail-mobile-header' : ''} lg:hidden`}>
+          <div className="mx-auto flex h-16 w-full max-w-none items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (window.history.length > 1) router.back()
+                else router.push(mobileBackHref)
+              }}
+              aria-label={`Back from ${mobileNavigationTitle}`}
+              className="usr-mobile-back-button usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-slate-100 dark:hover:bg-white/10"
+            >
+              <ChevronLeft className="h-6 w-6" aria-hidden="true" />
+            </button>
+            <h1 className="usr-mobile-page-title min-w-0 flex-1 truncate">{mobileNavigationTitle}</h1>
+            <div className="flex shrink-0 items-center gap-1">
+              {isMobileInbox && (
+                <Link
+                  href="/info/user/messaging/archived"
+                  aria-label="Archived messages"
+                  className="usr-mobile-archive-link usr-press inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 px-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  <Archive className="h-4 w-4" aria-hidden="true" />
+                  <span>Archived</span>
+                </Link>
               )}
             </div>
           </div>
-        </div>
-      </header>}
-      {!desktopOnly && spacer && <div aria-hidden="true" className={`user-top-header-spacer lg:h-16 ${detailMode ? 'h-[88px]' : 'h-[90px]'}`} />}
+        </header>
+      ))}
+      {!desktopOnly && showMobileHeader && spacer && <div aria-hidden="true" className={`user-top-header-spacer lg:h-16 ${isMobileHome ? 'h-[90px]' : 'h-16'}`} />}
       {appearanceOpen && typeof document !== 'undefined' ? createPortal(
         <div className="settings-appearance-overlay">
           <div

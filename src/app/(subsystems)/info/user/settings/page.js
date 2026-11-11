@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ArrowLeft, Bell, Check, ChevronDown, CircleHelp, Eye, Languages, LockKeyhole, ShieldCheck, Sun, UserRound, UserRoundCog } from 'lucide-react'
+import { Bell, Check, ChevronDown, ChevronLeft, CircleHelp, Eye, Languages, LockKeyhole, ShieldCheck, Sun, UserRound, UserRoundCog } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -417,7 +417,7 @@ export default function UserSettingsPage() {
 
   return (
     <main className="tourism-shell usr-section-page usr-settings min-h-screen w-full overflow-x-clip text-slate-900">
-      <UserTopHeader mobileOnly homeHref="/info/user/dashboard" />
+      <UserTopHeader mobileOnly showMobileHeader={false} spacer={false} homeHref="/info/user/dashboard" />
       <header className="settings-topbar">
         <button
           type="button"
@@ -428,7 +428,7 @@ export default function UserSettingsPage() {
           aria-label="Go back"
           className="settings-back-button"
         >
-          <ArrowLeft className="h-6 w-6" aria-hidden="true" />
+          <ChevronLeft className="h-6 w-6" aria-hidden="true" />
         </button>
         <h1>{t('settings.title')}</h1>
         <p>Manage your account and preferences</p>

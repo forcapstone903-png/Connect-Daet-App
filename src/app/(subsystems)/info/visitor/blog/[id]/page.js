@@ -29,6 +29,7 @@ import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -203,6 +204,8 @@ export default function PublicBlogDetailPage() {
           .from('info_blogs')
           .select('*')
           .eq('id', blogId)
+          .eq('status', 'published')
+          .eq('approval_status', 'approved')
           .single()
 
         if (blogError) {
@@ -212,7 +215,7 @@ export default function PublicBlogDetailPage() {
           if (blogData.created_by) {
             const [authorResult, profileResult] = await Promise.all([
               supabase.from('info_users')
-                .select('id, full_name, email, profile_image_url')
+                .select('id, full_name, email, profile_image_url, user_type')
                 .eq('id', blogData.created_by)
                 .maybeSingle(),
               supabase.from('profiles')
@@ -226,7 +229,7 @@ export default function PublicBlogDetailPage() {
               if (profileResult.error) console.error('Blog author display profile load failed:', profileResult.error)
               blogAuthor = {
                 ...authorResult.data,
-                full_name: profileResult.data?.full_name?.trim() || authorResult.data?.full_name,
+                full_name: authorResult.data?.full_name?.trim() || profileResult.data?.full_name?.trim(),
                 profile_image_url: profileResult.data?.profile_image_url || authorResult.data?.profile_image_url,
               }
             }
@@ -310,6 +313,7 @@ export default function PublicBlogDetailPage() {
             .from('info_blogs')
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .eq('created_by', articleAuthorId)
             .neq('id', blogId)
             .order('published_at', { ascending: false })
@@ -319,6 +323,7 @@ export default function PublicBlogDetailPage() {
                 .from('info_blogs')
                 .select('id, title, excerpt, featured_image, published_at, category')
                 .eq('status', 'published')
+                .eq('approval_status', 'approved')
                 .eq('category', articleCategory)
                 .neq('id', blogId)
                 .neq('created_by', articleAuthorId)
@@ -329,6 +334,7 @@ export default function PublicBlogDetailPage() {
             .from('info_blogs')
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
+            .eq('approval_status', 'approved')
             .neq('id', blogId)
             .order('views', { ascending: false, nullsFirst: false })
             .limit(4),
@@ -351,6 +357,7 @@ export default function PublicBlogDetailPage() {
               .from('info_blogs')
               .select('id, title, excerpt, featured_image, published_at, category')
               .eq('status', 'published')
+              .eq('approval_status', 'approved')
               .in('category', interestCategories)
               .neq('id', blogId)
               .neq('created_by', articleAuthorId)
@@ -669,7 +676,7 @@ export default function PublicBlogDetailPage() {
         <UserTopHeader spacer homeHref="/info/visitor" />
         <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <p className="text-sm text-slate-500">Article not found.</p>
-          <Link href="/info/visitor" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
+          <Link href="/info/visitor" className="mt-3 hidden text-xs font-semibold text-sky-600 hover:underline lg:inline">
             Back to Home
           </Link>
         </div>
@@ -678,9 +685,11 @@ export default function PublicBlogDetailPage() {
   }
 
   const contentHeadings = getContentHeadings(blog.content)
-  const blogAuthorName = blog.info_users?.full_name
-    || blog.info_users?.email
-    || (blog.tags?.includes('admin-curated') ? 'Connect-Daet Admin' : 'Anonymous')
+  const adminCurated = blog.tags?.includes('admin-curated')
+  const blogAuthorName = getAuthorDisplayName(
+    { ...(blog.info_users || (adminCurated ? { user_type: 'admin' } : {})), name: blog.info_users?.email },
+    adminCurated ? 'Daet Tourism Admin' : 'Anonymous',
+  )
   const renderArticleCards = (items) => (
     <div className="medium-article-recommendation-grid">
       {items.map((item) => (

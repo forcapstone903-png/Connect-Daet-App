@@ -27,6 +27,7 @@ export default function UserDraftsPage() {
         .select('id, title, excerpt, category, updated_at, created_at')
         .eq('created_by', userId)
         .eq('status', 'draft')
+        .eq('approval_status', 'draft')
         .order('updated_at', { ascending: false })
 
       setDrafts(data || [])
@@ -45,10 +46,12 @@ export default function UserDraftsPage() {
           title="Drafts"
           description="Unfinished stories are saved here. Pick one up whenever inspiration strikes."
           emoji="✒️"
+          hideMobileTitle
           backHref="/info/user/dashboard"
           backLabel="Community stories"
         >
           <span className="usr-section-counter">{drafts.length} draft{drafts.length === 1 ? '' : 's'}</span>
+          <Link href="/info/user/blog-submissions" className="usr-section-secondary">My blog posts</Link>
           <Link href="/info/user/blogs/new" className="usr-section-primary"><Plus className="h-4 w-4" />New post</Link>
         </UserSectionHeader>
 

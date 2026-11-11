@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowLeft,
+  ChevronLeft,
   ArrowRight,
   Bell,
   Camera,
@@ -298,7 +298,7 @@ export default function OnboardingPage() {
             disabled={saving}
             className="usr-section-secondary disabled:opacity-60"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Skip setup
           </button>
         </UserSectionHeader>
@@ -457,7 +457,7 @@ export default function OnboardingPage() {
               <>
                 <div className="mb-5 rounded-[1.5rem] border border-sky-200 bg-sky-50/70 p-4">
                   <div>
-                    <h2 className="text-sm font-bold text-slate-900">Choose what CONNECT-Daet can use</h2>
+                    <h2 className="text-sm font-bold text-slate-900">Choose what Connect Daet can use</h2>
                     <p className="mt-1 text-xs leading-5 text-slate-600">These permissions are optional and can be changed later in your phone or browser settings.</p>
                   </div>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
@@ -520,7 +520,7 @@ export default function OnboardingPage() {
 
             <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between">
               <button type="button" onClick={() => setStep((current) => Math.max(1, current - 1))} disabled={step === 1 || saving} className="usr-section-secondary disabled:opacity-40">
-                <ArrowLeft className="h-4 w-4" />
+                <ChevronLeft className="h-4 w-4" />
                 Back
               </button>
 

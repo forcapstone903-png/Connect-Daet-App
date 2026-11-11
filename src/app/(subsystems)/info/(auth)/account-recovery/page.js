@@ -3,7 +3,7 @@
 import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { ArrowLeft, KeyRound, ShieldCheck } from 'lucide-react'
+import { ChevronLeft, KeyRound, ShieldCheck } from 'lucide-react'
 import '../auth.css'
 
 function AccountRecoveryForm() {
@@ -54,7 +54,7 @@ function AccountRecoveryForm() {
     <main className="auth-page min-h-dvh bg-gradient-to-br from-[#edf2f9] via-[#f7f9fc] to-[#e7effb] px-4 py-8 text-slate-900">
       <div className="mx-auto flex min-h-[calc(100dvh-4rem)] w-full max-w-md flex-col justify-center">
         <Link href="/info/login" className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-semibold text-blue-700 transition hover:text-blue-800">
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           Back to sign in
         </Link>
 
@@ -66,13 +66,13 @@ function AccountRecoveryForm() {
             <p className="text-xs font-bold uppercase tracking-[0.24em] text-blue-700">DAET CONNECT</p>
             <h1 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Restore your account</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Sign in with your account email and password to cancel a deletion request during the 30-day grace period.
+              Sign in with your account email and password before the scheduled deletion date to restore your account.
             </p>
           </div>
 
           {scheduledNotice ? (
             <p role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-              Your account is scheduled for permanent deletion{scheduledFor ? ` on ${scheduledFor}` : ''}. You have 30 days from the request to restore your account.
+              Your account is scheduled for permanent deletion{scheduledFor ? ` on ${scheduledFor}` : ''}. Restore it before the scheduled date to cancel deletion.
               {scheduledEmailSent ? ' A confirmation email was sent.' : ' The confirmation email could not be delivered.'}
             </p>
           ) : null}

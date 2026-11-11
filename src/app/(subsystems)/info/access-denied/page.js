@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { ShieldAlert, ArrowLeft, Lock } from 'lucide-react'
+import { ShieldAlert, ChevronLeft, Lock } from 'lucide-react'
 
 export default function AccessDeniedPage() {
   return (
@@ -31,7 +31,7 @@ export default function AccessDeniedPage() {
             href="/info/login"
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ChevronLeft className="h-4 w-4" />
             Back to login
           </Link>
           <Link

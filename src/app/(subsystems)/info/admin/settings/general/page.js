@@ -1,95 +1,84 @@
-// app/(subsystems)/info/admin/settings/general/page.js — General Settings
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
-import useStoredSetting from '../_components/useStoredSetting';
+
+const SETTINGS_API = '/info/api/admin/settings';
+const DEFAULT_GENERAL = {
+  site_name: 'DAET Tourism',
+  contact_email: 'tourism@daet.gov.ph',
+  timezone: 'Asia/Manila',
+  language: 'English',
+  date_format: 'MM/DD/YYYY',
+};
+const DEFAULT_MODERATION = {
+  auto_moderation_enabled: false,
+  review_window_hours: 24,
+  hide_threshold_reports: 3,
+};
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`The server returned an invalid response (${response.status}).`);
+  }
+}
 
 export default function AdminSettingsGeneral() {
-  const [generalSettings, setGeneralSettings] = useState({
-    site_name: 'DAET Tourism',
-    contact_email: 'tourism@daet.gov.ph',
-    timezone: 'Asia/Manila',
-    language: 'English',
-    date_format: 'MM/DD/YYYY'
-  });
-  const [themeSettings, setThemeSettings] = useStoredSetting('admin_theme_settings', {
-    dark_mode: false,
-    primary_color: 'blue',
-    accent_color: 'emerald',
-    theme_mode: 'light'
-  });
-  const [rewardSettings, setRewardSettings] = useStoredSetting('admin_reward_settings', {
-    enable_points: true,
-    points_per_post: 10,
-    points_per_comment: 0.01,
-    points_for_profile_complete: 20,
-    daily_streak_bonus: 5,
-    leaderboard_enabled: true,
-    badge_display: true,
-    referral_bonus: 15
-  });
-  const [moderationSettings, setModerationSettings] = useStoredSetting('admin_moderation_settings', {
-    auto_moderation: true,
-    require_approval: false,
-    flagged_content_review_hours: 24,
-    max_reports_before_hide: 3
-  });
+  const [generalSettings, setGeneralSettings] = useState(DEFAULT_GENERAL);
+  const [moderationSettings, setModerationSettings] = useState(DEFAULT_MODERATION);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    const loadSettings = async () => {
+      try {
+        const response = await fetch(SETTINGS_API, { cache: 'no-store' });
+        const data = await readJsonResponse(response);
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || `Unable to load settings (${response.status}).`);
+        }
+        if (active) {
+          setGeneralSettings({ ...DEFAULT_GENERAL, ...data.settings?.general });
+          setModerationSettings({ ...DEFAULT_MODERATION, ...data.settings?.moderation });
+        }
+      } catch (error) {
+        if (active) setLoadError(error.message || 'Unable to load saved settings.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadSettings();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <SettingsShell
       title="General Settings"
-      subtitle="Site configuration, theme, rewards, and moderation rules"
+      subtitle="Edit shared site information and saved moderation policy preferences."
     >
       {(showToast) => {
-        const saveGeneralSettings = async () => {
+        const saveSetting = async (id, value, label) => {
           setSaving(true);
           try {
-            localStorage.setItem('site_settings', JSON.stringify(generalSettings));
-            showToast('General settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving general settings:', err);
-            showToast('Failed to save general settings', true);
-          } finally {
-            setSaving(false);
-          }
-        };
-
-        const saveThemeSettings = () => {
-          setSaving(true);
-          try {
-            localStorage.setItem('admin_theme_settings', JSON.stringify(themeSettings));
-            showToast('Theme settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving theme settings:', err);
-            showToast('Failed to save theme settings', true);
-          } finally {
-            setSaving(false);
-          }
-        };
-
-        const saveRewardSettings = () => {
-          setSaving(true);
-          try {
-            localStorage.setItem('admin_reward_settings', JSON.stringify(rewardSettings));
-            showToast('Reward settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving reward settings:', err);
-            showToast('Failed to save reward settings', true);
-          } finally {
-            setSaving(false);
-          }
-        };
-
-        const saveModerationSettings = () => {
-          setSaving(true);
-          try {
-            localStorage.setItem('admin_moderation_settings', JSON.stringify(moderationSettings));
-            showToast('Moderation settings saved successfully!');
-          } catch (err) {
-            console.error('Error saving moderation settings:', err);
-            showToast('Failed to save moderation settings', true);
+            const response = await fetch(SETTINGS_API, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id, value }),
+            });
+            const data = await readJsonResponse(response);
+            if (!response.ok || !data.success) {
+              throw new Error(data.message || `Unable to save ${label.toLowerCase()} (${response.status}).`);
+            }
+            showToast(`${label} saved to the shared administrator settings.`);
+          } catch (error) {
+            showToast(error.message || `Unable to save ${label.toLowerCase()}.`, true);
           } finally {
             setSaving(false);
           }
@@ -97,159 +86,75 @@ export default function AdminSettingsGeneral() {
 
         return (
           <div className="space-y-6">
-{/* General Settings */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">General Settings</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Site Name</label>
-                  <input type="text" value={generalSettings.site_name} onChange={e => setGeneralSettings(p => ({ ...p, site_name: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
-                  <input type="email" value={generalSettings.contact_email} onChange={e => setGeneralSettings(p => ({ ...p, contact_email: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Timezone</label>
-                  <select value={generalSettings.timezone} onChange={e => setGeneralSettings(p => ({ ...p, timezone: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl">
+            {loadError && (
+              <p className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+                {loadError} Changes cannot be saved until the settings store is available.
+              </p>
+            )}
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Shared site information</h2>
+              <p className="mt-1 text-sm text-slate-600">These values are stored on the server for administrators; they do not automatically change provider or deployment configuration.</p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Site name
+                  <input value={generalSettings.site_name} onChange={(event) => setGeneralSettings((current) => ({ ...current, site_name: event.target.value }))} maxLength={120} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Contact email
+                  <input type="email" value={generalSettings.contact_email} onChange={(event) => setGeneralSettings((current) => ({ ...current, contact_email: event.target.value }))} maxLength={254} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Timezone
+                  <select value={generalSettings.timezone} onChange={(event) => setGeneralSettings((current) => ({ ...current, timezone: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2">
                     <option value="Asia/Manila">Asia/Manila (GMT+8)</option>
                     <option value="UTC">UTC</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
-                  <select value={generalSettings.language} onChange={e => setGeneralSettings(p => ({ ...p, language: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl">
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Language
+                  <select value={generalSettings.language} onChange={(event) => setGeneralSettings((current) => ({ ...current, language: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2">
                     <option value="English">English</option>
                     <option value="Filipino">Filipino</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Date Format</label>
-                  <select value={generalSettings.date_format} onChange={e => setGeneralSettings(p => ({ ...p, date_format: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl">
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Date format
+                  <select value={generalSettings.date_format} onChange={(event) => setGeneralSettings((current) => ({ ...current, date_format: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2">
                     <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                     <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                   </select>
-                </div>
+                </label>
               </div>
-              <button onClick={saveGeneralSettings} disabled={saving} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save General Settings'}
+              <button type="button" onClick={() => saveSetting('general', generalSettings, 'General settings')} disabled={loading || saving || Boolean(loadError)} className="mt-5 rounded-full bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save general settings'}
               </button>
-            </div>
-{/* Theme Settings */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Theme Settings</h3>
-              <div>
-                <label className="flex items-center gap-2 mb-4">
-                  <input type="checkbox" checked={themeSettings.dark_mode} onChange={e => setThemeSettings(p => ({ ...p, dark_mode: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Enable dark mode</span>
-                </label>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Theme Mode</label>
-                <select value={themeSettings.theme_mode} onChange={e => setThemeSettings(p => ({ ...p, theme_mode: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl">
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="system">System default</option>
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Primary Color</label>
-                <select value={themeSettings.primary_color} onChange={e => setThemeSettings(p => ({ ...p, primary_color: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl">
-                  <option value="blue">Blue</option>
-                  <option value="emerald">Emerald</option>
-                  <option value="violet">Violet</option>
-                  <option value="rose">Rose</option>
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Accent Color</label>
-                <select value={themeSettings.accent_color} onChange={e => setThemeSettings(p => ({ ...p, accent_color: e.target.value }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl">
-                  <option value="emerald">Emerald</option>
-                  <option value="amber">Amber</option>
-                  <option value="sky">Sky</option>
-                  <option value="pink">Pink</option>
-                </select>
-              </div>
-              <button onClick={saveThemeSettings} disabled={saving} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Theme Settings'}
-              </button>
-            </div>
-{/* Rewards & Gamification */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Rewards & Gamification</h3>
-              <div>
-                <label className="flex items-center gap-2 mb-4">
-                  <input type="checkbox" checked={rewardSettings.enable_points} onChange={e => setRewardSettings(p => ({ ...p, enable_points: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Enable points system</span>
-                </label>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Points per Post</label>
-                  <input type="number" value={rewardSettings.points_per_post} onChange={e => setRewardSettings(p => ({ ...p, points_per_post: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Points per Comment</label>
-                  <input type="number" min="0" step="0.01" value={rewardSettings.points_per_comment} onChange={e => setRewardSettings(p => ({ ...p, points_per_comment: parseFloat(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Points for Completed Profile</label>
-                  <input type="number" value={rewardSettings.points_for_profile_complete} onChange={e => setRewardSettings(p => ({ ...p, points_for_profile_complete: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Daily Streak Bonus</label>
-                  <input type="number" value={rewardSettings.daily_streak_bonus} onChange={e => setRewardSettings(p => ({ ...p, daily_streak_bonus: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Referral Bonus</label>
-                  <input type="number" value={rewardSettings.referral_bonus} onChange={e => setRewardSettings(p => ({ ...p, referral_bonus: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-              </div>
-              <div className="mt-4 space-y-2">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={rewardSettings.leaderboard_enabled} onChange={e => setRewardSettings(p => ({ ...p, leaderboard_enabled: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Enable leaderboard</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={rewardSettings.badge_display} onChange={e => setRewardSettings(p => ({ ...p, badge_display: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Display badges on profiles</span>
-                </label>
-              </div>
-              <button onClick={saveRewardSettings} disabled={saving} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : 'Save Reward Settings'}
-              </button>
-            </div>
+            </section>
 
-{/* Moderation Settings */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-800 mb-4">Moderation Settings</h3>
-              <div className="space-y-4 max-w-2xl">
-                <div>
-                  <label className="flex items-center gap-2 mb-4">
-                    <input type="checkbox" checked={moderationSettings.auto_moderation} onChange={e => setModerationSettings(p => ({ ...p, auto_moderation: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm text-gray-700">Enable Auto-moderation (keyword filtering)</span>
-                  </label>
-                </div>
-                <div>
-                  <label className="flex items-center gap-2 mb-4">
-                    <input type="checkbox" checked={moderationSettings.require_approval} onChange={e => setModerationSettings(p => ({ ...p, require_approval: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                    <span className="text-sm text-gray-700">Require Approval for User Posts</span>
-                  </label>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Flagged Content Review Time (hours)</label>
-                  <input type="number" value={moderationSettings.flagged_content_review_hours} onChange={e => setModerationSettings(p => ({ ...p, flagged_content_review_hours: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Max Reports Before Auto-hide</label>
-                  <input type="number" value={moderationSettings.max_reports_before_hide} onChange={e => setModerationSettings(p => ({ ...p, max_reports_before_hide: parseInt(e.target.value) || 0 }))} className="w-full px-4 py-2 border border-gray-200 rounded-xl" />
-                </div>
-                <button onClick={saveModerationSettings} disabled={saving} className="mt-4 bg-blue-600 text-white px-6 py-2 rounded-full hover:bg-blue-700">
-                  {saving ? 'Saving...' : 'Save Moderation Settings'}
-                </button>
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Moderation preferences</h2>
+              <p className="mt-1 text-sm text-amber-800">
+                These preferences are persisted for administrator reference only. They do not enable automated keyword moderation, scheduled review, or automatic hiding. Blog and event approval workflows remain enforced separately.
+              </p>
+              <div className="mt-4 max-w-2xl space-y-4">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={moderationSettings.auto_moderation_enabled} onChange={(event) => setModerationSettings((current) => ({ ...current, auto_moderation_enabled: event.target.checked }))} className="h-4 w-4 accent-blue-600" />
+                  Record automated moderation as a preferred policy (not currently enforced)
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Preferred review window (hours)
+                  <input type="number" min="1" max="720" value={moderationSettings.review_window_hours} onChange={(event) => setModerationSettings((current) => ({ ...current, review_window_hours: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
+                </label>
+                <label className="block text-sm font-medium text-slate-700">
+                  Preferred report threshold
+                  <input type="number" min="1" max="100" value={moderationSettings.hide_threshold_reports} onChange={(event) => setModerationSettings((current) => ({ ...current, hide_threshold_reports: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
+                </label>
               </div>
-            </div>
+              <button type="button" onClick={() => saveSetting('moderation', moderationSettings, 'Moderation preferences')} disabled={loading || saving || Boolean(loadError)} className="mt-5 rounded-full bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save moderation preferences'}
+              </button>
+            </section>
           </div>
         );
       }}

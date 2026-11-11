@@ -42,12 +42,13 @@ export default function UserSectionHeader({
   icon: Icon,
   backHref,
   backLabel,
+  hideMobileTitle = false,
   children,
 }) {
   const HeaderIcon = Icon || HEADER_ICONS[emoji] || (emoji ? Bell : null)
 
   return (
-    <header className="usr-section-heading usr-card usr-enter">
+    <header className={`usr-section-heading usr-card usr-enter ${hideMobileTitle ? 'usr-section-heading-mobile-title-hidden' : ''}`}>
       <div className="usr-section-heading-row">
         <div className="min-w-0 flex-1">
           <p className="usr-section-eyebrow">{eyebrow}</p>

@@ -74,6 +74,7 @@ export async function PATCH(request) {
   }
 
   const requesterId = String(body?.requesterId || '').trim()
+  const notificationId = String(body?.notificationId || '').trim()
   const action = body?.action
   if (!requesterId || !['approve', 'reject'].includes(action) || requesterId === viewerId) {
     return errorResponse('A valid follow request action is required.', 400)
@@ -107,7 +108,28 @@ export async function PATCH(request) {
       .eq('status', 'pending')
     if (updateError) throw updateError
 
-    return NextResponse.json({ success: true, action, requesterId }, {
+    let notificationUpdated = true
+    if (action === 'approve' && notificationId) {
+      const { error: notificationError } = await adminSupabase
+        .from('info_notifications')
+        .update({
+          title: 'New follower',
+          message: 'is now following you.',
+          type: 'follow',
+          is_read: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', notificationId)
+        .eq('user_id', viewerId)
+        .eq('actor_id', requesterId)
+        .eq('type', 'follow_request')
+      if (notificationError) {
+        notificationUpdated = false
+        console.error('Approved follow request notification update failed:', notificationError)
+      }
+    }
+
+    return NextResponse.json({ success: true, action, requesterId, notificationUpdated }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
     })
   } catch (error) {

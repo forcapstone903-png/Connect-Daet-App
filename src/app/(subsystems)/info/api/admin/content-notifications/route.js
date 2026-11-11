@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getServerSession } from '@/lib/serverAuth'
+import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -14,11 +15,11 @@ function normalizeType(type) {
   return String(type).toLowerCase()
 }
 
-function notificationTitleFor(type) {
-  if (type === 'event') return 'New event from Administrator'
-  if (type === 'announcement') return 'New announcement from Administrator'
-  if (type === 'forum' || type === 'forum_thread') return 'New forum post from Administrator'
-  return 'New post from Administrator'
+function notificationTitleFor(type, actorName) {
+  if (type === 'event') return `New event from ${actorName}`
+  if (type === 'announcement') return `New announcement from ${actorName}`
+  if (type === 'forum' || type === 'forum_thread') return `New forum post from ${actorName}`
+  return `New post from ${actorName}`
 }
 
 // `info_announcements.audience` decides who should receive a site announcement.
@@ -137,15 +138,11 @@ async function insertNotificationRows(adminSupabase, rows) {
 }
 
 export async function POST(request) {
-  const session = getServerSession(request)
-  const currentUserId = session?.user_id || null
-  const currentRole = String(session?.role || '').toLowerCase()
+  const { session, response: authError } = authorizeAdminApi(request)
+  if (authError) return authError
 
-  if (!currentUserId) return NextResponse.json({ success: false, message: 'User session is required.' }, { status: 401 })
   if (!adminSupabase) return NextResponse.json({ success: false, message: 'Notification service is not configured.' }, { status: 500 })
-  if (currentRole !== 'admin' && currentRole !== 'administrator') {
-    return NextResponse.json({ success: false, message: 'Administrator access is required.' }, { status: 403 })
-  }
+  const currentUserId = session.user_id
 
   try {
     const body = await request.json().catch(() => ({}))
@@ -183,8 +180,8 @@ export async function POST(request) {
       .select('full_name')
       .eq('id', currentUserId)
       .maybeSingle()
-    const actorName = actor?.full_name || 'Administrator'
-    const notificationTitle = notificationTitleFor(contentType)
+    const actorName = getAuthorDisplayName({ user_type: 'admin', full_name: actor?.full_name })
+    const notificationTitle = notificationTitleFor(contentType, actorName)
     const notificationMessage = `${actorName} published a new post: ${message}`
 
     // Keep a deterministic duplicate shield so re-publishing the same link does not

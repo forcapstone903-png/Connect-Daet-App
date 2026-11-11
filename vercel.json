@@ -3,6 +3,10 @@
     {
       "path": "/info/api/cron/account-deletions",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/info/api/cron/admin-messages",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

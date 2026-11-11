@@ -1,3 +1,5 @@
+'use client'
+
 export function InlineScript({ html }) {
   // Rendered during HTML parsing so it runs before the first paint. React warns
   // in development about <script> inside a component, so the client copy is

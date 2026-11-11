@@ -6,24 +6,14 @@ import { Play } from 'lucide-react'
 import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import PostActionMenu from '@/app/(subsystems)/info/components/user/PostActionMenu'
+import PostTimestamp from '@/app/(subsystems)/info/components/user/PostTimestamp'
 import { getRepostTarget } from '@/lib/repostIdentity'
 
 function getInitials(name = '') {
   return String(name).split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
 }
 
-function formatRelativeTime(value) {
-  if (!value) return 'Just now'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Just now'
-  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`
-  return `${Math.floor(seconds / 86400)}d`
-}
-
-export default function QuoteRepostCard({ item, reposter, reposterName, reposterFollowing, originalAuthorFollowing, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink, compactFeed = false }) {
+export default function QuoteRepostCard({ item, reposter, reposterName, reposterFollowing, originalAuthorFollowing, userId, commentCount = 0, isSaved = false, onToggleComments, onToggleSave, onEdit, onRemoveNote, onPrivacyChange, onDelete, onArchive, onRestore, onHide, onNotInterested, onCopyLink, compactFeed = false, profileStyle = false }) {
   const original = item.original_post || {}
   const originalAuthor = original.author || item.original_author || {}
   const originalAuthorName = originalAuthor.full_name || 'Community member'
@@ -61,10 +51,11 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
   const safeOnCopyLink = onCopyLink || defaultCopyLink
   const safeOnHide = onHide || (() => {})
   const safeOnNotInterested = onNotInterested || (() => {})
-  const canShowMenu = Boolean(isOwnRepost || onHide || onNotInterested || onCopyLink || onEdit || onPrivacyChange || onDelete || onArchive || onRestore)
+  const repostQuote = item.repost_quote ?? item.repostQuote ?? ''
+  const canShowMenu = Boolean(isOwnRepost || onHide || onNotInterested || onCopyLink || onEdit || onRemoveNote || onPrivacyChange || onDelete || onArchive || onRestore)
   const [confirmAction, setConfirmAction] = useState(null)
   const [editOpen, setEditOpen] = useState(false)
-  const [editText, setEditText] = useState(item.repost_quote || '')
+  const [editText, setEditText] = useState(repostQuote)
 
   const handleConfirmAction = () => {
     const action = confirmAction
@@ -81,9 +72,6 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
 
   if (compactFeed) {
     const repostDate = item.reposted_at || item.created_at
-    const compactRepostDate = repostDate && !Number.isNaN(new Date(repostDate).getTime())
-      ? new Date(repostDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : ''
     const thumbnail = previewMedia[0]
 
     return (
@@ -103,14 +91,15 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
         {editOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="edit-repost-title">
             <form onSubmit={handleEditSubmit} className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
-              <h2 id="edit-repost-title" className="text-lg font-semibold text-slate-900">Edit repost comment</h2>
+              <h2 id="edit-repost-title" className="text-lg font-semibold text-slate-900">Edit repost note</h2>
               <textarea
                 autoFocus
                 value={editText}
-                onChange={(event) => setEditText(event.target.value)}
+                onChange={(event) => setEditText(event.target.value.slice(0, 280))}
                 rows={4}
+                maxLength={280}
                 className="mt-4 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100"
-                aria-label="Repost comment"
+                aria-label="Repost note"
               />
               <div className="mt-4 flex justify-end gap-3">
                 <button type="button" onClick={() => setEditOpen(false)} className="rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
@@ -120,47 +109,95 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
           </div>
         )}
 
-        <div className="medium-home-repost">
-          <div className="medium-home-post-head">
-            <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-post-avatar" aria-label={`View ${reposterDisplayName}'s profile`}>
-              {reposter?.profile_image_url ? <img src={reposter.profile_image_url} alt="" /> : getInitials(reposterDisplayName)}
-            </Link>
-            <div className="medium-home-post-byline">
-              <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-author-name">{reposterDisplayName}</Link>
-              {reposterFollowing !== undefined && reposterId !== userId && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
-                  {reposterFollowing ? 'Following' : 'Not following'}
-                </span>
-              )}
-              <span>reposted</span>
-              <span aria-hidden="true">·</span>
-              <time dateTime={repostDate || undefined}>{compactRepostDate || formatRelativeTime(repostDate)}</time>
-            </div>
-          </div>
+        <div className={profileStyle ? 'profile-repost-content' : 'medium-home-repost'}>
+          {profileStyle ? (
+            <>
+              <div className="profile-repost-byline">
+                <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'}>{reposterDisplayName}</Link>
+                <span aria-hidden="true">↻</span>
+                <span>reposted</span>
+                <span aria-hidden="true">·</span>
+                <PostTimestamp value={repostDate} />
+              </div>
+              <div className="profile-repost-shared-content">
+                {repostQuote && <p className="profile-repost-note">{repostQuote}</p>}
+                <article className="profile-repost-preview">
+                  {thumbnail && (
+                    <Link href={originalHref} className="profile-repost-thumbnail" aria-label={`${thumbnail.type === 'video' ? 'Video: ' : ''}Open ${original.title || 'original post'}`}>
+                      {thumbnail.type === 'video'
+                        ? (
+                          <>
+                            <video src={thumbnail.url} muted playsInline preload="metadata" />
+                            <span className="post-video-indicator" aria-hidden="true"><Play size={9} fill="currentColor" /> VIDEO</span>
+                          </>
+                        )
+                        : <img src={thumbnail.url} alt="" />}
+                    </Link>
+                  )}
+                  <div className="profile-repost-preview-copy">
+                    {original.title && <Link href={originalHref} className="profile-repost-title">{original.title}</Link>}
+                    {originalText && <Link href={originalHref}><p>{originalText}</p></Link>}
+                    <div className="profile-repost-author">
+                      {originalAuthor.profile_image_url
+                        ? <img src={originalAuthor.profile_image_url} alt="" />
+                        : <span>{getInitials(originalAuthorName)}</span>}
+                      <span>{originalAuthorName}</span>
+                      <span aria-hidden="true">·</span>
+                      {original.created_at && <PostTimestamp value={original.created_at} />}
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="medium-home-post-head">
+                <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-post-avatar" aria-label={`View ${reposterDisplayName}'s profile`}>
+                  {reposter?.profile_image_url ? <img src={reposter.profile_image_url} alt="" /> : getInitials(reposterDisplayName)}
+                </Link>
+                <div className="medium-home-post-byline">
+                  <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="medium-home-author-name">{reposterDisplayName}</Link>
+                  {reposterFollowing !== undefined && reposterId !== userId && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                      {reposterFollowing ? 'Following' : 'Not following'}
+                    </span>
+                  )}
+                  <span>reposted</span>
+                  <span aria-hidden="true">·</span>
+                  <PostTimestamp value={repostDate} />
+                </div>
+              </div>
 
-          {item.repost_quote && <p className="medium-home-repost-quote">{item.repost_quote}</p>}
+              {repostQuote && <p className="medium-home-repost-quote">{repostQuote}</p>}
 
-          <div className={`medium-home-post-body${thumbnail ? ' has-thumbnail' : ''}`}>
-            <div className="medium-home-post-copy">
-              <div className="medium-home-original-byline">
-                Originally by <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref}>{originalAuthorName}</Link>
-                {originalAuthorFollowing !== undefined && originalAuthor.id !== userId && (
-                  <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
-                    {originalAuthorFollowing ? 'Following' : 'Not following'}
-                  </span>
+              <div className={`medium-home-post-body${thumbnail ? ' has-thumbnail' : ''}`}>
+                <div className="medium-home-post-copy">
+                  <div className="medium-home-original-byline">
+                    Originally by <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref}>{originalAuthorName}</Link>
+                    {originalAuthorFollowing !== undefined && originalAuthor.id !== userId && (
+                      <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-semibold text-slate-500">
+                        {originalAuthorFollowing ? 'Following' : 'Not following'}
+                      </span>
+                    )}
+                  </div>
+                  {original.title && <Link href={originalHref} className="medium-home-post-title"><h2>{original.title}</h2></Link>}
+                  {originalText && <Link href={originalHref}><p className="medium-home-post-excerpt">{originalText}</p></Link>}
+                </div>
+                {thumbnail && (
+                  <Link href={originalHref} className="medium-home-post-thumbnail" aria-label={`${thumbnail.type === 'video' ? 'Video: ' : ''}Open ${original.title || 'original post'}`}>
+                    {thumbnail.type === 'video'
+                      ? (
+                        <>
+                          <video src={thumbnail.url} muted playsInline preload="metadata" />
+                          <span className="post-video-indicator" aria-hidden="true"><Play size={9} fill="currentColor" /> VIDEO</span>
+                        </>
+                      )
+                      : <img src={thumbnail.url} alt="" />}
+                  </Link>
                 )}
               </div>
-              {original.title && <Link href={originalHref} className="medium-home-post-title"><h2>{original.title}</h2></Link>}
-              {originalText && <p className="medium-home-post-excerpt">{originalText}</p>}
-            </div>
-            {thumbnail && (
-              <Link href={originalHref} className="medium-home-post-thumbnail" aria-label={`Open ${original.title || 'original post'}`}>
-                {thumbnail.type === 'video'
-                  ? <video src={thumbnail.url} muted playsInline preload="metadata" />
-                  : <img src={thumbnail.url} alt="" />}
-              </Link>
-            )}
-          </div>
+            </>
+          )}
 
           {originalId && (
             <div className="feed-actions">
@@ -172,7 +209,6 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
                 userId={userId}
                 heartOnly
                 compactFeed
-                onNotInterested={safeOnNotInterested}
                 originalPost={{ ...original, id: originalId, author: originalAuthor }}
                 commentCount={commentCount}
                 onToggleComments={onToggleComments}
@@ -188,7 +224,8 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
                       userId={userId}
                       contentTitle={original.title}
                       shareUrl={originalHref}
-                      onEdit={isOwnRepost && onEdit ? () => { setEditText(item.repost_quote || ''); setEditOpen(true) } : undefined}
+                      onEdit={isOwnRepost && onEdit ? () => { setEditText(repostQuote); setEditOpen(true) } : undefined}
+                      onRemoveNote={isOwnRepost && repostQuote ? onRemoveNote : undefined}
                       onPrivacyChange={isOwnRepost ? onPrivacyChange : undefined}
                       onRestore={isOwnRepost ? onRestore : undefined}
                       onArchive={isOwnRepost && onArchive ? () => setConfirmAction('archive') : undefined}
@@ -219,7 +256,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
         <span aria-hidden="true" className="text-emerald-600">🔄</span>
         <span>reposted</span>
         <span className="text-slate-400">·</span>
-        <time dateTime={item.reposted_at || item.created_at || undefined}>{formatRelativeTime(item.reposted_at || item.created_at)}</time>
+        <PostTimestamp value={item.reposted_at || item.created_at} />
         {canShowMenu && <div className="relative z-30 ml-auto">
           <PostActionMenu
             isRepost
@@ -229,7 +266,8 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
             userId={userId}
             contentTitle={original.title}
             shareUrl={originalHref}
-            onEdit={isOwnRepost && onEdit ? () => { setEditText(item.repost_quote || ''); setEditOpen(true) } : undefined}
+            onEdit={isOwnRepost && onEdit ? () => { setEditText(repostQuote); setEditOpen(true) } : undefined}
+            onRemoveNote={isOwnRepost && repostQuote ? onRemoveNote : undefined}
             onPrivacyChange={isOwnRepost ? onPrivacyChange : undefined}
             onRestore={isOwnRepost ? onRestore : undefined}
             onArchive={isOwnRepost && onArchive ? () => setConfirmAction('archive') : undefined}
@@ -274,7 +312,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
         </div>
       )}
 
-      {item.repost_quote && <p className="mt-2 break-words text-[15px] leading-6 text-slate-900">{item.repost_quote}</p>}
+      {repostQuote && <p className="mt-2 break-words text-[15px] leading-6 text-slate-900">{repostQuote}</p>}
 
       <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
         <div className="px-0 py-0">
@@ -284,7 +322,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
             </Link>
             <Link href={originalAuthor.id ? `/info/user/profile/${originalAuthor.id}` : originalHref} className="min-w-0 truncate text-sm font-bold text-slate-900 hover:text-sky-700">{originalAuthorName}</Link>
             <span className="text-slate-400">·</span>
-            <time className="text-xs text-slate-500" dateTime={original.created_at || undefined}>{formatRelativeTime(original.created_at)}</time>
+            <PostTimestamp value={original.created_at} className="text-xs text-slate-500" />
           </div>
 
           {original.title && <Link href={originalHref} className="mt-3 block px-3 text-base font-extrabold leading-6 text-slate-950 hover:text-sky-700">{original.title}</Link>}

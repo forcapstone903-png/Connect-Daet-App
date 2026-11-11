@@ -11,7 +11,7 @@ import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/themeBootstrap'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata = {
-  title: 'CONNECT-Daet',
+  title: 'Connect Daet',
   description: 'Connect with local artisans and tour operators in Daet, Camarines Norte, Philippines.',
   manifest: '/manifest.webmanifest',
   keywords: ['Daet', 'Camarines Norte', 'tourism', 'community', 'travel', 'Philippines'],
