@@ -6,10 +6,14 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
 const adminSupabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
+export const dynamic = 'force-dynamic'
+
+const PRIVATE_NO_STORE = { headers: { 'Cache-Control': 'private, no-store, max-age=0' } }
+
 function missingConfig() {
   return NextResponse.json(
     { success: false, message: 'Server is not configured for tourist spots administration.' },
-    { status: 500 }
+    { status: 500, ...PRIVATE_NO_STORE }
   )
 }
 
@@ -43,23 +47,37 @@ export async function GET(request) {
 
     if (error) {
       console.error('Tourist spots fetch error:', error)
-      return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: error.message }, { status: 500, ...PRIVATE_NO_STORE })
     }
 
+    const { data: accountViewCounts, error: accountViewError } = await adminSupabase
+      .rpc('get_tourist_spot_account_view_counts', { p_days: 90 })
+
+    if (accountViewError) {
+      console.error('Tourist spot account view counts fetch error:', accountViewError)
+      return NextResponse.json(
+        { success: false, message: 'Unable to load tourist spot view counts.' },
+        { status: 500, ...PRIVATE_NO_STORE }
+      )
+    }
+
+    const viewCountsBySpotId = new Map(
+      (accountViewCounts || []).map((item) => [String(item.tourist_spot_id), Number(item.view_count) || 0])
+    )
     const formattedSpots = (data || []).map((spot) => ({
       ...spot,
       image_url: spot.image_url || spot.featured_image || null,
       gallery_images: spot.gallery_images?.length ? spot.gallery_images : spot.images || [],
       entrance_fee: spot.entrance_fee ?? spot.entry_fee ?? null,
-      view_count: spot.view_count ?? spot.visit_count ?? 0,
+      view_count: viewCountsBySpotId.get(String(spot.id)) || 0,
       featured: !!spot.featured,
       rating: spot.rating || 0,
     }))
 
-    return NextResponse.json({ success: true, spots: formattedSpots })
+    return NextResponse.json({ success: true, spots: formattedSpots }, PRIVATE_NO_STORE)
   } catch (error) {
     console.error('Tourist spots list error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to fetch tourist spots' }, { status: 500 })
+    return NextResponse.json({ success: false, message: error.message || 'Unable to fetch tourist spots' }, { status: 500, ...PRIVATE_NO_STORE })
   }
 }
 
@@ -84,8 +102,7 @@ export async function POST(request) {
       gallery_images,
       rating,
       status,
-      featured,
-      view_count
+      featured
     } = body
 
     if (!name?.trim() || !location?.trim() || !category) {
@@ -111,7 +128,6 @@ export async function POST(request) {
       rating: rating || 0,
       status: status || 'active',
       featured: !!featured,
-      visit_count: view_count || 0,
       created_by: session.user_id,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()

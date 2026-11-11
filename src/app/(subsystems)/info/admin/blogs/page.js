@@ -112,7 +112,6 @@ function AdminBlogsContent() {
   const [layout, setLayout] = useState('board')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('')
-  const [author, setAuthor] = useState('')
   const [submittedFrom, setSubmittedFrom] = useState('')
   const [submittedTo, setSubmittedTo] = useState('')
   const [direction, setDirection] = useState('desc')
@@ -121,6 +120,7 @@ function AdminBlogsContent() {
   const [history, setHistory] = useState([])
   const [pagination, setPagination] = useState({ page: 1, pages: 0, total: 0 })
   const [stats, setStats] = useState(EMPTY_STATS)
+  const [adminId, setAdminId] = useState('')
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState('')
   const [error, setError] = useState('')
@@ -146,7 +146,6 @@ function AdminBlogsContent() {
     })
     if (view === 'posts' && search.trim()) params.set('search', search.trim())
     if (view === 'posts' && category) params.set('category', category)
-    if (view === 'posts' && author.trim()) params.set('author', author.trim())
     if (view === 'posts' && submittedFrom) params.set('submittedFrom', submittedFrom)
     if (view === 'posts' && submittedTo) params.set('submittedTo', submittedTo)
 
@@ -161,6 +160,7 @@ function AdminBlogsContent() {
       }
 
       setStats(result.stats || EMPTY_STATS)
+      setAdminId(result.adminId || '')
       setPagination(result.pagination || { page: 1, pages: 0, total: 0 })
       if (view === 'history') setHistory(result.history || [])
       else {
@@ -179,7 +179,7 @@ function AdminBlogsContent() {
     } finally {
       setLoading(false)
     }
-  }, [author, category, direction, layout, page, search, status, submittedFrom, submittedTo, view])
+  }, [category, direction, layout, page, search, status, submittedFrom, submittedTo, view])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadData(), search ? 250 : 0)
@@ -291,6 +291,10 @@ function AdminBlogsContent() {
   }
 
   const openEdit = (post) => {
+    if (!adminId || post?.created_by !== adminId) {
+      setError('You can only edit blog posts you authored.')
+      return
+    }
     setEditPost(post)
     setEditForm({
       title: post.title || '',
@@ -304,6 +308,11 @@ function AdminBlogsContent() {
   const saveEdit = async (event) => {
     event.preventDefault()
     if (!editPost) return
+    if (!adminId || editPost.created_by !== adminId) {
+      setError('You can only edit blog posts you authored.')
+      setEditPost(null)
+      return
+    }
     setActionId(editPost.id)
     setError('')
     try {
@@ -390,7 +399,7 @@ function AdminBlogsContent() {
     return (
       <>
         <button type="button" onClick={() => selectPost(post)} className={buttonClass}><Eye className="h-3.5 w-3.5" />Preview</button>
-        <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(post)} className={`${buttonClass} disabled:opacity-50`}><Pencil className="h-3.5 w-3.5" />Edit</button>
+        {post.created_by === adminId ? <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(post)} className={`${buttonClass} disabled:opacity-50`}><Pencil className="h-3.5 w-3.5" />Edit</button> : null}
         {renderModerationActions(post, compact)}
         <button type="button" disabled={Boolean(actionId)} onClick={() => setDeletePost(post)} className={`${buttonClass} border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50`}><Trash2 className="h-3.5 w-3.5" />Delete</button>
       </>
@@ -513,17 +522,9 @@ function AdminBlogsContent() {
                 <AdminSearch
                   value={search}
                   onChange={(value) => { setSearch(value); setPage(1); setSelectedIds([]) }}
-                  placeholder="Search posts..."
-                  label="Search blog posts"
+                  placeholder="Search posts or authors..."
+                  label="Search blog posts by title or author"
                   className="min-w-[220px] flex-1"
-                />
-                <label className="sr-only" htmlFor="blog-author-filter">Filter by author name</label>
-                <input
-                  id="blog-author-filter"
-                  value={author}
-                  onChange={(event) => { setAuthor(event.target.value); setPage(1); setSelectedIds([]) }}
-                  placeholder="Author"
-                  className="min-h-10 w-32 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
                 />
                 <label className="sr-only" htmlFor="blog-category-filter">Filter by category</label>
                 <select
@@ -651,7 +652,7 @@ function AdminBlogsContent() {
                         </div>
                         ))}
                       </div>
-                    ) : status === 'pending' && !search && !category && !author && !submittedFrom && !submittedTo ? (
+                    ) : status === 'pending' && !search && !category && !submittedFrom && !submittedTo ? (
                       <div className="flex min-h-[300px] flex-col items-center justify-center p-8 text-center">
                         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check className="h-6 w-6" /></span>
                         <h4 className="mt-4 text-sm font-bold text-slate-900">No pending approvals</h4>
@@ -660,7 +661,7 @@ function AdminBlogsContent() {
                       </div>
                     ) : (
                       <div className="p-6 text-center text-sm text-slate-500">
-                        {status === 'reported' && !search && !category && !author && !submittedFrom && !submittedTo
+                        {status === 'reported' && !search && !category && !submittedFrom && !submittedTo
                           ? 'No open reports for blog posts.'
                           : 'No posts match these filters.'}
                       </div>
@@ -736,7 +737,7 @@ function AdminBlogsContent() {
                               <History className="h-3.5 w-3.5" />View moderation history
                             </button>
                             <div className="flex gap-2">
-                              <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Edit</button>
+                              {selectedPost.created_by === adminId ? <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Edit</button> : null}
                               <button type="button" disabled={Boolean(actionId)} onClick={() => setDeletePost(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Delete</button>
                             </div>
                           </div>
@@ -761,7 +762,7 @@ function AdminBlogsContent() {
                         ) : selectedPost.approval_status === 'changes_requested' ? (
                           <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-blue-50/70 px-4 py-3 sm:px-5">
                             <span className="mr-auto text-xs font-bold text-blue-800">Changes requested · {selectedPost.rejection_reason || 'Awaiting author revision.'}</span>
-                            <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(selectedPost)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">Review revision</button>
+                            {selectedPost.created_by === adminId ? <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(selectedPost)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">Review revision</button> : null}
                           </div>
                         ) : null}
                       </>
@@ -845,7 +846,7 @@ function AdminBlogsContent() {
                 </>
               ) : (
                 <div className="p-8">
-                  {status === 'pending' && !search && !category && !author && !submittedFrom && !submittedTo ? (
+                  {status === 'pending' && !search && !category && !submittedFrom && !submittedTo ? (
                     <div className="flex flex-col items-center text-center">
                       <AdminEmptyState icon={Check} title="No pending approvals" description="All submitted posts have been reviewed." />
                       <button type="button" onClick={() => changeTab('all')} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50">View All Posts</button>
@@ -853,8 +854,8 @@ function AdminBlogsContent() {
                   ) : (
                     <AdminEmptyState
                       icon="search"
-                      title={search || category || author || submittedFrom || submittedTo ? 'No matching posts' : status === 'reported' ? 'No reported posts' : 'No posts in this view'}
-                      description={search || category || author || submittedFrom || submittedTo ? 'Try another search or clear the filters.' : status === 'reported' ? 'There are no open reports for blog posts.' : 'Blog submissions will appear here as soon as users send them for review.'}
+                      title={search || category || submittedFrom || submittedTo ? 'No matching posts' : status === 'reported' ? 'No reported posts' : 'No posts in this view'}
+                      description={search || category || submittedFrom || submittedTo ? 'Try another search or clear the filters.' : status === 'reported' ? 'There are no open reports for blog posts.' : 'Blog submissions will appear here as soon as users send them for review.'}
                     />
                   )}
                 </div>

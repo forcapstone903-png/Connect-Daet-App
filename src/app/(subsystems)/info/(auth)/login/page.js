@@ -19,6 +19,7 @@ function LoginContent() {
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
+  const accountDeletionPending = error.toLowerCase().includes('scheduled for deletion')
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
@@ -226,11 +227,11 @@ function LoginContent() {
             </div>
           </div>
 
-          <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-[#edf2f9] via-[#f7f9fc] to-[#e7effb] px-3 py-5 sm:px-5 sm:py-8 lg:px-8 xl:px-12">
+          <div className="flex min-h-dvh items-start justify-center bg-gradient-to-br from-[#edf2f9] via-[#f7f9fc] to-[#e7effb] px-3 pb-8 pt-8 sm:items-center sm:px-5 sm:py-8 lg:px-8 xl:px-12">
             <div
               className="w-full max-w-[540px] p-4 sm:p-8 xl:p-10"
             >
-              <div className="mb-8 text-center">
+              <div className="mb-6 text-center sm:mb-8">
                 <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-4 ring-blue-100">
                   <img src="/logo.png" alt="Daet logo" className="h-12 w-12 object-contain" />
                 </div>
@@ -249,11 +250,17 @@ function LoginContent() {
               )}
 
               {error && (
-                <div role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
+                <div role="alert" className="login-error-alert mb-4 rounded-xl border px-4 py-3.5 text-sm">
                   <div className="flex items-start gap-2">
                     <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>{error}</span>
                   </div>
+
+                  {accountDeletionPending && (
+                    <Link href="/info/account-recovery" className="login-error-action mt-3 inline-flex min-h-10 items-center rounded-lg border px-3 py-2 font-bold transition">
+                      Restore your account
+                    </Link>
+                  )}
 
                   {error.toLowerCase().includes('confirm') && (
                     <button
@@ -274,12 +281,12 @@ function LoginContent() {
                 </div>
               )}
 
-              <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm leading-5 text-blue-900">
+              {!accountDeletionPending && <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm leading-5 text-blue-900">
                 <div className="flex items-start gap-2">
                   <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" />
                   <span>For security, your account must be verified before you can sign in.</span>
                 </div>
-              </div>
+              </div>}
 
               <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
                 <div>
@@ -333,12 +340,12 @@ function LoginContent() {
                     Forgot password?
                   </Link>
                 </div>
-                <p className="text-center text-xs text-slate-600">
+                {!accountDeletionPending && <p className="text-center text-xs text-slate-600">
                   Account deletion scheduled?{' '}
                   <Link href="/info/account-recovery" className="font-semibold text-[#2563EB] hover:text-blue-700">
                     Restore your account
                   </Link>
-                </p>
+                </p>}
 
                 <button
                   type="submit"

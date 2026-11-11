@@ -7,6 +7,7 @@ export const runtime = 'nodejs'
 
 import { notifyFollowers } from '@/lib/notificationAudience'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
+import { notifyAdministrators } from '@/lib/adminNotifications'
 
 export async function POST(request) {
   try {
@@ -205,6 +206,13 @@ export async function POST(request) {
         })
       if (notificationError) console.error('Event submission notification failed:', notificationError)
 
+      await notifyAdministrators(adminSupabase, {
+        title: 'Event awaiting approval',
+        message: `A new event proposal needs review: ${title}`,
+        type: 'event',
+        link: '/info/admin/event-approvals?status=pending',
+      })
+
       return NextResponse.json({
         success: true,
         id: data.id,
@@ -256,6 +264,13 @@ export async function POST(request) {
       if (notificationError) {
         console.error('Complaint notification insert failed:', notificationError)
       }
+
+      await notifyAdministrators(adminSupabase, {
+        title: 'New complaint received',
+        message: `A user submitted a complaint: ${title}`,
+        type: 'warning',
+        link: '/info/admin/feedback',
+      })
 
       return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback' })
     }
@@ -337,6 +352,13 @@ export async function POST(request) {
       if (notificationError) {
         console.error('Feedback notification insert failed:', notificationError)
       }
+
+      await notifyAdministrators(adminSupabase, {
+        title: 'New user feedback',
+        message: `A user submitted feedback: ${title}`,
+        type: 'info',
+        link: '/info/admin/feedback',
+      })
 
       return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback', warning })
     }

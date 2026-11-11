@@ -30,7 +30,8 @@ import { filterValidUuidValues } from '@/lib/uuid'
 import { getLevelFromPoints } from '@/lib/gamification'
 import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
 import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
-import { getPostImages } from '@/lib/postMedia'
+import { getPostImages, getPostVideos } from '@/lib/postMedia'
+import { filterProfilePosts, getProfileContentTabs } from '@/lib/profileContent'
 import { isImageAttachment, parsePostContent } from '@/lib/postContent'
 import { useUserSettings } from '@/components/UserSettingsProvider'
 import {
@@ -72,27 +73,6 @@ function getBadgeTone(name) {
   }
 
   return palette[name] || palette.default
-}
-
-function filterProfilePosts(posts, tab) {
-  if (tab === 'Overview') return posts.slice(0, 3)
-  if (tab === 'All') return posts
-  if (tab === 'Posts') return posts.filter((post) => post.type === 'Post' && !post.isRepost)
-  if (tab === 'Blogs') return posts.filter((post) => post.type === 'Blog')
-  if (tab === 'Forums') return posts.filter((post) => post.type === 'Forum')
-  if (tab === 'Travel') return posts.filter((post) => post.type === 'Tourist Spot')
-  if (tab === 'Reposts') return posts.filter((post) => post.isRepost)
-  if (tab === 'Photos') return posts.filter((post) => getPostImages(post).length > 0)
-  if (tab === 'Videos') {
-    return posts.filter((post) => (
-      post.videos?.length > 0
-      || Boolean(post.video_url)
-      || (Array.isArray(post.media) && post.media.some((item) => (
-        typeof item === 'object' && String(item.type || item.kind || '').toLowerCase() === 'video'
-      )))
-    ))
-  }
-  return posts
 }
 
 export default function UserProfilePage() {
@@ -344,6 +324,9 @@ export default function UserProfilePage() {
             category: 'Community',
             href: `/info/user/posts/${post.id}`,
             media: post.featured_image || (post.images || [])[0] || '',
+            images: Array.isArray(post.images) ? post.images : [],
+            videos: Array.isArray(post.videos) ? post.videos : [],
+            video_url: post.video_url || '',
             pinned: false,
             accent: 'bg-amber-100 text-amber-700',
           }))),
@@ -360,6 +343,9 @@ export default function UserProfilePage() {
             longitude: spot.longitude,
             href: `/info/visitor/tourist-spots/${spot.id}`,
             media: spot.featured_image || (Array.isArray(spot.images) ? spot.images[0] : '') || '',
+            images: Array.isArray(spot.images) ? spot.images : [],
+            videos: Array.isArray(spot.videos) ? spot.videos : [],
+            video_url: spot.video_url || '',
             pinned: false,
             accent: 'bg-emerald-100 text-emerald-700',
           }))),
@@ -373,6 +359,9 @@ export default function UserProfilePage() {
             category: blog.category || 'Story',
             href: `/info/user/blogs/${blog.id}`,
             media: blog.featured_image || '',
+            images: Array.isArray(blog.images) ? blog.images : [],
+            videos: Array.isArray(blog.videos) ? blog.videos : [],
+            video_url: blog.video_url || '',
             pinned: Boolean(blog.is_pinned || blog.pinned),
             accent: 'bg-sky-100 text-sky-700',
           })),
@@ -386,6 +375,8 @@ export default function UserProfilePage() {
               ...(Array.isArray(thread.image_urls) ? thread.image_urls : []),
               ...parsePostContent(thread.content).attachments.filter(isImageAttachment),
             ])],
+            videos: Array.isArray(thread.videos) ? thread.videos : [],
+            video_url: thread.video_url || '',
             created_at: thread.created_at,
             category: thread.tags?.[0] || 'Community',
             href: `/info/user/forums/${thread.id}`,
@@ -403,6 +394,9 @@ export default function UserProfilePage() {
             category: event.category || 'Event',
             href: `/info/user/events/${event.id}`,
             media: event.featured_image || (Array.isArray(event.images) ? event.images[0] : '') || '',
+            images: Array.isArray(event.images) ? event.images : [],
+            videos: Array.isArray(event.videos) ? event.videos : [],
+            video_url: event.video_url || '',
             pinned: Boolean(event.is_pinned || event.pinned),
             accent: 'bg-amber-100 text-amber-700',
           })),
@@ -609,6 +603,7 @@ export default function UserProfilePage() {
   }, [userId])
 
   const visiblePosts = useMemo(() => filterProfilePosts(userPosts, profileTab), [userPosts, profileTab])
+  const profileTabs = useMemo(() => getProfileContentTabs(userPosts), [userPosts])
   const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
 
   const updateProfileRepostNote = async (post, quoteText) => {
@@ -812,6 +807,7 @@ export default function UserProfilePage() {
           <Link role="menuitem" href="/info/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
           <Link role="menuitem" href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
           <Link role="menuitem" href="/info/user/drafts" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><FilePenLine className="h-4 w-4" />Drafts</Link>
+          <Link role="menuitem" href="/info/user/blog-submissions" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><FilePenLine className="h-4 w-4" />My blog posts</Link>
           <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
           <div className="my-1 border-t border-slate-100" role="separator" />
           <button role="menuitem" type="button" onClick={() => { setProfileActionsOpen(false); setShowLogoutConfirm(true) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
@@ -848,11 +844,10 @@ export default function UserProfilePage() {
                   </h1>
                   <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500"><MapPin className="h-4 w-4 text-sky-600" />{profile.location}</p>
                   {profile.bio && <p className="profile-header-bio">{profile.bio}</p>}
-                </div>
-              </div>
-              <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
-                <Link href="/info/user/blog-submissions" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />My blog posts</Link>
-                <Link href="/info/user/blogs/new" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />Create Post</Link>
+                    </div>
+                  </div>
+                  <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+                    <Link href="/info/user/blogs/new" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />Create Post</Link>
                 <Link href="/info/user/profile/edit" className="usr-section-primary"><Wand2 className="h-4 w-4" />Edit Profile</Link>
               </div>
             </div>
@@ -899,7 +894,7 @@ export default function UserProfilePage() {
                 </div>
 
                 <div className="profile-tabs" role="tablist" aria-label="Profile content">
-                  {['Overview', 'All', 'Posts', 'Blogs', 'Forums', 'Travel', 'Photos', 'Videos', 'Reposts'].map((tab) => (
+                  {profileTabs.map((tab) => (
                     <button
                       key={tab}
                       type="button"
@@ -1019,7 +1014,7 @@ export default function UserProfilePage() {
                       ) : (
                         <p className="profile-overview-empty">No shared or favorite destinations saved yet. This profile does not track visits automatically.</p>
                       )}
-                      <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab('Travel')}>Explore shared destinations <span aria-hidden="true">→</span></button>
+                      {profileTabs.includes('Travel') && <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab('Travel')}>Explore shared destinations <span aria-hidden="true">→</span></button>}
                     </section>
 
                   </div>
@@ -1098,9 +1093,9 @@ export default function UserProfilePage() {
 
                         <Link href={post.href} className="profile-post-title mt-4 block"><h3>{post.title}</h3></Link>
                         <p className="profile-post-description">{post.type === 'Forum' ? parsePostContent(post.content).text : post.content}</p>
-                        {(getPostImages(post).length > 0 || post.videos?.length > 0 || post.video_url || post.media) && <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
-                          {getPostImages(post).length > 0 && <PostMediaGallery images={getPostImages(post)} detailHref={post.href} />}
-                          {(post.videos?.length ? post.videos : (post.video_url ? [post.video_url] : [])).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
+                        {(profileTab === 'Videos' ? getPostVideos(post).length > 0 : getPostImages(post).length > 0 || getPostVideos(post).length > 0) && <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                          {profileTab !== 'Videos' && getPostImages(post).length > 0 && <PostMediaGallery images={getPostImages(post)} detailHref={post.href} />}
+                          {profileTab !== 'Photos' && getPostVideos(post).map((url, index) => <video key={`${url}-${index}`} src={url} controls className="aspect-[16/8.5] w-full object-cover" preload="metadata" />)}
                         </div>}
 
                         <div className="profile-post-actions">

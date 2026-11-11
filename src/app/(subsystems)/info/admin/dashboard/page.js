@@ -1,7 +1,7 @@
 // app/(subsystems)/info/admin/dashboard/page.js
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -17,6 +17,7 @@ import {
   Megaphone,
   MessageSquare,
   Newspaper,
+  X,
   Users,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -238,9 +239,19 @@ export default function AdminDashboard() {
   const locationInputRef = useRef(null);
   const weatherPopoverRef = useRef(null);
   const notificationsPopoverRef = useRef(null);
+  const serverNotificationIdsRef = useRef(new Set());
+  const notificationsInitializedRef = useRef(false);
+  const refreshAdminNotificationsRef = useRef(null);
   const realtime = useRealtimeRefresh({
     channelName: `admin-dashboard-content-${user?.user_id || user?.id || 'unknown'}`,
-    tables: ['info_announcements', 'info_events', 'info_tourist_spots', 'forum_threads', 'forum_replies'],
+    tables: [
+      'info_announcements',
+      'info_events',
+      'info_tourist_spots',
+      'forum_threads',
+      'forum_replies',
+      { table: 'info_notifications', filter: `user_id=eq.${user?.user_id || user?.id || ''}` },
+    ],
     enabled: Boolean(user),
   })
 
@@ -521,6 +532,7 @@ export default function AdminDashboard() {
   
   const markAsRead = (id) => {
     setNotifications(prev => prev.map(notif => notif.id === id ? { ...notif, read: true } : notif));
+    if (!serverNotificationIdsRef.current.has(String(id))) return;
     void fetch('/info/api/notifications', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -545,6 +557,7 @@ export default function AdminDashboard() {
   
   const clearAllNotifications = () => {
     setNotifications([]);
+    serverNotificationIdsRef.current = new Set();
     setShowNotifications(false);
     try {
       localStorage.removeItem(NOTIFICATIONS_STORAGE_KEY);
@@ -557,6 +570,19 @@ export default function AdminDashboard() {
   
   const removeNotification = (id) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
+    if (!serverNotificationIdsRef.current.has(String(id))) return;
+    void fetch(`/info/api/notifications?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+    }).then(async (response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to remove the notification.')
+      }
+      serverNotificationIdsRef.current.delete(String(id));
+    }).catch((error) => {
+      console.error('Admin notification removal failed:', error);
+    });
   };
 
   const checkUpcomingEvents = () => {
@@ -827,10 +853,10 @@ export default function AdminDashboard() {
     }
   }, [notifications]);
 
-  const showToast = (message, isError = false) => {
+  const showToast = useCallback((message, isError = false) => {
     setToastMessage({ message, isError });
     setTimeout(() => setToastMessage(null), 2500);
-  };
+  }, []);
 
   const calendarStats = useMemo(() => {
     const now = new Date(); now.setHours(0, 0, 0, 0);
@@ -1125,7 +1151,11 @@ export default function AdminDashboard() {
         adminUserId
           ? fetch('/info/api/notifications', { credentials: 'same-origin' }).then(async (response) => {
               const result = await response.json()
-              return { data: response.ok && result.success ? result.notifications || [] : [], error: response.ok ? null : new Error(result.message || 'Unable to load notifications') }
+              const successful = response.ok && result.success && Array.isArray(result.notifications)
+              return {
+                data: successful ? result.notifications : [],
+                error: successful ? null : new Error(result.message || 'Unable to load notifications'),
+              }
             })
           : Promise.resolve({ data: [] })
       ]);
@@ -1156,6 +1186,7 @@ export default function AdminDashboard() {
           timestamp: new Date(notification.created_at || Date.now()),
         }));
 
+        serverNotificationIdsRef.current = new Set(serverNotifications.map((notification) => String(notification.id)));
         setNotifications((localNotifications) => {
           const merged = new Map(localNotifications.map((notification) => [String(notification.id), notification]));
           serverNotifications.forEach((notification) => {
@@ -1170,6 +1201,78 @@ export default function AdminDashboard() {
       console.error('Error fetching data:', err);
     }
   };
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let active = true;
+    let refreshing = false;
+    const refreshNotifications = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const response = await fetch('/info/api/notifications', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success || !Array.isArray(result.notifications)) {
+          throw new Error(result.message || 'Unable to refresh admin notifications.');
+        }
+        if (!active) return;
+
+        const serverNotifications = result.notifications.map((notification) => ({
+          id: notification.id,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type || 'info',
+          link: notification.link || null,
+          read: Boolean(notification.is_read),
+          timestamp: new Date(notification.created_at || Date.now()),
+        }));
+        const previousServerIds = serverNotificationIdsRef.current;
+        const shouldAnnounceNewNotifications = notificationsInitializedRef.current;
+        const newUnreadNotifications = serverNotifications.filter((notification) => (
+          !previousServerIds.has(String(notification.id)) && !notification.read
+        ));
+        serverNotificationIdsRef.current = new Set(serverNotifications.map((notification) => String(notification.id)));
+        notificationsInitializedRef.current = true;
+        if (shouldAnnounceNewNotifications && newUnreadNotifications.length) {
+          const notification = newUnreadNotifications[0];
+          showToast(`${notification.title}: ${notification.message}`);
+        }
+        setNotifications((current) => {
+          const localNotifications = current.filter((notification) => !previousServerIds.has(String(notification.id)));
+          const merged = new Map(localNotifications.map((notification) => [String(notification.id), notification]));
+          serverNotifications.forEach((notification) => merged.set(String(notification.id), notification));
+          return [...merged.values()]
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+            .slice(0, MAX_NOTIFICATIONS);
+        });
+        setNotificationsAvailable(true);
+      } catch (error) {
+        if (active) {
+          console.error('Admin notifications refresh failed:', error);
+          setNotificationsAvailable(false);
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    refreshAdminNotificationsRef.current = refreshNotifications;
+    void refreshNotifications();
+    const interval = setInterval(() => void refreshNotifications(), 30_000);
+    window.addEventListener('focus', refreshNotifications);
+    return () => {
+      active = false;
+      if (refreshAdminNotificationsRef.current === refreshNotifications) {
+        refreshAdminNotificationsRef.current = null;
+      }
+      clearInterval(interval);
+      window.removeEventListener('focus', refreshNotifications);
+    };
+  }, [showToast, user]);
 
   function formatActivityTime(value) {
     if (!value) return 'Just now';
@@ -1231,6 +1334,7 @@ export default function AdminDashboard() {
         fetchForumThreadsCount({ throwOnError: true }),
         fetchVenues({ throwOnError: true }),
         fetchRecentActivity({ throwOnError: true }),
+        refreshAdminNotificationsRef.current?.(),
       ])
       return true
     })
@@ -1585,37 +1689,46 @@ export default function AdminDashboard() {
                 </button>
                 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-slate-700 bg-slate-900 text-slate-100 shadow-2xl z-50 overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white">
+                  <div className="dc-notification-popover absolute right-0 z-50 mt-2 w-[min(26rem,calc(100vw-2rem))] overflow-hidden rounded-2xl shadow-2xl">
+                    <div className="dc-notification-header flex items-center justify-between px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/12"><Icon name="notifications" className="w-4 h-4" /></span>
-                        <h3 className="font-black text-sm">Notifications</h3>
+                        <span className="dc-notification-icon flex h-8 w-8 items-center justify-center rounded-full"><Icon name="notifications" className="w-4 h-4" /></span>
+                        <h3 className="dc-notification-heading text-sm font-black">Notifications</h3>
                       </div>
                       <div className="flex items-center gap-2">
-                        {unreadNotificationCount > 0 && <button type="button" onClick={markAllAsRead} className="text-xs font-bold text-sky-200 hover:text-white">Mark all read</button>}
-                        {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="text-xs font-bold text-rose-200 hover:text-white">Clear all</button>}
+                        {unreadNotificationCount > 0 && <button type="button" onClick={markAllAsRead} className="dc-notification-header-action dc-notification-read-all">Mark all read</button>}
+                        {notifications.length > 0 && <button type="button" onClick={clearAllNotifications} className="dc-notification-header-action dc-notification-clear-all">Clear all</button>}
                       </div>
                     </div>
-                    <div className="max-h-[22rem] overflow-y-auto bg-slate-900">
+                    <div className="dc-notification-list max-h-[22rem] overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center gap-2 py-8 text-slate-400">
+                        <div className="dc-notification-empty flex flex-col items-center justify-center gap-2 py-8">
                           <Icon name="notifications" className="w-6 h-6" />
                           <p className="text-sm font-semibold">No notifications</p>
                         </div>
                       ) : (
                         notifications.map(notif => (
-                          <div key={notif.id} className={`border-b border-slate-700 px-4 py-3 cursor-pointer transition ${!notif.read ? 'bg-slate-800' : 'bg-slate-900'}`} onClick={() => openNotification(notif)}>
-                            <div className="flex items-start gap-3">
-                              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-900 text-[11px] font-black text-white">{getNotificationIcon(notif.type).slice(0, 2).toUpperCase()}</span>
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-start justify-between gap-2">
-                                  <h4 className="font-black text-sm text-slate-100">{notif.title}</h4>
-                                  <button onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }} className="rounded-full px-2 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-100 hover:text-rose-600">Remove</button>
+                          <div key={notif.id} className={`dc-notification-item flex cursor-pointer items-start gap-3 border-b px-4 py-3 transition ${!notif.read ? 'is-unread' : ''}`} onClick={() => openNotification(notif)}>
+                            <span className="dc-notification-avatar mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-black">{getNotificationIcon(notif.type).slice(0, 2).toUpperCase()}</span>
+                            <div className="dc-notification-content min-w-0 flex-1">
+                              <div className="dc-notification-item-heading">
+                                <h4 className="dc-notification-title min-w-0 flex-1 text-sm font-black">{notif.title}</h4>
+                                <div className="dc-notification-item-actions">
+                                  {!notif.read && <span className="dc-notification-unread h-2 w-2 shrink-0 rounded-full" aria-label="Unread" />}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); removeNotification(notif.id) }}
+                                    className="dc-notification-remove"
+                                    aria-label={`Remove notification: ${notif.title}`}
+                                    title="Remove notification"
+                                  >
+                                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                                    <span>Remove</span>
+                                  </button>
                                 </div>
-                                <p className="mt-1 text-xs leading-5 text-slate-300">{notif.message}</p>
-                                <p className="mt-2 text-[11px] font-semibold text-slate-400">{notif.timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
                               </div>
-                              {!notif.read && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-sky-600"></span>}
+                              <p className="dc-notification-message mt-1 text-xs leading-5">{notif.message}</p>
+                              <p className="dc-notification-time mt-2 text-[11px] font-semibold">{notif.timestamp.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</p>
                             </div>
                           </div>
                         ))

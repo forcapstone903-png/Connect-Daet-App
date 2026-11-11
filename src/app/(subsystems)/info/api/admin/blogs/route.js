@@ -13,10 +13,11 @@ function getAdminClient() {
     : null
 }
 
-async function getCount(client, status) {
+async function getCount(client, status, adminId) {
   let query = client.from('info_blogs').select('id', { count: 'exact', head: true })
   if (status) query = query.eq('approval_status', status)
   if (status === 'approved') query = query.eq('status', 'published')
+  if (!status) query = query.or(`approval_status.neq.draft,created_by.eq.${adminId}`)
   const { count, error } = await query
   if (error) throw error
   return count || 0
@@ -46,11 +47,11 @@ export async function GET(request) {
   const params = new URL(request.url).searchParams
   try {
     const [totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedResult] = await Promise.all([
-      getCount(client),
-      getCount(client, 'pending'),
-      getCount(client, 'approved'),
-      getCount(client, 'rejected'),
-      getCount(client, 'changes_requested'),
+      getCount(client, null, authorization.session.user_id),
+      getCount(client, 'pending', authorization.session.user_id),
+      getCount(client, 'approved', authorization.session.user_id),
+      getCount(client, 'rejected', authorization.session.user_id),
+      getCount(client, 'changes_requested', authorization.session.user_id),
       client.from('info_moderation')
         .select('id', { count: 'exact', head: true })
         .eq('reported_item_table', 'info_blogs')
@@ -92,7 +93,6 @@ export async function GET(request) {
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(params.get('pageSize') || '10', 10) || 10))
     const search = (params.get('search') || '').trim().slice(0, 120)
     const category = (params.get('category') || '').trim().slice(0, 80)
-    const author = (params.get('author') || '').trim().slice(0, 120)
     const submittedFrom = params.get('submittedFrom') || ''
     const submittedTo = params.get('submittedTo') || ''
     const direction = params.get('direction') === 'asc'
@@ -138,23 +138,16 @@ export async function GET(request) {
       }
     }
 
-    let authorIds = null
-    if (author) {
-      const { data: authors, error: authorError } = await client
-        .from('info_users')
-        .select('id')
-        .ilike('full_name', `%${author}%`)
-        .limit(100)
-      if (authorError) throw authorError
-      authorIds = (authors || []).map((person) => person.id)
-      if (!authorIds.length) {
-        return NextResponse.json({
-          success: true,
-          posts: [],
-          pagination: { page, pageSize, total: 0, pages: 0 },
-          stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedPosts: reportedResult.count || 0 },
-        }, { headers: { 'Cache-Control': 'private, no-store' } })
-      }
+    let authorIds = []
+    if (search) {
+      const authorPattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`
+      const [nameResult, emailResult] = await Promise.all([
+        client.from('info_users').select('id').ilike('full_name', authorPattern).limit(1000),
+        client.from('info_users').select('id').ilike('email', authorPattern).limit(1000),
+      ])
+      if (nameResult.error) throw nameResult.error
+      if (emailResult.error) throw emailResult.error
+      authorIds = [...new Set([...(nameResult.data || []), ...(emailResult.data || [])].map((person) => person.id))]
     }
 
     let query = client
@@ -167,9 +160,25 @@ export async function GET(request) {
     if (status !== 'all' && status !== 'reported') query = query.eq('approval_status', status)
     if (status === 'approved') query = query.eq('status', 'published')
     if (reportedIds) query = query.in('id', reportedIds)
-    if (search) query = query.ilike('title', `%${search}%`)
+    if (search) {
+      const titleTerm = search.replace(/[\\,*()]/g, '\\$&')
+      const adminId = authorization.session.user_id
+      const searchFilters = [
+        `and(approval_status.neq.draft,title.ilike.*${titleTerm}*)`,
+        `and(created_by.eq.${adminId},title.ilike.*${titleTerm}*)`,
+      ]
+      if (authorIds.length) {
+        const authorsFilter = `created_by.in.(${authorIds.join(',')})`
+        searchFilters.push(
+          `and(approval_status.neq.draft,${authorsFilter})`,
+          `and(created_by.eq.${adminId},${authorsFilter})`,
+        )
+      }
+      query = query.or(searchFilters.join(','))
+    } else {
+      query = query.or(`approval_status.neq.draft,created_by.eq.${authorization.session.user_id}`)
+    }
     if (category) query = query.eq('category', category)
-    if (authorIds) query = query.in('created_by', authorIds)
     if (submittedFrom) query = query.gte('submitted_at', `${submittedFrom}T00:00:00.000Z`)
     if (submittedTo) {
       const endExclusive = new Date(`${submittedTo}T00:00:00.000Z`)
@@ -191,6 +200,7 @@ export async function GET(request) {
     return NextResponse.json({
       success: true,
       posts,
+      adminId: authorization.session.user_id,
       pagination: { page, pageSize, total: count || 0, pages: Math.ceil((count || 0) / pageSize) },
       stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedPosts: reportedResult.count || 0 },
     }, { headers: { 'Cache-Control': 'private, no-store' } })

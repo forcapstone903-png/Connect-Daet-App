@@ -16,6 +16,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
+import { AdminStatCard } from '@/app/(subsystems)/info/components/admin';
 
 const EVENT_CATEGORIES = [
   { value: 'festival', label: 'Festival' },
@@ -69,6 +70,7 @@ export default function AdminEventsPage() {
   const [selectedEventDetails, setSelectedEventDetails] = useState(null);
   const [eventDetailsSearch, setEventDetailsSearch] = useState('');
   const [currentEventPage, setCurrentEventPage] = useState(1);
+  const [eventListView, setEventListView] = useState('all');
   const EVENTS_PER_PAGE = 10;
   const [showTrashDropZone, setShowTrashDropZone] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -169,7 +171,7 @@ export default function AdminEventsPage() {
 
   const fetchEvents = useCallback(async () => {
     try {
-      let query = supabase.from('info_events').select('*');
+      let query = supabase.from('info_events').select('*').eq('approval_status', 'approved');
       
       if (filters.status !== 'all') {
         query = query.eq('status', filters.status);
@@ -769,6 +771,7 @@ export default function AdminEventsPage() {
   });
 
   const filteredEvents = events.filter(ev => {
+    if (eventListView === 'admin-drafts' ? ev.status !== 'draft' : ev.status === 'draft') return false;
     if (filters.status !== 'all' && ev.status !== filters.status) return false;
     if (filters.category !== 'all' && ev.category !== filters.category) return false;
     if (filters.search && !ev.title.toLowerCase().includes(filters.search.toLowerCase()) &&
@@ -938,74 +941,14 @@ export default function AdminEventsPage() {
           </div>
         </div>
 
-        {/* Stats Cards - Matching Dashboard Design */}
-        <div className="mb-6 grid gap-4 md:grid-cols-3 lg:grid-cols-6">
-          <div className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Total</p>
-                <p className="mt-3 text-3xl font-black text-slate-900">{stats.total}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-100 text-blue-700">
-                <Icon name="events" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-emerald-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Published</p>
-                <p className="mt-3 text-3xl font-black text-emerald-600">{stats.published}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                <Icon name="check" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-amber-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Draft</p>
-                <p className="mt-3 text-3xl font-black text-amber-600">{stats.draft}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                <Icon name="edit" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-rose-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Cancelled</p>
-                <p className="mt-3 text-3xl font-black text-rose-600">{stats.cancelled}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
-                <Icon name="delete" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-violet-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Completed</p>
-                <p className="mt-3 text-3xl font-black text-violet-600">{stats.completed}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                <Icon name="check" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-purple-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)] transition hover:-translate-y-0.5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Upcoming</p>
-                <p className="mt-3 text-3xl font-black text-purple-600">{stats.upcoming}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-purple-100 text-purple-700">
-                <Icon name="events" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
+        {/* Event statistics use the shared dashboard stat-card treatment. */}
+        <div className="mb-6 grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-6">
+          <AdminStatCard label="Total" value={stats.total} meta="All event records" icon="events" className="!min-h-[120px] !gap-2 !rounded-[1.25rem] !p-4" />
+          <AdminStatCard label="Published" value={stats.published} meta="Visible to visitors" icon="check" tone="success" className="!min-h-[120px] !gap-2 !rounded-[1.25rem] !p-4" />
+          <AdminStatCard label="Draft" value={stats.draft} meta="Not yet published" icon="edit" tone="warning" className="!min-h-[120px] !gap-2 !rounded-[1.25rem] !p-4" />
+          <AdminStatCard label="Cancelled" value={stats.cancelled} meta="Cancelled events" icon="delete" tone="danger" className="!min-h-[120px] !gap-2 !rounded-[1.25rem] !p-4" />
+          <AdminStatCard label="Completed" value={stats.completed} meta="Past events" icon="check" tone="violet" className="!min-h-[120px] !gap-2 !rounded-[1.25rem] !p-4" />
+          <AdminStatCard label="Upcoming" value={stats.upcoming} meta="Next 30 days" icon="events" tone="info" className="!min-h-[120px] !gap-2 !rounded-[1.25rem] !p-4" />
         </div>
 
         {/* Filter Bar - Matching Dashboard Design */}
@@ -1075,17 +1018,14 @@ export default function AdminEventsPage() {
         </div>
 
         {/* Calendar and upcoming events sit side by side on desktop. */}
-        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_280px] xl:grid-cols-[minmax(0,1fr)_300px] items-start gap-6">
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-stretch xl:grid-cols-[minmax(0,1fr)_300px]">
           <div className="admin-events-calendar admin-panel min-w-0 p-3 sm:p-5">
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+            <div className="mb-5">
               <div>
                 <p className="admin-eyebrow">Schedule</p>
                 <h2 className="text-lg font-bold">Event calendar</h2>
                 <p className="admin-subtitle">Select dates to create an event. Drag an event to reschedule.</p>
               </div>
-              <button type="button" onClick={() => openCreateModal()} className="admin-btn admin-btn-primary">
-                + New event
-              </button>
             </div>
             <div className="admin-events-calendar-scroll" role="region" aria-label="Event calendar" tabIndex={0}>
             <FullCalendar
@@ -1096,6 +1036,7 @@ export default function AdminEventsPage() {
               editable={true}
               eventStartEditable={true}
               eventDurationEditable={true}
+              eventResizableFromStart={true}
               events={calendarEvents}
               fixedWeekCount={true}
               dayMaxEvents={3}
@@ -1107,7 +1048,7 @@ export default function AdminEventsPage() {
               slotEventOverlap={false}
               eventTimeFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }}
               noEventsContent="No events scheduled for this month with the current filters."
-              height={850}
+              height={620}
               select={(info) => openCreateModal(info.startStr, info.endStr, info.allDay)}
               eventClick={(info) => {
                 const event = events.find(e => e.id === info.event.id);
@@ -1143,11 +1084,7 @@ export default function AdminEventsPage() {
                 const success = await updateEventDates(info.event.id, info.event.startStr, info.event.endStr, info.event.allDay);
                 if (!success) info.revert();
               }}
-              headerToolbar={{
-                left: 'title',
-                center: '',
-                right: 'prev,next today dayGridMonth,timeGridWeek'
-              }}
+              headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek' }}
               buttonText={{ today: 'Today', month: 'Month', week: 'Week' }}
               nowIndicator={true}
               weekends={true}
@@ -1166,7 +1103,7 @@ export default function AdminEventsPage() {
           </div>
 
           {/* Upcoming Events Widget - Matching Dashboard Design */}
-          <div className="admin-panel admin-upcoming-panel min-w-0 p-3 sm:p-5">
+          <div className="admin-panel admin-upcoming-panel min-w-0 p-3 sm:p-5 lg:flex lg:h-full lg:flex-col">
             <div className="flex justify-between items-center mb-3">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-emerald-700">Upcoming</p>
@@ -1178,7 +1115,7 @@ export default function AdminEventsPage() {
                 + Add
               </button>
             </div>
-            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+            <div className="min-h-0 space-y-2 overflow-y-auto lg:flex-1">
               {upcomingEvents.length > 0 ? (
                 upcomingEvents.map((ev) => {
                   const eventDate = new Date(ev.start);
@@ -1266,21 +1203,22 @@ export default function AdminEventsPage() {
           </div>
         </div>
 
-        {/* Event Details Panel - Matching Dashboard Design */}
-        <div className="mt-6 bg-white rounded-[2rem] border border-sky-100 p-5 shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Details</p>
+        {/* Event details and both event lists share one panel. */}
+        <div className="mt-6 overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
+          <div className="p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Details</p>
               <h3 className="text-lg font-bold text-gray-800">Event Details</h3>
+              </div>
+              {selectedEventDetails && (
+                <button onClick={() => openEditModal(selectedEventDetails)} className="text-sm text-blue-600 hover:underline">
+                  Edit Event
+                </button>
+              )}
             </div>
-            {selectedEventDetails && (
-              <button onClick={() => openEditModal(selectedEventDetails)} className="text-sm text-blue-600 hover:underline">
-                Edit Event
-              </button>
-            )}
-          </div>
 
-          {selectedEventDetails ? (
+            {selectedEventDetails ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
@@ -1439,35 +1377,48 @@ export default function AdminEventsPage() {
                 </div>
               )}
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
-                <input
-                  list="event-details-titles"
-                  value={eventDetailsSearch}
-                  onChange={(e) => handleEventDetailsSearch(e.target.value)}
-                  placeholder="Search event title"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-blue-500"
-                />
-                <datalist id="event-details-titles">
-                  {events.map((event) => (
-                    <option key={event.id} value={event.title} />
-                  ))}
-                </datalist>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
+                  <input
+                    list="event-details-titles"
+                    value={eventDetailsSearch}
+                    onChange={(e) => handleEventDetailsSearch(e.target.value)}
+                    placeholder="Search event title"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                  <datalist id="event-details-titles">
+                    {events.map((event) => (
+                      <option key={event.id} value={event.title} />
+                    ))}
+                  </datalist>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* Events List Table - Matching Dashboard Design */}
-        <div className="mt-6 bg-white rounded-[2rem] border border-sky-100 shadow-[0_20px_50px_rgba(15,23,42,0.04)] overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex justify-between items-center">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">All Events</p>
-              <h3 className="font-semibold text-gray-800">All Events</h3>
+          <div className="border-t border-gray-100">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setEventListView('all'); setCurrentEventPage(1); setSelectedEventIds(new Set()) }}
+                aria-pressed={eventListView === 'all'}
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${eventListView === 'all' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                All Events
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEventListView('admin-drafts'); setCurrentEventPage(1); setSelectedEventIds(new Set()) }}
+                aria-pressed={eventListView === 'admin-drafts'}
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${eventListView === 'admin-drafts' ? 'bg-amber-100 text-amber-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                Admin Drafts
+              </button>
             </div>
-            <p className="text-xs text-gray-400">{filteredEvents.length} events</p>
+            <p className="text-xs text-gray-400">{filteredEvents.length} {eventListView === 'admin-drafts' ? 'drafts' : 'events'}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -2175,6 +2126,7 @@ export default function AdminEventsPage() {
           letter-spacing: 0.05em !important;
         }
       `}</style>
+    </div>
     </div>
   );
 }

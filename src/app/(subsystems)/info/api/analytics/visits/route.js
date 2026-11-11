@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
@@ -85,13 +85,29 @@ export async function POST(request) {
       return response({ success: false, message: 'Invalid visitor analytics event.' }, 400)
     }
 
-    const visitorHash = createHash('sha256').update(visitorId.toLowerCase()).digest('hex')
+    const session = getServerSession(request)
+    const isTouristSpotDetail = /^\/info\/visitor\/tourist-spots\/[^/]+$/.test(pagePath)
+    const touristSpotId = isTouristSpotDetail
+      ? pagePath.match(/^\/info\/visitor\/tourist-spots\/([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i)?.[1]
+      : null
+    const accountHash = session?.user_id && isTouristSpotDetail
+      ? createHmac('sha256', serviceRoleKey).update(`tourist-spot-account:${session.user_id}`).digest('hex')
+      : null
+    const visitorHash = accountHash || createHash('sha256').update(visitorId.toLowerCase()).digest('hex')
     const { error } = await adminSupabase.rpc('record_site_page_view', {
       p_visitor_hash: visitorHash,
       p_page_path: pagePath,
     })
 
     if (error) throw error
+    if (accountHash && touristSpotId) {
+      const { error: accountViewError } = await adminSupabase.rpc('record_tourist_spot_account_view', {
+        p_tourist_spot_id: touristSpotId,
+        p_account_hash: accountHash,
+      })
+      if (accountViewError) throw accountViewError
+    }
+
     return response({ success: true })
   } catch (error) {
     if (error instanceof SyntaxError) {

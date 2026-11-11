@@ -7,7 +7,7 @@ const cookieSections = [
   },
   {
     heading: 'Types of cookies',
-    body: 'Essential cookies support login, navigation, and basic security. Functional storage remembers user preferences. If you accept analytics, a random first-party browser identifier is stored in local storage for up to 30 days so we can estimate unique visitors. The server stores only a one-way hash of that identifier, public page paths, and visit timestamps for up to 90 days. We do not store IP addresses, names, email addresses, or full URLs/query strings in this site-visit analytics feature.'
+    body: 'Essential cookies support login, navigation, and basic security. Functional storage remembers user preferences. If you accept analytics, a random first-party browser identifier is stored in local storage for up to 30 days so we can estimate anonymous unique visitors. For signed-in visitors viewing a tourist destination, the server uses a one-way keyed hash of the account identifier so each account is counted once per destination during the 90-day retention window; popularity reports may show a 30-day subset. Analytics records contain pseudonymous hashes, public page paths, and visit timestamps and are retained for up to 90 days. We do not store IP addresses, names, email addresses, or full URLs/query strings in this site-visit analytics feature.'
   },
   {
     heading: 'Your control',

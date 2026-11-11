@@ -65,6 +65,7 @@ export default function Comments({
   onPinChange,
   sortBy = 'relevant',
   compact = false,
+  replyOnly = false,
   sheetMode = false,
   focusCommentId = null,
   articleStyle = false,
@@ -653,24 +654,26 @@ export default function Comments({
 
               {!isEditing && (
                 <div className={`event-comment-actions mt-3 flex flex-wrap items-center gap-2 ${eventStyle ? 'mt-2' : ''}`}>
-                  <div className={`event-comment-reactions max-w-full ${eventStyle ? '' : 'min-w-42.5'}`}>
-                    <Reactions
-                      contentType="comment"
-                      contentId={comment.id}
-                      userId={userId}
-                      onCountClick={() => handleShowReactions(comment)}
-                      contentTitle={contentTitle || contentType}
-                      compact
-                      label="reactions"
-                      eventComment={eventStyle}
-                      heartOnly={eventStyle}
-                    />
-                  </div>
+                  {!replyOnly && (
+                    <div className={`event-comment-reactions max-w-full ${eventStyle ? '' : 'min-w-42.5'}`}>
+                      <Reactions
+                        contentType="comment"
+                        contentId={comment.id}
+                        userId={userId}
+                        onCountClick={() => handleShowReactions(comment)}
+                        contentTitle={contentTitle || contentType}
+                        compact
+                        label="reactions"
+                        eventComment={eventStyle}
+                        heartOnly={eventStyle}
+                      />
+                    </div>
+                  )}
 
                   <button
                     type="button"
                     onClick={() => {
-                      if (replyCount > 0 && !eventStyle) {
+                      if (replyCount > 0 && !eventStyle && !replyOnly) {
                         setExpandedReplyIds((prev) => ({
                           ...prev,
                           [comment.id]: !prev[comment.id],
@@ -693,13 +696,13 @@ export default function Comments({
                     className={`event-comment-reply-button inline-flex items-center gap-1 font-semibold text-slate-600 transition ${eventStyle ? '' : 'rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] hover:bg-slate-200 active:scale-[0.98]'}`}
                   >
                     {!eventStyle && <CornerDownRight className="h-3.5 w-3.5" />}
-                    {eventStyle ? 'Reply' : replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
+                    {eventStyle || replyOnly ? 'Reply' : replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
                   </button>
-                  {eventStyle && replyCount > 0 && (
+                  {(eventStyle || replyOnly) && replyCount > 0 && (
                     <button
                       type="button"
                       onClick={() => setExpandedReplyIds((previous) => ({ ...previous, [comment.id]: !previous[comment.id] }))}
-                      className="event-comment-replies-toggle"
+                      className={eventStyle ? 'event-comment-replies-toggle' : 'rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-200'}
                     >
                       {isReplyExpanded ? `▾ Hide replies (${replyCount})` : `▸ View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
                     </button>
@@ -857,7 +860,7 @@ export default function Comments({
         </div>
       )}
 
-      {(!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer order-1' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
+      {!replyOnly && (!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer order-1' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
         {articleStyle && !eventStyle && <p className="mb-2 text-sm font-bold text-slate-900">Share Your Thoughts</p>}
         {sheetMode && eventStyle && replyTo && (
           <div className="event-comment-replying-to">

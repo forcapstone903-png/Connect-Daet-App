@@ -12,6 +12,7 @@ import {
   Eye,
   FilePenLine,
   Info,
+  ImagePlus,
   MapPin,
   MessageCircle,
   MessageSquare,
@@ -188,6 +189,7 @@ export default function CreateBlogPage() {
   const [autosaveStatus, setAutosaveStatus] = useState('idle')
   const [autosaveWarning, setAutosaveWarning] = useState('')
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
+  const [mediaSettingsExpanded, setMediaSettingsExpanded] = useState(false)
   const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false)
   const [toastMessage, setToastMessage] = useState('')
   const [toastIsError, setToastIsError] = useState(false)
@@ -836,7 +838,11 @@ export default function CreateBlogPage() {
             </details>
 
             {shareType === 'blog' && (
-              <details className="content-studio-section">
+              <details
+                className="content-studio-section"
+                open={mediaSettingsExpanded}
+                onToggle={(event) => setMediaSettingsExpanded(event.currentTarget.open)}
+              >
                 <summary>Media</summary>
                 <div className="space-y-3 text-xs text-slate-600">
                   <MultiMediaUpload
@@ -939,7 +945,29 @@ export default function CreateBlogPage() {
 
   return (
     <main className="tourism-shell usr-section-page usr-editor usr-stories min-h-screen bg-slate-50 text-slate-900">
-      <UserTopHeader />
+      <UserTopHeader
+        mobileHeaderAction={(
+          <div className="content-studio-mobile-overflow" ref={mobileOverflowRef}>
+            <button
+              type="button"
+              className="content-studio-icon-action content-studio-mobile-overflow-trigger"
+              aria-label="More post actions"
+              aria-haspopup="menu"
+              aria-expanded={mobileOverflowOpen}
+              onClick={() => setMobileOverflowOpen((open) => !open)}
+            >
+              <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+            </button>
+            {mobileOverflowOpen && (
+              <div className="content-studio-mobile-overflow-menu" role="menu" aria-label="More post actions">
+                {shareType === 'blog' && <button type="button" role="menuitem" disabled={submitting || uploadingGallery || uploadingCover} onClick={() => { setMobileOverflowOpen(false); handleSubmit(null, 'draft') }}><FilePenLine className="h-4 w-4" />Save draft</button>}
+                <button type="button" role="menuitem" onClick={() => { setMobileOverflowOpen(false); setPreviewMode(true) }}><Eye className="h-4 w-4" />Preview</button>
+                <button type="button" role="menuitem" onClick={() => { setMobileOverflowOpen(false); setMobileSettingsOpen(true) }}><Settings2 className="h-4 w-4" />Settings</button>
+              </div>
+            )}
+          </div>
+        )}
+      />
       {toastMessage && (
         <div className={`content-studio-toast${toastIsError ? ' is-error' : ''}`} role={toastIsError ? 'alert' : 'status'}>
           {toastIsError ? <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />}
@@ -994,25 +1022,6 @@ export default function CreateBlogPage() {
               >
                 <Settings2 className="h-4 w-4" aria-hidden="true" />
               </button>
-              <div className="content-studio-mobile-overflow" ref={mobileOverflowRef}>
-                <button
-                  type="button"
-                  className="content-studio-icon-action content-studio-mobile-overflow-trigger"
-                  aria-label="More actions"
-                  aria-haspopup="menu"
-                  aria-expanded={mobileOverflowOpen}
-                  onClick={() => setMobileOverflowOpen((open) => !open)}
-                >
-                  <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
-                </button>
-                {mobileOverflowOpen && (
-                  <div className="content-studio-mobile-overflow-menu" role="menu" aria-label="More editor actions">
-                    {shareType === 'blog' && <button type="button" role="menuitem" disabled={submitting || uploadingGallery || uploadingCover} onClick={() => { setMobileOverflowOpen(false); handleSubmit(null, 'draft') }}><FilePenLine className="h-4 w-4" />Save draft</button>}
-                    <button type="button" role="menuitem" onClick={() => { setMobileOverflowOpen(false); setPreviewMode(true) }}><Eye className="h-4 w-4" />Preview</button>
-                    <button type="button" role="menuitem" onClick={() => { setMobileOverflowOpen(false); setMobileSettingsOpen(true) }}><Settings2 className="h-4 w-4" />Settings</button>
-                  </div>
-                )}
-              </div>
               <button
                 type="submit"
                 form="content-studio-form"
@@ -1129,6 +1138,29 @@ export default function CreateBlogPage() {
                 placeholder="Add a short summary (optional)"
                 aria-label="Short story summary"
               />
+
+              <button
+                type="button"
+                className="content-studio-add-media"
+                aria-label={mediaItems.length ? `Manage story photos and videos, ${mediaItems.length} added` : 'Add photos or videos to your story'}
+                onClick={() => {
+                  setMediaSettingsExpanded(true)
+                  setMobileSettingsOpen(true)
+                }}
+              >
+                <ImagePlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 flex-1 text-left">
+                  <strong className="block text-sm">Add photos or videos</strong>
+                  <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                    {mediaItems.length >= 10
+                      ? `${mediaItems.length} added · Maximum reached`
+                      : mediaItems.length
+                        ? `${mediaItems.length} added · Add up to ${10 - mediaItems.length} more`
+                        : 'Add up to 10 media items to your story'}
+                  </span>
+                </span>
+                <span className="text-xs font-bold text-blue-700">Add</span>
+              </button>
 
               <div className="content-studio-body">
                 <RichTextEditor

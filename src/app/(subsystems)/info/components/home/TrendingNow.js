@@ -9,7 +9,8 @@ export default function TrendingNow() {
   useEffect(() => {
     const load = async () => {
       try {
-        const { data } = await supabase.from('info_tourist_spots').select('*').order('view_count', { ascending: false }).limit(5)
+        const { data, error } = await supabase.rpc('get_popular_tourist_spots', { p_days: 30 })
+        if (error) throw error
         setItems(data || [])
       } catch (e) {
         console.error('Error loading trending', e)

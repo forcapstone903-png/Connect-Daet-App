@@ -12,6 +12,33 @@
   color: #94a3b8 !important;
 }
 
+.auth-page input:not([type='checkbox']):-webkit-autofill,
+.auth-page input:not([type='checkbox']):-webkit-autofill:hover,
+.auth-page input:not([type='checkbox']):-webkit-autofill:focus {
+  -webkit-text-fill-color: #0f172a !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  transition: background-color 9999s ease-out 0s;
+}
+
+.auth-page .login-error-alert,
+html.dark .auth-page .login-error-alert {
+  border-color: #fda4af !important;
+  background-color: #fff1f2 !important;
+  color: #9f1239 !important;
+}
+
+.auth-page .login-error-action,
+html.dark .auth-page .login-error-action {
+  border-color: #fda4af !important;
+  background-color: #fff !important;
+  color: #9f1239 !important;
+}
+
+.auth-page .login-error-action:hover,
+html.dark .auth-page .login-error-action:hover {
+  background-color: #ffe4e6 !important;
+}
+
 .auth-page .bg-white,
 .auth-page [class*='bg-white/'] {
   background-color: #fff !important;

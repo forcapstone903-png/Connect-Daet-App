@@ -176,6 +176,8 @@ test('admin account deletion is scheduled, authorized, and never directly delete
 
 test('popular destinations are calculated from consented detail-page views instead of fixed chart data', () => {
   const migration = read('supabase', 'migrations', '085_popular_tourist_spot_analytics.sql')
+  const uniqueViewsMigration = read('supabase', 'migrations', '092_unique_tourist_spot_views.sql')
+  const accountViewsMigration = read('supabase', 'migrations', '093_tourist_spot_account_views.sql')
   const route = read(
     'src',
     'app',
@@ -203,12 +205,62 @@ test('popular destinations are calculated from consented detail-page views inste
   assert.match(migration, /JOIN public\.info_tourist_spots/)
   assert.match(migration, /COUNT\(DISTINCT views\.visitor_hash\)/)
   assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.get_popular_tourist_spots\(INTEGER\) TO service_role/)
+  assert.match(uniqueViewsMigration, /COUNT\(DISTINCT views\.visitor_hash\)::INTEGER AS page_views/)
+  assert.match(accountViewsMigration, /FROM public\.tourist_spot_account_views AS views/)
+  assert.match(accountViewsMigration, /GRANT EXECUTE ON FUNCTION public\.get_popular_tourist_spots\(INTEGER\) TO anon, authenticated, service_role/)
   assert.match(route, /rpc\('get_popular_tourist_spots', \{ p_days: 30 \}\)/)
   assert.match(route, /popularDestinations:\s*destinationResult\.error \? null : destinationResult\.data/)
   assert.match(tracker, /if \(!pagePath \|\| !getConsent\(\)\)/)
+  assert.match(route, /createHmac\('sha256', serviceRoleKey\)/)
+  assert.match(route, /tourist-spot-account:\$\{session\.user_id\}/)
   assert.match(dashboard, /const popularAttractions = visitorMetrics\.popularDestinations/)
   assert.doesNotMatch(dashboard, /Bagasbas Beach', value: 92/)
   assert.match(dashboard, /No consented destination views recorded in the last 30 days/)
+})
+
+test('tourist spot view counts are deduplicated by signed-in account', () => {
+  const migration = read('supabase', 'migrations', '093_tourist_spot_account_views.sql')
+  const trackerRoute = read(
+    'src',
+    'app',
+    '(subsystems)',
+    'info',
+    'api',
+    'analytics',
+    'visits',
+    'route.js'
+  )
+  const adminRoute = read(
+    'src',
+    'app',
+    '(subsystems)',
+    'info',
+    'api',
+    'admin',
+    'tourist-spots',
+    'route.js'
+  )
+  const adminPage = read(
+    'src',
+    'app',
+    '(subsystems)',
+    'info',
+    'admin',
+    'tourist-spots',
+    'page.js'
+  )
+  const trending = read('src', 'app', '(subsystems)', 'info', 'components', 'home', 'TrendingNow.js')
+
+  assert.match(migration, /PRIMARY KEY \(tourist_spot_id, account_hash\)/)
+  assert.match(migration, /ON CONFLICT \(tourist_spot_id, account_hash\) DO NOTHING/)
+  assert.match(migration, /last_viewed_at < NOW\(\) - INTERVAL '90 days'/)
+  assert.match(trackerRoute, /record_tourist_spot_account_view/)
+  assert.match(trackerRoute, /createHmac\('sha256', serviceRoleKey\)/)
+  assert.match(adminRoute, /rpc\('get_tourist_spot_account_view_counts', \{ p_days: 90 \}\)/)
+  assert.match(adminPage, /Popular tourist spots/)
+  assert.doesNotMatch(adminPage, /label="View Count"/)
+  assert.match(trending, /rpc\('get_popular_tourist_spots', \{ p_days: 30 \}\)/)
+  assert.doesNotMatch(trending, /\.order\('view_count'/)
 })
 
 test('weather status does not require an unused OpenWeather API key', () => {

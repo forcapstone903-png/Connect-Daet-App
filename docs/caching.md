@@ -48,8 +48,11 @@ There is no cache key, invalidation, or manual-clear action.
 ## Admin destination popularity analytics
 
 The admin dashboard reads the five most-viewed active destination detail pages
-from consented `site_page_views` records for the last 30 days. The result is
-computed by the database and is not cached; the analytics API uses `no-store`.
+from consented `site_page_views` records for the last 30 days. Signed-in
+accounts are identified by a server-keyed hash and counted once per destination
+in that window; anonymous visitors use their consented browser identifier.
+Destination popularity is computed from distinct visitor hashes by the database
+and is not cached; the analytics API uses `no-store`.
 There is no stale/offline value or manual cache clear. Analytics contains
 pseudonymous visitor hashes and is restricted to the server-role database
 function and administrator endpoint. If no eligible page views exist, the UI
@@ -102,6 +105,30 @@ TTL: 1 day
 Offline behavior: Cached spots may render initially; failed revalidation clears them
 Security notes: Cache only public spot data; no authentication tokens or user-specific actions
 Manual clear method: invalidatePersistentCache('places:public:all:daet-content-v1')
+```
+
+## Admin Tourist Spot Management
+
+The management page fetches the complete spot list from the private admin API
+without browser or HTTP caching, then applies search, category, status, and sort
+controls locally. It refreshes after successful writes and preserves the last
+rendered list while showing an error if a refresh fails.
+
+```text
+Feature: Admin tourist spot management
+Data fetched: Tourist spot records and management/engagement fields
+Change frequency: Administrator edits and visitor engagement
+Visibility: Private, administrator-only
+Freshness: Fetch without cache on page load and after successful writes
+Stale behavior: Keep the last rendered list and show a retryable error
+Missing-cache behavior: Query the administrator API
+Invalidation trigger: No cache; refetch after create, edit, archive, activate, or delete
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Keep already-rendered records and show the load error
+Security notes: The API authorizes the administrator; responses are private and no-store
+Manual clear method: None; reload the page to fetch current records
 ```
 
 ## Visitor Review Preview

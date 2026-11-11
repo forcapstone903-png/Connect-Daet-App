@@ -133,14 +133,14 @@ export async function GET(request, { params }) {
         .limit(20),
       adminSupabase
         .from('forum_threads')
-        .select('id, title, content, created_at, category_id')
+        .select('id, title, content, image_urls, created_at, category_id')
         .eq('created_by', profileId)
         .in('status', ['active', 'published'])
         .order('created_at', { ascending: false })
         .limit(20),
       adminSupabase
         .from('info_events')
-        .select('id, title, description, featured_image, images, start_date, created_at, status')
+        .select('id, title, description, featured_image, images, videos, start_date, created_at, status')
         .eq('created_by', profileId)
         .eq('status', 'published')
         .eq('approval_status', 'approved')
@@ -177,7 +177,7 @@ export async function GET(request, { params }) {
     const [{ data: touristSpots, error: touristSpotsError }, { data: earnedBadges, error: earnedBadgesError }] = await Promise.all([
       adminSupabase
         .from('info_tourist_spots')
-        .select('id, name, description, category, location, latitude, longitude, featured_image, images, created_at')
+        .select('id, name, description, category, location, latitude, longitude, featured_image, images, videos, created_at')
         .eq('created_by', profileId)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
@@ -202,7 +202,7 @@ export async function GET(request, { params }) {
       ['user_post', 'info_user_posts', 'id, user_id, title, content, created_at, updated_at, visibility', 'created_at'],
       ['blog', 'info_blogs', 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, category', 'published_at'],
       ['forum_thread', 'forum_threads', 'id, created_by, title, content, created_at, category_id', 'created_at'],
-      ['event', 'info_events', 'id, created_by, title, description, featured_image, images, start_date, created_at, category, status, approval_status', 'start_date'],
+      ['event', 'info_events', 'id, created_by, title, description, featured_image, images, videos, start_date, created_at, category, status, approval_status', 'start_date'],
       ['tourist_spot', 'info_tourist_spots', 'id, created_by, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_at, status', 'created_at'],
     ].map(async ([type, table, fields, orderField]) => {
       const ids = repostIdsByType(type)

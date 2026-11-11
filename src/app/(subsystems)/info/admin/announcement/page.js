@@ -4,12 +4,22 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
-import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
+import {
+  AdminBadge,
+  AdminButton,
+  AdminEmptyState,
+  AdminLoadingScreen,
+  AdminPanel,
+  AdminSearch,
+  AdminShell,
+  AdminStatCard,
+  AdminToolbar,
+} from '@/app/(subsystems)/info/components/admin';
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 
@@ -527,303 +537,228 @@ export default function AdminAnnouncementPage() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">Loading announcements...</p>
-        </div>
-      </div>
-    );
+    return <AdminLoadingScreen label="Loading announcements..." />;
   }
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <AdminSidebar user={user} roleLabel="Announcements Manager" />
-
-      {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
-        {/* Header */}
-        <div className="admin-page-header">
-          <div className="flex w-full flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div className="min-w-0">
-              <p className="admin-eyebrow">Announcements &amp; alerts</p>
-              <h1>Announcements manager</h1>
-              <p className="admin-subtitle">Create and manage official communications, safety advisories, and traffic updates.</p>
-            </div>
-            <button
-              onClick={openCreateModal}
-              className="rounded-full bg-gradient-to-r from-sky-600 to-emerald-500 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_15px_30px_rgba(14,165,233,0.25)] transition hover:-translate-y-0.5 flex items-center gap-2"
-            >
-              <Icon name="plus" className="w-4 h-4" /> New Announcement
-            </button>
-          </div>
-        </div>
+    <AdminShell
+      user={user}
+      roleLabel="Announcements Manager"
+      eyebrow="Content"
+      title="Announcements & Alerts"
+      description="Create and manage official communications, safety advisories, and traffic updates."
+      headerIcon="notifications"
+      actions={(
+        <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>
+          New Announcement
+        </AdminButton>
+      )}
+    >
+      <div className="space-y-5">
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
 
-        {/* Stats Cards */}
-        <div className="mb-6 grid gap-4 md:grid-cols-3 lg:grid-cols-5">
-          <div className="rounded-[1.6rem] border border-sky-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Total</p>
-                <p className="mt-3 text-3xl font-black text-slate-900">{stats.total}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">
-                <Icon name="notifications" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-emerald-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Active</p>
-                <p className="mt-3 text-3xl font-black text-emerald-600">{stats.active}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700">
-                <Icon name="check" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-rose-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Critical</p>
-                <p className="mt-3 text-3xl font-black text-rose-600">{stats.critical}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
-                <Icon name="warning" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-amber-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Draft</p>
-                <p className="mt-3 text-3xl font-black text-amber-600">{stats.draft}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                <Icon name="edit" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
-          <div className="rounded-[1.6rem] border border-violet-100 bg-white p-4 shadow-[0_20px_50px_rgba(15,23,42,0.03)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Views</p>
-                <p className="mt-3 text-3xl font-black text-violet-600">{stats.totalViews.toLocaleString()}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                <Icon name="analytics" className="w-5 h-5" />
-              </div>
-            </div>
-          </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-5">
+          <AdminStatCard label="Total" value={stats.total} meta="All announcements" icon="notifications" />
+          <AdminStatCard label="Active" value={stats.active} meta="Currently published" icon="check" tone="success" />
+          <AdminStatCard label="Critical" value={stats.critical} meta="Published critical alerts" icon="warning" tone="danger" />
+          <AdminStatCard label="Draft" value={stats.draft} meta="Not yet published" icon="edit" tone="warning" />
+          <AdminStatCard label="Views" value={stats.totalViews.toLocaleString()} meta="Total announcement views" icon="analytics" tone="violet" />
         </div>
 
-        {announcementView !== 'all' && (
-          <div className="mb-4 flex items-center justify-between rounded-xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
-            <span>{announcementView === 'scheduled' ? 'Showing future scheduled announcements.' : 'Showing published and archived announcement history.'}</span>
-            <button type="button" onClick={() => setAnnouncementView('all')} className="font-semibold underline">Show all</button>
-          </div>
-        )}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(260px,0.8fr)]">
+          <AdminPanel title="Most viewed announcements" description="Announcements receiving the most visitor attention." bodyClassName="!pt-0">
+            {announcements.length ? (
+              <div className="space-y-4">
+                {[...announcements]
+                  .sort((a, b) => Number(b.view_count || 0) - Number(a.view_count || 0))
+                  .slice(0, 5)
+                  .map((announcement) => {
+                    const maxViews = Math.max(...announcements.map((item) => Number(item.view_count || 0)), 1);
+                    const views = Number(announcement.view_count || 0);
+                    const width = views ? Math.max((views / maxViews) * 100, 2) : 0;
+                    return (
+                      <div key={announcement.id} className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-3 text-sm">
+                          <span className="min-w-0 truncate font-semibold text-slate-800">{announcement.title}</span>
+                          <span className="shrink-0 text-xs tabular-nums text-slate-500">{views.toLocaleString()} views</span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${width}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            ) : <p className="text-sm text-slate-500">No announcements to rank yet.</p>}
+          </AdminPanel>
 
-        {/* Filters */}
-        <div className="mb-6 rounded-[2rem] border border-sky-100 bg-white/80 p-4 shadow-[0_20px_50px_rgba(15,23,42,0.04)] backdrop-blur-sm">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="relative flex-1 min-w-[200px]">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icon name="search" className="w-4 h-4" /></span>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search announcements..."
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-sky-500 focus:border-transparent"
+          <AdminPanel title="Performance summary" description="At-a-glance announcement performance." bodyClassName="!pt-0">
+            <dl className="divide-y divide-slate-100">
+              <div className="flex items-center justify-between gap-3 py-3 first:pt-0">
+                <dt className="text-sm text-slate-600">Active announcements</dt>
+                <dd className="font-bold tabular-nums text-slate-900">{stats.active}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-3">
+                <dt className="text-sm text-slate-600">Total opens</dt>
+                <dd className="font-bold tabular-nums text-slate-900">{stats.totalOpens.toLocaleString()}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-3 py-3 last:pb-0">
+                <dt className="text-sm text-slate-600">Open rate</dt>
+                <dd className="font-bold tabular-nums text-slate-900">
+                  {stats.totalViews ? `${Math.min(100, Math.round((stats.totalOpens / stats.totalViews) * 100))}%` : '0%'}
+                </dd>
+              </div>
+            </dl>
+          </AdminPanel>
+        </div>
+
+        <AdminPanel
+          title="Announcements"
+          description={`${filteredAnnouncements.length} ${filteredAnnouncements.length === 1 ? 'announcement' : 'announcements'} found`}
+          actions={(
+            <div className="flex rounded-xl border border-slate-200 p-1" role="group" aria-label="Announcement view">
+              {[
+                ['all', 'All'],
+                ['scheduled', 'Scheduled'],
+                ['history', 'History'],
+              ].map(([view, label]) => (
+                <button
+                  key={view}
+                  type="button"
+                  onClick={() => setAnnouncementView(view)}
+                  aria-pressed={announcementView === view}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${announcementView === view ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          bodyClassName="!p-0"
+        >
+          <AdminToolbar className="flex-wrap border-b border-slate-100 px-4 py-3 sm:px-5">
+            <AdminSearch
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="Search announcements..."
+              label="Search announcements"
+              className="min-w-[220px] flex-1"
+            />
+            <label className="sr-only" htmlFor="announcement-type-filter">Filter by type</label>
+            <select id="announcement-type-filter" value={filterType} onChange={(event) => setFilterType(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="all">All Types</option>
+              {ANNOUNCEMENT_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+            </select>
+            <label className="sr-only" htmlFor="announcement-severity-filter">Filter by severity</label>
+            <select id="announcement-severity-filter" value={filterSeverity} onChange={(event) => setFilterSeverity(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="all">All Severities</option>
+              {SEVERITY_LEVELS.map((severity) => <option key={severity.value} value={severity.value}>{severity.label}</option>)}
+            </select>
+            <label className="sr-only" htmlFor="announcement-status-filter">Filter by status</label>
+            <select id="announcement-status-filter" value={filterStatus} onChange={(event) => setFilterStatus(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+              <option value="all">All Statuses</option>
+              {STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}
+            </select>
+          </AdminToolbar>
+
+          {announcementView !== 'all' && (
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-blue-50/60 px-4 py-3 text-xs text-blue-900 sm:px-5" role="status">
+              <span>{announcementView === 'scheduled' ? 'Showing future scheduled announcements.' : 'Showing published and archived announcement history.'}</span>
+              <button type="button" onClick={() => setAnnouncementView('all')} className="shrink-0 font-semibold underline">Show all</button>
+            </div>
+          )}
+
+          {filteredAnnouncements.length === 0 ? (
+            <div className="p-8 sm:p-12">
+              <AdminEmptyState
+                icon="notifications"
+                title="No announcements found"
+                description="Try adjusting your search or filters, or create a new announcement."
+                action={<AdminButton variant="primary" icon="plus" onClick={openCreateModal}>New Announcement</AdminButton>}
               />
             </div>
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-sky-500"
-            >
-              <option value="all">All Types</option>
-              {ANNOUNCEMENT_TYPES.map(type => (
-                <option key={type.value} value={type.value}>{type.label}</option>
-              ))}
-            </select>
-            <select
-              value={filterSeverity}
-              onChange={(e) => setFilterSeverity(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-sky-500"
-            >
-              <option value="all">All Severities</option>
-              {SEVERITY_LEVELS.map(sev => (
-                <option key={sev.value} value={sev.value}>{sev.label}</option>
-              ))}
-            </select>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-sky-500"
-            >
-              <option value="all">All Statuses</option>
-              {STATUS_OPTIONS.map(stat => (
-                <option key={stat.value} value={stat.value}>{stat.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Announcements List */}
-        <div className="space-y-3">
-          {filteredAnnouncements.length === 0 ? (
-            <div className="rounded-[2rem] border border-sky-100 bg-white p-12 text-center shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-              <p className="text-5xl opacity-30 mb-3 block">🔔</p>
-              <p className="text-slate-500">No announcements found</p>
-              <button
-                onClick={openCreateModal}
-                className="mt-3 text-sky-600 hover:underline text-sm flex items-center gap-2 mx-auto"
-              >
-                Create your first announcement <Icon name="arrow" className="w-4 h-4" />
-              </button>
-            </div>
           ) : (
-            filteredAnnouncements.map((announcement) => {
+            <div className="grid grid-cols-2 gap-3 p-3 sm:p-4 lg:grid-cols-3 2xl:grid-cols-4">
+              {filteredAnnouncements.map((announcement) => {
               const typeConfig = getTypeConfig(announcement.announcement_type);
               const severityConfig = getSeverityConfig(announcement.severity);
               const expired = isExpired(announcement.expires_at);
               
               return (
-                <div
+                <article
                   key={announcement.id}
-                  className={`flex min-h-[280px] flex-col rounded-[1.8rem] border border-l-4 bg-white transition-all hover:shadow-md ${
-                    announcement.severity === 'critical' ? 'border-red-200 border-l-red-500 bg-red-50/30' :
-                    announcement.severity === 'warning' ? 'border-yellow-200 border-l-yellow-500 bg-yellow-50/30' :
-                    'border-sky-100 border-l-blue-500 bg-blue-50/20'
+                  className={`group flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md ${
+                    announcement.severity === 'critical' ? 'border-red-200 border-l-4 border-l-red-500' :
+                    announcement.severity === 'warning' ? 'border-amber-200 border-l-4 border-l-amber-500' :
+                    'border-slate-200 border-l-4 border-l-blue-500'
                   }`}
                 >
-                  <div className="flex flex-1 flex-col p-5">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
-                          announcement.severity === 'critical' ? 'bg-red-100 text-red-700' :
-                          announcement.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          <Icon name={getTypeIcon(announcement.announcement_type)} className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-slate-800 text-lg">{announcement.title}</h3>
-                          <div className="flex items-center gap-2 mt-1 flex-wrap">
-                            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-slate-100 text-slate-700">
-                              {typeConfig.label}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              announcement.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                              announcement.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-blue-100 text-blue-800'
-                            }`}>
-                              {severityConfig.label}
-                            </span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusColor(announcement.status)}`}>
-                              {announcement.status}
-                            </span>
-                            {expired && (
-                              <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500">
-                                Expired
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => openPreview(announcement)}
-                          className="p-2 text-slate-500 hover:text-sky-600 transition-colors rounded-full hover:bg-sky-50"
-                          title="Preview"
-                        >
-                          <Icon name="search" className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => openEditModal(announcement)}
-                          className="p-2 text-slate-500 hover:text-blue-600 transition-colors rounded-full hover:bg-blue-50"
-                          title="Edit"
-                        >
-                          <Icon name="edit" className="w-4 h-4" />
-                        </button>
-                        {announcement.status === 'published' ? (
-                          <button
-                            onClick={() => handleToggleStatus(announcement, 'archived')}
-                            className="p-2 text-slate-500 hover:text-yellow-600 transition-colors rounded-full hover:bg-yellow-50"
-                            title="Archive"
-                          >
-                            <Icon name="save" className="w-4 h-4" />
-                          </button>
-                        ) : announcement.status === 'draft' ? (
-                          <button
-                            onClick={() => handleToggleStatus(announcement, 'published')}
-                            className="p-2 text-slate-500 hover:text-green-600 transition-colors rounded-full hover:bg-green-50"
-                            title="Publish"
-                          >
-                            <Icon name="check" className="w-4 h-4" />
-                          </button>
-                        ) : null}
-                        <button
-                          onClick={() => setShowDeleteConfirm(announcement)}
-                          className="p-2 text-slate-500 hover:text-red-600 transition-colors rounded-full hover:bg-red-50"
-                          title="Delete"
-                        >
-                          <Icon name="delete" className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
-                      <span className="rounded-full bg-slate-100 px-2 py-1">Priority: {PRIORITY_LEVELS.find(p => p.value === announcement.priority)?.label || 'Normal'}</span>
-                      <span className="rounded-full bg-slate-100 px-2 py-1">Target: {getAudienceLabel(announcement.audience)}</span>
-                      {announcement.scheduled_for && (
-                        <span className="rounded-full bg-indigo-100 px-2 py-1 text-indigo-700">
-                          Scheduled: {formatDate(announcement.scheduled_for)}
-                        </span>
-                      )}
-                    </div>
-                    
-                    <p className="text-slate-600 mt-3 text-sm leading-relaxed whitespace-pre-line">{announcement.content}</p>
-                    
-                    {announcement.image_url && (
-                      <div className="mt-3">
-                        <img 
-                          src={announcement.image_url} 
-                          alt={announcement.title}
-                          className="h-32 w-auto rounded-xl object-cover"
-                        />
+                  <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
+                    {announcement.image_url ? (
+                      <img src={announcement.image_url} alt={announcement.title} loading="lazy" className="h-full w-full object-contain" />
+                    ) : (
+                      <div className="flex h-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
+                        <Icon name={getTypeIcon(announcement.announcement_type)} className="h-7 w-7 text-blue-400" />
+                        <span className="text-xs font-medium">No image available</span>
                       </div>
                     )}
-
-                    <div className="mt-auto flex items-center justify-between pt-4 text-xs text-slate-400">
-                      <div className="flex items-center gap-4 flex-wrap">
-                        <span>Created: {formatDate(announcement.created_at)}</span>
-                        {announcement.expires_at && (
-                          <span>Expires: {formatDate(announcement.expires_at)}</span>
-                        )}
-                        <span>Views: {announcement.view_count || 0}</span>
-                        <span>Open rate: {Math.min(100, Math.round(((announcement.open_count || 0) / Math.max(1, announcement.view_count || 1)) * 100))}%</span>
-                      </div>
-                      {announcement.severity === 'critical' && announcement.status === 'published' && !expired && (
-                        <span className="text-red-500 font-medium flex items-center gap-1">
-                          <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                          </span>
-                          Active Alert
-                        </span>
-                      )}
-                    </div>
+                    <span className="absolute left-2 top-2">
+                      <AdminBadge tone={announcement.severity === 'critical' ? 'danger' : announcement.severity === 'warning' ? 'warning' : 'info'}>
+                        {severityConfig.label}
+                      </AdminBadge>
+                    </span>
+                    <span className="absolute right-2 top-2">
+                      <AdminBadge status={announcement.status} dot>{announcement.status}</AdminBadge>
+                    </span>
+                    {expired ? <span className="absolute bottom-2 left-2"><AdminBadge tone="neutral">Expired</AdminBadge></span> : null}
                   </div>
-                </div>
+                  <div className="flex flex-1 flex-col p-2.5 sm:p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <h3 className="truncate text-sm font-bold text-slate-900">{announcement.title}</h3>
+                        <div className="mt-1 flex flex-wrap items-center gap-1">
+                          <AdminBadge tone="neutral">{typeConfig.label}</AdminBadge>
+                          <AdminBadge tone="neutral">{PRIORITY_LEVELS.find((item) => item.value === announcement.priority)?.label || 'Normal'} priority</AdminBadge>
+                        </div>
+                      </div>
+                      <details className="relative shrink-0">
+                        <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`More actions for ${announcement.title}`}>
+                          <span aria-hidden="true">···</span>
+                        </summary>
+                        <div className="absolute right-0 top-8 z-20 min-w-36 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                          {announcement.status === 'published' ? (
+                            <button type="button" onClick={() => handleToggleStatus(announcement, 'archived')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"><Icon name="save" className="h-3.5 w-3.5" />Archive</button>
+                          ) : announcement.status === 'draft' ? (
+                            <button type="button" onClick={() => handleToggleStatus(announcement, 'published')} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-green-700 hover:bg-green-50"><Icon name="check" className="h-3.5 w-3.5" />Publish</button>
+                          ) : null}
+                          <button type="button" onClick={() => setShowDeleteConfirm(announcement)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50"><Icon name="delete" className="h-3.5 w-3.5" />Delete</button>
+                        </div>
+                      </details>
+                    </div>
+                    <p className="mt-2 min-h-8 line-clamp-2 text-[11px] leading-4 text-slate-600">{announcement.content}</p>
+                    <p className="mt-2 flex items-center gap-1 truncate text-[10px] text-slate-500">
+                      <Icon name="users" className="h-3 w-3 shrink-0 text-slate-400" />
+                      {getAudienceLabel(announcement.audience)}
+                      {announcement.scheduled_for ? ` · Scheduled ${formatDate(announcement.scheduled_for)}` : ''}
+                    </p>
+                    <div className="mt-3 grid grid-cols-3 gap-1 border-t border-slate-100 pt-2.5">
+                      <span className="text-[10px] text-slate-500">Views <strong className="ml-0.5 text-slate-700">{Number(announcement.view_count || 0).toLocaleString()}</strong></span>
+                      <span className="text-[10px] text-slate-500">Opens <strong className="ml-0.5 text-slate-700">{Number(announcement.open_count || 0).toLocaleString()}</strong></span>
+                      <span className="text-[10px] text-slate-500">Rate <strong className="ml-0.5 text-slate-700">{Math.min(100, Math.round((Number(announcement.open_count || 0) / Math.max(1, Number(announcement.view_count || 0))) * 100))}%</strong></span>
+                    </div>
+                    <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+                      <AdminButton size="sm" variant="primary" icon="search" onClick={() => openPreview(announcement)}>Preview</AdminButton>
+                      <AdminButton size="sm" variant="secondary" icon="edit" onClick={() => openEditModal(announcement)}>Edit</AdminButton>
+                      <span className="ml-auto text-[9px] text-slate-400">Created {formatDate(announcement.created_at)}</span>
+                    </div>
+                    {announcement.expires_at ? <p className="pt-1.5 text-[9px] text-slate-400">Expires {formatDate(announcement.expires_at)}</p> : null}
+                  </div>
+                </article>
               );
-            })
+              })}
+            </div>
           )}
-        </div>
+        </AdminPanel>
       </div>
 
       {/* Create/Edit Modal */}
@@ -1178,6 +1113,6 @@ export default function AdminAnnouncementPage() {
           }
         }
       `}</style>
-    </div>
+    </AdminShell>
   );
 }

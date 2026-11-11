@@ -101,6 +101,7 @@ export default function UserTopHeader({
   mobileOnly = false,
   edgeToEdgeMobile = false,
   showDesktopNavigationToggle = true,
+  mobileHeaderAction = null,
 }) {
   const { settings, resolvedTheme, t, updateSettings } = useUserSettings()
   const pathname = usePathname()
@@ -797,29 +798,29 @@ export default function UserTopHeader({
                 <strong className="usr-mobile-header-brand-title truncate text-sm font-black tracking-tight sm:text-base">Connect Daet</strong>
               </div>
             </Link>
-            <div className="flex shrink-0 items-center gap-1">
-            <Link
-              href="/info/user/notifications"
-              aria-label={unreadAlerts > 0 ? `${t('common.notifications')}, ${unreadAlerts} unread` : t('common.notifications')}
-              title={t('common.notifications')}
-              className="usr-press relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-blue-600 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-blue-300"
-            >
-              <Bell className="h-[19px] w-[19px]" strokeWidth={1.8} aria-hidden="true" />
-              {unreadAlerts > 0 && (
-                <span aria-hidden="true" className="absolute right-0.5 top-0.5 flex h-[17px] min-w-[17px] items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[9px] font-bold leading-none text-white">
-                  {unreadAlerts > 99 ? '99+' : unreadAlerts}
-                </span>
-              )}
-            </Link>
-            <Link
-              href="/info/user/rewards"
-              aria-label={`${t('common.rewards')}: ${userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} points`}
-              title={t('common.rewards')}
-              className="usr-mobile-rewards-trigger usr-press flex h-9 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 text-blue-700 transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
-            >
-              <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
-              <span className="text-[11px] font-extrabold tabular-nums">{userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts</span>
-            </Link>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Link
+                href="/info/user/notifications"
+                aria-label={unreadAlerts > 0 ? `${t('common.notifications')}, ${unreadAlerts} unread` : t('common.notifications')}
+                title={t('common.notifications')}
+                className="usr-press relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700 dark:hover:bg-slate-700 dark:hover:text-blue-300"
+              >
+                <Bell className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                {unreadAlerts > 0 && (
+                  <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[10px] font-bold leading-none text-white dark:border-slate-900">
+                    {unreadAlerts > 99 ? '99+' : unreadAlerts}
+                  </span>
+                )}
+              </Link>
+              <Link
+                href="/info/user/rewards"
+                aria-label={`${t('common.rewards')}: ${userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} points`}
+                title={t('common.rewards')}
+                className="usr-mobile-rewards-trigger usr-press flex h-10 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
+              >
+                <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="text-xs font-extrabold tabular-nums">{userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts</span>
+              </Link>
             </div>
           </div>
         </header>
@@ -839,6 +840,7 @@ export default function UserTopHeader({
             </button>
             <h1 className="usr-mobile-page-title min-w-0 flex-1 truncate">{mobileNavigationTitle}</h1>
             <div className="flex shrink-0 items-center gap-1">
+              {mobileHeaderAction}
               {isMobileInbox && (
                 <Link
                   href="/info/user/messaging/archived"

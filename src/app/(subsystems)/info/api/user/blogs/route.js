@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
+import { notifyAdministrators } from '@/lib/adminNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -134,6 +135,15 @@ export async function POST(request) {
       const typedMessage = error.message || 'Unable to create your blog article.'
       console.error('Blog insert failed:', typedMessage)
       return NextResponse.json({ success: false, message: typedMessage }, { status: 500 })
+    }
+
+    if (body.status === 'published') {
+      await notifyAdministrators(adminSupabase, {
+        title: 'Blog awaiting approval',
+        message: `A new blog submission needs review: ${title}`,
+        type: 'warning',
+        link: '/info/admin/blogs?status=pending',
+      })
     }
 
     const warning = omittedColumns.length

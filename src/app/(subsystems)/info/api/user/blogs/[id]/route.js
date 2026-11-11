@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
+import { notifyAdministrators } from '@/lib/adminNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -148,6 +149,14 @@ export async function PATCH(request, { params }) {
 
   if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
+  if (isSubmission || editingApproved) {
+    await notifyAdministrators(adminSupabase, {
+      title: 'Blog awaiting approval',
+      message: `A blog submission needs review: ${data.title}`,
+      type: 'warning',
+      link: '/info/admin/blogs?status=pending',
+    })
+  }
   const warning = omittedColumns.length
     ? `The story was updated, but these optional fields need a database migration: ${[...new Set(omittedColumns)].join(', ')}.`
     : undefined

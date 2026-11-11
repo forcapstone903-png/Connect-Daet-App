@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
@@ -261,28 +261,13 @@ export default function AdminForumPage() {
           }
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Threads</p>
-            <p className="mt-2 text-2xl font-bold text-blue-600">{stats.total}</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Active</p>
-            <p className="mt-2 text-2xl font-bold text-green-600">{stats.active}</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Locked</p>
-            <p className="mt-2 text-2xl font-bold text-red-600">{stats.locked}</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Pinned</p>
-            <p className="mt-2 text-2xl font-bold text-purple-600">{stats.pinned}</p>
-          </div>
-          <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-wide text-gray-500">Reports</p>
-            <p className="mt-2 text-2xl font-bold text-orange-600">{stats.reports}</p>
-          </div>
-        </div>
+        <AdminStatGrid columns={5}>
+          <AdminStatCard label="Threads" value={stats.total} icon="forum" tone="brand" />
+          <AdminStatCard label="Active" value={stats.active} icon="check" tone="success" />
+          <AdminStatCard label="Locked" value={stats.locked} icon="moderation" tone="danger" />
+          <AdminStatCard label="Pinned" value={stats.pinned} icon="content" tone="violet" />
+          <AdminStatCard label="Reports" value={stats.reports} icon="feedback" tone="warning" />
+        </AdminStatGrid>
 
         <div className="bg-white rounded-2xl border border-gray-200 p-4 mb-6 shadow-sm">
           <div className="grid gap-4 md:grid-cols-4">

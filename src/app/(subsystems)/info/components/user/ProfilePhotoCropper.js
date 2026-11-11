@@ -6,6 +6,7 @@ import { ImagePlus, LoaderCircle, Move, RotateCcw, Trash2, Upload, X } from 'luc
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024
 const OUTPUT_SIZE = 512
+const MAX_ZOOM = 5
 
 function limitOffset(value, renderedSize, viewportSize) {
   const limit = Math.max(0, (renderedSize - viewportSize) / 2)
@@ -118,7 +119,7 @@ export default function ProfilePhotoCropper({ userId, imageUrl, onUploadComplete
   }
 
   const updateZoom = (value) => {
-    const nextZoom = Number(value)
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(1, Number(value)))
     if (!imageSize || !stageRef.current) {
       setZoom(nextZoom)
       return
@@ -275,9 +276,13 @@ export default function ProfilePhotoCropper({ userId, imageUrl, onUploadComplete
             <div className="mt-5">
               <label htmlFor="profile-photo-zoom" className="flex items-center justify-between text-xs font-semibold text-slate-600">
                 <span className="flex items-center gap-2"><Move className="h-4 w-4" aria-hidden="true" /> Zoom</span>
-                <span>{Math.round(zoom * 100)}%</span>
+                <span className="flex items-center gap-2">
+                  <button type="button" onClick={() => updateZoom(zoom - 0.25)} disabled={zoom <= 1} className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-base leading-none hover:bg-slate-50 disabled:opacity-40" aria-label="Zoom out">−</button>
+                  <span className="min-w-10 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
+                  <button type="button" onClick={() => updateZoom(zoom + 0.25)} disabled={zoom >= MAX_ZOOM} className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 text-base leading-none hover:bg-slate-50 disabled:opacity-40" aria-label="Zoom in">+</button>
+                </span>
               </label>
-              <input id="profile-photo-zoom" type="range" min="1" max="3" step="0.01" value={zoom} onChange={(event) => updateZoom(event.target.value)} className="mt-2 w-full accent-sky-600" />
+              <input id="profile-photo-zoom" type="range" min="1" max={MAX_ZOOM} step="0.01" value={zoom} onChange={(event) => updateZoom(event.target.value)} className="mt-2 w-full accent-sky-600" />
               <button type="button" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }} className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-sky-700">
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> Reset crop
               </button>

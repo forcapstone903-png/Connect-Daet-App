@@ -127,8 +127,17 @@ export async function PATCH(request, { params }) {
   })
   if (error) {
     console.error('Admin blog edit failed:', error.message)
-    const status = /not found/i.test(error.message || '') ? 404 : 500
-    return NextResponse.json({ success: false, message: status === 404 ? 'Blog post not found.' : 'Unable to save the blog post.' }, { status })
+    const status = /not found/i.test(error.message || '')
+      ? 404
+      : /only edit their own/i.test(error.message || '')
+        ? 403
+        : 500
+    const message = status === 404
+      ? 'Blog post not found.'
+      : status === 403
+        ? 'You can only edit blog posts you authored.'
+        : 'Unable to save the blog post.'
+    return NextResponse.json({ success: false, message }, { status })
   }
 
   return NextResponse.json({ success: true, blog: data }, {

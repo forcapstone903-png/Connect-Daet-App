@@ -66,6 +66,10 @@ export default function BlogManagement() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
+  const canEditBlog = (blog) => Boolean(
+    blog?.created_by && blog.created_by === (user?.user_id || user?.id)
+  );
+
   const generateSlug = (title) => {
     return title
       .toLowerCase()
@@ -73,7 +77,7 @@ export default function BlogManagement() {
       .replace(/^-+|-+$/g, '');
   };
 
-  const fetchBlogs = async () => {
+  const fetchBlogs = async (adminId = user?.user_id || user?.id) => {
     try {
       const { data, error } = await supabase
         .from('info_blogs')
@@ -81,7 +85,9 @@ export default function BlogManagement() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setBlogs(data || []);
+      setBlogs((data || []).filter((blog) => (
+        blog.approval_status !== 'draft' || blog.created_by === adminId
+      )));
 
       const { data: comments, error: commentsError } = await supabase
         .from('info_comments')
@@ -147,6 +153,10 @@ export default function BlogManagement() {
   const saveBlog = async () => {
     if (!blogForm.title.trim() || !blogForm.content.trim() || !blogForm.category) {
       showToast('Please complete the required fields', true);
+      return;
+    }
+    if (editingBlog && !canEditBlog(editingBlog)) {
+      showToast('You can only edit blog posts you authored.', true);
       return;
     }
 
@@ -311,6 +321,10 @@ export default function BlogManagement() {
   };
 
   const openEditModal = (blog) => {
+    if (!canEditBlog(blog)) {
+      showToast('You can only edit blog posts you authored.', true);
+      return;
+    }
     setEditingBlog(blog);
     setBlogForm({
       title: blog.title || '',
@@ -397,7 +411,7 @@ export default function BlogManagement() {
         }
 
         setUser(userData);
-        await fetchBlogs();
+        await fetchBlogs(userData.user_id || userData.id);
       } catch (err) {
         console.error('Auth check failed:', err);
         router.push('/info/login');
@@ -529,7 +543,7 @@ export default function BlogManagement() {
                         <button onClick={() => toggleFeatured(blog)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-sm hover:bg-purple-100">
                           {isFeatured ? 'Unfeature' : 'Feature'}
                         </button>
-                        <button onClick={() => openEditModal(blog)} className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl text-sm hover:bg-blue-100">Edit</button>
+                        {canEditBlog(blog) ? <button onClick={() => openEditModal(blog)} className="bg-blue-50 text-blue-600 px-3 py-1.5 rounded-xl text-sm hover:bg-blue-100">Edit</button> : null}
                         <button onClick={() => softDeleteBlog(blog)} className="bg-red-50 text-red-600 px-3 py-1.5 rounded-xl text-sm hover:bg-red-100">Archive</button>
                       </div>
                     </div>

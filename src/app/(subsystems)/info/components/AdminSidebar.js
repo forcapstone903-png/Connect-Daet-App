@@ -44,7 +44,6 @@ const navigationSections = [
         items: [
           { href: '/info/admin/events', label: 'All Events', iconName: 'events', exact: true },
           { href: '/info/admin/event-approvals', label: 'Event Approvals', iconName: 'moderation' },
-          { href: '/info/admin/events?action=create', label: 'Add Event', iconName: 'plus', exact: true },
         ],
       },
       {

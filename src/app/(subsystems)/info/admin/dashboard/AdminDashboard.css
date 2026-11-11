@@ -371,6 +371,192 @@
   border-bottom: 0;
 }
 
+.admin-command-center .dc-notification-popover {
+  border: 1px solid #dbe4ef;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.2);
+}
+
+.admin-command-center .dc-notification-header {
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.admin-command-center .dc-notification-icon,
+.admin-command-center .dc-notification-avatar {
+  background: #e8f0ff;
+  color: #1d4ed8;
+}
+
+.admin-command-center .dc-notification-heading,
+.admin-command-center .dc-notification-title {
+  color: #172033;
+}
+
+.admin-command-center .dc-notification-header-action {
+  font-size: 11px;
+  font-weight: 750;
+  transition: color 140ms ease;
+}
+
+.admin-command-center .dc-notification-read-all {
+  color: #1d4ed8;
+}
+
+.admin-command-center .dc-notification-clear-all,
+.admin-command-center .dc-notification-remove {
+  color: #be123c;
+}
+
+.admin-command-center .dc-notification-remove {
+  display: inline-flex;
+  min-height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 4px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color 140ms ease, color 140ms ease, background 140ms ease;
+}
+
+.admin-command-center .dc-notification-header-action:hover,
+.admin-command-center .dc-notification-remove:hover {
+  text-decoration: underline;
+}
+
+.admin-command-center .dc-notification-remove:hover {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  text-decoration: none;
+}
+
+.admin-command-center .dc-notification-remove:focus-visible {
+  outline: 2px solid #e11d48;
+  outline-offset: 2px;
+}
+
+.admin-command-center .dc-notification-list {
+  background: #ffffff;
+}
+
+.admin-command-center .dc-notification-item {
+  border-color: #e2e8f0;
+  background: #ffffff;
+}
+
+.admin-command-center .dc-notification-content {
+  min-width: 0;
+}
+
+.admin-command-center .dc-notification-item-heading,
+.admin-command-center .dc-notification-item-actions {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.admin-command-center .dc-notification-item-heading {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.admin-command-center .dc-notification-item-actions {
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.admin-command-center .dc-notification-item:hover {
+  background: #f8fafc;
+}
+
+.admin-command-center .dc-notification-item.is-unread {
+  background: #eff6ff;
+}
+
+.admin-command-center .dc-notification-message {
+  color: #475569;
+}
+
+.admin-command-center .dc-notification-time,
+.admin-command-center .dc-notification-empty {
+  color: #64748b;
+}
+
+.admin-command-center .dc-notification-unread {
+  background: #2563eb;
+}
+
+html.dark .admin-command-center .dc-notification-popover {
+  border-color: #2a3b54;
+  background: #111d2f;
+  color: #e7edf7;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+}
+
+html.dark .admin-command-center .dc-notification-header {
+  border-color: #2a3b54;
+  background: #172438;
+}
+
+html.dark .admin-command-center .dc-notification-icon,
+html.dark .admin-command-center .dc-notification-avatar {
+  background: #263a56;
+  color: #bfdbfe;
+}
+
+html.dark .admin-command-center .dc-notification-heading,
+html.dark .admin-command-center .dc-notification-title {
+  color: #f1f5fb;
+}
+
+html.dark .admin-command-center .dc-notification-read-all {
+  color: #93c5fd;
+}
+
+html.dark .admin-command-center .dc-notification-clear-all,
+html.dark .admin-command-center .dc-notification-remove {
+  color: #fda4af;
+}
+
+html.dark .admin-command-center .dc-notification-remove:hover {
+  border-color: #881337;
+  background: #3b1725;
+}
+
+html.dark .admin-command-center .dc-notification-list,
+html.dark .admin-command-center .dc-notification-item {
+  background: #111d2f;
+}
+
+html.dark .admin-command-center .dc-notification-item {
+  border-color: #2a3b54;
+}
+
+html.dark .admin-command-center .dc-notification-item:hover {
+  background: #1a293e;
+}
+
+html.dark .admin-command-center .dc-notification-item.is-unread {
+  background: #1b2c45;
+}
+
+html.dark .admin-command-center .dc-notification-message {
+  color: #c4d2e5;
+}
+
+html.dark .admin-command-center .dc-notification-time,
+html.dark .admin-command-center .dc-notification-empty {
+  color: #91a2ba;
+}
+
 .admin-command-center .dc-community-value {
   color: #f3f6fb;
   font-size: 23px;

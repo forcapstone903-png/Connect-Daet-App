@@ -25,6 +25,7 @@ export function getPostImages(post) {
       // Slideshow/gallery covers images only; videos keep their existing renderer.
       if (kind && kind !== 'image' && kind !== 'photo' && kind !== 'picture') return;
     }
+    if (/\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(url)) return;
     if (!url || !/^https?:\/\//i.test(url) && !url.startsWith('/')) return;
     if (seen.has(url)) return;
     seen.add(url);
@@ -35,6 +36,41 @@ export function getPostImages(post) {
   if (Array.isArray(post?.media)) post.media.forEach(push);
   else if (typeof post?.media === 'string' && post.media.trim()) push(post.media);
   if (typeof post?.featured_image === 'string' && post.featured_image.trim()) push(post.featured_image);
+
+  return items;
+}
+
+export function getPostVideos(post) {
+  const items = [];
+  const seen = new Set();
+
+  const push = (value) => {
+    if (!value) return;
+    let url = '';
+    if (typeof value === 'string') {
+      url = value.trim();
+    } else if (typeof value === 'object') {
+      url = String(value.url || value.video_url || value.path || '').trim();
+      const kind = String(value.type || value.kind || '').toLowerCase();
+      if (kind && kind !== 'video') return;
+    }
+    if (!url || !/^https?:\/\//i.test(url) && !url.startsWith('/')) return;
+    if (seen.has(url)) return;
+    seen.add(url);
+    items.push(url);
+  };
+
+  if (Array.isArray(post?.videos)) post.videos.forEach(push);
+  if (typeof post?.video_url === 'string') push(post.video_url);
+  if (Array.isArray(post?.media)) {
+    post.media.forEach((item) => {
+      if (typeof item === 'object' && String(item.type || item.kind || '').toLowerCase() === 'video') push(item);
+    });
+  } else if (typeof post?.media === 'object' && String(post.media.type || post.media.kind || '').toLowerCase() === 'video') {
+    push(post.media);
+  } else if (typeof post?.media === 'string' && /\.(mp4|webm|mov|m4v|ogv)(?:$|[?#])/i.test(post.media.trim())) {
+    push(post.media);
+  }
 
   return items;
 }

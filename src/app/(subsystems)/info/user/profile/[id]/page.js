@@ -25,7 +25,8 @@ import {
 import ProfileFeedActions from "@/app/(subsystems)/info/components/user/ProfileFeedActions";
 import PostMediaGallery from "@/app/(subsystems)/info/components/user/PostMediaGallery";
 import QuoteRepostCard from "@/app/(subsystems)/info/components/user/QuoteRepostCard";
-import { getPostImages } from "@/lib/postMedia";
+import { getPostImages, getPostVideos } from "@/lib/postMedia";
+import { filterProfilePosts, getProfileContentTabs } from "@/lib/profileContent";
 import { getPostPreview } from "@/lib/postContent";
 import UserTopHeader from "@/app/(subsystems)/info/components/user/UserTopHeader";
 import { SectionLoading } from "@/app/(subsystems)/info/components/user/UserSectionHeader";
@@ -105,6 +106,9 @@ function buildPostList(content) {
       text: post.content || "Shared a community post.",
       date: post.created_at,
       media: post.featured_image || (post.images || [])[0] || "",
+      images: Array.isArray(post.images) ? post.images : [],
+      videos: Array.isArray(post.videos) ? post.videos : [],
+      video_url: post.video_url || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
       href: `/info/user/posts/${post.id}`,
@@ -116,6 +120,9 @@ function buildPostList(content) {
       text: post.excerpt || "Shared a new story with the community.",
       date: post.published_at || post.created_at,
       media: post.featured_image || (post.images || [])[0] || "",
+      images: Array.isArray(post.images) ? post.images : [],
+      videos: Array.isArray(post.videos) ? post.videos : [],
+      video_url: post.video_url || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
       href: `/info/user/blogs/${post.id}`,
@@ -126,6 +133,12 @@ function buildPostList(content) {
       title: post.title,
       text: post.content || "Started a community discussion.",
       date: post.created_at,
+      images: [
+        ...(Array.isArray(post.image_urls) ? post.image_urls : []),
+        ...(Array.isArray(post.images) ? post.images : []),
+      ],
+      videos: Array.isArray(post.videos) ? post.videos : [],
+      video_url: post.video_url || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
       href: `/info/user/forums/${post.id}`,
@@ -137,6 +150,9 @@ function buildPostList(content) {
       text: post.description || "Shared a community event.",
       date: post.start_date || post.created_at,
       media: post.featured_image || (post.images || [])[0] || "",
+      images: Array.isArray(post.images) ? post.images : [],
+      videos: Array.isArray(post.videos) ? post.videos : [],
+      video_url: post.video_url || "",
       reactionsCount: post.reactions_count || 0,
       commentsCount: post.comments_count || 0,
       href: `/info/user/events/${post.id}`,
@@ -153,6 +169,8 @@ function buildPostList(content) {
       category: spot.category || "Destination",
       media: spot.featured_image || (spot.images || [])[0] || "",
       images: Array.isArray(spot.images) ? spot.images : [],
+      videos: Array.isArray(spot.videos) ? spot.videos : [],
+      video_url: spot.video_url || "",
       reactionsCount: 0,
       commentsCount: 0,
       href: `/info/visitor/tourist-spots/${spot.id}`,
@@ -184,27 +202,6 @@ function buildPostList(content) {
       };
     }),
   ].sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
-}
-
-function filterProfilePosts(posts, tab) {
-  if (tab === "Overview") return posts.slice(0, 3);
-  if (tab === "All") return posts;
-  if (tab === "Posts") return posts.filter((post) => post.type === "Post" && !post.isRepost);
-  if (tab === "Blogs") return posts.filter((post) => post.type === "Blog");
-  if (tab === "Forums") return posts.filter((post) => post.type === "Forum");
-  if (tab === "Travel") return posts.filter((post) => post.type === "Tourist Spot");
-  if (tab === "Reposts") return posts.filter((post) => post.isRepost);
-  if (tab === "Photos") return posts.filter((post) => getPostImages(post).length > 0);
-  if (tab === "Videos") {
-    return posts.filter((post) => (
-      post.videos?.length > 0
-      || Boolean(post.video_url)
-      || (Array.isArray(post.media) && post.media.some((item) => (
-        typeof item === "object" && String(item.type || item.kind || "").toLowerCase() === "video"
-      )))
-    ));
-  }
-  return posts;
 }
 
 export default function PublicProfilePage() {
@@ -587,6 +584,7 @@ export default function PublicProfilePage() {
   const displayName = profile.full_name || "Community member";
   const firstName = displayName.split(" ")[0];
   const visiblePosts = filterProfilePosts(posts, profileTab);
+  const profileTabs = getProfileContentTabs(posts);
 
   return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen w-full overflow-x-clip text-slate-900">
@@ -876,7 +874,7 @@ export default function PublicProfilePage() {
               </div>
 
               <div className="profile-tabs" role="tablist" aria-label="Profile content">
-                {["Overview", "All", "Posts", "Blogs", "Forums", "Travel", "Photos", "Videos", "Reposts"].map((tab) => (
+                {profileTabs.map((tab) => (
                   <button
                     key={tab}
                     type="button"
@@ -964,7 +962,9 @@ export default function PublicProfilePage() {
                 ) : (
                   <p className="profile-overview-empty">No destination contributions to show. Visit tracking is not available on this profile.</p>
                 )}
-                <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab("Travel")}>View travel contributions <span aria-hidden="true">→</span></button>
+                {profileTabs.includes("Travel") ? (
+                  <button type="button" className="profile-overview-link-button" onClick={() => setProfileTab("Travel")}>View travel contributions <span aria-hidden="true">→</span></button>
+                ) : null}
               </section>
             </div>
           ) : null}
@@ -1007,6 +1007,7 @@ export default function PublicProfilePage() {
             <div className="space-y-1.5">
               {visiblePosts.map((post) => {
                 const mediaList = getPostImages(post);
+                const videoList = getPostVideos(post);
 
                 if (post.isRepost) {
                   return (
@@ -1073,20 +1074,21 @@ export default function PublicProfilePage() {
                       </p>
                     ) : null}
 
-                    {mediaList.length ? (
+                    {profileTab !== "Videos" && mediaList.length ? (
                       <div className="mt-3 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-100">
                         <PostMediaGallery images={mediaList} detailHref={post.href} />
                       </div>
                     ) : null}
 
-                    {post.videos?.length ? (
+                    {profileTab !== "Photos" ? videoList.map((url, index) => (
                       <video
-                        src={post.videos[0]}
+                        key={`${url}-${index}`}
+                        src={url}
                         controls
                         className="mt-3 aspect-[16/8.5] w-full rounded-[16px] object-cover"
                         preload="metadata"
                       />
-                    ) : null}
+                    )) : null}
 
                     <div className="profile-post-actions">
                       <ProfileFeedActions post={post} userId={viewerId} />

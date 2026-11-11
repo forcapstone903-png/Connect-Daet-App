@@ -3,17 +3,25 @@
 
 import { startTransition, useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
+import { Archive, Bookmark, ChevronLeft, ChevronRight, Eye, LayoutGrid, List, MapPin, MoreHorizontal, Pencil, Share2, Star, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal';
-import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 import Comments from '@/app/(subsystems)/info/components/user/Comments';
-import Reactions from '@/app/(subsystems)/info/components/user/Reactions';
 import { getCacheKey, invalidatePersistentCache } from '@/lib/cache';
+import {
+  AdminBadge,
+  AdminButton,
+  AdminEmptyState,
+  AdminLoadingScreen,
+  AdminPanel,
+  AdminSearch,
+  AdminShell,
+  AdminStatCard,
+  AdminToolbar,
+} from '@/app/(subsystems)/info/components/admin';
 
 const DEFAULT_SPOT_CATEGORIES = [
   { value: 'beach', label: 'Beach', color: 'bg-cyan-100 text-cyan-700' },
@@ -40,6 +48,7 @@ export default function TouristSpotsManagement() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [spotsLoading, setSpotsLoading] = useState(true);
   const [spots, setSpots] = useState([]);
   const [spotCategories, setSpotCategories] = useState(DEFAULT_SPOT_CATEGORIES);
   const [spotStatuses, setSpotStatuses] = useState(DEFAULT_STATUS_OPTIONS);
@@ -53,16 +62,17 @@ export default function TouristSpotsManagement() {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  const [viewMode, setViewMode] = useState('grid');
   const [selectedSpotIds, setSelectedSpotIds] = useState(new Set());
   const [categoryDraft, setCategoryDraft] = useState('');
   const [galleryUrls, setGalleryUrls] = useState([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
-  const [bulkAction, setBulkAction] = useState('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
   const [confirmingSpot, setConfirmingSpot] = useState(null);
   const [currentSpotPage, setCurrentSpotPage] = useState(1);
-  const SPOTS_PER_PAGE = 10;
+  const SPOTS_PER_PAGE = 9;
 
   const [spotForm, setSpotForm] = useState({
     name: '',
@@ -78,8 +88,7 @@ export default function TouristSpotsManagement() {
     gallery_images: [],
     rating: 0,
     status: 'active',
-    featured: false,
-    view_count: 0
+    featured: false
   });
 
   const showToast = useCallback((message, isError = false) => {
@@ -88,14 +97,13 @@ export default function TouristSpotsManagement() {
   }, []);
 
   const fetchSpots = useCallback(async () => {
+    setSpotsLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (searchTerm) params.append('search', searchTerm);
-      if (categoryFilter && categoryFilter !== 'all') params.append('category', categoryFilter);
-      if (statusFilter && statusFilter !== 'all') params.append('status', statusFilter);
-
-      const response = await fetch(`/info/api/admin/tourist-spots?${params.toString()}`);
-      if (!response.ok) throw new Error('Failed to fetch spots');
+      const response = await fetch('/info/api/admin/tourist-spots', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error(`Failed to fetch spots (${response.status})`);
       
       const result = await response.json();
       if (result.success) {
@@ -106,8 +114,10 @@ export default function TouristSpotsManagement() {
     } catch (err) {
       console.error('Error fetching spots:', err);
       showToast('Failed to load tourist spots', true);
+    } finally {
+      setSpotsLoading(false);
     }
-  }, [showToast, searchTerm, categoryFilter, statusFilter]);
+  }, [showToast]);
 
   // Load distinct categories and statuses from DB to replace hardcoded lists
   useEffect(() => {
@@ -151,7 +161,6 @@ export default function TouristSpotsManagement() {
         rating: spotForm.rating || 0,
         status: spotForm.status,
         featured: !!spotForm.featured,
-        view_count: spotForm.view_count || 0,
         created_by: user?.id
       };
 
@@ -196,11 +205,12 @@ export default function TouristSpotsManagement() {
     setShowArchiveConfirm(false)
     if (!confirmingSpot) return
 
+    const nextStatus = confirmingSpot.status === 'inactive' ? 'active' : 'inactive'
     try {
       const response = await fetch(`/info/api/admin/tourist-spots/${confirmingSpot.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...confirmingSpot, status: 'inactive' })
+        body: JSON.stringify({ ...confirmingSpot, status: nextStatus })
       });
 
       if (!response.ok) throw new Error('Failed to archive spot');
@@ -208,7 +218,7 @@ export default function TouristSpotsManagement() {
       if (!result.success) throw new Error(result.message || 'Failed to archive spot');
 
       invalidatePublicSpotsCache();
-      showToast(`"${confirmingSpot.name}" archived`);
+      showToast(nextStatus === 'inactive' ? `"${confirmingSpot.name}" archived` : `"${confirmingSpot.name}" reactivated`);
       fetchSpots();
       setConfirmingSpot(null)
     } catch (err) {
@@ -251,16 +261,18 @@ export default function TouristSpotsManagement() {
     if (selectedSpotIds.size === 0) return;
 
     try {
-      const { error } = await supabase
+      const query = supabase
         .from('info_tourist_spots')
-        .update({ status: newStatus })
+        .update(newStatus === 'featured'
+          ? { featured: true, updated_at: new Date().toISOString() }
+          : { status: newStatus, updated_at: new Date().toISOString() })
         .in('id', Array.from(selectedSpotIds));
+      const { error } = await query;
 
       if (error) throw error;
       invalidatePublicSpotsCache();
-      showToast(`${selectedSpotIds.size} spots updated`, false);
+      showToast(newStatus === 'featured' ? `${selectedSpotIds.size} spots featured` : `${selectedSpotIds.size} spots updated`, false);
       setSelectedSpotIds(new Set());
-      setBulkAction('');
       setShowBulkModal(false);
       fetchSpots();
     } catch (err) {
@@ -308,8 +320,7 @@ export default function TouristSpotsManagement() {
       gallery_images: [],
       rating: 0,
       status: 'active',
-      featured: false,
-      view_count: 0
+      featured: false
     });
     setShowModal(true);
   }, []);
@@ -331,8 +342,7 @@ export default function TouristSpotsManagement() {
       gallery_images: spot.gallery_images || [],
       rating: spot.rating || 0,
       status: spot.status || 'active',
-      featured: spot.featured || false,
-      view_count: spot.view_count || 0
+      featured: spot.featured || false
     });
     setShowModal(true);
   };
@@ -399,16 +409,6 @@ export default function TouristSpotsManagement() {
     return found || { label: category || 'General', color: 'bg-gray-100 text-gray-700' };
   };
 
-  const getStatusBadge = (status) => {
-    const badges = {
-      'active': 'bg-green-100 text-green-700',
-      'inactive': 'bg-yellow-100 text-yellow-700',
-      'maintenance': 'bg-orange-100 text-orange-700',
-      'closed': 'bg-red-100 text-red-700'
-    };
-    return badges[status] || 'bg-gray-100 text-gray-700';
-  };
-
   const toggleSelectSpot = (spotId) => {
     const next = new Set(selectedSpotIds);
     if (next.has(spotId)) next.delete(spotId);
@@ -417,20 +417,29 @@ export default function TouristSpotsManagement() {
   };
 
   const selectAllSpots = () => {
-    if (selectedSpotIds.size === filteredSpots.length) {
-      setSelectedSpotIds(new Set());
+    const visibleIds = paginatedSpots.map((spot) => spot.id);
+    if (visibleIds.length && visibleIds.every((id) => selectedSpotIds.has(id))) {
+      setSelectedSpotIds((current) => new Set([...current].filter((id) => !visibleIds.includes(id))));
       return;
     }
-    setSelectedSpotIds(new Set(filteredSpots.map((spot) => spot.id)));
+    setSelectedSpotIds((current) => new Set([...current, ...visibleIds]));
   };
 
-  const filteredSpots = spots.filter(spot => {
-    const matchesSearch = spot.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          spot.location.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredSpots = useMemo(() => {
+    const filtered = spots.filter(spot => {
+    const matchesSearch = String(spot.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                          String(spot.location || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesCategory = categoryFilter === 'all' || spot.category === categoryFilter;
     const matchesStatus = statusFilter === 'all' || spot.status === statusFilter;
     return matchesSearch && matchesCategory && matchesStatus;
-  });
+    });
+    return filtered.sort((a, b) => {
+      if (sortBy === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+      if (sortBy === 'views') return Number(b.view_count || 0) - Number(a.view_count || 0);
+      if (sortBy === 'rating') return Number(b.rating || 0) - Number(a.rating || 0);
+      return new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0);
+    });
+  }, [spots, searchTerm, categoryFilter, statusFilter, sortBy]);
 
   const totalSpotPages = Math.ceil(filteredSpots.length / SPOTS_PER_PAGE);
   const paginatedSpots = filteredSpots.slice(
@@ -460,7 +469,7 @@ export default function TouristSpotsManagement() {
         shares: safeNumber(spot.share_count),
         totalEngagement: safeNumber(spot.view_count) + safeNumber(spot.save_count) + safeNumber(spot.share_count),
       }))
-      .sort((a, b) => b.totalEngagement - a.totalEngagement)
+      .sort((a, b) => b.views - a.views)
       .slice(0, 5);
 
     return {
@@ -469,6 +478,8 @@ export default function TouristSpotsManagement() {
       totalShares,
       avgRating,
       totalSpots: spots.length,
+      activeSpots: spots.filter((spot) => spot.status === 'active').length,
+      featuredSpots: spots.filter((spot) => spot.featured).length,
       topSpots,
       hasSaveShareTracking: spots.some((spot) => Object.prototype.hasOwnProperty.call(spot, 'save_count') || Object.prototype.hasOwnProperty.call(spot, 'share_count'))
     };
@@ -526,298 +537,293 @@ export default function TouristSpotsManagement() {
     startTransition(() => {
       void fetchSpots();
     });
-  }, [fetchSpots, searchTerm, categoryFilter, statusFilter, user]);
+  }, [fetchSpots, user]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <AdminLoadingScreen label="Loading tourist spots..." />;
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AdminSidebar user={user} roleLabel="Admin Console" />
-
-      {/* Main Content */}
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
-        <div className="admin-page-header flex-wrap">
-          <div className="min-w-0">
-            <p className="admin-eyebrow">Content</p>
-            <h1>Tourist spot management</h1>
-            <p className="admin-subtitle">Manage Daet&apos;s tourist attractions, destinations, and featured places.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {selectedSpotIds.size > 0 && (
-              <select
-                value={bulkAction}
-                onChange={(e) => {
-                  if (e.target.value === 'delete') setShowBulkModal(true);
-                  else if (e.target.value) bulkUpdateSpots(e.target.value);
-                  setBulkAction('');
-                }}
-                className="px-3 py-2 border border-gray-200 rounded-full bg-white text-sm"
-              >
-                <option value="">Bulk Actions</option>
-                <option value="active">Activate</option>
-                <option value="inactive">Deactivate</option>
-                <option value="maintenance">Maintenance</option>
-                <option value="delete">Delete</option>
-              </select>
-            )}
-            <button onClick={() => setShowCategoryModal(true)} className="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-full flex items-center gap-2">
-              Categories
-            </button>
-            <button onClick={openCreateModal} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-full flex items-center gap-2">
-              <span>+</span> Add New Spot
-            </button>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl shadow-sm border border-blue-500/20 p-5 mb-6 text-white">
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-blue-100">Attraction analytics</p>
-              <h2 className="text-2xl font-bold mt-2">Engagement overview</h2>
-            </div>
-            <div className="text-sm text-blue-100">
-              {analyticsSummary.hasSaveShareTracking ? 'Save/share tracking is enabled' : 'Current schema only tracks views; add save/share columns to enable full engagement metrics'}
-            </div>
+    <AdminShell
+      user={user}
+      eyebrow="Content"
+      title="Tourist Spot Management"
+      description="Manage Daet's tourist attractions, destinations, and featured places."
+      headerIcon="attractions"
+      actions={(
+        <>
+          <AdminButton variant="secondary" size="sm" onClick={() => setShowCategoryModal(true)}>Categories</AdminButton>
+          <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Add New Tourist Spot</AdminButton>
+        </>
+      )}
+    >
+      <div className="admin-page-shell">
+        <div className="space-y-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-6">
+            <AdminStatCard label="Total tourist spots" value={spotsLoading && !spots.length ? null : analyticsSummary.totalSpots} loading={spotsLoading && !spots.length} icon="attractions" tone="brand" />
+            <AdminStatCard label="Active" value={spotsLoading && !spots.length ? null : analyticsSummary.activeSpots} loading={spotsLoading && !spots.length} icon="check" tone="success" />
+            <AdminStatCard label="Featured" value={spotsLoading && !spots.length ? null : analyticsSummary.featuredSpots} loading={spotsLoading && !spots.length} icon="star" tone="info" />
+            <AdminStatCard label="Unique account views" value={spotsLoading && !spots.length ? null : analyticsSummary.totalViews.toLocaleString()} loading={spotsLoading && !spots.length} icon="analytics" tone="violet" />
+            <AdminStatCard label="Saves" value={spotsLoading && !spots.length ? null : analyticsSummary.totalSaves.toLocaleString()} loading={spotsLoading && !spots.length} icon="content" tone="danger" />
+            <AdminStatCard label="Shares" value={spotsLoading && !spots.length ? null : analyticsSummary.totalShares.toLocaleString()} loading={spotsLoading && !spots.length} icon="analytics" tone="warning" />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-5">
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-              <div className="text-sm text-blue-100">Total views</div>
-              <div className="text-3xl font-bold mt-2">{analyticsSummary.totalViews.toLocaleString()}</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-              <div className="text-sm text-blue-100">Saved</div>
-              <div className="text-3xl font-bold mt-2">{analyticsSummary.totalSaves.toLocaleString()}</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-              <div className="text-sm text-blue-100">Shared</div>
-              <div className="text-3xl font-bold mt-2">{analyticsSummary.totalShares.toLocaleString()}</div>
-            </div>
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
-              <div className="text-sm text-blue-100">Avg. rating</div>
-              <div className="text-3xl font-bold mt-2">{analyticsSummary.avgRating}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4 mb-6">
-          <div className="flex flex-wrap gap-4 items-center">
-            <div className="flex-1 min-w-50">
-              <input type="text" placeholder="Search by name or location..." value={searchTerm} onChange={(e) => { setCurrentSpotPage(1); setSearchTerm(e.target.value); }} className="w-full px-4 py-2 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500" />
-            </div>
-            <select value={categoryFilter} onChange={(e) => { setCurrentSpotPage(1); setCategoryFilter(e.target.value); }} className="px-4 py-2 border border-gray-200 rounded-2xl">
-              <option value="all">All Categories</option>
-              {(spotCategories || []).map(cat => (<option key={cat.value} value={cat.value}>{cat.label}</option>))}
-            </select>
-            <select value={statusFilter} onChange={(e) => { setCurrentSpotPage(1); setStatusFilter(e.target.value); }} className="px-4 py-2 border border-gray-200 rounded-2xl">
-              <option value="all">All Status</option>
-              {(spotStatuses || []).map((status) => (
-                <option key={status.value} value={status.value}>{status.label}</option>
-              ))}
-            </select>
-            <div className="text-sm text-gray-500">{filteredSpots.length} spots found</div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 xl:grid-cols-[1.4fr_0.8fr] gap-6 mb-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold text-gray-800">Top attractions</h3>
-              <span className="text-xs text-gray-500">By total engagement</span>
-            </div>
-            <div className="space-y-2">
-              {analyticsSummary.topSpots.length ? analyticsSummary.topSpots.map((spot, index) => {
-                const max = Math.max(...analyticsSummary.topSpots.map(item => item.totalEngagement), 1);
-                const width = (spot.totalEngagement / max) * 100;
-                return (
-                  <div key={spot.id} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <span className="font-medium text-gray-700">#{index + 1} {spot.name}</span>
-                      <span>{spot.totalEngagement} engagement</span>
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(260px,0.8fr)]">
+            <AdminPanel
+              title="Popular tourist spots"
+              description="Destinations ranked by unique signed-in accounts over the last 90 days."
+              bodyClassName="!pt-0"
+            >
+              <div className="space-y-4">
+                {analyticsSummary.topSpots.length ? analyticsSummary.topSpots.map((spot) => {
+                  const maxViews = Math.max(...analyticsSummary.topSpots.map((item) => item.views), 1);
+                  const width = spot.views ? Math.max((spot.views / maxViews) * 100, 2) : 0;
+                  return (
+                    <div key={spot.id} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="min-w-0 truncate font-semibold text-slate-800">{spot.name}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-slate-500">{spot.views.toLocaleString()} views</span>
+                      </div>
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${width}%` }} />
+                      </div>
                     </div>
-                    <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-indigo-500" style={{ width: `${width}%` }} />
-                    </div>
-                    <div className="flex gap-3 text-xs text-gray-500">
-                      <span>Views: {spot.views}</span>
-                      <span>Saves: {spot.saves}</span>
-                      <span>Shares: {spot.shares}</span>
-                    </div>
-                  </div>
-                );
-              }) : (
-                <p className="text-sm text-gray-500">No attraction data yet.</p>
-              )}
-            </div>
+                  );
+                }) : <p className="text-sm text-slate-500">No tourist spots to rank yet.</p>}
+              </div>
+            </AdminPanel>
+
+            <AdminPanel
+              title="Performance summary"
+              description="At-a-glance destination performance."
+              className="flex h-full flex-col"
+              bodyClassName="!flex-1 !pt-0"
+            >
+              <dl className="flex h-full flex-col divide-y divide-slate-100">
+                <div className="flex flex-1 items-center justify-between gap-3 py-3 first:pt-0">
+                  <dt className="text-sm text-slate-600">Active attractions</dt>
+                  <dd className="font-bold tabular-nums text-slate-900">{analyticsSummary.activeSpots}</dd>
+                </div>
+                <div className="flex flex-1 items-center justify-between gap-3 py-3">
+                  <dt className="text-sm text-slate-600">Engagement rate</dt>
+                  <dd className="font-bold tabular-nums text-slate-900">
+                    {analyticsSummary.totalSpots ? ((analyticsSummary.totalViews / analyticsSummary.totalSpots) * 10).toFixed(1) : '0.0'}%
+                  </dd>
+                </div>
+                <div className="flex flex-1 items-center justify-between gap-3 py-3 last:pb-0">
+                  <dt className="text-sm text-slate-600">Favorite category</dt>
+                  <dd className="max-w-[55%] truncate font-bold capitalize text-slate-900">
+                    {(() => {
+                      const counts = spots.reduce((acc, spot) => {
+                        acc[spot.category || 'general'] = (acc[spot.category || 'general'] || 0) + 1;
+                        return acc;
+                      }, {});
+                      const topCategory = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+                      return topCategory ? String(topCategory[0]).replace(/[_-]/g, ' ') : '—';
+                    })()}
+                  </dd>
+                </div>
+              </dl>
+              {!analyticsSummary.hasSaveShareTracking ? (
+                <p className="mt-3 border-t border-slate-100 pt-3 text-xs leading-5 text-slate-500">
+                  Save and share totals are unavailable in the current data schema.
+                </p>
+              ) : null}
+            </AdminPanel>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Performance summary</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between rounded-xl bg-blue-50 px-3 py-2 text-sm">
-                <span className="text-blue-700">Active attractions</span>
-                <span className="font-semibold text-blue-800">{analyticsSummary.totalSpots}</span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2 text-sm">
-                <span className="text-emerald-700">Engagement rate</span>
-                <span className="font-semibold text-emerald-800">
-                  {analyticsSummary.totalSpots ? ((analyticsSummary.totalViews / Math.max(analyticsSummary.totalSpots, 1)) * 10).toFixed(1) : '0.0'}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between rounded-xl bg-purple-50 px-3 py-2 text-sm">
-                <span className="text-purple-700">Favorite category</span>
-                <span className="font-semibold text-purple-800">
-                  {(() => {
-                    const counts = spots.reduce((acc, spot) => {
-                      acc[spot.category || 'general'] = (acc[spot.category || 'general'] || 0) + 1;
-                      return acc;
-                    }, {});
-                    const topCategory = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
-                    return topCategory ? topCategory[0] : '—';
-                  })()}
-                </span>
-              </div>
-              <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 px-3 py-3 text-xs text-gray-500">
-                Tip: add save_count and share_count fields in Supabase if you want full engagement analytics beyond views.
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-4 overflow-x-auto">
-          <table className="min-w-full bg-white rounded-2xl border border-gray-200">
-            <thead className="bg-gray-50 text-left">
-              <tr>
-                <th className="p-3"><input type="checkbox" checked={selectedSpotIds.size === filteredSpots.length && filteredSpots.length > 0} onChange={selectAllSpots} /></th>
-                <th className="p-3 text-xs uppercase text-gray-500">Name</th>
-                <th className="p-3 text-xs uppercase text-gray-500">Category</th>
-                <th className="p-3 text-xs uppercase text-gray-500">Status</th>
-                <th className="p-3 text-xs uppercase text-gray-500">Views</th>
-                <th className="p-3 text-xs uppercase text-gray-500">Rating</th>
-                <th className="p-3 text-xs uppercase text-gray-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedSpots.map((spot) => (
-                <tr key={spot.id} className="border-t border-gray-100">
-                  <td className="p-3"><input type="checkbox" checked={selectedSpotIds.has(spot.id)} onChange={() => toggleSelectSpot(spot.id)} /></td>
-                  <td className="p-3">
-                    <div className="font-medium text-gray-800">{spot.name}</div>
-                    <div className="text-xs text-gray-500">{spot.location}</div>
-                  </td>
-                  <td className="p-3"><span className={`text-xs px-2 py-1 rounded-full ${getCategoryDisplay(spot.category).color}`}>{getCategoryDisplay(spot.category).label}</span></td>
-                  <td className="p-3"><span className={`text-xs px-2 py-1 rounded-full ${getStatusBadge(spot.status)}`}>{spot.status}</span></td>
-                  <td className="p-3 text-sm text-gray-700">{spot.view_count || 0}</td>
-                  <td className="p-3 text-sm text-gray-700">{spot.rating ? `${spot.rating}/5` : '—'}</td>
-                  <td className="p-3">
-                    <div className="flex gap-2 flex-wrap">
-                      <button onClick={() => openEditModal(spot)} className="text-xs text-blue-600 hover:underline">Edit</button>
-                      <button onClick={() => previewSpotPublic(spot)} className="text-xs text-purple-600 hover:underline">Preview</button>
-                      <button onClick={() => archiveSpot(spot)} className="text-xs text-yellow-600 hover:underline">Archive</button>
-                      <button onClick={() => deleteSpot(spot)} className="text-xs text-red-600 hover:underline">Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {totalSpotPages > 1 && (
-          <div className="mt-4 flex items-center justify-between rounded-2xl border border-gray-200 bg-white px-4 py-3">
-            <div className="text-xs font-medium text-gray-500">
-              Page {currentSpotPage} of {totalSpotPages} · {filteredSpots.length} results
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentSpotPage((page) => Math.max(1, page - 1))}
-                disabled={currentSpotPage === 1}
-                className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              {Array.from({ length: totalSpotPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentSpotPage(page)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium border ${page === currentSpotPage ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                >
-                  {page}
+          <AdminPanel
+            title="Tourist spots"
+            description={`All tourist spots · ${filteredSpots.length} ${filteredSpots.length === 1 ? 'spot' : 'spots'} found`}
+            actions={(
+              <div className="flex rounded-xl border border-slate-200 p-1" role="group" aria-label="Tourist spot view">
+                <button type="button" onClick={() => setViewMode('grid')} aria-pressed={viewMode === 'grid'} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${viewMode === 'grid' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  <LayoutGrid className="h-4 w-4" />Grid
                 </button>
-              ))}
-              <button
-                onClick={() => setCurrentSpotPage((page) => Math.min(totalSpotPages, page + 1))}
-                disabled={currentSpotPage === totalSpotPages}
-                className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
+                <button type="button" onClick={() => setViewMode('list')} aria-pressed={viewMode === 'list'} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${viewMode === 'list' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+                  <List className="h-4 w-4" />List
+                </button>
+              </div>
+            )}
+            bodyClassName="!p-0"
+          >
+            <AdminToolbar className="border-b border-slate-100 px-4 py-3 sm:px-5">
+              <AdminSearch
+                value={searchTerm}
+                onChange={(value) => { setCurrentSpotPage(1); setSelectedSpotIds(new Set()); setSearchTerm(value); }}
+                placeholder="Search by name or location..."
+                label="Search tourist spots"
+                className="min-w-[220px] flex-1"
+              />
+              <label className="sr-only" htmlFor="spot-category-filter">Filter by category</label>
+              <select id="spot-category-filter" value={categoryFilter} onChange={(event) => { setCurrentSpotPage(1); setSelectedSpotIds(new Set()); setCategoryFilter(event.target.value); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+                <option value="all">All Categories</option>
+                {spotCategories.map((cat) => <option key={cat.value} value={cat.value}>{cat.label}</option>)}
+              </select>
+              <label className="sr-only" htmlFor="spot-status-filter">Filter by status</label>
+              <select id="spot-status-filter" value={statusFilter} onChange={(event) => { setCurrentSpotPage(1); setSelectedSpotIds(new Set()); setStatusFilter(event.target.value); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+                <option value="all">All Status</option>
+                {spotStatuses.map((status) => <option key={status.value} value={status.value}>{status.value === 'inactive' ? 'Archived' : status.label}</option>)}
+              </select>
+              <label className="sr-only" htmlFor="spot-sort">Sort tourist spots</label>
+              <select id="spot-sort" value={sortBy} onChange={(event) => { setCurrentSpotPage(1); setSelectedSpotIds(new Set()); setSortBy(event.target.value); }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700">
+                <option value="newest">Recently updated</option>
+                <option value="name">Name</option>
+                <option value="views">Most viewed</option>
+                <option value="rating">Highest rated</option>
+              </select>
+            </AdminToolbar>
 
-        {/* Spots Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredSpots.map((spot) => {
-            const category = getCategoryDisplay(spot.category);
-            return (
-              <div key={spot.id} className="flex min-h-[430px] flex-col bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-                <div className="relative h-48 bg-gray-100">
-                  {spot.image_url ? (
-                    <img src={spot.image_url} alt={spot.name} className="w-full h-full object-cover" />
-                  ) : null}
-                  <div className="absolute top-3 left-3">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${category.color}`}>
-                      {category.label}
-                    </span>
-                  </div>
-                  <div className="absolute top-3 right-3">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusBadge(spot.status)}`}>
-                      {spot.status}
-                    </span>
-                  </div>
+            {selectedSpotIds.size > 0 ? (
+              <div className="flex flex-wrap items-center gap-2 border-b border-blue-100 bg-blue-50/70 px-4 py-3 sm:px-5">
+                <span className="mr-auto text-sm font-semibold text-blue-900">{selectedSpotIds.size} selected</span>
+                <AdminButton size="sm" variant="secondary" onClick={() => bulkUpdateSpots('featured')}>Feature</AdminButton>
+                <AdminButton size="sm" variant="secondary" onClick={() => bulkUpdateSpots('inactive')}>Archive</AdminButton>
+                <AdminButton size="sm" variant="outline-danger" icon="delete" onClick={() => setShowBulkModal(true)}>Delete</AdminButton>
+                <button type="button" onClick={() => setSelectedSpotIds(new Set())} className="px-2 py-1 text-xs font-semibold text-slate-500 hover:text-slate-800">Clear</button>
+              </div>
+            ) : null}
+
+            {spotsLoading && !spots.length ? (
+              <div className="grid gap-4 p-4 sm:grid-cols-2 2xl:grid-cols-3" aria-label="Loading tourist spots">
+                {[0, 1, 2].map((item) => <div key={item} className="h-72 animate-pulse rounded-2xl bg-slate-100" />)}
+              </div>
+            ) : !filteredSpots.length ? (
+              <div className="p-8 sm:p-12">
+                <AdminEmptyState
+                  icon="attractions"
+                  title={spots.length ? 'No tourist spots found' : 'No Tourist Spots'}
+                  description={spots.length ? 'Try adjusting your search or filters.' : 'There are currently no tourist destinations in the system.'}
+                  action={!spots.length ? <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Add Tourist Spot</AdminButton> : null}
+                />
+              </div>
+            ) : viewMode === 'grid' ? (
+              <div className="p-4 sm:p-5">
+                <div className="mb-4 flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <input
+                    type="checkbox"
+                    checked={paginatedSpots.length > 0 && paginatedSpots.every((spot) => selectedSpotIds.has(spot.id))}
+                    onChange={selectAllSpots}
+                    aria-label="Select all tourist spots on this page"
+                    className="h-4 w-4 rounded border-slate-300 accent-blue-600"
+                  />
+                  <span className="text-xs font-semibold text-slate-500">Select visible spots</span>
                 </div>
-                <div className="flex flex-1 flex-col p-4">
-                  <h3 className="font-bold text-gray-800 text-lg mb-1">{spot.name}</h3>
-                  <p className="text-sm text-gray-500 mb-2">Location: {spot.location}</p>
-                  {spot.rating > 0 && (
-                    <div className="flex items-center gap-1 mb-2">
-                      <span className="text-sm font-medium">Rating:</span>
-                      <span className="text-sm font-medium">{spot.rating}</span>
-                    </div>
-                  )}
-                  <p className="text-sm text-gray-600 line-clamp-2 mb-3">{spot.description || 'No description provided'}</p>
-                  {spot.opening_hours && (
-                    <p className="text-xs text-gray-400 flex items-center gap-1 mb-2">Hours: {spot.opening_hours}</p>
-                  )}
-                  {spot.entrance_fee && (
-                    <p className="text-xs text-gray-400 flex items-center gap-1">Entrance fee: ₱{spot.entrance_fee}</p>
-                  )}
-                  <div className="mt-auto flex gap-2 pt-3 border-t border-gray-100">
-                    <button onClick={() => openEditModal(spot)} className="flex-1 bg-blue-50 text-blue-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-blue-100">Edit</button>
-                    <button onClick={() => previewSpotPublic(spot)} className="flex-1 bg-purple-50 text-purple-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-purple-100">Preview</button>
-                    <button onClick={() => archiveSpot(spot)} className="flex-1 bg-yellow-50 text-yellow-700 px-3 py-2 rounded-xl text-sm font-medium hover:bg-yellow-100">Archive</button>
-                    <button onClick={() => deleteSpot(spot)} className="flex-1 bg-red-50 text-red-600 px-3 py-2 rounded-xl text-sm font-medium hover:bg-red-100">Delete</button>
-                  </div>
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-4">
+                  {paginatedSpots.map((spot) => {
+                    const category = getCategoryDisplay(spot.category);
+                    return (
+                      <article key={spot.id} className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md">
+                        <div className="relative aspect-[16/10] overflow-hidden bg-slate-100">
+                          {spot.image_url ? (
+                            <img src={spot.image_url} alt={spot.name} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]" />
+                          ) : (
+                            <div className="flex h-full flex-col items-center justify-center gap-2 bg-slate-50 text-slate-400">
+                              <MapPin className="h-7 w-7 text-blue-400" />
+                              <span className="text-xs font-medium">No image available</span>
+                            </div>
+                          )}
+                          <label className="absolute left-2 top-2 rounded-md bg-white/95 p-1 shadow-sm" onClick={(event) => event.stopPropagation()}>
+                            <input type="checkbox" checked={selectedSpotIds.has(spot.id)} onChange={() => toggleSelectSpot(spot.id)} aria-label={`Select ${spot.name}`} className="h-3.5 w-3.5 accent-blue-600" />
+                          </label>
+                          <div className="absolute right-2 top-2 flex flex-wrap justify-end gap-1">
+                            <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${category.color}`}>{category.label}</span>
+                            <AdminBadge status={spot.status} dot>{spot.status === 'inactive' ? 'Archived' : spot.status}</AdminBadge>
+                          </div>
+                          {spot.featured ? <span className="absolute bottom-2 left-2"><AdminBadge tone="brand"><Star className="mr-1 h-3 w-3 fill-current" />Featured</AdminBadge></span> : null}
+                        </div>
+                        <div className="flex flex-1 flex-col p-2.5 sm:p-3">
+                          <h3 className="truncate text-sm font-bold text-slate-900">{spot.name}</h3>
+                          <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-slate-500"><MapPin className="h-3 w-3 shrink-0 text-slate-400" />{spot.location}</p>
+                          <p className="mt-2 min-h-8 line-clamp-2 text-[11px] leading-4 text-slate-600">{spot.description || 'No description provided.'}</p>
+                          <div className="mt-3 grid grid-cols-3 gap-1.5 border-t border-slate-100 pt-2.5">
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500"><Eye className="h-3 w-3 text-blue-500" />{Number(spot.view_count || 0).toLocaleString()}</span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500"><Bookmark className="h-3 w-3 text-blue-500" />{Number(spot.save_count || 0).toLocaleString()}</span>
+                            <span className="flex items-center gap-1 text-[10px] text-slate-500"><Share2 className="h-3 w-3 text-blue-500" />{Number(spot.share_count || 0).toLocaleString()}</span>
+                          </div>
+                          <div className="mt-auto flex items-center gap-1.5 pt-3">
+                            <AdminButton size="sm" variant="primary" icon="edit" onClick={() => openEditModal(spot)}>Edit</AdminButton>
+                            <AdminButton size="sm" variant="secondary" icon="eye" onClick={() => previewSpotPublic(spot)}>Preview</AdminButton>
+                            <details className="relative ml-auto">
+                              <summary className="flex h-7 w-7 cursor-pointer list-none items-center justify-center rounded-full border border-slate-200 text-slate-600 hover:bg-slate-50" aria-label={`More actions for ${spot.name}`}><MoreHorizontal className="h-4 w-4" /></summary>
+                              <div className="absolute bottom-9 right-0 z-20 min-w-36 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                                <button type="button" onClick={() => archiveSpot(spot)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50"><Archive className="h-3.5 w-3.5" />{spot.status === 'inactive' ? 'Reactivate' : 'Archive'}</button>
+                                <button type="button" onClick={() => deleteSpot(spot)} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+                              </div>
+                            </details>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <div className="px-2 sm:px-4">
+                <div className="mb-3 flex items-center gap-2 px-2 pt-3">
+                  <input type="checkbox" checked={paginatedSpots.length > 0 && paginatedSpots.every((spot) => selectedSpotIds.has(spot.id))} onChange={selectAllSpots} aria-label="Select all tourist spots on this page" className="h-4 w-4 accent-blue-600" />
+                  <span className="text-xs font-semibold text-slate-500">Select visible spots</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-left">
+                    <thead className="border-y border-slate-100 bg-slate-50/70 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                      <tr>
+                        <th className="px-3 py-3">Tourist Spot</th>
+                        <th className="px-3 py-3">Location</th>
+                        <th className="px-3 py-3">Category</th>
+                        <th className="px-3 py-3">Status</th>
+                        <th className="px-3 py-3">Views</th>
+                        <th className="px-3 py-3">Rating</th>
+                        <th className="px-3 py-3">Updated</th>
+                        <th className="px-3 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {paginatedSpots.map((spot) => (
+                        <tr key={spot.id} className="transition hover:bg-slate-50/70">
+                          <td className="whitespace-nowrap px-3 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <input type="checkbox" checked={selectedSpotIds.has(spot.id)} onChange={() => toggleSelectSpot(spot.id)} aria-label={`Select ${spot.name}`} className="h-4 w-4 accent-blue-600" />
+                              {spot.image_url ? <img src={spot.image_url} alt="" className="h-10 w-14 rounded-lg border border-slate-200 object-cover" /> : <span className="flex h-10 w-14 items-center justify-center rounded-lg bg-slate-100 text-blue-500"><MapPin className="h-4 w-4" /></span>}
+                              <span className="font-semibold text-slate-800">{spot.name}</span>
+                            </div>
+                          </td>
+                          <td className="max-w-48 truncate px-3 py-3 text-sm text-slate-600">{spot.location}</td>
+                          <td className="px-3 py-3"><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${getCategoryDisplay(spot.category).color}`}>{getCategoryDisplay(spot.category).label}</span></td>
+                          <td className="px-3 py-3"><AdminBadge status={spot.status} dot>{spot.status === 'inactive' ? 'Archived' : spot.status}</AdminBadge></td>
+                          <td className="px-3 py-3 text-sm tabular-nums text-slate-600">{Number(spot.view_count || 0).toLocaleString()}</td>
+                          <td className="px-3 py-3 text-sm tabular-nums text-slate-600">{spot.rating ? `${spot.rating}/5` : '—'}</td>
+                          <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-500">{spot.updated_at ? new Date(spot.updated_at).toLocaleDateString() : '—'}</td>
+                          <td className="px-3 py-3">
+                            <div className="flex justify-end gap-1">
+                              <button type="button" onClick={() => openEditModal(spot)} aria-label={`Edit ${spot.name}`} className="rounded-lg p-2 text-blue-700 hover:bg-blue-50"><Pencil className="h-4 w-4" /></button>
+                              <button type="button" onClick={() => previewSpotPublic(spot)} aria-label={`Preview ${spot.name}`} className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"><Eye className="h-4 w-4" /></button>
+                              <button type="button" onClick={() => archiveSpot(spot)} aria-label={`${spot.status === 'inactive' ? 'Reactivate' : 'Archive'} ${spot.name}`} className="rounded-lg p-2 text-amber-700 hover:bg-amber-50"><Archive className="h-4 w-4" /></button>
+                              <button type="button" onClick={() => deleteSpot(spot)} aria-label={`Delete ${spot.name}`} className="rounded-lg p-2 text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
-        {filteredSpots.length === 0 && (
-          <div className="text-center py-12 bg-white rounded-2xl border border-gray-200">
-            <p className="text-gray-400 mt-2">No tourist spots found</p>
-            <button onClick={openCreateModal} className="mt-4 text-blue-600 underline">Create your first spot</button>
-          </div>
-        )}
+            {totalSpotPages > 1 ? (
+              <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-3 sm:px-5">
+                <span className="text-xs text-slate-500">
+                  Showing {(currentSpotPage - 1) * SPOTS_PER_PAGE + 1}–{Math.min(currentSpotPage * SPOTS_PER_PAGE, filteredSpots.length)} of {filteredSpots.length}
+                </span>
+                <div className="ml-auto flex items-center gap-2">
+                  <button type="button" onClick={() => setCurrentSpotPage((page) => Math.max(1, page - 1))} disabled={currentSpotPage === 1} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
+                  <span className="text-xs font-semibold text-slate-700">Page {currentSpotPage} of {totalSpotPages}</span>
+                  <button type="button" onClick={() => setCurrentSpotPage((page) => Math.min(totalSpotPages, page + 1))} disabled={currentSpotPage === totalSpotPages} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
+                </div>
+              </div>
+            ) : null}
+          </AdminPanel>
+        </div>
       </div>
 
       {/* Create/Edit Modal */}
@@ -827,50 +833,28 @@ export default function TouristSpotsManagement() {
             <h3 className="text-xl font-bold text-gray-800 mb-4">{editingSpot ? 'Edit Tourist Spot' : 'Add New Tourist Spot'}</h3>
             
             <div className="grid grid-cols-2 gap-4">
+              <p className="col-span-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Basic information</p>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Spot Name *</label>
                 <input type="text" value={spotForm.name} onChange={e => setSpotForm(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="e.g., Bagasbas Beach" />
               </div>
-              
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Location *</label>
-                <input type="text" value={spotForm.location} onChange={e => setSpotForm(p => ({ ...p, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="Barangay, Daet" />
-              </div>
-              
-              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
                 <select value={spotForm.category} onChange={e => setSpotForm(p => ({ ...p, category: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
                   <option value="">Select category</option>
                   {(spotCategories || []).map(cat => (<option key={cat.value} value={cat.value}>{cat.label}</option>))}
                 </select>
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select value={spotForm.status} onChange={e => setSpotForm(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
-                  {(spotStatuses || []).map((status) => (
-                    <option key={status.value} value={status.value}>{status.label}</option>
-                  ))}
-                </select>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea value={spotForm.description} onChange={e => setSpotForm(p => ({ ...p, description: e.target.value }))} rows="4" className="w-full px-3 py-2 border border-gray-300 rounded-xl resize-none" placeholder="Detailed description of the tourist spot..." />
               </div>
 
-              <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={!!spotForm.featured} onChange={e => setSpotForm(p => ({ ...p, featured: e.target.checked }))} className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm text-gray-700">Featured</span>
-                </label>
+              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Location</p>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address / Area *</label>
+                <input type="text" value={spotForm.location} onChange={e => setSpotForm(p => ({ ...p, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="Barangay, Daet" />
               </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Opening Hours</label>
-                <input type="text" value={spotForm.opening_hours} onChange={e => setSpotForm(p => ({ ...p, opening_hours: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="e.g., 8:00 AM - 6:00 PM" />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Entrance Fee (PHP)</label>
-                <input type="number" value={spotForm.entrance_fee} onChange={e => setSpotForm(p => ({ ...p, entrance_fee: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="0 for free" />
-              </div>
-              
               <div className="grid grid-cols-2 gap-4 col-span-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
@@ -881,12 +865,22 @@ export default function TouristSpotsManagement() {
                   <input type="text" value={spotForm.longitude} onChange={e => setSpotForm(p => ({ ...p, longitude: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="122.9553" />
                 </div>
               </div>
-              
+
+              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Visitor information</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Opening Hours</label>
+                <input type="text" value={spotForm.opening_hours} onChange={e => setSpotForm(p => ({ ...p, opening_hours: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="e.g., 8:00 AM - 6:00 PM" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Entrance Fee (PHP)</label>
+                <input type="number" value={spotForm.entrance_fee} onChange={e => setSpotForm(p => ({ ...p, entrance_fee: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="0 for free" />
+              </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
                 <input type="text" value={spotForm.contact_number} onChange={e => setSpotForm(p => ({ ...p, contact_number: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="(054) 123-4567" />
               </div>
-              
+
+              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Media</p>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Featured Image</label>
                 <MediaUpload
@@ -900,7 +894,6 @@ export default function TouristSpotsManagement() {
                   maxSizeMB={5}
                 />
               </div>
-
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Gallery Images</label>
                 <MediaUpload
@@ -925,9 +918,21 @@ export default function TouristSpotsManagement() {
                 )}
               </div>
 
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">View Count</label>
-                <input type="number" value={spotForm.view_count || 0} onChange={e => setSpotForm(p => ({ ...p, view_count: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="0" />
+              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Publication</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select value={spotForm.status} onChange={e => setSpotForm(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
+                  {(spotStatuses || []).map((status) => (
+                    <option key={status.value} value={status.value}>{status.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={!!spotForm.featured} onChange={e => setSpotForm(p => ({ ...p, featured: e.target.checked }))} className="w-4 h-4 text-blue-600" />
+                  <span className="text-sm text-gray-700">Featured</span>
+                </label>
               </div>
 
               <div className="col-span-2">
@@ -935,16 +940,12 @@ export default function TouristSpotsManagement() {
                 <input type="number" step="0.1" min="0" max="5" value={spotForm.rating || 0} onChange={e => setSpotForm(p => ({ ...p, rating: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="4.8" />
               </div>
               
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-                <textarea value={spotForm.description} onChange={e => setSpotForm(p => ({ ...p, description: e.target.value }))} rows="4" className="w-full px-3 py-2 border border-gray-300 rounded-xl resize-none" placeholder="Detailed description of the tourist spot..." />
-              </div>
             </div>
             
             <div className="flex justify-end gap-3 mt-6">
-              <button onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button onClick={saveSpot} disabled={saving} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : (editingSpot ? 'Update' : 'Create')}
+              <button type="button" onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={saveSpot} disabled={saving} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving...' : (editingSpot ? 'Save Changes' : 'Save Tourist Spot')}
               </button>
             </div>
           </div>
@@ -983,42 +984,87 @@ export default function TouristSpotsManagement() {
       )}
 
       {showPreviewModal && previewSpot && (
-        <div className="fixed inset-0 bg-black/75 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-3xl overflow-hidden">
-            <div className="relative h-64 bg-gray-100">
-              {previewSpot.image_url ? <img src={previewSpot.image_url} alt={previewSpot.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">No image</div>}
-              <button onClick={closeModal} className="absolute top-3 right-3 bg-white/90 px-3 py-1 rounded-full text-sm shadow-sm hover:bg-white">Close</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:p-6">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tourist-spot-preview-title"
+            className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="relative h-48 shrink-0 overflow-hidden bg-slate-100 sm:h-64 lg:h-72">
+              {previewSpot.image_url ? (
+                <img
+                  src={previewSpot.image_url}
+                  alt={previewSpot.name}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-slate-400">
+                  <MapPin className="h-8 w-8 text-blue-400" />
+                  No image available
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={closeModal}
+                aria-label="Close tourist spot preview"
+                className="absolute right-3 top-3 rounded-lg border border-white/70 bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-white"
+              >
+                Close
+              </button>
             </div>
-            <div className="p-5">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-2xl font-bold text-gray-800">{previewSpot.name}</h3>
-                <span className={`text-xs px-3 py-1 rounded-full ${getStatusBadge(previewSpot.status)}`}>{previewSpot.status}</span>
-              </div>
-              <p className="text-sm text-gray-500 mb-3">Location: {previewSpot.location}</p>
-              <p className="text-gray-700 mb-3">{previewSpot.description || 'No description available.'}</p>
-              <div className="grid grid-cols-2 gap-3 text-sm text-gray-600">
-                <div>Opening Hours: {previewSpot.opening_hours || 'Not set'}</div>
-                <div>Entrance Fee: {previewSpot.entrance_fee ? `₱${previewSpot.entrance_fee}` : 'Free'}</div>
-                <div>Rating: {previewSpot.rating ? `${previewSpot.rating}/5` : 'Not rated'}</div>
-                <div>Views: {previewSpot.view_count || 0}</div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="mb-2">
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${getCategoryDisplay(previewSpot.category).color}`}>
+                      {getCategoryDisplay(previewSpot.category).label}
+                    </span>
+                  </div>
+                  <h2 id="tourist-spot-preview-title" className="text-xl font-bold text-slate-900 sm:text-2xl">{previewSpot.name}</h2>
+                  <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-500">
+                    <MapPin className="h-4 w-4 shrink-0" />
+                    {previewSpot.location}
+                  </p>
+                </div>
+                <AdminBadge status={previewSpot.status} dot>
+                  {previewSpot.status === 'inactive' ? 'Archived' : previewSpot.status}
+                </AdminBadge>
               </div>
 
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div className="text-sm font-semibold text-gray-800">Reactions</div>
-                  <div className="text-xs text-gray-500">Comments</div>
-                </div>
-                <div className="mt-2">
-                  <Reactions contentType="tourist_spot" contentId={previewSpot.id} userId={user?.id} contentTitle={previewSpot.name} fullWidth={true} />
-                </div>
+              <p className="mb-4 text-sm leading-6 text-slate-700">{previewSpot.description || 'No description available.'}</p>
+
+              <div className="grid grid-cols-2 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 sm:grid-cols-3 sm:p-4">
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Opening hours</span>{previewSpot.opening_hours || 'Not set'}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Entrance fee</span>{previewSpot.entrance_fee ? `₱${previewSpot.entrance_fee}` : 'Free'}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Rating</span>{previewSpot.rating ? `${previewSpot.rating}/5` : 'Not rated'}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Views</span>{Number(previewSpot.view_count || 0).toLocaleString()}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Saves</span>{Number(previewSpot.save_count || 0).toLocaleString()}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Shares</span>{Number(previewSpot.share_count || 0).toLocaleString()}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Created</span>{previewSpot.created_at ? new Date(previewSpot.created_at).toLocaleDateString() : '—'}</div>
+                <div><span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-400">Updated</span>{previewSpot.updated_at ? new Date(previewSpot.updated_at).toLocaleDateString() : '—'}</div>
               </div>
 
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                <div className="text-sm font-semibold text-gray-800 mb-3">Comments</div>
-                <Comments contentType="tourist_spot" contentId={previewSpot.id} userId={user?.id} contentOwnerId={previewSpot.created_by || user?.id} contentTitle={previewSpot.name} compact={true} />
+              <div className="mt-5 border-t border-slate-100 pt-4">
+                <Comments
+                  contentType="tourist_spot"
+                  contentId={previewSpot.id}
+                  userId={user?.id}
+                  contentOwnerId={previewSpot.created_by}
+                  contentTitle={previewSpot.name}
+                  compact
+                  replyOnly
+                />
               </div>
             </div>
-          </div>
+
+            <footer className="flex shrink-0 flex-wrap gap-2 border-t border-slate-100 bg-white p-3 sm:px-6 sm:py-4">
+              <AdminButton variant="primary" icon="edit" onClick={() => { setShowPreviewModal(false); openEditModal(previewSpot); }}>Edit</AdminButton>
+              <AdminButton variant="secondary" onClick={() => { setShowPreviewModal(false); archiveSpot(previewSpot); }}>{previewSpot.status === 'inactive' ? 'Reactivate' : 'Archive'}</AdminButton>
+              <AdminButton variant="outline-danger" icon="delete" onClick={() => { setShowPreviewModal(false); deleteSpot(previewSpot); }}>Delete</AdminButton>
+            </footer>
+          </section>
         </div>
       )}
 
@@ -1052,9 +1098,11 @@ export default function TouristSpotsManagement() {
 
       <ConfirmationModal
         isOpen={showArchiveConfirm}
-        title="Archive Tourist Spot"
-        message={`Are you sure you want to archive "${confirmingSpot?.name}"? You can activate it again later.`}
-        confirmText="Archive"
+        title={confirmingSpot?.status === 'inactive' ? 'Reactivate Tourist Spot' : 'Archive Tourist Spot'}
+        message={confirmingSpot?.status === 'inactive'
+          ? `Are you sure you want to reactivate "${confirmingSpot?.name}"? It will be visible to visitors again.`
+          : `Are you sure you want to archive "${confirmingSpot?.name}"? You can activate it again later.`}
+        confirmText={confirmingSpot?.status === 'inactive' ? 'Reactivate' : 'Archive'}
         cancelText="Cancel"
         isDangerous={false}
         onConfirm={handleConfirmArchive}
@@ -1070,6 +1118,6 @@ export default function TouristSpotsManagement() {
           {toastMessage.isError ? 'Warning' : 'Success'} {toastMessage.message}
         </div>
       )}
-    </div>
+    </AdminShell>
   );
 }

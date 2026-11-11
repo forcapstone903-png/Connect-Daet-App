@@ -68,8 +68,7 @@ export async function PUT(request, { params }) {
       gallery_images,
       rating,
       status,
-      featured,
-      view_count
+      featured
     } = body
 
     if (!name?.trim() || !location?.trim() || !category) {
@@ -95,7 +94,6 @@ export async function PUT(request, { params }) {
       rating: rating || 0,
       status: status || 'active',
       featured: !!featured,
-      visit_count: view_count || 0,
       updated_at: new Date().toISOString()
     }
 
