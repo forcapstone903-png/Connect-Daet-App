@@ -61,11 +61,13 @@ export async function GET(request) {
     if (params.get('view') === 'history') {
       const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1)
       const pageSize = Math.min(100, Math.max(1, Number.parseInt(params.get('pageSize') || '25', 10) || 25))
-      const { data, count, error } = await client
+      let historyQuery = client
         .from('blog_moderation_history')
         .select('id, blog_id, blog_title, blog_author_id, reviewed_by, action, reason, previous_status, new_status, created_at', { count: 'exact' })
         .order('created_at', { ascending: false })
-        .range((page - 1) * pageSize, page * pageSize - 1)
+      const blogId = params.get('blogId')
+      if (blogId) historyQuery = historyQuery.eq('blog_id', blogId)
+      const { data, count, error } = await historyQuery.range((page - 1) * pageSize, page * pageSize - 1)
       if (error) throw error
 
       const people = await getPeople(client, (data || []).flatMap((entry) => [entry.blog_author_id, entry.reviewed_by]))
@@ -83,7 +85,7 @@ export async function GET(request) {
     }
 
     const status = params.get('status') || 'pending'
-    if (!['all', 'pending', 'approved', 'rejected', 'changes_requested'].includes(status)) {
+    if (!['all', 'pending', 'approved', 'rejected', 'changes_requested', 'reported'].includes(status)) {
       return NextResponse.json({ success: false, message: 'Invalid approval status filter.' }, { status: 400 })
     }
     const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1)
@@ -107,6 +109,35 @@ export async function GET(request) {
       return NextResponse.json({ success: false, message: 'The start date must be on or before the end date.' }, { status: 400 })
     }
 
+    let reportedIds = null
+    let reportsByBlog = new Map()
+    if (status === 'reported') {
+      const { data: reports, error: reportsError } = await client
+        .from('info_moderation')
+        .select('id, reported_item_id, reason, description, created_at')
+        .eq('reported_item_table', 'info_blogs')
+        .in('status', ['pending', 'reviewing'])
+        .not('reported_item_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1000)
+      if (reportsError) throw reportsError
+      reportsByBlog = new Map()
+      for (const report of reports || []) {
+        const existing = reportsByBlog.get(report.reported_item_id) || []
+        existing.push(report)
+        reportsByBlog.set(report.reported_item_id, existing)
+      }
+      reportedIds = [...reportsByBlog.keys()]
+      if (!reportedIds.length) {
+        return NextResponse.json({
+          success: true,
+          posts: [],
+          pagination: { page, pageSize, total: 0, pages: 0 },
+          stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedPosts: reportedResult.count || 0 },
+        }, { headers: { 'Cache-Control': 'private, no-store' } })
+      }
+    }
+
     let authorIds = null
     if (author) {
       const { data: authors, error: authorError } = await client
@@ -128,13 +159,14 @@ export async function GET(request) {
 
     let query = client
       .from('info_blogs')
-      .select('id, title, excerpt, content, category, featured_image, status, approval_status, submitted_at, reviewed_at, reviewed_by, rejection_reason, created_by, created_at, published_at', { count: 'exact' })
+      .select('id, title, excerpt, content, category, featured_image, status, approval_status, submitted_at, reviewed_at, reviewed_by, rejection_reason, created_by, created_at, updated_at, published_at', { count: 'exact' })
       .order('submitted_at', { ascending: direction, nullsFirst: false })
       .order('created_at', { ascending: false })
       .range((page - 1) * pageSize, page * pageSize - 1)
 
-    if (status !== 'all') query = query.eq('approval_status', status)
+    if (status !== 'all' && status !== 'reported') query = query.eq('approval_status', status)
     if (status === 'approved') query = query.eq('status', 'published')
+    if (reportedIds) query = query.in('id', reportedIds)
     if (search) query = query.ilike('title', `%${search}%`)
     if (category) query = query.eq('category', category)
     if (authorIds) query = query.in('created_by', authorIds)
@@ -153,6 +185,7 @@ export async function GET(request) {
       ...post,
       author: people.get(post.created_by) || null,
       reviewer: people.get(post.reviewed_by) || null,
+      reports: reportsByBlog.get(post.id) || [],
     }))
 
     return NextResponse.json({

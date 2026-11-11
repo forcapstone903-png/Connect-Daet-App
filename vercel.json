@@ -6,7 +6,7 @@
     },
     {
       "path": "/info/api/cron/admin-messages",
-      "schedule": "*/5 * * * *"
+      "schedule": "15 0 * * *"
     }
   ]
 }

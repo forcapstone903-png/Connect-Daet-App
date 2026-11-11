@@ -1,11 +1,13 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowDown,
   ArrowUp,
   BookOpenText,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -14,8 +16,10 @@ import {
   History,
   LayoutGrid,
   List,
+  Mail,
   MessageSquareText,
   Pencil,
+  Plus,
   RotateCcw,
   ShieldCheck,
   Trash2,
@@ -35,11 +39,12 @@ import {
 } from '@/app/(subsystems)/info/components/admin'
 
 const TABS = [
-  { id: 'all', label: 'All posts' },
   { id: 'pending', label: 'Pending approvals' },
+  { id: 'all', label: 'All posts' },
   { id: 'approved', label: 'Approved' },
-  { id: 'rejected', label: 'Rejected' },
   { id: 'changes_requested', label: 'Changes requested' },
+  { id: 'rejected', label: 'Rejected' },
+  { id: 'reported', label: 'Reported' },
 ]
 
 const EMPTY_STATS = {
@@ -127,6 +132,9 @@ function AdminBlogsContent() {
   const [editPost, setEditPost] = useState(null)
   const [editForm, setEditForm] = useState({ title: '', excerpt: '', content: '', category: '', featured_image: '' })
   const [deletePost, setDeletePost] = useState(null)
+  const [historyPost, setHistoryPost] = useState(null)
+  const [postHistory, setPostHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -155,13 +163,18 @@ function AdminBlogsContent() {
       setStats(result.stats || EMPTY_STATS)
       setPagination(result.pagination || { page: 1, pages: 0, total: 0 })
       if (view === 'history') setHistory(result.history || [])
-      else setPosts(result.posts || [])
+      else {
+        const nextPosts = result.posts || []
+        setPosts(nextPosts)
+        setSelectedPost((current) => nextPosts.find((post) => post.id === current?.id) || nextPosts[0] || null)
+      }
       return true
     } catch (loadError) {
       console.error('Blog moderation data load failed:', loadError)
       setError(loadError.message || 'Unable to load blog moderation data.')
       setPosts([])
       setHistory([])
+      setSelectedPost(null)
       return false
     } finally {
       setLoading(false)
@@ -191,6 +204,27 @@ function AdminBlogsContent() {
     setModerationFeedback('')
     setReasonError('')
     setError('')
+  }
+
+  const openPostHistory = async (post) => {
+    setHistoryPost(post)
+    setPostHistory([])
+    setHistoryLoading(true)
+    try {
+      const params = new URLSearchParams({ view: 'history', blogId: post.id, page: '1', pageSize: '100' })
+      const response = await fetch(`/info/api/admin/blogs?${params}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load moderation history.')
+      setPostHistory(result.history || [])
+    } catch (historyError) {
+      console.error('Blog moderation history load failed:', historyError)
+      setError(historyError.message || 'Unable to load moderation history.')
+    } finally {
+      setHistoryLoading(false)
+    }
   }
 
   const moderatePost = async () => {
@@ -329,6 +363,7 @@ function AdminBlogsContent() {
         {state === 'pending' ? (
           <>
             <button type="button" disabled={busy} onClick={() => openDecision(post, 'approve')} className={`${buttonClass} bg-emerald-600 text-white hover:bg-emerald-700`}><ShieldCheck className="h-3.5 w-3.5" />Approve</button>
+            <button type="button" disabled={busy} onClick={() => openDecision(post, 'request_changes')} className={`${buttonClass} border border-blue-200 text-blue-700 hover:bg-blue-50`}><MessageSquareText className="h-3.5 w-3.5" />Request changes</button>
             <button type="button" disabled={busy} onClick={() => openDecision(post, 'reject')} className={`${buttonClass} border border-red-200 text-red-700 hover:bg-red-50`}><X className="h-3.5 w-3.5" />Reject</button>
           </>
         ) : null}
@@ -362,6 +397,15 @@ function AdminBlogsContent() {
     )
   }
 
+  const tabCount = (tabId) => ({
+    all: stats.totalPosts,
+    pending: stats.pendingApprovals,
+    approved: stats.approvedPosts,
+    changes_requested: stats.changesRequested,
+    rejected: stats.rejectedPosts,
+    reported: stats.reportedPosts,
+  })[tabId]
+
   const changeTab = (nextStatus) => {
     setPage(1)
     setView('posts')
@@ -381,6 +425,19 @@ function AdminBlogsContent() {
     if (layout !== 'board') setLayout('board')
   }
 
+  const handleQueueKeyDown = (event) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || !posts.length) return
+    event.preventDefault()
+    const currentIndex = posts.findIndex((post) => post.id === selectedPost?.id)
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? posts.length - 1
+        : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + posts.length) % posts.length
+    selectPost(posts[nextIndex])
+    document.getElementById(`blog-queue-card-${posts[nextIndex].id}`)?.focus()
+  }
+
   const renderStatus = (value) => (
     <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-bold capitalize ${statusClass(value)}`}>
       {value === 'approved' ? <Check className="h-3.5 w-3.5" /> : value === 'rejected' ? <X className="h-3.5 w-3.5" /> : value === 'changes_requested' ? <MessageSquareText className="h-3.5 w-3.5" /> : value === 'draft' ? <BookOpenText className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
@@ -392,24 +449,29 @@ function AdminBlogsContent() {
     <AdminShell
       title="Blog management"
       eyebrow="Content moderation"
-      description="Review submissions before publication, track decisions, and keep public stories trustworthy."
+      description="Review submissions before publication, provide actionable feedback, and manage published tourism stories."
       headerIcon="blog"
+      actions={(
+        <Link href="/info/admin/blog" className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700">
+          <Plus className="h-4 w-4" />Create Post
+        </Link>
+      )}
       contentClassName="pb-10"
     >
-      <div className="space-y-6 px-4 py-5 sm:px-6 lg:px-8">
+      <div className="space-y-5 px-4 py-4 sm:px-6 lg:px-8">
         <AdminStatGrid columns={5}>
           <AdminStatCard label="Total posts" value={stats.totalPosts} icon="content" href="/info/admin/blogs?status=all" />
-          <AdminStatCard label="Pending approvals" value={stats.pendingApprovals} icon="moderation" tone="warning" href="/info/admin/blogs?status=pending" />
+          <AdminStatCard label="Pending approvals" value={stats.pendingApprovals} icon="moderation" tone="warning" className="ring-1 ring-amber-300 shadow-md" href="/info/admin/blogs?status=pending" />
           <AdminStatCard label="Approved posts" value={stats.approvedPosts} icon="blog" tone="success" href="/info/admin/blogs?status=approved" />
-          <AdminStatCard label="Rejected posts" value={stats.rejectedPosts} icon="moderation" tone="danger" href="/info/admin/blogs?status=rejected" />
-          <AdminStatCard label="Reported posts" value={stats.reportedPosts} icon="moderation" tone="danger" href="/info/admin/moderation" />
+          <AdminStatCard label="Changes requested" value={stats.changesRequested} icon="moderation" tone="info" href="/info/admin/blogs?status=changes_requested" />
+          <AdminStatCard label="Reported posts" value={stats.reportedPosts} icon="moderation" tone="danger" href="/info/admin/blogs?status=reported" />
         </AdminStatGrid>
 
         <AdminPanel
-          title={view === 'history' ? 'Moderation history' : 'Post submissions'}
+          title={view === 'history' ? 'Moderation history' : 'Content moderation'}
           description={view === 'history'
             ? 'A record of administrator decisions and feedback.'
-            : 'Review full submissions, give authors actionable feedback, and track moderation decisions.'}
+            : 'Pending content → review → approve, reject, or request changes.'}
           bodyClassName="!p-0"
           actions={(
             <button
@@ -430,15 +492,19 @@ function AdminBlogsContent() {
                     key={tab.id}
                     type="button"
                     onClick={() => changeTab(tab.id)}
+                    role="tab"
+                    aria-selected={status === tab.id}
                     className={`rounded-t-xl border-b-2 px-3 py-2 text-sm font-semibold transition ${
                       status === tab.id
-                        ? 'border-blue-600 text-blue-700'
+                        ? 'border-blue-600 bg-blue-50/60 text-blue-700'
                         : 'border-transparent text-slate-500 hover:text-slate-800'
                     }`}
                   >
                     {tab.label}
-                    {tab.id === 'pending' ? <span className="ml-2 text-xs text-amber-700">{stats.pendingApprovals}</span> : null}
-                    {tab.id === 'changes_requested' ? <span className="ml-2 text-xs text-blue-700">{stats.changesRequested}</span> : null}
+                    <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${
+                      tab.id === 'pending' ? 'bg-amber-100 text-amber-800' :
+                        tab.id === 'reported' ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'
+                    }`}>{tabCount(tab.id)}</span>
                   </button>
                 ))}
               </div>
@@ -447,7 +513,7 @@ function AdminBlogsContent() {
                 <AdminSearch
                   value={search}
                   onChange={(value) => { setSearch(value); setPage(1); setSelectedIds([]) }}
-                  placeholder="Search post titles…"
+                  placeholder="Search posts..."
                   label="Search blog posts"
                   className="min-w-[220px] flex-1"
                 />
@@ -457,7 +523,7 @@ function AdminBlogsContent() {
                   value={author}
                   onChange={(event) => { setAuthor(event.target.value); setPage(1); setSelectedIds([]) }}
                   placeholder="Author"
-                  className="min-h-10 w-36 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
+                  className="min-h-10 w-32 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400"
                 />
                 <label className="sr-only" htmlFor="blog-category-filter">Filter by category</label>
                 <select
@@ -469,10 +535,14 @@ function AdminBlogsContent() {
                   <option value="">All categories</option>
                   {categories.map((item) => <option key={item} value={item}>{item.replace(/[_-]/g, ' ')}</option>)}
                 </select>
-                <label className="sr-only" htmlFor="blog-submitted-from">Submitted from</label>
-                <input id="blog-submitted-from" type="date" value={submittedFrom} onChange={(event) => { setSubmittedFrom(event.target.value); setPage(1); setSelectedIds([]) }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-blue-400" />
-                <label className="sr-only" htmlFor="blog-submitted-to">Submitted to</label>
-                <input id="blog-submitted-to" type="date" value={submittedTo} onChange={(event) => { setSubmittedTo(event.target.value); setPage(1); setSelectedIds([]) }} className="min-h-10 rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-blue-400" />
+                <fieldset className="flex items-center gap-1">
+                  <legend className="sr-only">Date range</legend>
+                  <label className="sr-only" htmlFor="blog-submitted-from">Submitted from</label>
+                  <input id="blog-submitted-from" type="date" value={submittedFrom} onChange={(event) => { setSubmittedFrom(event.target.value); setPage(1); setSelectedIds([]) }} className="min-h-10 w-[138px] rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-blue-400" />
+                  <span className="text-xs text-slate-400">to</span>
+                  <label className="sr-only" htmlFor="blog-submitted-to">Submitted to</label>
+                  <input id="blog-submitted-to" type="date" value={submittedTo} onChange={(event) => { setSubmittedTo(event.target.value); setPage(1); setSelectedIds([]) }} className="min-h-10 w-[138px] rounded-xl border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none focus:border-blue-400" />
+                </fieldset>
                 <button
                   type="button"
                   onClick={() => { setDirection((value) => value === 'desc' ? 'asc' : 'desc'); setPage(1); setSelectedIds([]) }}
@@ -480,11 +550,11 @@ function AdminBlogsContent() {
                   aria-label={`Sort by submission date ${direction === 'desc' ? 'ascending' : 'descending'}`}
                 >
                   {direction === 'desc' ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
-                  Submitted
+                  Sort
                 </button>
                 <div className="ml-auto flex rounded-xl border border-slate-200 p-1" role="group" aria-label="Post display mode">
-                  <button type="button" onClick={() => { setLayout('board'); setPage(1); setSelectedIds([]) }} aria-pressed={layout === 'board'} className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${layout === 'board' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutGrid className="inline h-4 w-4" /><span className="sr-only">Queue view</span></button>
-                  <button type="button" onClick={() => { setLayout('list'); setPage(1); setSelectedIds([]) }} aria-pressed={layout === 'list'} className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold ${layout === 'list' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}><List className="inline h-4 w-4" /><span className="sr-only">List view</span></button>
+                  <button type="button" onClick={() => { setLayout('board'); setPage(1); setSelectedIds([]) }} aria-pressed={layout === 'board'} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${layout === 'board' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}><LayoutGrid className="h-4 w-4" />Board</button>
+                  <button type="button" onClick={() => { setLayout('list'); setPage(1); setSelectedIds([]) }} aria-pressed={layout === 'list'} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${layout === 'list' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}><List className="h-4 w-4" />List</button>
                 </div>
               </AdminToolbar>
 
@@ -494,19 +564,25 @@ function AdminBlogsContent() {
                 <div className="space-y-3 p-5" aria-label="Loading blog posts">
                   {[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}
                 </div>
-              ) : layout === 'board' && posts.length ? (
-                <div className="grid gap-0 lg:grid-cols-[minmax(280px,0.9fr)_minmax(0,1.1fr)]">
+              ) : layout === 'board' ? (
+                <div className="grid gap-0 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
                   <section className="min-w-0 border-b border-slate-100 lg:border-b-0 lg:border-r" aria-label="Blog review queue">
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                       <div>
-                        <h3 className="text-sm font-bold text-slate-900">{status === 'pending' ? 'Pending queue' : `${statusLabel(status)} posts`}</h3>
-                        <p className="mt-0.5 text-xs text-slate-500">{pagination.total} posts · select a post to preview</p>
+                        <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-800">
+                          {status === 'pending' ? 'Pending approvals' : status === 'reported' ? 'Reported posts' : `${statusLabel(status)} posts`}
+                        </h3>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {status === 'pending'
+                            ? `${pagination.total} ${pagination.total === 1 ? 'post requires' : 'posts require'} review`
+                            : `${pagination.total} posts · select a post to review`}
+                        </p>
                       </div>
                       {status === 'pending' ? (
                         <label className="inline-flex items-center gap-2 text-xs font-semibold text-slate-600">
                           <input
                             type="checkbox"
-                            checked={posts.length > 0 && posts.every((post) => selectedIds.includes(post.id))}
+                            checked={posts.length > 0 && posts.filter((post) => post.approval_status === 'pending').every((post) => selectedIds.includes(post.id))}
                             onChange={(event) => setSelectedIds(event.target.checked ? posts.filter((post) => post.approval_status === 'pending').map((post) => post.id) : [])}
                             aria-label="Select all pending posts on this page"
                           />
@@ -515,20 +591,36 @@ function AdminBlogsContent() {
                       ) : null}
                     </div>
                     {status === 'pending' && selectedIds.length ? (
-                      <div className="flex flex-wrap gap-2 border-b border-slate-100 bg-blue-50/60 px-4 py-3">
-                        <span className="mr-auto self-center text-xs font-semibold text-blue-900">{selectedIds.length} selected</span>
+                      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-blue-100 bg-blue-50/95 px-4 py-3 shadow-sm backdrop-blur">
+                        <span className="mr-auto self-center text-xs font-bold text-blue-900">{selectedIds.length} selected</span>
                         <button type="button" disabled={Boolean(actionId)} onClick={() => openBulkDecision('approve')} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Approve selected</button>
                         <button type="button" disabled={Boolean(actionId)} onClick={() => openBulkDecision('request_changes')} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 disabled:opacity-50">Request changes</button>
                         <button type="button" disabled={Boolean(actionId)} onClick={() => openBulkDecision('reject')} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 disabled:opacity-50">Reject selected</button>
                       </div>
                     ) : null}
-                    <div className="max-h-[65vh] space-y-2 overflow-y-auto p-3">
-                      {posts.map((post) => (
+                    {posts.length ? (
+                      <div
+                        className="max-h-[68vh] space-y-2 overflow-y-auto p-3"
+                        tabIndex={0}
+                        onKeyDown={handleQueueKeyDown}
+                        aria-label="Submission queue. Use the up and down arrow keys to move between posts."
+                      >
+                        {posts.map((post) => (
                         <div
                           key={post.id}
+                          id={`blog-queue-card-${post.id}`}
+                          tabIndex={0}
+                          onFocus={() => setSelectedPost(post)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault()
+                              selectPost(post)
+                            }
+                          }}
                           draggable={post.approval_status === 'pending'}
                           onDragStart={(event) => { event.dataTransfer.setData('text/plain', post.id); event.dataTransfer.effectAllowed = 'move' }}
-                          className={`flex gap-3 rounded-xl border p-3 transition ${selectedPost?.id === post.id ? 'border-blue-300 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                          className={`flex gap-3 rounded-xl border p-3 outline-none transition focus-visible:ring-2 focus-visible:ring-blue-400 ${selectedPost?.id === post.id ? 'border-blue-300 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                          aria-label={`${post.title || 'Untitled post'}, ${statusLabel(post.approval_status)}, by ${authorName(post.author)}`}
                         >
                           {status === 'pending' ? (
                             <input
@@ -536,36 +628,44 @@ function AdminBlogsContent() {
                               checked={selectedIds.includes(post.id)}
                               onChange={(event) => setSelectedIds((current) => event.target.checked ? [...new Set([...current, post.id])] : current.filter((id) => id !== post.id))}
                               aria-label={`Select ${post.title || 'Untitled post'}`}
-                              className="mt-1 shrink-0"
+                              onClick={(event) => event.stopPropagation()}
+                              className="mt-1 h-4 w-4 shrink-0 accent-blue-600"
                             />
                           ) : null}
-                          <div className="min-w-0 flex-1">
-                            <button type="button" onClick={() => selectPost(post)} className="flex w-full min-w-0 gap-3 text-left">
-                              {post.featured_image ? <img src={post.featured_image} alt="" className="h-16 w-20 shrink-0 rounded-lg object-cover" /> : <span className="flex h-16 w-20 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><BookOpenText className="h-6 w-6" /></span>}
+                          <button type="button" onClick={() => selectPost(post)} aria-pressed={selectedPost?.id === post.id} className="flex min-w-0 flex-1 gap-3 text-left">
+                              {post.featured_image ? <img src={post.featured_image} alt="" className="h-[68px] w-[88px] shrink-0 rounded-lg border border-slate-200 object-cover" /> : <span className="flex h-[68px] w-[88px] shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-400"><BookOpenText className="h-6 w-6" /></span>}
                               <span className="min-w-0 flex-1">
                                 <span className="flex flex-wrap items-center justify-between gap-2">
                                   <span className="truncate text-sm font-bold text-slate-900">{post.title || 'Untitled post'}</span>
-                                  {renderStatus(post.approval_status)}
+                                  <span className="shrink-0">{renderStatus(post.approval_status)}</span>
                                 </span>
-                                <span className="mt-1 block truncate text-xs text-slate-600">{post.excerpt || plainText(post.content).slice(0, 140) || 'No excerpt provided.'}</span>
-                                <span className="mt-2 block truncate text-[11px] text-slate-500">{authorName(post.author)} · {formatDate(post.submitted_at || post.created_at)}</span>
+                                <span className="mt-1 block line-clamp-1 text-xs text-slate-600">{plainText(post.excerpt || post.content).slice(0, 120) || 'No excerpt provided.'}</span>
+                                <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+                                  <span className="font-semibold text-slate-700">{authorName(post.author)}</span>
+                                  {post.author?.email ? <span>{post.author.email}</span> : null}
+                                  <span className="capitalize">{String(post.category || 'Uncategorized').replace(/[_-]/g, ' ')}</span>
+                                  <span>{formatDate(post.submitted_at || post.created_at)}</span>
+                                </span>
                               </span>
-                            </button>
-                            <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2">
-                              {renderModerationActions(post, true)}
-                              {post.approval_status === 'pending' ? (
-                                <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(post, 'request_changes')} className="inline-flex items-center gap-1 rounded-lg border border-blue-200 px-2 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-                                  <MessageSquareText className="h-3.5 w-3.5" />Request changes
-                                </button>
-                              ) : null}
-                              <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(post)} aria-label={`Edit ${post.title || 'blog post'}`} className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Edit</button>
-                              <button type="button" disabled={Boolean(actionId)} onClick={() => setDeletePost(post)} aria-label={`Delete ${post.title || 'blog post'}`} className="inline-flex items-center gap-1 rounded-lg border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Delete</button>
-                            </div>
-                          </div>
+                          </button>
                         </div>
-                      ))}
-                    </div>
-                    {status === 'pending' ? (
+                        ))}
+                      </div>
+                    ) : status === 'pending' && !search && !category && !author && !submittedFrom && !submittedTo ? (
+                      <div className="flex min-h-[300px] flex-col items-center justify-center p-8 text-center">
+                        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check className="h-6 w-6" /></span>
+                        <h4 className="mt-4 text-sm font-bold text-slate-900">No pending approvals</h4>
+                        <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">All submitted posts have been reviewed.</p>
+                        <button type="button" onClick={() => changeTab('all')} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50">View All Posts</button>
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center text-sm text-slate-500">
+                        {status === 'reported' && !search && !category && !author && !submittedFrom && !submittedTo
+                          ? 'No open reports for blog posts.'
+                          : 'No posts match these filters.'}
+                      </div>
+                    )}
+                    {status === 'pending' && posts.length ? (
                       <div className="grid gap-2 border-t border-slate-100 p-3 sm:grid-cols-3">
                         {[
                           { decision: 'approve', label: 'Approve', classes: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
@@ -592,58 +692,121 @@ function AdminBlogsContent() {
                     ) : null}
                   </section>
 
-                  <section className="min-w-0 p-4 sm:p-5" aria-label="Selected blog preview">
+                  <section className="flex min-w-0 flex-col lg:max-h-[80vh]" aria-label="Selected blog preview">
                     {selectedPost ? (
                       <>
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Complete post preview</p>
-                            <h3 className="mt-2 text-xl font-bold text-slate-950">{selectedPost.title || 'Untitled post'}</h3>
-                            <p className="mt-1 text-sm text-slate-500">{authorName(selectedPost.author)}{selectedPost.author?.email ? ` · ${selectedPost.author.email}` : ''}</p>
+                        <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Post preview</p>
+                              <h3 className="mt-2 text-xl font-bold leading-tight text-slate-950">{selectedPost.title || 'Untitled post'}</h3>
+                              <p className="mt-1 text-sm text-slate-500">{authorName(selectedPost.author)}{selectedPost.author?.email ? ` · ${selectedPost.author.email}` : ''}</p>
+                            </div>
+                            {renderStatus(selectedPost.approval_status)}
                           </div>
-                          {renderStatus(selectedPost.approval_status)}
-                        </div>
-                        {selectedPost.featured_image ? <img src={selectedPost.featured_image} alt="" className="mt-4 max-h-64 w-full rounded-xl object-cover" /> : null}
-                        <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-slate-500">
-                          <span>Submitted {formatDate(selectedPost.submitted_at || selectedPost.created_at)}</span>
-                          <span className="capitalize">{String(selectedPost.category || 'Uncategorized').replace(/[_-]/g, ' ')}</span>
-                        </div>
-                        {selectedPost.excerpt ? <p className="mt-4 border-l-2 border-blue-200 pl-3 text-sm font-medium leading-6 text-slate-700">{selectedPost.excerpt}</p> : null}
-                        <div className="mt-4 max-h-[34vh] overflow-y-auto whitespace-pre-wrap break-words text-sm leading-7 text-slate-700">{plainText(selectedPost.content)}</div>
-                        {selectedPost.rejection_reason ? <p className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><strong>Previous administrator feedback:</strong> {selectedPost.rejection_reason}</p> : null}
-                        <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
-                          {renderPostManagementActions(selectedPost)}
-                          {selectedPost.approval_status === 'pending' ? (
-                            <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'request_changes')} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">
-                              <MessageSquareText className="mr-1 inline h-3.5 w-3.5" />Request changes
+                          {selectedPost.featured_image ? <img src={selectedPost.featured_image} alt="" className="mt-4 max-h-64 w-full rounded-xl border border-slate-200 object-cover" /> : null}
+                          {selectedPost.excerpt ? <p className="mt-4 border-l-2 border-blue-200 pl-3 text-sm font-medium leading-6 text-slate-700">{selectedPost.excerpt}</p> : null}
+                          <article className="mx-auto mt-5 max-w-3xl whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">
+                            {plainText(selectedPost.content) || 'No article content provided.'}
+                          </article>
+                          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+                            <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">Moderation details</p>
+                            <dl className="mt-3 grid gap-x-5 gap-y-3 text-xs sm:grid-cols-2">
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Status</dt><dd className="mt-1 text-slate-700">{statusLabel(selectedPost.approval_status)}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Submitted</dt><dd className="mt-1 text-slate-700">{formatDate(selectedPost.submitted_at || selectedPost.created_at)}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Author</dt><dd className="mt-1 text-slate-700">{authorName(selectedPost.author)}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Category</dt><dd className="mt-1 capitalize text-slate-700">{String(selectedPost.category || 'Uncategorized').replace(/[_-]/g, ' ')}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Last modified</dt><dd className="mt-1 text-slate-700">{formatDate(selectedPost.updated_at || selectedPost.reviewed_at || selectedPost.created_at)}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Moderated by</dt><dd className="mt-1 text-slate-700">{selectedPost.reviewer?.full_name || selectedPost.reviewer?.email || (selectedPost.reviewed_by ? 'Daet Tourism Admin' : 'Not reviewed')}</dd></div>
+                            </dl>
+                            {selectedPost.rejection_reason ? (
+                              <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                                <strong>Moderation reason:</strong> {selectedPost.rejection_reason}
+                              </p>
+                            ) : null}
+                            {selectedPost.reports?.length ? (
+                              <div className="mt-4 border-t border-slate-200 pt-3">
+                                <p className="text-xs font-bold text-red-700">{selectedPost.reports.length} open report{selectedPost.reports.length === 1 ? '' : 's'}</p>
+                                {selectedPost.reports.map((report) => <p key={report.id} className="mt-1 text-xs leading-5 text-slate-600"><strong>{report.reason}:</strong> {report.description || 'No additional details.'}</p>)}
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                            <button type="button" onClick={() => void openPostHistory(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                              <History className="h-3.5 w-3.5" />View moderation history
                             </button>
-                          ) : null}
+                            <div className="flex gap-2">
+                              <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"><Pencil className="h-3.5 w-3.5" />Edit</button>
+                              <button type="button" disabled={Boolean(actionId)} onClick={() => setDeletePost(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Delete</button>
+                            </div>
+                          </div>
                         </div>
+                        {selectedPost.approval_status === 'pending' ? (
+                          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-8px_20px_-18px_rgba(15,23,42,0.5)] backdrop-blur sm:px-5">
+                            <span className="mr-auto text-xs font-bold text-amber-800">{renderStatus('pending')}<span className="ml-2 hidden sm:inline">Decision required</span></span>
+                            <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'reject')} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 hover:bg-red-50 disabled:opacity-50">Reject</button>
+                            <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'request_changes')} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">Request changes</button>
+                            <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Check className="mr-1 inline h-3.5 w-3.5" />Approve</button>
+                          </div>
+                        ) : selectedPost.approval_status === 'approved' ? (
+                          <div className="border-t border-slate-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 sm:px-5">
+                            <p className="font-bold"><Check className="mr-1 inline h-4 w-4" />Approved</p>
+                            <p className="mt-1 text-xs">Approved by {selectedPost.reviewer?.full_name || selectedPost.reviewer?.email || 'Daet Tourism Admin'} · {formatDate(selectedPost.reviewed_at)}</p>
+                          </div>
+                        ) : selectedPost.approval_status === 'rejected' ? (
+                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-red-50/70 px-4 py-3 sm:px-5">
+                            <span className="mr-auto text-xs font-bold text-red-800">Rejected · {selectedPost.rejection_reason || 'No reason provided.'}</span>
+                            <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'request_changes')} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">Request changes</button>
+                          </div>
+                        ) : selectedPost.approval_status === 'changes_requested' ? (
+                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-blue-50/70 px-4 py-3 sm:px-5">
+                            <span className="mr-auto text-xs font-bold text-blue-800">Changes requested · {selectedPost.rejection_reason || 'Awaiting author revision.'}</span>
+                            <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(selectedPost)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">Review revision</button>
+                          </div>
+                        ) : null}
                       </>
                     ) : (
                       <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center">
                         <Eye className="h-8 w-8 text-slate-300" />
-                        <h3 className="mt-3 text-sm font-bold text-slate-800">Choose a submission</h3>
-                        <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">The complete post and author details will appear here for review.</p>
+                        <h3 className="mt-3 text-sm font-bold text-slate-800">{posts.length ? 'Choose a submission' : 'Nothing to review'}</h3>
+                        <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">{posts.length ? 'The complete post and author details will appear here for review.' : 'Use the filters or choose another moderation tab.'}</p>
                       </div>
                     )}
                   </section>
                 </div>
               ) : posts.length ? (
-                <AdminTable wrapClassName="border-0 shadow-none">
-                  <thead>
-                    <tr>
-                      <th scope="col">Post</th>
-                      <th scope="col">Author</th>
-                      <th scope="col">Category</th>
-                      <th scope="col">Date submitted</th>
-                      <th scope="col">Status</th>
-                      <th scope="col" className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {posts.map((post) => (
+                <>
+                  {status === 'pending' && selectedIds.length ? (
+                    <div className="flex flex-wrap items-center gap-2 border-b border-blue-100 bg-blue-50/80 px-4 py-3">
+                      <span className="mr-auto text-xs font-bold text-blue-900">{selectedIds.length} selected</span>
+                      <button type="button" disabled={Boolean(actionId)} onClick={() => openBulkDecision('approve')} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Approve selected</button>
+                      <button type="button" disabled={Boolean(actionId)} onClick={() => openBulkDecision('request_changes')} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-700 disabled:opacity-50">Request changes</button>
+                      <button type="button" disabled={Boolean(actionId)} onClick={() => openBulkDecision('reject')} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-bold text-red-700 disabled:opacity-50">Reject selected</button>
+                    </div>
+                  ) : null}
+                  <AdminTable wrapClassName="border-0 shadow-none">
+                    <thead>
+                      <tr>
+                        {status === 'pending' ? (
+                          <th scope="col">
+                            <input type="checkbox" checked={posts.length > 0 && posts.every((post) => selectedIds.includes(post.id))} onChange={(event) => setSelectedIds(event.target.checked ? posts.map((post) => post.id) : [])} aria-label="Select all pending posts on this page" className="h-4 w-4 accent-blue-600" />
+                          </th>
+                        ) : null}
+                        <th scope="col">Post</th>
+                        <th scope="col">Author</th>
+                        <th scope="col">Category</th>
+                        <th scope="col">Submitted</th>
+                        <th scope="col">Last modified</th>
+                        <th scope="col">Status</th>
+                        <th scope="col" className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {posts.map((post) => (
                       <tr key={post.id}>
+                        {status === 'pending' ? (
+                          <td><input type="checkbox" checked={selectedIds.includes(post.id)} onChange={(event) => setSelectedIds((current) => event.target.checked ? [...new Set([...current, post.id])] : current.filter((id) => id !== post.id))} aria-label={`Select ${post.title || 'Untitled post'}`} className="h-4 w-4 accent-blue-600" /></td>
+                        ) : null}
                         <td>
                           <div className="flex min-w-[220px] items-center gap-3">
                             {post.featured_image ? (
@@ -668,6 +831,7 @@ function AdminBlogsContent() {
                         </td>
                         <td className="capitalize">{String(post.category || '—').replace(/[_-]/g, ' ')}</td>
                         <td>{formatDate(post.submitted_at || post.created_at)}</td>
+                        <td>{formatDate(post.reviewed_at || post.updated_at || post.created_at)}</td>
                         <td>{renderStatus(post.approval_status)}</td>
                         <td>
                           <div className="flex min-w-[340px] flex-wrap justify-end gap-1.5">
@@ -675,16 +839,24 @@ function AdminBlogsContent() {
                           </div>
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </AdminTable>
+                      ))}
+                    </tbody>
+                  </AdminTable>
+                </>
               ) : (
                 <div className="p-8">
-                  <AdminEmptyState
-                    icon="search"
-                    title={search || category ? 'No matching posts' : 'No posts in this view'}
-                    description={search || category ? 'Try another search or clear the category filter.' : 'Blog submissions will appear here as soon as users send them for review.'}
-                  />
+                  {status === 'pending' && !search && !category && !author && !submittedFrom && !submittedTo ? (
+                    <div className="flex flex-col items-center text-center">
+                      <AdminEmptyState icon={Check} title="No pending approvals" description="All submitted posts have been reviewed." />
+                      <button type="button" onClick={() => changeTab('all')} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50">View All Posts</button>
+                    </div>
+                  ) : (
+                    <AdminEmptyState
+                      icon="search"
+                      title={search || category || author || submittedFrom || submittedTo ? 'No matching posts' : status === 'reported' ? 'No reported posts' : 'No posts in this view'}
+                      description={search || category || author || submittedFrom || submittedTo ? 'Try another search or clear the filters.' : status === 'reported' ? 'There are no open reports for blog posts.' : 'Blog submissions will appear here as soon as users send them for review.'}
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -735,6 +907,45 @@ function AdminBlogsContent() {
         </AdminPanel>
       </div>
 
+      {historyPost ? (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
+          <section className="max-h-[85vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="blog-history-title">
+            <header className="flex items-start justify-between gap-4 border-b border-slate-100 p-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.12em] text-blue-700">Audit trail</p>
+                <h2 id="blog-history-title" className="mt-1 text-lg font-bold text-slate-950">Moderation history</h2>
+                <p className="mt-1 text-sm text-slate-500">{historyPost.title || 'Untitled post'}</p>
+              </div>
+              <button type="button" onClick={() => setHistoryPost(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">Close</button>
+            </header>
+            <div className="max-h-[65vh] overflow-y-auto p-5">
+              {historyLoading ? (
+                <div className="space-y-3" aria-label="Loading moderation history">
+                  {[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100" />)}
+                </div>
+              ) : postHistory.length ? (
+                <ol className="space-y-3">
+                  {postHistory.map((entry) => (
+                    <li key={entry.id} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-bold capitalize text-slate-900">{entry.action.replace(/_/g, ' ')}</p>
+                          <p className="mt-1 text-xs text-slate-600">{entry.reviewer?.full_name || entry.reviewer?.email || 'Daet Tourism Admin'}</p>
+                        </div>
+                        <time className="text-xs text-slate-500">{formatDate(entry.created_at)}</time>
+                      </div>
+                      {entry.previous_status || entry.new_status ? <p className="mt-2 text-xs text-slate-600">{statusLabel(entry.previous_status)} → {statusLabel(entry.new_status)}</p> : null}
+                      {entry.reason ? <p className="mt-2 border-l-2 border-blue-200 pl-3 text-xs leading-5 text-slate-600">{entry.reason}</p> : null}
+                    </li>
+                  ))}
+                </ol>
+              ) : (
+                <AdminEmptyState icon={History} title="No moderation history yet" description="Approval and rejection decisions will be recorded here." />
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
       {decisionDialog ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
           <form onSubmit={handleDecision} className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl sm:p-6" role="dialog" aria-modal="true" aria-labelledby="moderation-decision-title">
