@@ -337,6 +337,12 @@ async function handleRequest(request) {
     return response
   }
 
+  if (!loggedIn && normalizedPathname === '/') {
+    const landingUrl = request.nextUrl.clone()
+    landingUrl.pathname = '/info/visitor'
+    return NextResponse.redirect(landingUrl)
+  }
+
   // "isAdmin" here means any back-office staff role (admin, tourism officer,
   // moderator). Which admin pages each role may open is checked further down.
   const isAdmin = loggedIn && isStaffRole(serverSession?.role)

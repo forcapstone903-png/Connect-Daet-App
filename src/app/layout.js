@@ -17,8 +17,8 @@ export const metadata = {
   manifest: '/manifest.webmanifest',
   keywords: ['Daet', 'Camarines Norte', 'tourism', 'community', 'travel', 'Philippines'],
   icons: {
-    icon: '/logo.png',
-    apple: '/logo.png',
+    icon: '/icon-connect-daet-512.png',
+    apple: '/icon-connect-daet-192.png',
   },
 }
 

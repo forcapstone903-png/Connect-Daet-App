@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
   ArrowRight, BedDouble, Bell, CalendarDays, ChevronRight, Clock, Landmark, Mail, MapPin, Menu, MessageSquare,
   Flag, Navigation, Newspaper, Phone, Search, ShoppingBag, Siren, Star, TriangleAlert, Utensils, X,
@@ -13,11 +14,11 @@ import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import { usePublicSettings } from '@/lib/usePublicSettings'
 import { loginUrlFor } from '@/lib/loginPrompt'
 import FrequentlyAskedQuestions from '@/app/(subsystems)/info/components/FrequentlyAskedQuestions'
+import connectDaetLogo from '@/app/(subsystems)/info/assets/images/logo.png'
+import styles from './VisitorHome.module.css'
 import bagasbasImage from '@/app/(subsystems)/info/assets/images/bagasbasbeach.webp'
-import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
 
 const HERO_IMAGE = bagasbasImage.src || bagasbasImage
-const FALLBACK_IMAGE = daetImage.src || daetImage
 const REALTIME_TABLES = ['info_tourist_spots', 'info_events', 'info_blogs', 'forum_threads', 'info_announcements']
 
 const PLACE_TYPES = [
@@ -45,7 +46,8 @@ const NAV = [
 ]
 
 const today = () => new Date().toISOString().slice(0, 10)
-const imageOf = (item) => item?.image_url || item?.featured_image || item?.gallery_images?.[0] || FALLBACK_IMAGE
+const imageOf = (item) => [item?.image_url, item?.featured_image, item?.gallery_images?.[0]]
+  .find((image) => typeof image === 'string' && image.trim()) || null
 const formatDay = (value) => {
   const date = new Date(`${value}T00:00:00`)
   return Number.isNaN(date.getTime()) ? { month: '—', day: '' } : {
@@ -79,6 +81,14 @@ function SkeletonCards({ count = 3, tall = false }) {
 
 function EmptyNote({ children }) {
   return <p className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-500 sm:col-span-2 lg:col-span-3">{children}</p>
+}
+
+function MediaPlaceholder({ icon: Icon }) {
+  return (
+    <div aria-hidden="true" className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 via-sky-50 to-slate-200 text-slate-400">
+      <Icon className="h-10 w-10" />
+    </div>
+  )
 }
 
 function Stars({ value }) {
@@ -204,21 +214,28 @@ export default function VisitorHomePage() {
   const mapQuery = encodeURIComponent(`${municipality.name}, ${municipality.province}, Philippines`)
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
+    <div className={`${styles.homePage} flex min-h-screen flex-col bg-slate-50 text-slate-900`}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2">Skip to content</a>
 
       {/* ---------- Header ---------- */}
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-          <Link href="/info/visitor" className="flex items-center gap-2.5">
-            {settings.logoUrl
-              ? <img src={settings.logoUrl} alt="" className="h-9 w-9 rounded-xl object-contain" />
-              : <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-600 text-sm font-black text-white">CD</span>}
-            <span className="text-base font-black tracking-tight text-slate-900">{settings.siteName}</span>
+      <header className={`${styles.header} sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur`}>
+        <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:gap-4 sm:px-6 lg:px-8">
+          <Link href="/info/visitor" className={`${styles.brandLink} flex min-w-0 items-center gap-2.5`}>
+            <span className={styles.brandMark}>
+              <Image
+                src={settings.logoUrl || connectDaetLogo}
+                alt=""
+                width={36}
+                height={36}
+                unoptimized
+                className={`${styles.brandLogo} h-9 w-9 object-contain`}
+              />
+            </span>
+            <span className="truncate text-sm font-black tracking-tight text-slate-900 sm:text-base">{settings.siteName}</span>
           </Link>
           <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
             {NAV.map((item) => (
-              <Link key={item.href} href={item.href} className="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900">{item.label}</Link>
+              <Link key={item.href} href={item.href} className={`${styles.navLink} rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900`}>{item.label}</Link>
             ))}
           </nav>
           <div className="flex items-center gap-2">
@@ -232,7 +249,7 @@ export default function VisitorHomePage() {
         {menuOpen ? (
           <nav id="visitor-menu" aria-label="Mobile" className="border-t border-slate-200 bg-white px-4 pb-4 lg:hidden">
             {NAV.map((item) => (
-              <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)} className="flex items-center justify-between border-b border-slate-100 py-3 text-sm font-semibold text-slate-700">
+              <Link key={item.href} href={item.href} onClick={() => setMenuOpen(false)} className="flex items-center justify-between border-b border-slate-100 py-3 text-sm font-semibold text-slate-700 transition hover:pl-1 hover:text-sky-700">
                 {item.label} <ChevronRight className="h-4 w-4 text-slate-400" />
               </Link>
             ))}
@@ -268,20 +285,24 @@ export default function VisitorHomePage() {
 
       <main id="main" className="flex-1">
         {/* ---------- Hero ---------- */}
-        <section className="relative isolate overflow-hidden">
-          <img src={HERO_IMAGE} alt="Bagasbas Beach in Daet at sunset" className="absolute inset-0 -z-10 h-full w-full object-cover" />
-          <div className="absolute inset-0 -z-10 bg-gradient-to-b from-slate-950/70 via-slate-950/50 to-slate-950/80" />
-          <div className="mx-auto max-w-7xl px-4 pb-16 pt-14 sm:px-6 sm:pb-20 sm:pt-20 lg:px-8">
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-sky-200">{municipality.name}, {municipality.province}</p>
-            <h1 className="mt-3 max-w-3xl text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">Plan your visit to {municipality.name}</h1>
-            <p className="mt-4 max-w-2xl text-base text-slate-200 sm:text-lg">Official places, events, and real-time advisories from the {settings.tourismOfficeName}.</p>
-            <form onSubmit={submitSearch} role="search" className="mt-8 flex max-w-2xl gap-2 rounded-2xl bg-white p-2 shadow-xl">
+        <section className={`${styles.hero} relative isolate overflow-hidden`}>
+          <img src={HERO_IMAGE} alt="" className={`${styles.heroImage} absolute inset-0 -z-10 h-full w-full object-cover`} />
+          <div className={`${styles.heroOverlay} absolute inset-0 -z-10`} />
+          <div className={`${styles.heroCopy} mx-auto max-w-7xl px-4 py-14 sm:px-6 sm:py-16 lg:px-8 lg:py-20`}>
+            <div className={`${styles.heroPill} mb-5 flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-bold tracking-wide text-white sm:text-sm`}>
+              <MapPin className="h-4 w-4 text-sky-300" aria-hidden="true" />
+              Official guide to {municipality.name}
+            </div>
+            <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-200 sm:text-sm">{municipality.name}, {municipality.province}</p>
+            <h1 className={`${styles.heroTitle} mt-3 max-w-3xl text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl`}>Plan your visit to {municipality.name}</h1>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-200 sm:text-lg sm:leading-7">Find welcoming places, local events, and real-time advisories from the {settings.tourismOfficeName}.</p>
+            <form onSubmit={submitSearch} role="search" className={`${styles.heroSearch} mt-7 flex max-w-2xl gap-2 rounded-2xl bg-white p-2 sm:mt-8`}>
               <label htmlFor="visitor-search" className="sr-only">Search places, events, and stories</label>
-              <div className="flex flex-1 items-center gap-2 px-2">
+              <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2">
                 <Search className="h-5 w-5 shrink-0 text-slate-400" aria-hidden="true" />
-                <input id="visitor-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search beaches, hotels, food, events…" className="w-full min-w-0 bg-transparent py-2.5 text-base text-slate-900 outline-none placeholder:text-slate-400" />
+                <input id="visitor-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search places, food, events…" className="w-full min-w-0 bg-transparent py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 sm:text-base" />
               </div>
-              <button type="submit" className="rounded-xl bg-sky-600 px-5 text-sm font-bold text-white hover:bg-sky-700">Search</button>
+              <button type="submit" className={`${styles.heroSearchButton} rounded-xl bg-sky-600 px-6 text-sm font-bold text-white transition hover:bg-sky-700 active:scale-[0.98]`}>Search</button>
             </form>
           </div>
         </section>
@@ -300,11 +321,11 @@ export default function VisitorHomePage() {
           <h2 id="types-heading" className="sr-only">Browse by type</h2>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {PLACE_TYPES.map(({ type, label, hint, icon: Icon, tone }) => (
-              <Link key={type} href={`/info/visitor/tourist-spots?type=${type}`} className="group rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+              <Link key={type} href={`/info/visitor/tourist-spots?type=${type}`} className={`${styles.categoryCard} group min-h-40 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:p-4`}>
                 <span className={`inline-flex h-11 w-11 items-center justify-center rounded-xl ${tone}`}><Icon className="h-5 w-5" aria-hidden="true" /></span>
                 <span className="mt-3 block text-base font-bold text-slate-900">{label}</span>
-                <span className="block text-xs text-slate-500">{hint}</span>
-                <span className="mt-2 block text-xs font-semibold text-sky-700">{data.counts[type] == null ? (loading ? '…' : 'Browse') : `${data.counts[type]} listed`}</span>
+                <span className="min-h-10 line-clamp-2 block text-xs text-slate-500">{hint}</span>
+                <span className="mt-auto block pt-2 text-xs font-semibold text-sky-700">{data.counts[type] == null ? (loading ? '…' : 'Browse') : `${data.counts[type]} listed`}</span>
               </Link>
             ))}
           </div>
@@ -314,22 +335,25 @@ export default function VisitorHomePage() {
         <section aria-labelledby="places-heading" className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
           <div id="places-heading"><SectionHeader eyebrow="Places" title="Popular in Daet" href="/info/visitor/tourist-spots" linkLabel="All places" /></div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {loading ? <SkeletonCards tall /> : data.places.length ? data.places.map((place) => (
-              <Link key={place.id} href={`/info/visitor/tourist-spots/${place.id}`} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md">
-                <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
-                  <img src={imageOf(place)} alt="" loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" />
-                  {place.featured ? <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-sky-700">Featured</span> : null}
-                </div>
-                <div className="p-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{PLACE_TYPES.find((t) => t.type === place.listing_type)?.label || 'Place'} · {place.category}</p>
-                  <h3 className="mt-1 text-lg font-bold text-slate-900 group-hover:text-sky-700">{place.name}</h3>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-sm text-slate-500">
-                    <span className="flex min-w-0 items-center gap-1"><MapPin className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="truncate">{place.barangay || place.location}</span></span>
-                    {Number(place.rating) > 0 ? <span className="flex items-center gap-1 font-semibold text-slate-700"><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />{Number(place.rating).toFixed(1)}</span> : null}
+            {loading ? <SkeletonCards tall /> : data.places.length ? data.places.map((place) => {
+              const image = imageOf(place)
+              return (
+                <Link key={place.id} href={`/info/visitor/tourist-spots/${place.id}`} className={`${styles.placeCard} group rounded-2xl border border-slate-200 bg-white shadow-sm`}>
+                  <div className="relative aspect-[4/3] overflow-hidden bg-slate-100">
+                    {image ? <img src={image} alt="" loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" /> : <MediaPlaceholder icon={Landmark} />}
+                    {place.featured ? <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2.5 py-1 text-xs font-bold text-sky-700">Featured</span> : null}
                   </div>
-                </div>
-              </Link>
-            )) : <EmptyNote>No places have been published yet.</EmptyNote>}
+                  <div className="flex flex-1 flex-col p-4">
+                    <p className="truncate text-xs font-semibold uppercase tracking-wide text-slate-500">{PLACE_TYPES.find((t) => t.type === place.listing_type)?.label || 'Place'} · {place.category}</p>
+                    <h3 className="mt-1 min-h-14 line-clamp-2 text-lg font-bold text-slate-900 group-hover:text-sky-700">{place.name}</h3>
+                    <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-sm text-slate-500">
+                      <span className="flex min-w-0 items-center gap-1"><MapPin className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="truncate">{place.barangay || place.location}</span></span>
+                      {Number(place.rating) > 0 ? <span className="flex items-center gap-1 font-semibold text-slate-700"><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />{Number(place.rating).toFixed(1)}</span> : null}
+                    </div>
+                  </div>
+                </Link>
+              )
+            }) : <EmptyNote>No places have been published yet.</EmptyNote>}
           </div>
         </section>
 
@@ -342,14 +366,14 @@ export default function VisitorHomePage() {
                 {loading ? <SkeletonCards count={3} /> : data.events.length ? data.events.map((event) => {
                   const { month, day } = formatDay(event.start_date)
                   return (
-                    <Link key={event.id} href={`/info/visitor/events/${event.id}`} className="flex gap-4 rounded-2xl border border-slate-200 p-3 transition hover:border-sky-300 hover:bg-sky-50/40">
+                    <Link key={event.id} href={`/info/visitor/events/${event.id}`} className={`${styles.eventCard} flex min-h-24 gap-3 rounded-2xl border border-slate-200 p-3 sm:gap-4`}>
                       <span className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl bg-sky-600 text-white">
                         <span className="text-xs font-bold uppercase">{month}</span>
                         <span className="text-2xl font-black leading-none">{day}</span>
                       </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-base font-bold text-slate-900">{event.title}</span>
-                        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-slate-500">
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="block h-6 truncate text-base font-bold text-slate-900">{event.title}</span>
+                        <span className="mt-1 flex max-h-10 min-h-10 flex-wrap content-center gap-x-3 gap-y-1 overflow-hidden text-sm text-slate-500">
                           {event.start_time ? <span className="inline-flex items-center gap-1"><Clock className="h-4 w-4" aria-hidden="true" />{event.start_time.slice(0, 5)}</span> : null}
                           <span className="inline-flex min-w-0 items-center gap-1"><MapPin className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="truncate">{event.venue || event.location || 'Daet'}</span></span>
                           {event.is_free ? <span className="font-semibold text-emerald-700">Free</span> : null}
@@ -367,10 +391,10 @@ export default function VisitorHomePage() {
               </div>
               <div className="space-y-3">
                 {loading ? <SkeletonCards count={2} /> : data.announcements.length ? data.announcements.map((notice) => (
-                  <article key={notice.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <article key={notice.id} className="flex min-h-44 flex-col rounded-2xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs text-slate-500">{formatDate(notice.published_at)}</p>
-                    <h3 className="mt-1 font-bold text-slate-900">{notice.title}</h3>
-                    <p className="mt-1 line-clamp-3 text-sm text-slate-600">{notice.content}</p>
+                    <h3 className="mt-1 min-h-12 line-clamp-2 font-bold text-slate-900">{notice.title}</h3>
+                    <p className="mt-1 min-h-[4.5rem] line-clamp-3 text-sm text-slate-600">{notice.content}</p>
                   </article>
                 )) : <p className="rounded-2xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No announcements at the moment.</p>}
                 <Link href="/info/visitor/alerts" className="flex items-center gap-3 rounded-2xl bg-slate-900 p-4 text-white hover:bg-slate-800">
@@ -388,16 +412,21 @@ export default function VisitorHomePage() {
           <div aria-labelledby="stories-heading">
             <div id="stories-heading"><SectionHeader eyebrow="Travel stories" title="From the community" href="/info/visitor/search?type=blogs" linkLabel="More stories" /></div>
             <div className="grid gap-4 sm:grid-cols-3">
-              {loading ? <SkeletonCards tall /> : data.stories.length ? data.stories.map((story) => (
-                <Link key={story.id} href={`/info/visitor/blog/${story.id}`} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm hover:shadow-md">
-                  <div className="aspect-[16/10] overflow-hidden bg-slate-100"><img src={story.featured_image || FALLBACK_IMAGE} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" /></div>
-                  <div className="p-4">
-                    <p className="flex items-center gap-1 text-xs text-slate-500"><Newspaper className="h-3.5 w-3.5" aria-hidden="true" />{formatDate(story.published_at)}</p>
-                    <h3 className="mt-1 line-clamp-2 font-bold text-slate-900 group-hover:text-sky-700">{story.title}</h3>
-                    {story.excerpt ? <p className="mt-1 line-clamp-2 text-sm text-slate-600">{story.excerpt}</p> : null}
-                  </div>
-                </Link>
-              )) : <EmptyNote>No stories have been published yet.</EmptyNote>}
+              {loading ? <SkeletonCards tall /> : data.stories.length ? data.stories.map((story) => {
+                const image = imageOf(story)
+                return (
+                  <Link key={story.id} href={`/info/visitor/blog/${story.id}`} className={`${styles.storyCard} group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm`}>
+                    <div className="aspect-[16/10] overflow-hidden bg-slate-100">
+                      {image ? <img src={image} alt="" loading="lazy" className="h-full w-full object-cover transition group-hover:scale-105" /> : <MediaPlaceholder icon={Newspaper} />}
+                    </div>
+                    <div className="flex flex-1 flex-col p-4">
+                      <p className="flex items-center gap-1 text-xs text-slate-500"><Newspaper className="h-3.5 w-3.5" aria-hidden="true" />{formatDate(story.published_at)}</p>
+                      <h3 className="mt-1 min-h-12 line-clamp-2 font-bold text-slate-900 group-hover:text-sky-700">{story.title}</h3>
+                      <p className="mt-1 min-h-10 line-clamp-2 text-sm text-slate-600">{story.excerpt || ''}</p>
+                    </div>
+                  </Link>
+                )
+              }) : <EmptyNote>No stories have been published yet.</EmptyNote>}
             </div>
           </div>
           <aside aria-labelledby="forum-heading">
@@ -407,10 +436,10 @@ export default function VisitorHomePage() {
             </div>
             <div className="divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
               {loading ? <div className="h-48 animate-pulse" /> : data.threads.length ? data.threads.map((thread) => (
-                <Link key={thread.id} href={`/info/visitor/forum/${thread.id}`} className="flex items-start gap-3 p-4 hover:bg-slate-50">
+                <Link key={thread.id} href={`/info/visitor/forum/${thread.id}`} className="flex min-h-[76px] items-start gap-3 p-4 hover:bg-slate-50">
                   <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" aria-hidden="true" />
                   <span className="min-w-0">
-                    <span className="block line-clamp-2 text-sm font-semibold text-slate-900">{thread.title}</span>
+                    <span className="block min-h-10 line-clamp-2 text-sm font-semibold text-slate-900">{thread.title}</span>
                     <span className="text-xs text-slate-500">{thread.reply_count || 0} replies</span>
                   </span>
                 </Link>
@@ -430,14 +459,14 @@ export default function VisitorHomePage() {
                 {data.reviews.map((review) => {
                   const text = decodeReviewText(review.review_text)
                   return (
-                    <article key={review.id} className="flex flex-col rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                      <Link href={`/info/visitor/tourist-spots/${review.attraction_id}`} className="flex-1 hover:text-sky-800">
+                    <article key={review.id} className="flex min-h-[260px] flex-col rounded-2xl border border-slate-200 bg-slate-50 p-5">
+                      <Link href={`/info/visitor/tourist-spots/${review.attraction_id}`} className="flex flex-1 flex-col hover:text-sky-800">
                         <Stars value={review.rating} />
-                        {text.title ? <h3 className="mt-2 font-bold text-slate-900">{text.title}</h3> : null}
-                        <p className="mt-2 line-clamp-4 text-sm text-slate-700">“{text.body}”</p>
+                        {text.title ? <h3 className="mt-2 min-h-6 line-clamp-1 font-bold text-slate-900">{text.title}</h3> : <span aria-hidden="true" className="mt-2 h-6" />}
+                        <p className="mt-2 min-h-20 line-clamp-4 text-sm text-slate-700">“{text.body}”</p>
                       </Link>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-slate-500">{review.info_users?.full_name || 'Visitor'} · {formatDate(review.created_at)}</span>
+                      <div className="mt-3 flex min-w-0 items-center justify-between gap-2 text-xs">
+                        <span className="min-w-0 truncate font-semibold text-slate-500">{review.info_users?.full_name || 'Visitor'} · {formatDate(review.created_at)}</span>
                         <button type="button" onClick={() => void reportReview(review)} disabled={reportingId === review.id} className="inline-flex items-center gap-1 rounded-full px-2 py-1 font-semibold text-slate-500 hover:bg-white hover:text-red-600 disabled:opacity-50">
                           <Flag className="h-3.5 w-3.5" aria-hidden="true" /> Report
                         </button>
@@ -501,8 +530,20 @@ export default function VisitorHomePage() {
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 text-sm sm:grid-cols-2 sm:px-6 lg:grid-cols-4 lg:px-8">
           <div>
-            <p className="font-black text-slate-900">{settings.siteName}</p>
-            <p className="mt-2 text-slate-500">{settings.tagline}</p>
+            <div className="flex items-center gap-2.5">
+              <span className={styles.footerBrandMark}>
+                <Image
+                  src={settings.logoUrl || connectDaetLogo}
+                  alt=""
+                  width={28}
+                  height={28}
+                  unoptimized
+                  className="h-7 w-7 object-contain"
+                />
+              </span>
+              <p className="font-black text-slate-900">{settings.siteName}</p>
+            </div>
+            <p className="mt-2 max-w-xs leading-6 text-slate-500">{settings.tagline}</p>
           </div>
           <div>
             <p className="font-bold text-slate-900">Explore</p>

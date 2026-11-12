@@ -1,9 +1,11 @@
 'use client'
 
 import { startTransition, useCallback, useEffect, useMemo, useState } from 'react'
-import { MessageCircle, Repeat2, Search, ThumbsUp } from 'lucide-react'
+import Link from 'next/link'
+import { ExternalLink, MessageCircle, Repeat2, Search, ThumbsUp } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { AdminButton, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin'
+import { getEngagementContentHref } from '@/lib/engagementContentLinks.mjs'
 
 const TYPE_STYLES = {
   reaction: 'bg-violet-50 text-violet-700',
@@ -192,11 +194,26 @@ export default function EngagementSection() {
               <tbody className="divide-y divide-slate-100">
                 {pageRows.map((row) => {
                   const ActivityIcon = row.type === 'reaction' ? ThumbsUp : row.type === 'comment' ? MessageCircle : Repeat2
+                  const contentHref = getEngagementContentHref(row.contentType, row.contentId)
                   return (
                     <tr key={row.id} className="align-top hover:bg-slate-50">
                       <td className="px-5 py-4"><span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${TYPE_STYLES[row.type]}`}><ActivityIcon className="h-3.5 w-3.5" />{TYPE_LABELS[row.type]}</span></td>
                       <td className="px-5 py-4"><p className="font-semibold text-slate-800">{row.actor.full_name || 'Unknown user'}</p><p className="mt-1 text-xs text-slate-500">{row.actor.id || 'Unknown account'}</p></td>
-                      <td className="px-5 py-4"><p className="font-semibold text-slate-800">{row.contentType}</p><p className="mt-1 max-w-[190px] truncate font-mono text-[11px] text-slate-500" title={row.contentId}>{row.contentId}</p></td>
+                      <td className="px-5 py-4">
+                        <p className="font-semibold text-slate-800">{row.contentType}</p>
+                        <p className="mt-1 max-w-[190px] truncate font-mono text-[11px] text-slate-500" title={row.contentId}>{row.contentId}</p>
+                        {contentHref ? (
+                          <Link
+                            href={contentHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            aria-label={`View ${row.contentType} content`}
+                            className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                          >
+                            View content <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                          </Link>
+                        ) : null}
+                      </td>
                       <td className="max-w-[280px] px-5 py-4 text-slate-600"><p className="line-clamp-2">{row.detail}</p></td>
                       <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">{formatDate(row.createdAt)}</td>
                     </tr>

@@ -1,0 +1,259 @@
+.homePage {
+  overflow-x: clip;
+}
+
+.header {
+  box-shadow: 0 8px 26px rgb(15 23 42 / 5%);
+}
+
+.brandLink {
+  flex: 0 0 auto;
+  transition: transform 180ms ease;
+}
+
+.brandLink:hover {
+  transform: translateY(-1px);
+}
+
+.brandMark,
+.footerBrandMark {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.brandMark {
+  width: 40px;
+  height: 40px;
+}
+
+.footerBrandMark {
+  width: 36px;
+  height: 36px;
+}
+
+.brandLogo {
+  filter: drop-shadow(0 3px 6px rgb(15 23 42 / 14%));
+  transition: transform 220ms ease;
+}
+
+.brandLink:hover .brandLogo,
+.brandLink:focus-visible .brandLogo {
+  transform: rotate(-5deg) scale(1.06);
+}
+
+.navLink {
+  position: relative;
+  transition: color 180ms ease, background-color 180ms ease;
+}
+
+.navLink::after {
+  position: absolute;
+  right: 12px;
+  bottom: 5px;
+  left: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background: #0284c7;
+  content: '';
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 180ms ease;
+}
+
+.navLink:hover::after,
+.navLink:focus-visible::after {
+  transform: scaleX(1);
+}
+
+.hero {
+  display: flex;
+  min-height: clamp(360px, 42vw, 520px);
+  align-items: center;
+  background: #0f172a;
+}
+
+.heroImage {
+  transform: scale(1.045);
+  animation: hero-drift 20s ease-out both;
+}
+
+.heroOverlay {
+  background:
+    radial-gradient(ellipse at 75% 30%, rgb(14 165 233 / 12%), transparent 45%),
+    linear-gradient(100deg, rgb(2 6 23 / 84%) 0%, rgb(15 23 42 / 62%) 52%, rgb(2 6 23 / 32%) 100%),
+    linear-gradient(0deg, rgb(2 6 23 / 42%), transparent 60%);
+}
+
+.heroCopy {
+  width: 100%;
+}
+
+.heroCopy > * {
+  animation: visitor-rise-in 700ms cubic-bezier(.2, .75, .25, 1) both;
+}
+
+.heroCopy > :nth-child(1) {
+  animation-delay: 50ms;
+}
+
+.heroCopy > :nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.heroCopy > :nth-child(3) {
+  animation-delay: 230ms;
+}
+
+.heroCopy > :nth-child(4) {
+  animation-delay: 320ms;
+}
+
+.heroPill {
+  width: fit-content;
+  border: 1px solid rgb(255 255 255 / 28%);
+  background: rgb(15 23 42 / 36%);
+  box-shadow: 0 8px 24px rgb(2 6 23 / 18%);
+  backdrop-filter: blur(12px);
+}
+
+.heroTitle {
+  text-wrap: balance;
+  text-shadow: 0 4px 24px rgb(2 6 23 / 24%);
+}
+
+.heroSearch {
+  border: 1px solid rgb(255 255 255 / 58%);
+  box-shadow: 0 18px 48px rgb(2 6 23 / 25%);
+  transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+.heroSearch:focus-within {
+  box-shadow: 0 0 0 4px rgb(56 189 248 / 22%), 0 18px 48px rgb(2 6 23 / 25%);
+  transform: translateY(-1px);
+}
+
+.heroSearchButton {
+  min-height: 44px;
+}
+
+.categoryCard,
+.placeCard,
+.eventCard,
+.storyCard {
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.categoryCard {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  animation: visitor-rise-in 620ms cubic-bezier(.2, .75, .25, 1) both;
+}
+
+.categoryCard:nth-child(2) {
+  animation-delay: 70ms;
+}
+
+.categoryCard:nth-child(3) {
+  animation-delay: 140ms;
+}
+
+.categoryCard:nth-child(4) {
+  animation-delay: 210ms;
+}
+
+.categoryCard:hover,
+.categoryCard:focus-visible,
+.placeCard:hover,
+.placeCard:focus-visible,
+.eventCard:hover,
+.storyCard:hover,
+.storyCard:focus-visible {
+  transform: translateY(-4px);
+  box-shadow: 0 18px 38px rgb(15 23 42 / 11%);
+}
+
+.categoryCard:focus-visible,
+.placeCard:focus-visible,
+.eventCard:focus-visible,
+.storyCard:focus-visible,
+.navLink:focus-visible,
+.brandLink:focus-visible {
+  outline: 3px solid rgb(14 165 233 / 55%);
+  outline-offset: 3px;
+}
+
+.placeCard {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.storyCard {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+
+.footerBrand {
+  width: fit-content;
+}
+
+@keyframes visitor-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes hero-drift {
+  from {
+    transform: scale(1.12);
+  }
+  to {
+    transform: scale(1.045);
+  }
+}
+
+@media (max-width: 420px) {
+  .hero {
+    min-height: 390px;
+  }
+
+  .heroSearch {
+    flex-direction: column;
+  }
+
+  .heroSearchButton {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brandLink,
+  .brandLogo,
+  .navLink,
+  .navLink::after,
+  .heroCopy > *,
+  .heroSearch,
+  .categoryCard,
+  .placeCard,
+  .eventCard,
+  .storyCard {
+    animation: none !important;
+    scroll-behavior: auto !important;
+    transition: none !important;
+  }
+
+  .heroImage {
+    animation: none !important;
+    transform: none;
+  }
+}

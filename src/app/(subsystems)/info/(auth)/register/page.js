@@ -168,7 +168,7 @@ export default function RegisterPage() {
 
             <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-14 text-white">
               <div className="flex items-center gap-3">
-                <img src="/logo.png" alt="Daet logo" className="h-14 w-14 rounded-2xl border border-white/20 bg-white/10 p-1" />
+                <img src="/logo.png" alt="Daet logo" className="h-14 w-14 object-contain" />
                 <div>
                   <p className="text-sm font-bold tracking-[0.25em] text-white/85">DAET</p>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-sky-100">Camarines Norte</p>
@@ -211,9 +211,7 @@ export default function RegisterPage() {
             className="w-full max-w-[540px] p-4 sm:p-8 xl:p-10"
           >
             <div className="mb-8 text-center">
-              <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-white ring-4 ring-blue-100">
-                <img src="/logo.png" alt="Daet logo" className="h-12 w-12 object-contain" />
-              </div>
+              <img src="/logo.png" alt="Daet logo" className="mx-auto mb-4 h-12 w-12 object-contain" />
               <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700">Daet Connect</p>
               <h2 className="mt-3 text-2xl font-black text-slate-900 sm:text-3xl">Create account</h2>
               <p className="mt-2 text-sm text-slate-600">Join the local tourism community in Daet.</p>
