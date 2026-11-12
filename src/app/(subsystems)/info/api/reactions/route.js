@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -197,7 +198,7 @@ async function writeReaction(request, method) {
 
       if (error) {
         console.error('Reaction delete failed:', error)
-        return NextResponse.json({ success: false, message: error.message || 'Unable to remove reaction.' }, { status: 400 })
+        return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to remove reaction.') }, { status: 400 })
       }
 
       return NextResponse.json({ success: true })
@@ -222,7 +223,7 @@ async function writeReaction(request, method) {
         details: error?.details,
         hint: error?.hint,
       })
-      return NextResponse.json({ success: false, message: error.message || 'Unable to react to content.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to react to content.') }, { status: 400 })
     }
 
     try {

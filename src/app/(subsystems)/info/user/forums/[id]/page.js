@@ -9,6 +9,7 @@ import {
   Copy,
   MoreHorizontal,
   MessageSquare,
+  Flag,
   Lock,
   Archive,
   Pin,
@@ -233,7 +234,7 @@ export default function ThreadDetailPage() {
             `
             *,
             forum_categories(name),
-            info_users!forum_threads_created_by_fkey(full_name, email, profile_image_url)
+            info_users!forum_threads_created_by_fkey(full_name, profile_image_url)
           `
           )
           .eq('id', threadId)
@@ -270,7 +271,7 @@ export default function ThreadDetailPage() {
             .select(
               `
               *,
-              info_users(full_name, email, profile_image_url)
+              info_users(full_name, profile_image_url)
             `
             )
             .eq('thread_id', threadId)
@@ -280,7 +281,7 @@ export default function ThreadDetailPage() {
           if (repliesResult.error && isMissingForumReplyColumnError(repliesResult.error)) {
             repliesResult = await supabase
               .from('forum_replies')
-              .select('id, thread_id, user_id, parent_reply_id, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)')
+              .select('id, thread_id, user_id, parent_reply_id, content, status, created_at, updated_at, info_users(full_name, profile_image_url)')
               .eq('thread_id', threadId)
               .eq('status', 'active')
               .order('created_at', { ascending: false })
@@ -410,7 +411,7 @@ export default function ThreadDetailPage() {
       .select(
         `
         *,
-        info_users(full_name, email, profile_image_url)
+        info_users(full_name, profile_image_url)
       `
       )
       .eq('thread_id', threadId)
@@ -521,7 +522,7 @@ export default function ThreadDetailPage() {
 
   const submitReplyReport = async () => {
     if (!userId) {
-      alert('Please log in to report a reply.')
+      alert('Please log in to submit a report.')
       return
     }
     if (!reportTarget || !reportReason || userId === reportTarget.user_id) return
@@ -533,11 +534,11 @@ export default function ThreadDetailPage() {
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          reportType: 'forum_reply',
+          reportType: reportTarget.reportType,
           reason: reportReason,
           description: reportDescription.trim(),
           itemId: reportTarget.id,
-          itemTable: 'forum_replies',
+          itemTable: reportTarget.reportTable,
         }),
       })
       const result = await response.json()
@@ -545,7 +546,7 @@ export default function ThreadDetailPage() {
       setReportTarget(null)
       setReportReason('Spam or misleading content')
       setReportDescription('')
-      alert('Thank you. The reply has been reported for review.')
+      alert('Thank you. The content has been reported for review.')
     } catch (error) {
       console.error('Reply report submission failed:', error)
       alert(error?.message || 'Unable to submit this report right now.')
@@ -634,7 +635,11 @@ export default function ThreadDetailPage() {
           </div>
           {!isOwnReply && (
             <div className="flex items-center gap-1">
-              {userId && <button type="button" onClick={() => setReportTarget(reply)} className="inline-flex h-8 items-center justify-center rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Report</button>}
+              {userId && <button type="button" onClick={() => setReportTarget({
+                ...reply,
+                reportType: 'forum_reply',
+                reportTable: 'forum_replies',
+              })} className="inline-flex h-8 items-center justify-center rounded-full bg-slate-50 px-2 text-[11px] font-semibold text-slate-600 hover:bg-slate-100">Report</button>}
             </div>
           )}
           {isOwnReply && (
@@ -757,6 +762,23 @@ export default function ThreadDetailPage() {
                       <button type="button" role="menuitem" onClick={() => { setShowThreadMenu(false); unpublishThread() }}><Archive className="h-4 w-4" />Unpublish</button>
                     </>
                   )}
+                  {userId && !isThreadOwner && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowThreadMenu(false)
+                        setReportTarget({
+                          ...thread,
+                          user_id: thread.created_by,
+                          reportType: 'forum_thread',
+                          reportTable: 'forum_threads',
+                        })
+                      }}
+                    >
+                      <Flag className="h-4 w-4" />Report discussion
+                    </button>
+                  )}
                   <button type="button" role="menuitem" onClick={copyThreadLink}><Copy className="h-4 w-4" />Copy link</button>
                 </div>
               )}
@@ -772,7 +794,7 @@ export default function ThreadDetailPage() {
                 {thread.pinned && <Pin className="h-4 w-4 text-amber-600 flex-shrink-0" />}
                 {editingThread ? <input value={threadDraft.title} onChange={(event) => setThreadDraft((current) => ({ ...current, title: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xl font-black outline-none" /> : <h1>{thread.title}</h1>}
                 <div className={`forum-view-status ${getStatusColor(thread.status)}`} aria-label={`Thread status: ${thread.status}`}>
-                  {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'}
+                  {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' || thread.status === 'closed' ? '🔒' : '📦'}
                 </div>
               </div>
 
@@ -825,12 +847,12 @@ export default function ThreadDetailPage() {
             <a href="#forum-replies" className="forum-view-replies-action"><MessageSquare className="h-4 w-4" />{replies.length}</a>
             <ShareRepost contentType="forum_thread" contentId={threadId} userId={userId} />
             <span className="forum-view-views"><Eye className="h-4 w-4" />{(thread.views || 0) + 1}</span>
-            {thread.status === 'locked' && <span className="forum-view-locked"><Lock className="h-4 w-4" />Locked</span>}
+            {(thread.status === 'locked' || thread.status === 'closed') && <span className="forum-view-locked"><Lock className="h-4 w-4" />Locked</span>}
           </div>
         </article>
 
         {/* Reply Form */}
-        {thread.status !== 'locked' && thread.status !== 'archived' && (
+        {thread.status !== 'locked' && thread.status !== 'closed' && thread.status !== 'archived' && (
             <div className="forum-view-composer mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <h3 className="forum-view-composer-title mb-3 text-sm font-bold text-slate-900">Share Your Reply</h3>
 
@@ -872,8 +894,8 @@ export default function ThreadDetailPage() {
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 id="report-reply-title" className="text-base font-bold text-slate-900">Report reply</h2>
-                <p className="mt-1 text-xs text-slate-500">Tell us why this reply should be reviewed.</p>
+                <h2 id="report-reply-title" className="text-base font-bold text-slate-900">Report {reportTarget.reportTable === 'forum_threads' ? 'discussion' : 'reply'}</h2>
+                <p className="mt-1 text-xs text-slate-500">Tell us why this content should be reviewed.</p>
               </div>
               <button type="button" onClick={() => setReportTarget(null)} className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200" aria-label="Close report dialog"><X className="h-4 w-4" /></button>
             </div>

@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
 import { isValidUuid } from '@/lib/uuid'
+import { notifyModerators } from '@/lib/adminNotifications'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -17,7 +20,8 @@ const REPLY_SELECT = 'id, thread_id, user_id, parent_reply_id, content, image_ur
 const LEGACY_REPLY_SELECT = 'id, thread_id, user_id, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)'
 const OPTIONAL_COLUMNS = ['parent_reply_id', 'image_url', 'video_url', 'gif_url', 'sticker_url', 'mention_data']
 
-const LOCKED_THREAD_STATUSES = new Set(['locked', 'archived'])
+const LOCKED_THREAD_STATUSES = new Set(['locked', 'closed', 'archived'])
+const PUBLIC_THREAD_STATUSES = new Set(['active', 'published'])
 const MAX_CONTENT_LENGTH = 5000
 const MAX_MEDIA_URL_LENGTH = 2048
 const MAX_STICKER_LENGTH = 24
@@ -43,7 +47,21 @@ function isMissingForumReplyColumnError(error) {
 
 function canManageReply(session, ownerId) {
   const role = String(session?.role || '').trim().toLowerCase()
-  return session?.user_id === ownerId || role === 'admin' || role === 'administrator'
+  return session?.user_id === ownerId || ['admin', 'administrator', 'moderator'].includes(role)
+}
+
+async function getRestrictionResponse(adminSupabase, userId) {
+  try {
+    const restriction = await getActiveCommentRestriction(adminSupabase, userId)
+    if (restriction) {
+      return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting replies.' }, { status: 403 })
+    }
+  } catch (error) {
+    console.error('Forum reply restriction lookup failed:', error)
+    return NextResponse.json({ success: false, message: 'Unable to verify your posting permissions.' }, { status: 500 })
+  }
+
+  return null
 }
 
 // Returns the trimmed URL, null when empty, or undefined when the value cannot be
@@ -122,9 +140,12 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Add a message, photo, video, GIF or sticker before posting.' }, { status: 400 })
     }
 
+    const restrictionResponse = await getRestrictionResponse(adminSupabase, session.user_id)
+    if (restrictionResponse) return restrictionResponse
+
     const { data: thread, error: threadError } = await adminSupabase
       .from('forum_threads')
-      .select('id, status')
+      .select('id, status, created_by')
       .eq('id', threadId)
       .maybeSingle()
 
@@ -132,6 +153,9 @@ export async function POST(request) {
     if (!thread) return NextResponse.json({ success: false, message: 'Discussion not found.' }, { status: 404 })
     if (LOCKED_THREAD_STATUSES.has(String(thread.status || '').toLowerCase())) {
       return NextResponse.json({ success: false, message: 'This discussion is locked.' }, { status: 403 })
+    }
+    if (!PUBLIC_THREAD_STATUSES.has(String(thread.status || '').toLowerCase()) && !canManageReply(session, thread.created_by)) {
+      return NextResponse.json({ success: false, message: 'Discussion not found.' }, { status: 404 })
     }
 
     const resolvedParentId = isValidUuid(parentReplyId) ? parentReplyId : null
@@ -148,11 +172,14 @@ export async function POST(request) {
       }
     }
 
+    const isModerator = ['admin', 'administrator', 'moderator'].includes(
+      String(session.role || '').trim().toLowerCase()
+    )
     const payload = {
       thread_id: threadId,
       user_id: session.user_id,
       content,
-      status: 'active',
+      status: isModerator ? 'active' : 'pending',
       parent_reply_id: resolvedParentId,
       image_url: imageUrl,
       video_url: videoUrl,
@@ -178,13 +205,22 @@ export async function POST(request) {
 
     if (error) {
       console.error('Forum reply insert error:', error)
-      return NextResponse.json({ success: false, message: error.message || 'Unable to post the reply.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post the reply.') }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true, reply })
+    if (reply.status === 'pending') {
+      await notifyModerators(adminSupabase, {
+        actorId: session.user_id,
+        title: 'Forum reply awaiting approval',
+        message: 'A new forum reply needs review.',
+        link: '/info/admin/moderation',
+      })
+    }
+
+    return NextResponse.json({ success: true, reply, pending: reply.status === 'pending' })
   } catch (error) {
     console.error('Forum reply route error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to post the reply.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post the reply.') }, { status: 500 })
   }
 }
 
@@ -214,7 +250,7 @@ export async function PATCH(request) {
 
     const { data: existing, error: lookupError } = await adminSupabase
       .from('forum_replies')
-      .select('id, user_id')
+      .select('id, user_id, status')
       .eq('id', replyId)
       .maybeSingle()
 
@@ -224,10 +260,21 @@ export async function PATCH(request) {
       return NextResponse.json({ success: false, message: 'You can only edit your own comments.' }, { status: 403 })
     }
 
+    const restrictionResponse = await getRestrictionResponse(adminSupabase, session.user_id)
+    if (restrictionResponse) return restrictionResponse
+
+    const isModerator = ['admin', 'administrator', 'moderator'].includes(
+      String(session.role || '').trim().toLowerCase()
+    )
+    const updatePayload = {
+      content,
+      status: isModerator ? existing.status : 'pending',
+    }
+
     // `updated_at` is refreshed by the tr_forum_replies_updated_at trigger.
     let { data: reply, error } = await adminSupabase
       .from('forum_replies')
-      .update({ content })
+      .update(updatePayload)
       .eq('id', replyId)
       .select(REPLY_SELECT)
       .single()
@@ -235,7 +282,7 @@ export async function PATCH(request) {
     if (error && isMissingForumReplyColumnError(error)) {
       ;({ data: reply, error } = await adminSupabase
         .from('forum_replies')
-        .update({ content })
+        .update(updatePayload)
         .eq('id', replyId)
         .select(LEGACY_REPLY_SELECT)
         .single())
@@ -243,13 +290,13 @@ export async function PATCH(request) {
 
     if (error) {
       console.error('Forum reply update error:', error)
-      return NextResponse.json({ success: false, message: error.message || 'Unable to update the comment.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to update the comment.') }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true, reply })
+    return NextResponse.json({ success: true, reply, pending: reply.status === 'pending' })
   } catch (error) {
     console.error('Forum reply update route error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to update the comment.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to update the comment.') }, { status: 500 })
   }
 }
 
@@ -284,12 +331,12 @@ export async function DELETE(request) {
     const { error } = await adminSupabase.from('forum_replies').delete().eq('id', replyId)
     if (error) {
       console.error('Forum reply delete error:', error)
-      return NextResponse.json({ success: false, message: error.message || 'Unable to delete the comment.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to delete the comment.') }, { status: 400 })
     }
 
     return NextResponse.json({ success: true, replyId })
   } catch (error) {
     console.error('Forum reply delete route error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to delete the comment.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to delete the comment.') }, { status: 500 })
   }
 }

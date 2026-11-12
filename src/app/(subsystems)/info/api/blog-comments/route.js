@@ -2,7 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { parseMentionCandidates } from '@/lib/mentions'
-import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
+import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
+import { notifyModerators } from '@/lib/adminNotifications'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,7 +47,7 @@ export async function GET(request) {
     return NextResponse.json({ success: true, comments: data || [] })
   } catch (error) {
     console.error('Blog comments load failed:', error.message || error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to load comments.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to load comments.') }, { status: 500 })
   }
 }
 
@@ -201,7 +203,8 @@ async function persistBlogCommentMentions(adminSupabase, text, actorId, commentI
 }
 
 export async function POST(request) {
-  const userId = getServerSession(request)?.user_id || null
+  const session = getServerSession(request)
+  const userId = session?.user_id || null
   if (!userId) {
     return NextResponse.json({ success: false, message: 'Please log in to comment.' }, { status: 401 })
   }
@@ -223,7 +226,10 @@ export async function POST(request) {
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
-    const restriction = await getActivePublishingRestriction(adminSupabase, userId)
+    const isModerator = ['admin', 'administrator', 'moderator'].includes(
+      String(session.role || '').trim().toLowerCase()
+    )
+    const restriction = await getActiveCommentRestriction(adminSupabase, userId)
     if (restriction) {
       return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting comments.' }, { status: 403 })
     }
@@ -246,12 +252,21 @@ export async function POST(request) {
         parent_id: parentId,
         user_id: userId,
         content,
-        status: 'approved',
+        status: isModerator ? 'approved' : 'pending',
       })
       .select('*, info_users(full_name, email, profile_image_url)')
       .single()
 
     if (error) throw error
+    if (data.status === 'pending') {
+      await notifyModerators(adminSupabase, {
+        actorId: userId,
+        title: 'Blog comment awaiting approval',
+        message: 'A new blog comment needs review.',
+        link: '/info/admin/moderation',
+      })
+      return NextResponse.json({ success: true, comment: data, pending: true })
+    }
 
     const { data: actor } = await adminSupabase
       .from('info_users')
@@ -311,6 +326,6 @@ export async function POST(request) {
     return NextResponse.json({ success: true, comment: data })
   } catch (error) {
     console.error('Blog comment creation failed:', error.message || error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to submit your comment.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to submit your comment.') }, { status: 500 })
   }
 }

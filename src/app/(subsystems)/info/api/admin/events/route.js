@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { notifyContentAuthorsOfDeletion } from '@/lib/contentDeletionNotifications.mjs'
+import { isValidUuid } from '@/lib/uuid'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -107,5 +109,60 @@ export async function GET(request) {
         ? 'Event approval is not configured in the database yet. Apply migration 082_event_admin_approval.sql.'
         : 'Unable to load event moderation data.',
     }, { status: missingModerationSchema ? 503 : 500 })
+  }
+}
+
+export async function DELETE(request) {
+  const authorization = authorizeAdminApi(request)
+  if (authorization.response) return authorization.response
+  const client = getAdminClient()
+  if (!client) {
+    return NextResponse.json({ success: false, message: 'Event moderation is not configured.' }, { status: 500 })
+  }
+
+  let body
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ success: false, message: 'Select at least one event to delete.' }, { status: 400 })
+  }
+
+  const ids = [...new Set(Array.isArray(body?.ids) ? body.ids : [])]
+  if (!ids.length || ids.length > 200 || ids.some((id) => !isValidUuid(id))) {
+    return NextResponse.json({ success: false, message: 'Select between 1 and 200 valid events.' }, { status: 400 })
+  }
+
+  try {
+    let query = client.from('info_events').delete().in('id', ids)
+    if (String(authorization.session.role || '').trim().toLowerCase() === 'tourism_officer') {
+      query = query.eq('approval_status', 'approved')
+    }
+
+    const { data: deleted, error } = await query.select('id, title, created_by')
+    if (error) throw error
+    if (!deleted?.length) {
+      return NextResponse.json({ success: false, message: 'No selected event is available for deletion.' }, { status: 404 })
+    }
+
+    const notifications = await notifyContentAuthorsOfDeletion(client, deleted.map((event) => ({
+      authorId: event.created_by,
+      actorId: authorization.session.user_id,
+      contentType: 'event',
+      contentTitle: event.title,
+    })))
+    const skipped = ids.length - deleted.length
+
+    return NextResponse.json({
+      success: true,
+      deleted: deleted.length,
+      skipped,
+      skippedWarning: skipped
+        ? 'Some selected events were unavailable or not permitted for your role.'
+        : null,
+      notificationWarning: notifications.warning,
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
+  } catch (error) {
+    console.error('Admin event deletion failed:', error)
+    return NextResponse.json({ success: false, message: 'Unable to delete the selected event(s).' }, { status: 500 })
   }
 }

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
 import { notifyFollowers } from '@/lib/notificationAudience'
+import { notifyContentAuthorOfDeletion } from '@/lib/contentDeletionNotifications.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,7 +46,10 @@ export async function POST(request, { params }) {
   }
 
   const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
-  const { data, error } = await client.rpc('admin_transition_info_blog', {
+  const transitionFunction = action === 'request_changes'
+    ? 'request_info_blog_changes'
+    : 'admin_transition_info_blog'
+  const { data, error } = await client.rpc(transitionFunction, {
     p_blog_id: blogId,
     p_reviewer_id: authorization.session.user_id,
     p_action: action,
@@ -161,6 +165,17 @@ export async function DELETE(request, { params }) {
   }
 
   const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+  const { data: blog, error: lookupError } = await client
+    .from('info_blogs')
+    .select('created_by, title')
+    .eq('id', blogId)
+    .maybeSingle()
+  if (lookupError) {
+    console.error('Admin blog deletion lookup failed:', lookupError.message)
+    return NextResponse.json({ success: false, message: 'Unable to verify the blog author.' }, { status: 500 })
+  }
+  if (!blog) return NextResponse.json({ success: false, message: 'Blog post not found.' }, { status: 404 })
+
   const { data, error } = await client.rpc('admin_delete_info_blog', {
     p_blog_id: blogId,
     p_reviewer_id: authorization.session.user_id,
@@ -171,7 +186,19 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ success: false, message: status === 404 ? 'Blog post not found.' : 'Unable to delete the blog post.' }, { status })
   }
 
-  return NextResponse.json({ success: true, blog: data }, {
+  const notification = await notifyContentAuthorOfDeletion(client, {
+    authorId: blog.created_by,
+    actorId: authorization.session.user_id,
+    contentType: 'blog post',
+    contentTitle: blog.title,
+  })
+
+  return NextResponse.json({
+    success: true,
+    blog: data,
+    notificationSent: notification.sent,
+    notificationWarning: notification.warning,
+  }, {
     headers: { 'Cache-Control': 'private, no-store' },
   })
 }

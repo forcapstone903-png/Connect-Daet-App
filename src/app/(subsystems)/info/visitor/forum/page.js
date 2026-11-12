@@ -45,7 +45,7 @@ export default function PublicForumPage() {
       const { data, error: queryError } = await supabase
         .from('forum_threads')
         .select('id, title, content, created_at, last_activity_at, reply_count, views, pinned, tags, category_id, forum_categories(name), info_users!forum_threads_created_by_fkey(full_name)')
-        .eq('status', 'published')
+        .in('status', ['published', 'closed'])
         .order('last_activity_at', { ascending: false })
         .limit(100)
 

@@ -50,7 +50,7 @@ export default function BlogSubmissionsPage() {
         <UserSectionHeader
           eyebrow="Writing studio"
           title="My blog posts"
-          description="Track each post from draft through administrator review and publication."
+          description="Track each post from draft through staff review and publication."
           emoji="📝"
           hideMobileTitle
           backHref="/info/user/dashboard"
@@ -99,7 +99,7 @@ export default function BlogSubmissionsPage() {
                     </p>
                     {['rejected', 'changes_requested'].includes(blog.approval_status) && blog.rejection_reason ? (
                       <p className={`mt-3 rounded-xl border p-3 text-sm leading-6 ${blog.approval_status === 'changes_requested' ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
-                        <strong>Administrator feedback:</strong> {blog.rejection_reason}
+                        <strong>Review feedback:</strong> {blog.rejection_reason}
                       </p>
                     ) : null}
                   </div>

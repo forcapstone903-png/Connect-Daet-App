@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar'
 import AdminPageHeader from './AdminPageHeader'
-import { hasAdminAccess } from '@/lib/adminRoles'
+import { getAdminHomePath, hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies'
 
 export function AdminLoadingScreen({ label = 'Loading admin console…' }) {
@@ -30,6 +30,7 @@ export default function AdminShell({
   eyebrow,
   description,
   headerIcon,
+  headerClassName = '',
   actions,
   meta,
   children,
@@ -57,8 +58,9 @@ export default function AdminShell({
 
       try {
         const userData = JSON.parse(session)
-        if (!hasAdminAccess(userData.role)) {
-          router.replace('/info/admin/dashboard')
+        const role = userData.role || userData.user_type
+        if (!hasAdminAccess(role)) {
+          router.replace(getAdminHomePath(role))
           return
         }
         if (isActive) {
@@ -87,7 +89,7 @@ export default function AdminShell({
       <AdminSidebar
         user={user}
         roleLabel={roleLabel}
-        userRole={userRole ?? user?.role ?? 'admin'}
+        userRole={userRole ?? user?.role ?? user?.user_type ?? 'admin'}
         onLogout={onLogout}
       />
 
@@ -98,12 +100,13 @@ export default function AdminShell({
             title={title}
             description={description}
             icon={headerIcon}
+            className={headerClassName}
             actions={actions}
             meta={meta}
           />
         ) : null}
 
-        {children}
+        {children != null ? <div className="admin-page-content">{children}</div> : null}
       </div>
     </div>
   )

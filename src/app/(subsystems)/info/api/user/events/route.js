@@ -24,7 +24,7 @@ export async function GET(request) {
     const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
     const { data, error } = await client
       .from('info_events')
-      .select('id, title, description, location, start_date, end_date, start_time, category, status, approval_status, submitted_at, reviewed_at, rejection_reason, published_at')
+      .select('id, title, description, location, start_date, end_date, start_time, end_time, category, organizer, is_free, ticket_price, status, approval_status, submitted_at, reviewed_at, rejection_reason, published_at')
       .eq('created_by', session.user_id)
       .in('approval_status', ['pending', 'approved', 'rejected'])
       .order('submitted_at', { ascending: false, nullsFirst: false })

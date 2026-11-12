@@ -2,20 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
+import { DEFAULT_GENERAL_SETTINGS } from '@/lib/siteSettings.mjs';
 
 const SETTINGS_API = '/info/api/admin/settings';
-const DEFAULT_GENERAL = {
-  site_name: 'DAET Tourism',
-  contact_email: 'tourism@daet.gov.ph',
-  timezone: 'Asia/Manila',
-  language: 'English',
-  date_format: 'MM/DD/YYYY',
-};
-const DEFAULT_MODERATION = {
-  auto_moderation_enabled: false,
-  review_window_hours: 24,
-  hide_threshold_reports: 3,
-};
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 
 async function readJsonResponse(response) {
   const text = await response.text();
@@ -26,63 +17,85 @@ async function readJsonResponse(response) {
   }
 }
 
+function Field({ label, hint, children }) {
+  return (
+    <label className="text-sm font-medium text-slate-700">
+      {label}
+      {children}
+      {hint ? <span className="mt-1 block text-xs font-normal text-slate-500">{hint}</span> : null}
+    </label>
+  );
+}
+
+const inputClass = 'mt-1 w-full rounded-xl border border-slate-200 px-4 py-2';
+
 export default function AdminSettingsGeneral() {
-  const [generalSettings, setGeneralSettings] = useState(DEFAULT_GENERAL);
-  const [moderationSettings, setModerationSettings] = useState(DEFAULT_MODERATION);
+  const [form, setForm] = useState(DEFAULT_GENERAL_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     let active = true;
-    const loadSettings = async () => {
-      try {
-        const response = await fetch(SETTINGS_API, { cache: 'no-store' });
+    fetch(SETTINGS_API, { cache: 'no-store' })
+      .then(async (response) => {
         const data = await readJsonResponse(response);
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || `Unable to load settings (${response.status}).`);
-        }
-        if (active) {
-          setGeneralSettings({ ...DEFAULT_GENERAL, ...data.settings?.general });
-          setModerationSettings({ ...DEFAULT_MODERATION, ...data.settings?.moderation });
-        }
-      } catch (error) {
-        if (active) setLoadError(error.message || 'Unable to load saved settings.');
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    loadSettings();
-    return () => {
-      active = false;
-    };
+        if (!response.ok || !data.success) throw new Error(data.message || `Unable to load settings (${response.status}).`);
+        if (active) setForm({ ...DEFAULT_GENERAL_SETTINGS, ...data.settings?.general });
+      })
+      .catch((error) => { if (active) setLoadError(error.message || 'Unable to load saved settings.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
 
+  const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+
   return (
-    <SettingsShell
-      title="General Settings"
-      subtitle="Edit shared site information and saved moderation policy preferences."
-    >
+    <SettingsShell title="General Settings" subtitle="Site identity, contact details and municipality information shown on the public site.">
       {(showToast) => {
-        const saveSetting = async (id, value, label) => {
+        const save = async () => {
           setSaving(true);
           try {
             const response = await fetch(SETTINGS_API, {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id, value }),
+              body: JSON.stringify({ id: 'general', value: form }),
             });
             const data = await readJsonResponse(response);
-            if (!response.ok || !data.success) {
-              throw new Error(data.message || `Unable to save ${label.toLowerCase()} (${response.status}).`);
-            }
-            showToast(`${label} saved to the shared administrator settings.`);
+            if (!response.ok || !data.success) throw new Error(data.message || `Unable to save (${response.status}).`);
+            setForm({ ...DEFAULT_GENERAL_SETTINGS, ...data.setting?.value });
+            showToast('General settings saved. Public pages update within a minute.');
           } catch (error) {
-            showToast(error.message || `Unable to save ${label.toLowerCase()}.`, true);
+            showToast(error.message || 'Unable to save general settings.', true);
           } finally {
             setSaving(false);
           }
         };
+
+        const uploadLogo = async (file) => {
+          if (!file) return;
+          if (!LOGO_TYPES.includes(file.type) || file.size > MAX_LOGO_BYTES) {
+            showToast('Use a PNG, JPEG or WebP image of 2 MB or less.', true);
+            return;
+          }
+          setUploading(true);
+          try {
+            const body = new FormData();
+            body.append('file', file);
+            const response = await fetch('/info/api/admin/media', { method: 'POST', body, credentials: 'same-origin' });
+            const data = await readJsonResponse(response);
+            if (!response.ok || !data.success || !data.file?.url) throw new Error(data.message || 'Logo upload failed.');
+            setForm((current) => ({ ...current, logo_url: data.file.url }));
+            showToast('Logo uploaded. Save to publish it.');
+          } catch (error) {
+            showToast(error.message || 'Logo upload failed.', true);
+          } finally {
+            setUploading(false);
+          }
+        };
+
+        const disabled = loading || saving || Boolean(loadError);
 
         return (
           <div className="space-y-6">
@@ -93,68 +106,85 @@ export default function AdminSettingsGeneral() {
             )}
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800">Shared site information</h2>
-              <p className="mt-1 text-sm text-slate-600">These values are stored on the server for administrators; they do not automatically change provider or deployment configuration.</p>
+              <h2 className="text-lg font-bold text-slate-800">Site identity</h2>
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <label className="text-sm font-medium text-slate-700">
-                  Site name
-                  <input value={generalSettings.site_name} onChange={(event) => setGeneralSettings((current) => ({ ...current, site_name: event.target.value }))} maxLength={120} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Contact email
-                  <input type="email" value={generalSettings.contact_email} onChange={(event) => setGeneralSettings((current) => ({ ...current, contact_email: event.target.value }))} maxLength={254} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Timezone
-                  <select value={generalSettings.timezone} onChange={(event) => setGeneralSettings((current) => ({ ...current, timezone: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2">
+                <Field label="Site name"><input value={form.site_name} onChange={set('site_name')} maxLength={120} className={inputClass} /></Field>
+                <Field label="Tagline"><input value={form.tagline} onChange={set('tagline')} maxLength={160} className={inputClass} /></Field>
+                <div className="md:col-span-2">
+                  <p className="text-sm font-medium text-slate-700">Logo</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-4">
+                    <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                      {form.logo_url ? <img src={form.logo_url} alt="Current logo" className="h-full w-full object-contain" /> : <span className="text-xs text-slate-400">No logo</span>}
+                    </div>
+                    <label className={`cursor-pointer rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 ${disabled || uploading ? 'pointer-events-none opacity-50' : 'hover:bg-slate-50'}`}>
+                      {uploading ? 'Uploading…' : 'Upload logo'}
+                      <input type="file" accept={LOGO_TYPES.join(',')} className="sr-only" onChange={(event) => { void uploadLogo(event.target.files?.[0]); event.target.value = ''; }} />
+                    </label>
+                    {form.logo_url ? <button type="button" onClick={() => setForm((current) => ({ ...current, logo_url: '' }))} className="text-sm font-semibold text-red-600">Remove</button> : null}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">Shown on the About and Contact pages and public headers. PNG, JPEG or WebP, up to 2 MB.</p>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Contact information</h2>
+              <p className="mt-1 text-sm text-slate-600">Published on the public Contact page.</p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Tourism office name"><input value={form.tourism_office_name} onChange={set('tourism_office_name')} maxLength={120} className={inputClass} /></Field>
+                <Field label="Contact email"><input type="email" value={form.contact_email} onChange={set('contact_email')} maxLength={254} className={inputClass} /></Field>
+                <Field label="Phone"><input type="tel" value={form.contact_phone} onChange={set('contact_phone')} maxLength={40} className={inputClass} placeholder="(054) 000 0000" /></Field>
+                <Field label="Emergency hotline"><input type="tel" value={form.emergency_hotline} onChange={set('emergency_hotline')} maxLength={40} className={inputClass} placeholder="911" /></Field>
+                <Field label="Office address"><input value={form.office_address} onChange={set('office_address')} maxLength={300} className={inputClass} /></Field>
+                <Field label="Office hours"><input value={form.office_hours} onChange={set('office_hours')} maxLength={200} className={inputClass} placeholder="Mon–Fri, 8:00 AM – 5:00 PM" /></Field>
+                <Field label="Facebook page" hint="https:// address"><input type="url" value={form.facebook_url} onChange={set('facebook_url')} maxLength={300} className={inputClass} /></Field>
+                <Field label="Website" hint="https:// address"><input type="url" value={form.website_url} onChange={set('website_url')} maxLength={300} className={inputClass} /></Field>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Municipality information</h2>
+              <p className="mt-1 text-sm text-slate-600">Published on the public About page.</p>
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <Field label="Municipality"><input value={form.municipality_name} onChange={set('municipality_name')} maxLength={80} className={inputClass} /></Field>
+                <Field label="Province"><input value={form.province} onChange={set('province')} maxLength={80} className={inputClass} /></Field>
+                <Field label="Region"><input value={form.region} onChange={set('region')} maxLength={80} className={inputClass} /></Field>
+                <div className="md:col-span-3">
+                  <Field label="About the municipality" hint={`${form.municipality_description.length}/4000 characters. Blank lines start new paragraphs.`}>
+                    <textarea value={form.municipality_description} onChange={set('municipality_description')} maxLength={4000} rows={8} className={inputClass} />
+                  </Field>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Regional format</h2>
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
+                <Field label="Timezone">
+                  <select value={form.timezone} onChange={set('timezone')} className={inputClass}>
                     <option value="Asia/Manila">Asia/Manila (GMT+8)</option>
                     <option value="UTC">UTC</option>
                   </select>
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Language
-                  <select value={generalSettings.language} onChange={(event) => setGeneralSettings((current) => ({ ...current, language: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2">
+                </Field>
+                <Field label="Language">
+                  <select value={form.language} onChange={set('language')} className={inputClass}>
                     <option value="English">English</option>
                     <option value="Filipino">Filipino</option>
                   </select>
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  Date format
-                  <select value={generalSettings.date_format} onChange={(event) => setGeneralSettings((current) => ({ ...current, date_format: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2">
+                </Field>
+                <Field label="Date format">
+                  <select value={form.date_format} onChange={set('date_format')} className={inputClass}>
                     <option value="MM/DD/YYYY">MM/DD/YYYY</option>
                     <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                     <option value="YYYY-MM-DD">YYYY-MM-DD</option>
                   </select>
-                </label>
+                </Field>
               </div>
-              <button type="button" onClick={() => saveSetting('general', generalSettings, 'General settings')} disabled={loading || saving || Boolean(loadError)} className="mt-5 rounded-full bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save general settings'}
-              </button>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800">Moderation preferences</h2>
-              <p className="mt-1 text-sm text-amber-800">
-                These preferences are persisted for administrator reference only. They do not enable automated keyword moderation, scheduled review, or automatic hiding. Blog and event approval workflows remain enforced separately.
-              </p>
-              <div className="mt-4 max-w-2xl space-y-4">
-                <label className="flex items-center gap-2 text-sm text-slate-700">
-                  <input type="checkbox" checked={moderationSettings.auto_moderation_enabled} onChange={(event) => setModerationSettings((current) => ({ ...current, auto_moderation_enabled: event.target.checked }))} className="h-4 w-4 accent-blue-600" />
-                  Record automated moderation as a preferred policy (not currently enforced)
-                </label>
-                <label className="block text-sm font-medium text-slate-700">
-                  Preferred review window (hours)
-                  <input type="number" min="1" max="720" value={moderationSettings.review_window_hours} onChange={(event) => setModerationSettings((current) => ({ ...current, review_window_hours: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
-                </label>
-                <label className="block text-sm font-medium text-slate-700">
-                  Preferred report threshold
-                  <input type="number" min="1" max="100" value={moderationSettings.hide_threshold_reports} onChange={(event) => setModerationSettings((current) => ({ ...current, hide_threshold_reports: Number(event.target.value) }))} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
-                </label>
-              </div>
-              <button type="button" onClick={() => saveSetting('moderation', moderationSettings, 'Moderation preferences')} disabled={loading || saving || Boolean(loadError)} className="mt-5 rounded-full bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving…' : 'Save moderation preferences'}
-              </button>
-            </section>
+            <button type="button" onClick={() => void save()} disabled={disabled} className="rounded-full bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save general settings'}
+            </button>
           </div>
         );
       }}

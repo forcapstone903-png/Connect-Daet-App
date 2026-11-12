@@ -1,11 +1,12 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react'
+import { Check, X } from 'lucide-react'
 import Image from 'next/image'
 import {
   AdminBadge,
   AdminEmptyState,
+  AdminPagination,
   AdminPanel,
   AdminSearch,
   AdminShell,
@@ -124,8 +125,8 @@ export default function AdminEventApprovalsPage() {
       description="Review event proposals submitted by community members. Events remain private until approved."
       headerIcon="events"
     >
-      <div className="space-y-5 px-4 py-5 sm:px-6 lg:px-8">
-        <AdminStatGrid>
+      <div className="space-y-5">
+        <AdminStatGrid className="!mb-0">
           <AdminStatCard label="Total submissions" value={stats.total} icon="events" />
           <AdminStatCard label="Pending review" value={stats.pending} icon="moderation" />
           <AdminStatCard label="Approved" value={stats.approved} icon="check" />
@@ -176,7 +177,7 @@ export default function AdminEventApprovalsPage() {
                   ))}
                 </tbody>
               </AdminTable>
-            ) : <div className="p-8"><AdminEmptyState icon="analytics" title="No moderation history yet" description="Administrator decisions will be recorded here." /></div>
+            ) : <AdminEmptyState className="!py-6" icon="analytics" title="No moderation history yet" description="Administrator decisions will be recorded here." />
           ) : loading ? (
             <div className="space-y-3 p-5" aria-label="Loading event submissions">
               {[0, 1, 2].map((item) => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}
@@ -214,25 +215,24 @@ export default function AdminEventApprovalsPage() {
               </AdminTable>
               {pagination.pages > 1 ? (
                 <AdminTableFooter>
-                  <span className="text-sm text-slate-500">
-                    Showing {(pagination.page - 1) * 10 + 1}–{Math.min(pagination.page * 10, pagination.total)} of {pagination.total}
-                  </span>
-                  <div className="ml-auto flex items-center gap-2">
-                    <button type="button" disabled={page <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))} className="rounded-lg border border-slate-200 p-2 text-slate-600 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
-                    <span className="text-sm font-semibold text-slate-700">Page {pagination.page} of {pagination.pages}</span>
-                    <button type="button" disabled={page >= pagination.pages} onClick={() => setPage((value) => Math.min(pagination.pages, value + 1))} className="rounded-lg border border-slate-200 p-2 text-slate-600 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
-                  </div>
+                  <AdminPagination
+                    page={pagination.page}
+                    totalPages={pagination.pages}
+                    totalItems={pagination.total}
+                    pageSize={10}
+                    itemLabel="events"
+                    onPageChange={setPage}
+                  />
                 </AdminTableFooter>
               ) : null}
             </>
           ) : (
-            <div className="p-8">
-              <AdminEmptyState
-                icon={status === 'pending' ? 'moderation' : 'events'}
-                title={status === 'pending' ? 'No events awaiting review' : 'No events found'}
-                description={status === 'pending' ? 'New submissions from the event form will appear here.' : 'There are no event submissions in this view.'}
-              />
-            </div>
+            <AdminEmptyState
+              className="!py-6"
+              icon={status === 'pending' ? 'moderation' : 'events'}
+              title={status === 'pending' ? 'No events awaiting review' : 'No events found'}
+              description={status === 'pending' ? 'New submissions from the event form will appear here.' : 'There are no event submissions in this view.'}
+            />
           )}
         </AdminPanel>
       </div>

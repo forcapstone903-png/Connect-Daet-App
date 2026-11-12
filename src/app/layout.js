@@ -4,6 +4,7 @@ import CookieConsent from '@/components/CookieConsent'
 import PushNotificationPrompt from '@/components/PushNotificationPrompt'
 import SiteVisitTracker from '@/components/SiteVisitTracker'
 import AlertToast from '@/components/AlertToast'
+import SafetyAlertBanner from '@/components/SafetyAlertBanner'
 import UserSettingsProvider from '@/components/UserSettingsProvider'
 import { InlineScript } from '@/app/(subsystems)/info/components/InlineScript'
 import { THEME_BOOTSTRAP_SCRIPT } from '@/lib/themeBootstrap'
@@ -36,6 +37,7 @@ export default function RootLayout({ children }) {
         <CookieConsent />
         <SiteVisitTracker />
         <PushNotificationPrompt />
+        <SafetyAlertBanner />
         <AlertToast />
       </body>
     </html>

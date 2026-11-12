@@ -2,45 +2,59 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader, UserRound } from 'lucide-react'
+import { useParams } from 'next/navigation'
+import { ArrowLeft, CalendarDays, Clock3, FileText, Loader, MessageCircle, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import { isImageAttachment, parsePostContent } from '@/lib/postContent'
 
 export default function UserPostDetailPage() {
-  const [post, setPost] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [postId, setPostId] = useState('')
+  const params = useParams()
+  const postId = typeof params.id === 'string' ? params.id : ''
+  const [postResult, setPostResult] = useState({ postId: '', post: null, error: '' })
   const [userId, setUserId] = useState(null)
+  const currentPostResult = postResult.postId === postId ? postResult : null
+  const post = currentPostResult?.post || null
+  const loading = Boolean(postId) && !currentPostResult
+  const error = !postId ? 'Post not found.' : currentPostResult?.error || ''
 
   useEffect(() => {
-    const id = window.location.pathname.split('/').filter(Boolean).pop()
-    setPostId(id || '')
-    if (!id) {
-      setError('Post not found.')
-      setLoading(false)
-      return
-    }
+    let active = true
+    if (!postId) return () => { active = false }
 
     const loadPost = async () => {
-      const { data: sessionData } = await supabase.auth.getSession()
-      setUserId(sessionData?.session?.user?.id || null)
+      try {
+        const { data: sessionData } = await supabase.auth.getSession()
+        if (!active) return
+        setUserId(sessionData?.session?.user?.id || null)
 
-      const { data, error: loadError } = await supabase
-        .from('info_user_posts')
-        .select('id, user_id, title, content, status, created_at, updated_at, info_users(full_name, email, profile_image_url)')
-        .eq('id', id)
-        .eq('status', 'published')
-        .maybeSingle()
+        const { data, error: loadError } = await supabase
+          .from('info_user_posts')
+          .select('id, user_id, title, content, status, created_at, updated_at, info_users(full_name, profile_image_url)')
+          .eq('id', postId)
+          .eq('status', 'published')
+          .maybeSingle()
 
-      if (loadError || !data) setError('This post is no longer available.')
-      else setPost(data)
-      setLoading(false)
+        if (!active) return
+        if (loadError) {
+          console.error('User post detail lookup failed:', loadError)
+          setPostResult({ postId, post: null, error: 'Unable to load this post right now. Please try again.' })
+        } else if (!data) {
+          setPostResult({ postId, post: null, error: 'This post is no longer available.' })
+        } else {
+          setPostResult({ postId, post: data, error: '' })
+        }
+      } catch (loadError) {
+        console.error('User post detail request failed:', loadError)
+        if (active) setPostResult({ postId, post: null, error: 'Unable to load this post right now. Please try again.' })
+      }
     }
 
     void loadPost()
-  }, [])
+    return () => {
+      active = false
+    }
+  }, [postId])
 
   if (loading) return (
     <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6">
@@ -60,51 +74,128 @@ export default function UserPostDetailPage() {
   )
 
   const postContent = parsePostContent(post.content)
+  const postTitle = post.title?.trim() || 'Community post'
+  const postCreatedAt = post.created_at ? new Date(post.created_at) : null
+  const postUpdatedAt = post.updated_at ? new Date(post.updated_at) : null
+  const validCreatedAt = postCreatedAt && !Number.isNaN(postCreatedAt.getTime())
+  const validUpdatedAt = postUpdatedAt && !Number.isNaN(postUpdatedAt.getTime())
+  const wasUpdated = validCreatedAt && validUpdatedAt
+    && postUpdatedAt.getTime() - postCreatedAt.getTime() > 60_000
 
   return (
-    <main className="tourism-shell usr-section-page usr-detail min-h-screen px-3 py-6 text-slate-900 sm:px-5">
-      <div className="usr-section-container mx-auto max-w-6xl pb-8 pt-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start lg:gap-6">
-      <article className="max-w-3xl">
-        <div className="usr-card usr-enter p-5 sm:p-8">
-          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500">
-            <Link href={post.user_id ? `/info/user/profile/${post.user_id}` : '/info/user/profile'} aria-label="View author's profile" className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-teal-50 text-teal-700">
-              {post.info_users?.profile_image_url ? <img src={post.info_users.profile_image_url} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-4 w-4" />}
-            </Link>
-            <Link href={post.user_id ? `/info/user/profile/${post.user_id}` : '/info/user/profile'} className="font-bold text-slate-800 hover:text-teal-700">{post.info_users?.full_name || post.info_users?.email || 'Community member'}</Link>
-            <span aria-hidden="true">·</span>
-            <time dateTime={post.created_at || undefined}>{new Date(post.created_at).toLocaleDateString()}</time>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Community post</span>
-          </div>
-          <h1 className="mt-5 text-2xl font-black text-slate-900 sm:text-3xl">{post.title}</h1>
-          {postContent.text && <p className="usr-reading-body mt-5 whitespace-pre-wrap break-words text-slate-700">{postContent.text}</p>}
-          {postContent.attachments.length > 0 && (
-            <section className="mt-5" aria-label="Post attachments">
-              <h2 className="mb-3 text-sm font-bold text-slate-800">
-                Attachments ({postContent.attachments.length})
-              </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {postContent.attachments.map((url, index) => (
-                  <a
-                    key={`${url}-${index}`}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-                    aria-label={`Open attachment ${index + 1}`}
-                  >
-                    {isImageAttachment(url)
-                      ? <img src={url} alt={`Attachment ${index + 1}`} loading="lazy" className="aspect-square w-full object-cover" />
-                      : <span className="flex aspect-square items-center justify-center p-3 text-center text-xs font-semibold text-blue-700">Open attachment {index + 1}</span>}
-                  </a>
-                ))}
+    <main className="tourism-shell usr-section-page usr-detail min-h-screen px-4 py-5 text-slate-900 sm:px-6 sm:py-8">
+      <div className="usr-section-container mx-auto max-w-7xl pb-10 pt-0">
+        <nav className="mb-5 flex flex-wrap items-center justify-between gap-3" aria-label="Post navigation">
+          <Link
+            href="/info/user/dashboard"
+            className="usr-section-secondary inline-flex items-center gap-2 text-sm font-bold shadow-sm hover:border-sky-200 hover:bg-sky-50 hover:text-sky-800"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Back to feed
+          </Link>
+          <span className="text-xs font-bold uppercase tracking-[0.16em] text-slate-400">Community / Post</span>
+        </nav>
+
+        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:gap-7">
+          <article className="usr-card usr-enter min-w-0 overflow-hidden">
+            <header className="bg-sky-50 px-5 py-6 sm:px-8 sm:py-8">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 rounded-full border border-sky-100 bg-white/90 px-3 py-1.5 text-xs font-bold text-sky-800">
+                  <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                  Community post
+                </span>
+                <a
+                  href="#post-comments"
+                  className="inline-flex min-h-10 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-slate-600 transition hover:bg-white hover:text-sky-800"
+                >
+                  <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                  Join the conversation
+                </a>
               </div>
-            </section>
-          )}
+
+              <h1 className="mt-5 break-words text-3xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl">
+                {postTitle}
+              </h1>
+
+              <div className="mt-6 flex min-w-0 items-center gap-3 border-t border-sky-100 pt-5">
+                <Link
+                  href={post.user_id ? `/info/user/profile/${post.user_id}` : '/info/user/profile'}
+                  aria-label="View author's profile"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-sky-100 text-sky-700 shadow-sm"
+                >
+                  {post.info_users?.profile_image_url
+                    ? <img src={post.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
+                    : <UserRound className="h-5 w-5" aria-hidden="true" />}
+                </Link>
+                <div className="min-w-0">
+                  <Link
+                    href={post.user_id ? `/info/user/profile/${post.user_id}` : '/info/user/profile'}
+                    className="block truncate text-sm font-bold text-slate-900 hover:text-sky-700"
+                  >
+                    {post.info_users?.full_name || post.info_users?.email || 'Community member'}
+                  </Link>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
+                      <time dateTime={post.created_at || undefined}>
+                        {validCreatedAt ? postCreatedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recently'}
+                      </time>
+                    </span>
+                    {wasUpdated && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+                        Edited {postUpdatedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </header>
+
+            <div className="border-t border-slate-100 px-5 py-6 sm:px-8 sm:py-8">
+              {postContent.text && (
+                <p className="usr-reading-body whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700 sm:text-base">
+                  {postContent.text}
+                </p>
+              )}
+
+              {postContent.attachments.length > 0 && (
+                <section className={postContent.text ? 'mt-8 border-t border-slate-100 pt-6' : ''} aria-label="Post attachments">
+                  <h2 className="mb-4 text-sm font-bold text-slate-800">
+                    Attachments <span className="ml-1 text-slate-400">({postContent.attachments.length})</span>
+                  </h2>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {postContent.attachments.map((url, index) => (
+                      <a
+                        key={`${url}-${index}`}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 transition hover:border-sky-300 hover:shadow-md"
+                        aria-label={`Open attachment ${index + 1}`}
+                      >
+                        {isImageAttachment(url)
+                          ? <img src={url} alt={`Attachment ${index + 1}`} loading="lazy" className="aspect-video w-full object-cover transition duration-300 group-hover:scale-[1.02]" />
+                          : <span className="flex aspect-video items-center justify-center gap-2 p-4 text-sm font-semibold text-sky-700"><FileText className="h-5 w-5" aria-hidden="true" />Open attachment {index + 1}</span>}
+                      </a>
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          </article>
+
+          <aside id="post-comments" className="min-w-0 scroll-mt-6 lg:sticky lg:top-6">
+            <Comments
+              contentType="user_post"
+              contentId={post.id}
+              userId={userId}
+              contentOwnerId={post.user_id}
+              contentTitle={postTitle}
+              articleStyle
+            />
+          </aside>
         </div>
-      </article>
-      <aside className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100vh-3rem)] lg:overflow-y-auto lg:pr-1">
-        <Comments contentType="user_post" contentId={post.id} userId={userId} contentOwnerId={post.user_id} contentTitle={post.title} />
-      </aside>
       </div>
     </main>
   )

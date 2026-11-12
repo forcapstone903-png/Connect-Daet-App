@@ -3,6 +3,7 @@
 import { Bell, Mail, MessageSquare, ShieldCheck } from 'lucide-react'
 import { ActionRow, SettingsCard, ToggleRow } from './SettingsControls'
 import EnableNotificationsButton from '@/components/EnableNotificationsButton'
+import AlertPreferences from './AlertPreferences'
 import { NOTIFICATION_OPTIONS } from '@/lib/userSettings'
 
 const IN_APP_NOTIFICATION_KEYS = new Set(['newFollowers', 'forumMentions', 'announcementAlerts'])
@@ -55,6 +56,8 @@ export default function NotificationsSection({ settings, t, userId, onNotificati
       <ActionRow label={t('settings.notifications.push')} hint={t('settings.notifications.pushHint')}>
         {userId ? <EnableNotificationsButton userId={userId} /> : null}
       </ActionRow>
+
+      {userId ? <AlertPreferences /> : null}
     </SettingsCard>
   )
 }

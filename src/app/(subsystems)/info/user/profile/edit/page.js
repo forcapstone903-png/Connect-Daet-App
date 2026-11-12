@@ -31,14 +31,19 @@ export default function EditProfilePage() {
         return
       }
 
-      const [{ data: userData }, { data: profileData }] = await Promise.all([
-        supabase.from('info_users').select('full_name, username, phone_number, bio, city, country, profile_image_url').eq('id', id).maybeSingle(),
+      // Phone number is private (not readable from the browser), so it comes
+      // from the signed-session profile API.
+      const [{ data: userData }, { data: profileData }, privateProfile] = await Promise.all([
+        supabase.from('info_users').select('full_name, username, bio, city, country, profile_image_url').eq('id', id).maybeSingle(),
         supabase.from('profiles').select('full_name, bio, city, country, location, profile_image_url, cover_photo_url').eq('user_id', id).maybeSingle(),
+        fetch('/info/api/profile', { credentials: 'same-origin', cache: 'no-store' })
+          .then((response) => (response.ok ? response.json() : null))
+          .catch(() => null),
       ])
       setForm({
         full_name: userData?.full_name || profileData?.full_name || '',
         username: userData?.username || '',
-        phone_number: userData?.phone_number || '',
+        phone_number: privateProfile?.profile?.phoneNumber || '',
         bio: profileData?.bio || userData?.bio || '',
         location: profileData?.location || [profileData?.city, profileData?.country].filter(Boolean).join(', ') || [userData?.city, userData?.country].filter(Boolean).join(', ') || 'Daet, Camarines Norte',
         avatar_url: userData?.profile_image_url || profileData?.profile_image_url || '',

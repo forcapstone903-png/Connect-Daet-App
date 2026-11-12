@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import AdminDiscussionModeration from '@/app/(subsystems)/info/components/admin/AdminDiscussionModeration';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
@@ -52,7 +53,7 @@ export default function AdminForumPage() {
       const response = await fetch('/info/api/admin/forum/categories', { cache: 'no-store' });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load forum categories');
-      setCustomCategories((result.categories || []).map((category) => category.name));
+      setCustomCategories(result.categories || []);
     } catch (error) {
       console.error('Forum categories load failed:', error);
       showToast(error.message || 'Unable to load forum categories.', true);
@@ -77,7 +78,7 @@ export default function AdminForumPage() {
 
   const openCreateModal = () => {
     setEditingThread(null);
-    setThreadForm({ title: '', content: '', status: 'published', category: customCategories[0] || 'General' });
+    setThreadForm({ title: '', content: '', status: 'published', category: customCategories[0]?.name || 'General' });
     setShowModal(true);
   };
 
@@ -137,7 +138,7 @@ export default function AdminForumPage() {
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.message || 'Unable to delete thread');
-      showToast('Thread deleted successfully!');
+      showToast(data.notificationWarning || 'Thread deleted successfully!', Boolean(data.notificationWarning));
       await fetchThreads();
     } catch (err) {
       console.error('Error deleting forum thread:', err);
@@ -159,6 +160,22 @@ export default function AdminForumPage() {
     } catch (err) {
       console.error('Error archiving forum thread:', err);
       showToast(err.message, true);
+    }
+  };
+
+  const toggleLock = async (thread) => {
+    try {
+      const response = await fetch(`/info/api/admin/forum/${thread.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: thread.status === 'closed' ? 'published' : 'closed' }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update thread lock.');
+      showToast(thread.status === 'closed' ? 'Thread unlocked.' : 'Thread locked.');
+      await fetchThreads();
+    } catch (error) {
+      showToast(error.message || 'Unable to update thread lock.', true);
     }
   };
 
@@ -189,11 +206,43 @@ export default function AdminForumPage() {
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to add category');
-      setCustomCategories((previous) => [...previous, result.category.name]);
+      setCustomCategories((previous) => [...previous, result.category]);
       setNewCategory('');
       showToast('Category added.');
     } catch (error) {
       showToast(error.message || 'Unable to add category.', true);
+    }
+  };
+
+  const editCategory = async (category) => {
+    const name = window.prompt('Edit category name:', category.name)?.trim();
+    if (!name || name === category.name) return;
+    try {
+      const response = await fetch(`/info/api/admin/forum/categories/${category.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, description: category.description || '' }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update category.');
+      setCustomCategories((previous) => previous.map((item) => item.id === category.id ? result.category : item));
+      setThreads((previous) => previous.map((thread) => thread.category_id === category.id ? { ...thread, category: result.category.name } : thread));
+      showToast('Category updated.');
+    } catch (error) {
+      showToast(error.message || 'Unable to update category.', true);
+    }
+  };
+
+  const deleteCategory = async (category) => {
+    if (!window.confirm(`Delete category "${category.name}"?`)) return;
+    try {
+      const response = await fetch(`/info/api/admin/forum/categories/${category.id}`, { method: 'DELETE' });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete category.');
+      setCustomCategories((previous) => previous.filter((item) => item.id !== category.id));
+      showToast('Category deleted.');
+    } catch (error) {
+      showToast(error.message || 'Unable to delete category.', true);
     }
   };
 
@@ -280,46 +329,52 @@ export default function AdminForumPage() {
             />
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-2xl border border-gray-200 px-4 py-2">
               <option value="all">All statuses</option>
+              <option value="draft">Draft</option>
+              <option value="pending">Pending review</option>
               <option value="published">Published</option>
               <option value="closed">Closed</option>
               <option value="archived">Archived</option>
+              <option value="rejected">Rejected</option>
             </select>
             <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="w-full rounded-2xl border border-gray-200 px-4 py-2">
               <option value="all">All categories</option>
               {customCategories.map((category) => (
-                <option key={category} value={category}>{category}</option>
+                <option key={category.id} value={category.name}>{category.name}</option>
               ))}
             </select>
             <button onClick={fetchThreads} className="rounded-2xl bg-gray-800 px-4 py-2 text-white hover:bg-gray-900">Refresh</button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-[2fr_1fr] gap-6">
-          <div className="grid gap-4">
+        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <div className="grid min-w-0 content-start gap-4">
             {filteredThreads.length ? filteredThreads.map((thread) => (
-              <div key={thread.id} className="flex min-h-[250px] flex-col rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
+              <article key={thread.id} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
+                <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <h2 className="text-xl font-semibold text-gray-900">{thread.title}</h2>
+                      <h2 className="break-words text-xl font-semibold text-gray-900">{thread.title}</h2>
                       {thread.pinned && <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold uppercase text-amber-700">Pinned</span>}
                     </div>
-                    <p className="mt-1 text-sm text-gray-500">{thread.reply_count || 0} replies · {thread.status} · {(thread.category || 'General')}</p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button onClick={() => pinThread(thread)} className="rounded-full bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100">{thread.pinned ? 'Unpin' : 'Pin'}</button>
-                    <button onClick={() => openViewModal(thread)} className="rounded-full bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200">View</button>
-                    <button onClick={() => openEditModal(thread)} className="rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100">Edit</button>
-                    {thread.status !== 'archived' && <button onClick={() => archiveThread(thread)} className="rounded-full bg-yellow-50 px-4 py-2 text-sm font-medium text-yellow-700 hover:bg-yellow-100">Archive</button>}
-                    <button onClick={() => deleteThread(thread)} className="rounded-full bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100">Delete</button>
-                  </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-600">{thread.reply_count || 0} replies</span>
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 font-medium capitalize text-blue-700">{thread.status}</span>
+                      <span className="rounded-full bg-gray-50 px-2.5 py-1 font-medium text-gray-600">{thread.category || 'General'}</span>
+                    </div>
                 </div>
-                <p className="mt-4 text-sm leading-6 text-gray-600 line-clamp-3">{thread.content}</p>
-                <div className="mt-4 flex flex-wrap gap-3 text-xs text-gray-500">
+                <p className="break-words rounded-xl bg-gray-50 px-3 py-2 text-sm leading-6 text-gray-600 line-clamp-3">{thread.content}</p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                   <span>Created: {new Date(thread.created_at).toLocaleString()}</span>
                   <span>Last activity: {thread.last_activity_at ? new Date(thread.last_activity_at).toLocaleString() : '—'}</span>
                 </div>
-              </div>
+                <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+                  <button onClick={() => pinThread(thread)} className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition hover:bg-amber-100">{thread.pinned ? 'Unpin' : 'Pin'}</button>
+                  <button onClick={() => void toggleLock(thread)} className="rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition hover:bg-violet-100">{thread.status === 'closed' ? 'Unlock' : 'Lock'}</button>
+                  <button onClick={() => openViewModal(thread)} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200">View</button>
+                  <button onClick={() => openEditModal(thread)} className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 transition hover:bg-blue-100">Edit</button>
+                  {thread.status !== 'archived' && <button onClick={() => archiveThread(thread)} className="rounded-lg bg-yellow-50 px-3 py-1.5 text-xs font-medium text-yellow-700 transition hover:bg-yellow-100">Archive</button>}
+                  <button onClick={() => deleteThread(thread)} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100">Delete</button>
+                </div>
+              </article>
             )) : (
               <div className="rounded-3xl border border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">
                 No forum threads found.
@@ -327,23 +382,42 @@ export default function AdminForumPage() {
             )}
           </div>
 
-          <div className="space-y-2">
-            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-              <h3 className="text-lg font-bold text-gray-800 mb-3">Forum Categories</h3>
-              <div className="flex flex-wrap gap-2 mb-4">
+          <div className="min-w-0 space-y-2">
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-1 text-lg font-bold text-gray-800">Forum Categories</h3>
+              <p className="mb-4 text-sm text-gray-500">Organize discussions into clear topics.</p>
+              <div className="mb-4 space-y-2">
                 {customCategories.map((category) => (
-                  <span key={category} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">{category}</span>
+                  <div key={category.id} className="flex min-w-0 items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-2">
+                    <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-gray-700" title={category.name}>{category.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => void editCategory(category)}
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
+                      aria-label={`Edit ${category.name}`}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteCategory(category)}
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"
+                      aria-label={`Delete ${category.name}`}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 ))}
               </div>
-              <div className="flex gap-2">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
                 <input
                   type="text"
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
                   placeholder="Add category"
-                  className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm"
+                  className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm"
                 />
-                <button onClick={addCategory} className="rounded-xl bg-gray-800 px-3 py-2 text-sm text-white">Add</button>
+                <button onClick={addCategory} className="shrink-0 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800">Add category</button>
               </div>
             </div>
 
@@ -407,7 +481,7 @@ export default function AdminForumPage() {
                   className="mt-2 w-full rounded-2xl border border-gray-200 px-4 py-3"
                 >
                   {customCategories.map((category) => (
-                    <option key={category} value={category}>{category}</option>
+                    <option key={category.id} value={category.name}>{category.name}</option>
                   ))}
                 </select>
               </div>
@@ -447,19 +521,22 @@ export default function AdminForumPage() {
       )}
 
       {selectedThread && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-xl">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-semibold text-gray-900">{selectedThread.title}</h3>
-              <button onClick={closeViewModal} className="text-gray-400 hover:text-gray-600">Close</button>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-3 sm:p-5" role="presentation">
+          <section className="max-h-[94vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="forum-thread-preview-title">
+            <header className="flex items-center justify-between gap-4 border-b border-gray-200 p-5">
+              <h3 id="forum-thread-preview-title" className="break-words text-xl font-semibold text-gray-900">{selectedThread.title}</h3>
+              <button type="button" onClick={closeViewModal} className="shrink-0 rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50">Close</button>
+            </header>
+            <div className="max-h-[calc(94vh-5rem)] overflow-y-auto p-5">
+              <p className="whitespace-pre-wrap break-words text-sm leading-6 text-gray-700">{selectedThread.content}</p>
+              <AdminDiscussionModeration key={`forum:${selectedThread.id}`} contentType="forum_thread" contentId={selectedThread.id} />
             </div>
-            <p className="text-sm leading-6 text-gray-700 whitespace-pre-wrap">{selectedThread.content}</p>
-          </div>
+          </section>
         </div>
       )}
 
       {toastMessage && (
-        <div className={`fixed bottom-5 right-5 px-4 py-2 rounded-full text-white text-sm z-40 ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
+        <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           {toastMessage.message}
         </div>
       )}

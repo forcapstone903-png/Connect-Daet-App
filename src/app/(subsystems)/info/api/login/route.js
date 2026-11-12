@@ -1,15 +1,42 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getSupabaseAuthConfig } from '@/lib/supabaseConfig'
-import { maskEmail, sanitizeUserProfileForLog } from '@/lib/safeLogging'
 import { setSecureSessionCookie } from '@/lib/serverAuth'
 import { createSessionAdminClient, getUserSessionVersion } from '@/lib/sessionVersions'
+import { checkLoginLockout, clearLoginFailures, recordLoginFailure } from '@/lib/loginLockout'
+import { resolveAuthenticatedUserRole } from '@/lib/staffRoles.mjs'
+import { getAppSetting } from '@/lib/appSettingsServer'
+import { loadSessionOptions } from '@/lib/sessionIssue'
+import { describeSuspension, getActiveSuspension } from '@/lib/contentRestrictions'
+import { publicErrorMessage } from '@/lib/publicError'
+
+function lockoutResponse(lockedUntil) {
+  const retryAfter = Math.max(1, Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 1000))
+  const minutes = Math.max(1, Math.ceil(retryAfter / 60))
+  return NextResponse.json(
+    { success: false, message: `Too many failed sign-in attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.` },
+    { status: 429, headers: { 'Retry-After': String(retryAfter), 'Cache-Control': 'no-store' } }
+  )
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+async function writeLoginAudit(client, { userId = null, action, changes = {} }) {
+  try {
+    const { error } = await client.from('info_audit_log').insert({
+      user_id: userId,
+      action,
+      table_name: 'auth',
+      changes,
+    })
+    if (error) console.error('Login audit record failed:', { action, code: error.code || null })
+  } catch (error) {
+    console.error('Login audit record failed:', { action, code: error.code || null })
+  }
+}
+
 export async function POST(request) {
-  console.log('📝 ====== LOGIN API CALLED ======')
   
   try {
     // Get environment variables
@@ -36,10 +63,33 @@ export async function POST(request) {
       )
     }
 
-    // Create Supabase client
-    const supabase = createClient(supabaseUrl, supabaseAuthKey)
+    const sessionAdmin = createSessionAdminClient()
+    if (!sessionAdmin) {
+      return NextResponse.json(
+        { success: false, message: 'Secure login protection is unavailable. Please try again later.' },
+        { status: 503 }
+      )
+    }
 
-    console.log('📝 Attempting login for:', maskEmail(normalizedEmail))
+    let lockedUntil
+    try {
+      lockedUntil = await checkLoginLockout(sessionAdmin, normalizedEmail)
+    } catch (lockoutError) {
+      console.error('Login lockout check failed:', { code: lockoutError.code || null })
+      return NextResponse.json(
+        { success: false, message: 'Secure login protection is unavailable. Please try again later.' },
+        { status: 503 }
+      )
+    }
+    if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
+      return lockoutResponse(lockedUntil)
+    }
+
+    // Create Supabase client
+    const supabase = createClient(supabaseUrl, supabaseAuthKey, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    })
+
 
     // Sign in with password
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -58,6 +108,26 @@ export async function POST(request) {
 
       if (authError.message.includes('Invalid login credentials')) {
         errorMessage = 'Invalid email or password. Please try again.'
+        try {
+          const failureLockoutUntil = await recordLoginFailure(
+            sessionAdmin,
+            normalizedEmail,
+            await getAppSetting('security', sessionAdmin)
+          )
+          await writeLoginAudit(sessionAdmin, {
+            action: 'login_failed',
+            changes: { reason: 'invalid_credentials' },
+          })
+          if (failureLockoutUntil && new Date(failureLockoutUntil).getTime() > Date.now()) {
+            return lockoutResponse(failureLockoutUntil)
+          }
+        } catch (lockoutError) {
+          console.error('Failed to record login failure:', { code: lockoutError.code || null })
+          return NextResponse.json(
+            { success: false, message: 'Secure login protection is unavailable. Please try again later.' },
+            { status: 503 }
+          )
+        }
       }
 
       return NextResponse.json({ success: false, message: errorMessage }, { status: 401 })
@@ -68,14 +138,6 @@ export async function POST(request) {
       return NextResponse.json(
         { success: false, message: 'Failed to get user data' },
         { status: 500 }
-      )
-    }
-
-    const sessionAdmin = createSessionAdminClient()
-    if (!sessionAdmin) {
-      return NextResponse.json(
-        { success: false, message: 'Unable to establish a secure session. Please try again.' },
-        { status: 503 }
       )
     }
 
@@ -98,7 +160,7 @@ export async function POST(request) {
       )
     }
 
-    const userProfileLookup = await supabase
+    const userProfileLookup = await sessionAdmin
       .from('info_users')
       .select('email_verified')
       .eq('id', authData.user.id)
@@ -118,16 +180,18 @@ export async function POST(request) {
       )
     }
 
-    console.log('✅ User authenticated:', authData.user.id)
 
     // Get or create user profile
     const metadataRole = String(authData.user.user_metadata?.user_type || 'tourist').trim().toLowerCase()
-    const normalizedRole = ['admin', 'moderator', 'tourist', 'business'].includes(metadataRole) ? metadataRole : 'tourist'
+    // user_metadata is editable by the account owner, so it must never grant a
+    // staff role. Staff roles come only from info_users.user_type, which only
+    // an administrator can change (PATCH /info/api/admin/users).
+    const normalizedRole = resolveAuthenticatedUserRole(null, metadataRole)
     const dbUserType = normalizedRole
     let userProfile = null
 
     try {
-      const { data: existingProfile, error: profileLookupError } = await supabase
+      const { data: existingProfile, error: profileLookupError } = await sessionAdmin
         .from('info_users')
         .select('*')
         .eq('id', authData.user.id)
@@ -155,7 +219,7 @@ export async function POST(request) {
           updated_at: new Date().toISOString(),
         }
 
-        const { data: created, error: createError } = await supabase
+        const { data: created, error: createError } = await sessionAdmin
           .from('info_users')
           .insert(newProfile)
           .select()
@@ -169,10 +233,8 @@ export async function POST(request) {
           )
         }
 
-        console.log('✅ Created profile:', sanitizeUserProfileForLog(created))
         userProfile = created
       } else {
-        console.log('✅ Profile found:', sanitizeUserProfileForLog(userProfile))
       }
 
       if (userProfile?.status === 'pending_deletion' || userProfile?.deletion_requested_at) {
@@ -186,6 +248,35 @@ export async function POST(request) {
         return NextResponse.json(
           { success: false, message: 'This account is not active. Please contact support.' },
           { status: 403 }
+        )
+      }
+
+      let suspension
+      try {
+        suspension = await getActiveSuspension(sessionAdmin, authData.user.id)
+      } catch (suspensionError) {
+        console.error('Suspension lookup failed during login:', { code: suspensionError.code || null })
+        return NextResponse.json(
+          { success: false, message: 'Unable to verify your account status. Please try again.' },
+          { status: 503 }
+        )
+      }
+      if (suspension) {
+        return NextResponse.json({ success: false, message: describeSuspension(suspension) }, { status: 403 })
+      }
+
+      userProfile = {
+        ...userProfile,
+        user_type: resolveAuthenticatedUserRole(userProfile.user_type, metadataRole),
+      }
+
+      try {
+        await clearLoginFailures(sessionAdmin, normalizedEmail)
+      } catch (lockoutError) {
+        console.error('Unable to clear successful login failure counter:', { code: lockoutError.code || null })
+        return NextResponse.json(
+          { success: false, message: 'Unable to establish a secure session. Please try again.' },
+          { status: 503 }
         )
       }
 
@@ -206,6 +297,10 @@ export async function POST(request) {
             },
             created_at: signedInAt,
           }),
+        writeLoginAudit(sessionAdmin, {
+          userId: authData.user.id,
+          action: 'login_succeeded',
+        }),
       ])
       if (lastLoginUpdate.error) {
         console.error('Successful login timestamp update failed:', { code: lastLoginUpdate.error.code || null })
@@ -223,8 +318,10 @@ export async function POST(request) {
 
     // Return success with user data
     let sessionVersion
+    let sessionOptions
     try {
       sessionVersion = await getUserSessionVersion(sessionAdmin, authData.user.id)
+      sessionOptions = await loadSessionOptions(sessionAdmin, userProfile)
     } catch (sessionVersionError) {
       console.error('Login session version lookup failed:', { code: sessionVersionError.code || null })
       return NextResponse.json(
@@ -249,16 +346,16 @@ export async function POST(request) {
         access_token: authData.session?.access_token,
         refresh_token: authData.session?.refresh_token,
         expires_at: authData.session?.expires_at,
-      }
-    })
+      },
+    }, { headers: { 'Cache-Control': 'no-store' } })
 
-    setSecureSessionCookie(response, userProfile, rememberMe === true, sessionVersion)
+    setSecureSessionCookie(response, userProfile, rememberMe === true, sessionVersion, null, sessionOptions)
     return response
     
   } catch (error) {
     console.error('🔴 Login API error:', error)
     return NextResponse.json(
-      { success: false, message: 'Internal server error: ' + error.message },
+      { success: false, message: 'Internal server error.' },
       { status: 500 }
     )
   }

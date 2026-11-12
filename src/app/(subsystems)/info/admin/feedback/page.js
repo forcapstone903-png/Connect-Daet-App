@@ -2,14 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
+const FEEDBACK_API = '/info/api/admin/feedback';
+
+async function callFeedbackApi(method = 'GET', body) {
+  const response = await fetch(FEEDBACK_API, {
+    method,
+    credentials: 'same-origin',
+    cache: 'no-store',
+    ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.success) throw new Error(result.message || 'Request failed.');
+  return result;
+}
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
 
-const DEFAULT_STATUSES = ['open', 'in_progress', 'answered', 'closed', 'cancelled'];
+const DEFAULT_STATUSES = ['open', 'in_progress', 'answered', 'closed'];
 const DEFAULT_CATEGORIES = ['general', 'booking', 'safety', 'feedback', 'report', 'other'];
 
 export default function FeedbackAndComplaintPage() {
@@ -36,13 +48,12 @@ export default function FeedbackAndComplaintPage() {
 
   const fetchRecords = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('info_inquiries')
-        .select('* , user:user_id (full_name, email)')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const { items: data } = await callFeedbackApi();
       setItems((data || []).map((item) => ({ ...item, user_name: item.user?.full_name || 'Unknown visitor' })));
+      const sts = Array.from(new Set([...DEFAULT_STATUSES, ...(data || []).map((r) => r.status).filter(Boolean)]));
+      setStatuses(sts);
+      const cats = Array.from(new Set([...DEFAULT_CATEGORIES, ...(data || []).map((r) => r.category).filter(Boolean)]));
+      setCategories(cats);
     } catch (err) {
       console.error('Error fetching feedback/complaints:', err);
       showToast('Failed to load feedback and complaints.', true);
@@ -71,22 +82,6 @@ export default function FeedbackAndComplaintPage() {
 
     checkAuth();
   }, [fetchRecords, router]);
-
-  useEffect(() => {
-    const loadLookups = async () => {
-      try {
-        const { data, error } = await supabase.from('info_inquiries').select('status, category');
-        if (error) throw error;
-        const sts = Array.from(new Set((data || []).map(r => r.status).filter(Boolean)));
-        if (sts.length) setStatuses(sts);
-        const cats = Array.from(new Set((data || []).map(r => r.category).filter(Boolean)));
-        if (cats.length) setCategories(cats);
-      } catch (e) {
-        console.error('Error loading feedback lookups:', e);
-      }
-    };
-    loadLookups();
-  }, []);
 
   const filteredItems = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -120,17 +115,7 @@ export default function FeedbackAndComplaintPage() {
 
   const updateStatus = async (recordId, nextStatus) => {
     try {
-      const { error } = await supabase
-        .from('info_inquiries')
-        .update({
-          status: nextStatus,
-          updated_at: new Date().toISOString(),
-          responded_by: adminUser?.id || null,
-          responded_at: nextStatus === 'answered' || nextStatus === 'closed' ? new Date().toISOString() : null,
-        })
-        .eq('id', recordId);
-
-      if (error) throw error;
+      await callFeedbackApi('PATCH', { id: recordId, status: nextStatus });
       await fetchRecords();
       showToast(`Status updated to ${nextStatus}.`);
     } catch (err) {
@@ -147,18 +132,7 @@ export default function FeedbackAndComplaintPage() {
 
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('info_inquiries')
-        .update({
-          status: 'answered',
-          admin_response: responseText.trim(),
-          responded_by: adminUser?.id || null,
-          responded_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', selectedItem.id);
-
-      if (error) throw error;
+      await callFeedbackApi('PATCH', { id: selectedItem.id, response: responseText.trim() });
 
       showToast('Response saved successfully.');
       setResponseText('');
@@ -342,34 +316,14 @@ export default function FeedbackAndComplaintPage() {
 
         {totalFeedbackPages > 1 && (
           <div className="flex items-center justify-between border-t border-slate-100 bg-white px-4 py-3">
-            <div className="text-xs font-medium text-slate-500">
-              Page {currentFeedbackPage} of {totalFeedbackPages} · {filteredItems.length} results
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setCurrentFeedbackPage((page) => Math.max(1, page - 1))}
-                disabled={currentFeedbackPage === 1}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Previous
-              </button>
-              {Array.from({ length: totalFeedbackPages }, (_, i) => i + 1).map((page) => (
-                <button
-                  key={page}
-                  onClick={() => setCurrentFeedbackPage(page)}
-                  className={`rounded-full px-3 py-1.5 text-xs font-medium border ${page === currentFeedbackPage ? 'bg-violet-600 border-violet-600 text-white' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-                >
-                  {page}
-                </button>
-              ))}
-              <button
-                onClick={() => setCurrentFeedbackPage((page) => Math.min(totalFeedbackPages, page + 1))}
-                disabled={currentFeedbackPage === totalFeedbackPages}
-                className="rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
+            <AdminPagination
+              page={currentFeedbackPage}
+              totalPages={totalFeedbackPages}
+              totalItems={filteredItems.length}
+              pageSize={FEEDBACK_PER_PAGE}
+              itemLabel="feedback items"
+              onPageChange={setCurrentFeedbackPage}
+            />
           </div>
         )}
       </div>
@@ -419,7 +373,7 @@ export default function FeedbackAndComplaintPage() {
       )}
 
       {toast && (
-        <div className="fixed bottom-5 right-5 z-[60] rounded-full px-4 py-2 text-sm font-medium shadow-lg backdrop-blur-sm border ${toast.isError ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}">
+        <div role={toast.isError ? 'alert' : 'status'} aria-live={toast.isError ? 'assertive' : 'polite'} className={`admin-toast ${toast.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           {toast.message}
         </div>
       )}

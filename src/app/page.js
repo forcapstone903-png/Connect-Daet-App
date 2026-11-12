@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
+import { getStaffHomePath } from '@/lib/staffRoles.mjs'
 
 export default function SplashPage() {
   const router = useRouter()
@@ -14,11 +15,7 @@ export default function SplashPage() {
 
       if (cookieSession?.logged_in || session) {
         const role = String(cookieSession?.role || session?.user?.user_metadata?.user_type || '').toLowerCase()
-        if (role === 'admin') {
-          router.push('/info/admin/dashboard')
-        } else {
-          router.push('/info/user/dashboard')
-        }
+        router.push(getStaffHomePath(role))
         return
       }
 

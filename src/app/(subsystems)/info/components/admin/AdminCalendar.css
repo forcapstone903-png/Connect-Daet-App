@@ -136,6 +136,10 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.admin-tourism-calendar .fc .fc-daygrid-day-frame:hover,
+.admin-tourism-calendar .fc .fc-daygrid-event {
+  cursor: default;
+}
 @media (max-width: 639px) {
   .admin-events-calendar .fc .fc-daygrid-day-number { margin: 2px; }
   .admin-events-calendar .fc .fc-daygrid-event { padding: 2px; font-size: 0.65rem; }

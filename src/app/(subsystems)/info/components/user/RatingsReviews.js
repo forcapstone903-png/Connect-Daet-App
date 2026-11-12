@@ -6,6 +6,8 @@ import { Heart, Pencil, ThumbsUp, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCacheKey, invalidateCache } from '@/lib/cache'
 import { decodeReviewText, encodeReviewText } from '@/lib/reviewText'
+import { usePublicSettings } from '@/lib/usePublicSettings'
+import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 
 const PAGE_SIZE = 3
 
@@ -48,12 +50,14 @@ function StarRating({ value, onChange, readOnly = false, compact = false }) {
 }
 
 export default function RatingsReviews({ attractionId, userId, onRatingSummaryChange }) {
+  const { settings: publicSettings } = usePublicSettings()
   const [reviews, setReviews] = useState([])
   const [summary, setSummary] = useState(EMPTY_SUMMARY)
   const [myReview, setMyReview] = useState(null)
   const [userRating, setUserRating] = useState(0)
   const [reviewTitle, setReviewTitle] = useState('')
   const [reviewText, setReviewText] = useState('')
+  const [reviewPhotoUrl, setReviewPhotoUrl] = useState('')
   const [sortBy, setSortBy] = useState('recent')
   const [showAllReviews, setShowAllReviews] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -61,12 +65,26 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
   const [loadingMore, setLoadingMore] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
   const [helpfulVotes, setHelpfulVotes] = useState({})
   const [helpfulCounts, setHelpfulCounts] = useState({})
   const requestId = useRef(0)
   const loadedCount = useRef(0)
+
+  const removeReviewPhoto = async (url) => {
+    const response = await fetch('/info/api/upload', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ bucket: 'profile-media', url }),
+    })
+    const result = await response.json()
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || 'Unable to remove the review photo.')
+    }
+  }
 
   const loadReviews = useCallback(async (append = false) => {
     if (!attractionId) return
@@ -81,24 +99,29 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
     }
 
     try {
-      const baseQuery = supabase
-        .from('attraction_ratings')
-        .select('id, user_id, rating, review_text, pros, cons, created_at')
-        .eq('attraction_type', 'tourist_spot')
-        .eq('attraction_id', attractionId)
-      const sortedQuery = sortBy === 'recent'
-        ? baseQuery.order('created_at', { ascending: false })
-        : baseQuery
-          .order('rating', { ascending: sortBy === 'lowest' })
-          .order('created_at', { ascending: false })
+      const reviewPage = (columns) => {
+        const baseQuery = supabase
+          .from('attraction_ratings')
+          .select(columns)
+          .eq('attraction_type', 'tourist_spot')
+          .eq('attraction_id', attractionId)
+        const sortedQuery = sortBy === 'recent'
+          ? baseQuery.order('created_at', { ascending: false })
+          : baseQuery
+            .order('rating', { ascending: sortBy === 'lowest' })
+            .order('created_at', { ascending: false })
+        return sortedQuery.order('id', { ascending: false }).range(offset, offset + PAGE_SIZE - 1)
+      }
 
-      const [summaryResult, reviewsResult] = await Promise.all([
+      const [summaryResult, firstReviewsResult] = await Promise.all([
         supabase.rpc('get_tourist_spot_rating_summary', { p_attraction_id: attractionId }),
-        sortedQuery
-          .order('id', { ascending: false })
-          .range(offset, offset + PAGE_SIZE - 1),
+        reviewPage('id, user_id, rating, review_text, pros, cons, photo_url, created_at, office_reply, office_reply_at'),
       ])
       if (summaryResult.error) throw summaryResult.error
+      // Office replies need migration 102; without it, load reviews alone.
+      const reviewsResult = firstReviewsResult.error?.code === '42703'
+        ? await reviewPage('id, user_id, rating, review_text, pros, cons, photo_url, created_at')
+        : firstReviewsResult
       if (reviewsResult.error) throw reviewsResult.error
 
       const rows = reviewsResult.data || []
@@ -188,12 +211,13 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
         setUserRating(0)
         setReviewTitle('')
         setReviewText('')
+        setReviewPhotoUrl('')
         return
       }
 
       const { data, error } = await supabase
         .from('attraction_ratings')
-        .select('id, rating, review_text, pros, cons')
+        .select('id, rating, review_text, pros, cons, photo_url')
         .eq('attraction_type', 'tourist_spot')
         .eq('attraction_id', attractionId)
         .eq('user_id', userId)
@@ -211,6 +235,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       setUserRating(data?.rating || 0)
       setReviewTitle(text.title)
       setReviewText(text.body)
+      setReviewPhotoUrl(data?.photo_url || '')
     }
 
     loadMyReview()
@@ -247,12 +272,21 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
           review_text: encodeReviewText(reviewTitle, reviewText),
           pros: myReview?.pros || [],
           cons: myReview?.cons || [],
+          photo_url: reviewPhotoUrl || null,
         }, { onConflict: 'user_id,attraction_type,attraction_id' })
-        .select('id, rating, review_text, pros, cons')
+        .select('id, rating, review_text, pros, cons, photo_url')
         .single()
       if (error) throw error
 
       setMyReview(data)
+      if (myReview?.photo_url && myReview.photo_url !== data.photo_url) {
+        try {
+          await removeReviewPhoto(myReview.photo_url)
+        } catch (cleanupError) {
+          console.error('Previous review photo cleanup failed:', cleanupError)
+          setActionError('Your review was saved, but the previous photo could not be removed.')
+        }
+      }
       invalidateCache(getCacheKey('visitor', 'public', 'reviews'))
       await loadReviews()
     } catch (error) {
@@ -267,6 +301,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
     if (!userId || !myReview) return
     if (!window.confirm('Delete your rating and review for this destination?')) return
 
+    const photosToRemove = [...new Set([myReview.photo_url, reviewPhotoUrl].filter(Boolean))]
     setActionError('')
     setDeleting(true)
     try {
@@ -284,7 +319,17 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       setUserRating(0)
       setReviewTitle('')
       setReviewText('')
+      setReviewPhotoUrl('')
       await loadReviews()
+      for (const photoUrl of photosToRemove) {
+        try {
+          await removeReviewPhoto(photoUrl)
+        } catch (cleanupError) {
+          console.error('Deleted review photo cleanup failed:', cleanupError)
+          setActionError('Your review was deleted, but a photo could not be removed.')
+          break
+        }
+      }
     } catch (error) {
       console.error('Tourist spot review deletion failed:', error)
       setActionError('Your review could not be deleted. Please try again.')
@@ -392,7 +437,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
               <button
                 type="button"
                 onClick={handleDeleteRating}
-                disabled={deleting || submitting}
+                disabled={deleting || submitting || uploadingPhoto}
                 className="inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
               >
                 <Trash2 className="h-3.5 w-3.5" />{deleting ? 'Deleting…' : 'Delete'}
@@ -403,6 +448,34 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
           <div className="mb-2 flex items-center gap-2">
             <StarRating value={userRating} onChange={setUserRating} />
             <span className="text-xs text-slate-500">{userRating ? `${userRating} / 5` : 'Select hearts'}</span>
+          </div>
+
+          {myReview?.photo_url && reviewPhotoUrl === myReview.photo_url ? (
+            <div className="mb-3 flex flex-wrap items-center gap-3">
+              <img src={myReview.photo_url} alt="Your review photo" className="h-20 w-20 rounded-lg object-cover" />
+              <button
+                type="button"
+                onClick={() => setReviewPhotoUrl('')}
+                disabled={submitting || deleting || uploadingPhoto}
+                className="rounded-lg bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+              >
+                Remove current photo
+              </button>
+            </div>
+          ) : null}
+          <div className="mb-3">
+            <p className="mb-1 text-xs font-medium text-slate-600">Review photo <span className="font-normal text-slate-400">(optional)</span></p>
+            <MediaUpload
+              key={`${attractionId}-${myReview?.id || 'new'}`}
+              bucket="profile-media"
+              folder={`reviews/${userId}`}
+              mediaType="image"
+              maxSizeMB={5}
+              buttonText={reviewPhotoUrl && reviewPhotoUrl !== myReview?.photo_url ? 'Change photo' : 'Add a photo'}
+              onUploadComplete={(url) => setReviewPhotoUrl(url || '')}
+              onUploadError={(message) => setActionError(message)}
+              onUploadStateChange={setUploadingPhoto}
+            />
           </div>
 
           <label className="mb-2 block text-xs font-medium text-slate-600">
@@ -433,7 +506,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
           <button
             type="button"
             onClick={handleSubmitRating}
-            disabled={submitting || deleting}
+            disabled={submitting || deleting || uploadingPhoto}
             className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {myReview && <Pencil className="h-3.5 w-3.5" />}
@@ -510,6 +583,18 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
                     </div>
                     {reviewContent.title && <h4 className="mt-2 text-sm font-semibold text-slate-900">{reviewContent.title}</h4>}
                     {reviewContent.body && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{reviewContent.body}</p>}
+                    {review.photo_url ? (
+                      <img src={review.photo_url} alt="Photo shared with this review" loading="lazy" className="mt-2 max-h-64 w-full rounded-lg object-cover sm:max-w-sm" />
+                    ) : null}
+                    {review.office_reply ? (
+                      <div className="mt-2 rounded-lg border-l-4 border-sky-400 bg-sky-50 px-3 py-2">
+                        <p className="text-xs font-semibold text-sky-800">
+                          Response from the {publicSettings.tourismOfficeName || 'tourism office'}
+                          {review.office_reply_at ? ` · ${new Date(review.office_reply_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}` : ''}
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{review.office_reply}</p>
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => handleHelpful(review.id)}

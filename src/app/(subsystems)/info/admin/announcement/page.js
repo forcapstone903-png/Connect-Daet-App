@@ -162,7 +162,7 @@ export default function AdminAnnouncementPage() {
             .in('content_id', announcementIds),
           supabase
             .from('content_comments')
-            .select('id, content_id, body, created_at, user_id, info_users(full_name, email)')
+            .select('id, content_id, body, created_at, user_id, info_users(full_name)')
             .eq('content_type', 'announcement')
             .eq('status', 'active')
             .in('content_id', announcementIds)
@@ -557,7 +557,7 @@ export default function AdminAnnouncementPage() {
       <div className="space-y-5">
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
           <AdminStatCard label="Total" value={stats.total} meta="All announcements" icon="notifications" />
           <AdminStatCard label="Active" value={stats.active} meta="Currently published" icon="check" tone="success" />
           <AdminStatCard label="Critical" value={stats.critical} meta="Published critical alerts" icon="warning" tone="danger" />
@@ -565,29 +565,43 @@ export default function AdminAnnouncementPage() {
           <AdminStatCard label="Views" value={stats.totalViews.toLocaleString()} meta="Total announcement views" icon="analytics" tone="violet" />
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(260px,0.8fr)]">
-          <AdminPanel title="Most viewed announcements" description="Announcements receiving the most visitor attention." bodyClassName="!pt-0">
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)]">
+          <AdminPanel title="Most viewed announcements" description="Announcements receiving the most visitor attention." bodyClassName="!p-0">
             {announcements.length ? (
-              <div className="space-y-4">
-                {[...announcements]
-                  .sort((a, b) => Number(b.view_count || 0) - Number(a.view_count || 0))
-                  .slice(0, 5)
-                  .map((announcement) => {
-                    const maxViews = Math.max(...announcements.map((item) => Number(item.view_count || 0)), 1);
-                    const views = Number(announcement.view_count || 0);
-                    const width = views ? Math.max((views / maxViews) * 100, 2) : 0;
-                    return (
-                      <div key={announcement.id} className="space-y-1.5">
-                        <div className="flex items-center justify-between gap-3 text-sm">
-                          <span className="min-w-0 truncate font-semibold text-slate-800">{announcement.title}</span>
-                          <span className="shrink-0 text-xs tabular-nums text-slate-500">{views.toLocaleString()} views</span>
-                        </div>
-                        <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                          <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${width}%` }} />
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[440px] text-left text-sm">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-[0.14em] text-slate-500">
+                    <tr>
+                      <th scope="col" className="w-12 px-5 py-3 font-bold">Rank</th>
+                      <th scope="col" className="px-3 py-3 font-bold">Announcement</th>
+                      <th scope="col" className="w-32 px-5 py-3 text-right font-bold">Views</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[...announcements]
+                      .sort((a, b) => Number(b.view_count || 0) - Number(a.view_count || 0))
+                      .slice(0, 5)
+                      .map((announcement, index) => {
+                        const maxViews = Math.max(...announcements.map((item) => Number(item.view_count || 0)), 1);
+                        const views = Number(announcement.view_count || 0);
+                        const width = views ? Math.max((views / maxViews) * 100, 2) : 0;
+                        return (
+                          <tr key={announcement.id} className="transition-colors hover:bg-slate-50/80">
+                            <td className="px-5 py-4">
+                              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-50 text-xs font-bold tabular-nums text-blue-700">{index + 1}</span>
+                            </td>
+                            <td className="min-w-0 px-3 py-4">
+                              <p className="truncate font-semibold text-slate-800" title={announcement.title}>{announcement.title}</p>
+                              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100" role="meter" aria-label={`${announcement.title} relative views`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(width)}>
+                                <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${width}%` }} />
+                              </div>
+                            </td>
+                            <td className="whitespace-nowrap px-5 py-4 text-right font-semibold tabular-nums text-slate-700">{views.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
               </div>
             ) : <p className="text-sm text-slate-500">No announcements to rank yet.</p>}
           </AdminPanel>
@@ -1085,13 +1099,11 @@ export default function AdminAnnouncementPage() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className={`fixed top-4 left-1/2 z-[60] -translate-x-1/2 flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm shadow-lg max-w-[90vw] animate-toast-in ${
-          toastMessage.isError ? 'bg-red-600' : 'bg-green-500'
-        }`}>
+        <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           <span className="shrink-0 inline-flex items-center">
             {toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}
           </span>
-          <span className="break-words">{toastMessage.message}</span>
+          <span>{toastMessage.message}</span>
         </div>
       )}
 

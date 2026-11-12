@@ -26,7 +26,7 @@ export default function MediaUpload({
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [mediaPreview, setMediaPreview] = useState(existingMediaUrl || null);
-  const [mediaTypeDetected, setMediaTypeDetected] = useState(null);
+  const [mediaTypeDetected, setMediaTypeDetected] = useState(mediaType === 'both' ? null : mediaType);
   const [trimNotice, setTrimNotice] = useState('');
   const fileInputRef = useRef(null);
 

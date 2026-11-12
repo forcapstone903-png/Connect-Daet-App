@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
+import { loginUrlFor } from '@/lib/loginPrompt'
 import {
   Bookmark,
   Bell,
@@ -11,19 +12,24 @@ import {
   ChevronRight,
   Copy,
   ExternalLink,
+  Globe,
   Heart,
   LoaderCircle,
+  Mail,
   MapPin,
   MessageCircle,
   MoreHorizontal,
+  Phone,
   Share2,
   X,
 } from 'lucide-react'
+import { getListingTypeLabel } from '@/lib/listings.mjs'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
+import RatingsReviews from '@/app/(subsystems)/info/components/user/RatingsReviews'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { trackUserActivity } from '@/lib/trackActivity'
@@ -182,7 +188,7 @@ export default function TouristSpotDetailPage() {
         const [authorResult, authorProfileResult, relatedResult] = await Promise.all([
           data.created_by
             ? supabase.from('info_users')
-              .select('id, full_name, email, profile_image_url, user_type')
+              .select('id, full_name, profile_image_url, user_type')
               .eq('id', data.created_by)
               .maybeSingle()
             : Promise.resolve({ data: null, error: null }),
@@ -197,6 +203,7 @@ export default function TouristSpotDetailPage() {
               .from('info_tourist_spots')
               .select('id, name, location, featured_image, images, gallery_images, rating')
               .eq('status', 'active')
+              .eq('listing_type', data.listing_type || 'attraction')
               .eq('category', data.category)
               .neq('id', spotId)
               .order('rating', { ascending: false })
@@ -225,7 +232,7 @@ export default function TouristSpotDetailPage() {
           const favoriteResult = await supabase.from('user_favorites')
             .select('id')
             .eq('user_id', currentUserId)
-            .eq('item_type', 'tourist_spot')
+            .eq('item_type', 'spot')
             .eq('item_id', spotId)
             .maybeSingle()
           if (favoriteResult.error) throw favoriteResult.error
@@ -285,7 +292,14 @@ export default function TouristSpotDetailPage() {
     ? mediaItems(spot.featured_image, spot.gallery_images, spot.images)
     : [], [spot])
   const address = spot ? getAddress(spot) : ''
-  const entranceFee = spot ? optionalNumber(spot.entrance_fee) : null
+  // The column is entry_fee; entrance_fee is the older API alias.
+  const entranceFee = spot ? optionalNumber(spot.entrance_fee ?? spot.entry_fee) : null
+  const contactLinks = spot ? [
+    spot.contact_number && { href: `tel:${String(spot.contact_number).replace(/[^\d+]/g, '')}`, label: spot.contact_number, icon: Phone },
+    spot.email && { href: `mailto:${spot.email}`, label: spot.email, icon: Mail },
+    spot.website && /^https?:\/\//i.test(spot.website) && { href: spot.website, label: 'Website', icon: Globe, external: true },
+    spot.facebook_url && /^https?:\/\//i.test(spot.facebook_url) && { href: spot.facebook_url, label: 'Facebook page', icon: ExternalLink, external: true },
+  ].filter(Boolean) : []
   const latitude = spot ? optionalNumber(spot.latitude) : null
   const longitude = spot ? optionalNumber(spot.longitude) : null
   const hasCoordinates = latitude !== null && longitude !== null
@@ -296,7 +310,7 @@ export default function TouristSpotDetailPage() {
 
   const toggleFavorite = async () => {
     if (!userId) {
-      router.push('/info/login')
+      router.push(loginUrlFor('Create a free account or sign in to save places to your trip.'))
       return
     }
     setBusy(true)
@@ -304,9 +318,9 @@ export default function TouristSpotDetailPage() {
     try {
       const result = isSaved
         ? await supabase.from('user_favorites').delete()
-          .eq('user_id', userId).eq('item_type', 'tourist_spot').eq('item_id', spotId)
+          .eq('user_id', userId).eq('item_type', 'spot').eq('item_id', spotId)
         : await supabase.from('user_favorites').upsert({
-          user_id: userId, item_type: 'tourist_spot', item_id: spotId,
+          user_id: userId, item_type: 'spot', item_id: spotId,
         }, { onConflict: 'user_id,item_type,item_id' })
       if (result.error) throw result.error
       setIsSaved(!isSaved)
@@ -326,7 +340,7 @@ export default function TouristSpotDetailPage() {
 
   const toggleReaction = async (target) => {
     if (!userId) {
-      router.push('/info/login')
+      router.push(loginUrlFor('Sign in to react to places.'))
       return
     }
     const next = reaction === target ? '' : target
@@ -439,6 +453,7 @@ export default function TouristSpotDetailPage() {
               <span>Back to home</span>
             </Link>
             <div className="tourist-detail-kickers">
+              <span>{getListingTypeLabel(spot.listing_type)}</span>
               {spot.category && <span>{spot.category}</span>}
               {(spot.is_popular || spot.is_featured) && <span className="tourist-popular-badge">Popular destination</span>}
             </div>
@@ -492,11 +507,16 @@ export default function TouristSpotDetailPage() {
                   {spot.category && <span><strong>Category</strong>{spot.category}</span>}
                   {(spot.visit_duration || spot.duration) && <span><strong>Recommended visit</strong>{spot.visit_duration || spot.duration}</span>}
                   {spot.best_visit_time && <span><strong>Best time to visit</strong>{spot.best_visit_time}</span>}
-                  {entranceFee !== null && <span><strong>Entrance fee</strong>{entranceFee > 0 ? `₱${spot.entrance_fee}` : 'Free'}</span>}
-                  {spot.opening_hours && <span><strong>Opening hours</strong>{spot.opening_hours}</span>}
+                  {entranceFee !== null && <span><strong>Entrance fee</strong>{entranceFee > 0 ? `₱${entranceFee.toLocaleString('en-PH')}` : 'Free'}</span>}
+                  {spot.price_range && <span><strong>Price range</strong>{spot.price_range}</span>}
+                  {spot.barangay && <span><strong>Barangay</strong>{spot.barangay}</span>}
+                  {spot.opening_hours && <span><strong>{spot.listing_type === 'accommodation' ? 'Hours / check-in' : 'Opening hours'}</strong>{spot.opening_hours}</span>}
                   {spot.weather_average && <span><strong>Weather</strong>{spot.weather_average}</span>}
                 </div>
                 {spot.highlights && <div className="tourist-highlights"><h3>Highlights</h3><p>{Array.isArray(spot.highlights) ? spot.highlights.join(' · ') : spot.highlights}</p></div>}
+                {spot.tags?.length > 0 && <ul className="mt-4 flex flex-wrap gap-2" aria-label="Tags">
+                  {spot.tags.map((tag) => <li key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">#{tag}</li>)}
+                </ul>}
               </section>
 
               {images.length > 0 && <section className="event-detail-section tourist-gallery-section">
@@ -522,6 +542,8 @@ export default function TouristSpotDetailPage() {
                 </div>
               </section>
 
+              <RatingsReviews key={spot.id} attractionId={spot.id} userId={userId} />
+
               <section className="event-detail-section tourist-comments-section" id="tourist-comments">
                 <div className="tourist-section-heading"><h2>Comments</h2><span>{commentCount}</span></div>
                 <Comments contentType="tourist_spot" contentId={spot.id} userId={userId} contentOwnerId={spot.created_by} contentTitle={spot.name} eventStyle />
@@ -529,6 +551,28 @@ export default function TouristSpotDetailPage() {
             </div>
 
             <aside className="tourist-detail-sidebar">
+              <section className="event-detail-related tourist-related">
+                <h2>Contact</h2>
+                {contactLinks.length > 0 ? (
+                  <ul className="mt-3 space-y-2">
+                    {contactLinks.map(({ href, label, icon: ContactIcon, external }) => (
+                      <li key={href}>
+                        <a
+                          href={href}
+                          {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+                          className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <ContactIcon size={16} aria-hidden="true" className="shrink-0 text-slate-500" />
+                          <span className="min-w-0 truncate">{label}</span>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="tourist-muted mt-2">Contact details have not been added yet.</p>}
+                {mapDestination && <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800">
+                  <MapPin size={16} aria-hidden="true" />Get directions
+                </a>}
+              </section>
               {relatedSpots.length > 0 && <section className="event-detail-related tourist-related">
                 <h2>You might also like</h2>
                 <div className="event-detail-related-list">

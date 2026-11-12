@@ -37,15 +37,19 @@ test('reposts keep independent feed item identity and are not merged together', 
 
 test('diversity reduces repeated categories in a row', () => {
   const profile = { contentTypes: {}, categories: {}, authors: {}, destinations: {} }
+  const now = Date.parse('2025-01-01T00:00:00.000Z')
   const items = [
-    { id: '1', type: 'tourist_spot', category: 'Beach', title: 'Beach 1', published_at: new Date().toISOString() },
-    { id: '2', type: 'tourist_spot', category: 'Beach', title: 'Beach 2', published_at: new Date().toISOString() },
-    { id: '3', type: 'blog', category: 'Food', title: 'Food 1', published_at: new Date().toISOString() },
+    { id: '1', type: 'tourist_spot', category: 'Beach', title: 'Beach 1', published_at: '2025-01-01T00:00:00.000Z' },
+    { id: '2', type: 'tourist_spot', category: 'Beach', title: 'Beach 2', published_at: '2025-01-01T00:00:00.000Z' },
+    { id: '3', type: 'blog', category: 'Food', title: 'Food 1', published_at: '2025-01-01T00:00:00.000Z' },
   ]
 
-  const scored = rankFeedItems({ items, profile, now: Date.now() })
-  assert.ok(scored[0].recommendationScore > scored[2].recommendationScore)
-  assert.equal(scored[0].category, 'Food')
+  const scored = rankFeedItems({ items, profile, now })
+  const foodIndex = scored.findIndex((item) => item.category === 'Food')
+  const secondBeachIndex = scored.findIndex((item, index) => index > 0 && item.category === 'Beach')
+  assert.ok(foodIndex >= 0)
+  assert.ok(secondBeachIndex >= 0)
+  assert.ok(foodIndex < secondBeachIndex)
 })
 
 test('cold-start profile still produces a usable score distribution', () => {

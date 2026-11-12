@@ -1,6 +1,6 @@
 # Site visit analytics
 
-The admin analytics dashboard reports page views, estimated unique visitors, daily totals, and the most-viewed public tourism pages for the latest 30 days.
+The analytics dashboard reports page views, estimated unique visitors, daily totals, device screen categories, and the most-viewed public tourism pages for a 7-, 30-, or 90-day period.
 
 ## What is counted
 
@@ -8,21 +8,24 @@ The admin analytics dashboard reports page views, estimated unique visitors, dai
 - User/admin/authentication routes, API paths, query strings, and fragments are excluded.
 - Analytics is disabled until the visitor chooses **Accept all** in the cookie notice.
 - A random browser ID is retained in local storage for up to 30 days. The browser sends the ID only with an approved public page path and only while consent is granted.
-- For anonymous page views, the server stores a one-way SHA-256 hash of the browser ID, normalized public path, and visit timestamp. For signed-in tourist-spot detail views, it uses a server-keyed one-way account hash instead. It does not store raw IDs, IP addresses, user-agents, referrers, email addresses, or query strings.
+- For anonymous page views, the server stores a one-way SHA-256 hash of the browser ID alongside the normalized public path and visit timestamp. For signed-in tourist-spot detail views, it uses a server-keyed one-way account hash instead. It does not store raw IDs, IP addresses, user-agents, referrers, email addresses, or query strings.
 - Signed-in tourist-spot views are recorded in a separate deduplication table. A spot counts each account once during the rolling 90-day retention window; anonymous browser views do not increase the tourist-spot account count.
+- Popular tourist-spot rankings use those deduplicated account counts. The public Trending Now widget receives only the top destinations, names, and aggregate counts; account hashes are never returned.
 - Repeated requests for the same visitor and page within 10 seconds are deduplicated.
+- With analytics consent, the tracker sends only a coarse viewport category (`mobile`, `tablet`, or `desktop`); it does not send or store a user-agent string. Existing visits are categorized as `unknown`.
 - “Unique visitors” means distinct consented browser IDs during the selected period; it is an estimate, not a count of verified people. Cleared storage, different browsers/devices, denied consent, and automation affect the result.
 - Analytics records and tourist-spot account-deduplication rows should be retained for no more than 90 days.
 
 ## Deployment
 
-1. Review and apply `supabase/migrations/062_site_visit_analytics.sql` to the target database.
+1. Review and apply the project's migrations in numeric order through `supabase/migrations/100_admin_analytics_exports.sql`; this report depends on the existing user, alerts, moderation, and site-visit schema.
 2. Ensure the application server has the Supabase URL and service-role key. The key must remain server-side.
 3. Configure a daily Supabase scheduled job to call `public.cleanup_site_page_views()` so records older than 90 days are removed. Confirm the job is enabled and monitor failures; the migration does not enable `pg_cron` automatically.
-4. Open `/info/admin/analytics` with an admin account and verify the 30-day totals, daily chart, and popular pages.
+4. Open `/info/admin/analytics` with an administrator or tourism officer and verify the selected period, daily traffic, device categories, destinations, and operational metrics. Only administrators receive staff activity details.
 5. Test consent accepted, consent denied, consent withdrawal, private-route exclusion, duplicate navigation, one account revisiting the same spot, and the same-origin ingest endpoint.
+6. Download both PDF and Excel reports and verify that the contents match the selected period. Staff activity must only appear in administrator exports.
 
-Migration history alone does not mean this database has applied the migration. Until the migration is applied and the scheduled cleanup is configured, the dashboard will return a visible error or data may outlive the intended retention period.
+Migration history alone does not mean this database has applied the migration. Until the migrations are applied and the scheduled cleanup is configured, the dashboard will return a visible error or data may outlive the intended retention period.
 
 ## Cache decision
 

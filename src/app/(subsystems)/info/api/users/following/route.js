@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -26,7 +27,7 @@ export async function GET(request) {
 
   if (error) {
     console.error('Followed users lookup failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to load followed users.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to load followed users.') }, { status: 500 })
   }
 
   const followingIds = [...new Set((data || []).map((row) => row.following_id).filter(Boolean))]

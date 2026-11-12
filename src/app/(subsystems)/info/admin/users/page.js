@@ -3,21 +3,39 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Heart } from 'lucide-react';
+import { ClipboardList, Heart, Star, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AdminAvatar from '@/app/(subsystems)/info/components/admin/AdminAvatar';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
-import { hasAdminAccess } from '@/lib/adminRoles'
+import { getAdminRoleLabel, hasAdminAccess, isSuperAdmin } from '@/lib/adminRoles'
+import { GRANTABLE_PERMISSIONS, REVOCABLE_PERMISSIONS, hasPermission, isStaffRole } from '@/lib/staffRoles.mjs'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
 
 // Lookup lists (populated from DB where available)
 // Defaults provided as fallbacks
-const SUPPORTED_USER_TYPES = ['tourist', 'business', 'admin', 'moderator'];
-const DEFAULT_USER_STATUSES = ['active', 'inactive', 'suspended', 'pending'];
+const SUPPORTED_USER_TYPES = ['tourist', 'business', 'tourism_officer', 'moderator', 'admin'];
+const DEFAULT_USER_STATUSES = ['active', 'pending', 'suspended', 'banned', 'pending_deletion'];
+const PERMISSION_LABELS = {
+  'media.use': 'Upload to the media library',
+  'content.notify': 'Notify followers about new content',
+  'tourism.manage': 'Manage places and events',
+  'alerts.broadcast': 'Send real-time alerts',
+  'announcements.manage': 'Publish official announcements',
+  'feedback.manage': 'Answer feedback, inquiries and reviews',
+  'analytics.view': 'View analytics and exports',
+  'moderation.manage': 'Moderate content and users',
+  'forum.manage': 'Manage forum topics and categories',
+  'users.view': 'View the user list',
+};
+const OVERRIDE_ROLES = ['tourism_officer', 'moderator'];
+const EMPTY_OVERRIDES = { grant: [], revoke: [] };
 const DEFAULT_POST_STATUSES = ['pending', 'approved', 'rejected', 'flagged'];
+const formatStatusLabel = (status) => String(status)
+  .replaceAll('_', ' ')
+  .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 export default function ManageUsersPage() {
   const router = useRouter();
@@ -27,7 +45,7 @@ export default function ManageUsersPage() {
   const [userTypes] = useState(SUPPORTED_USER_TYPES);
   const [userStatuses, setUserStatuses] = useState(DEFAULT_USER_STATUSES);
   const [postStatuses, setPostStatuses] = useState(DEFAULT_POST_STATUSES);
-  const [stats, setStats] = useState({ total: 0, tourists: 0, businesses: 0, moderators: 0, active: 0, suspended: 0, pending: 0 });
+  const [stats, setStats] = useState({ total: 0, tourists: 0, businesses: 0, moderators: 0, staff: 0, active: 0, suspended: 0, pending: 0 });
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,7 +77,7 @@ export default function ManageUsersPage() {
 
   // User form
   const [userForm, setUserForm] = useState({
-    full_name: '', email: '', password: '', user_type: 'tourist', status: 'active', points: 0
+    full_name: '', email: '', password: '', user_type: 'tourist', status: 'active', points: 0, permissions: EMPTY_OVERRIDES
   });
 
   const [pointsAdjust, setPointsAdjust] = useState({ amount: '', reason: '', mode: 'add' });
@@ -76,6 +94,7 @@ export default function ManageUsersPage() {
       tourists: data.filter(u => u.user_type === 'tourist').length,
       businesses: data.filter(u => u.user_type === 'business').length,
       moderators: data.filter(u => u.user_type === 'moderator').length,
+      staff: data.filter(u => isStaffRole(u.user_type)).length,
       active: data.filter(u => u.status === 'active').length,
       suspended: data.filter(u => u.status === 'suspended').length,
       pending: data.filter(u => u.status === 'pending').length,
@@ -88,7 +107,15 @@ export default function ManageUsersPage() {
       const response = await fetch('/info/api/admin/users');
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load users');
-      const users = (data.users || []).filter((user) => !['admin', 'administrator'].includes(String(user.user_type).toLowerCase()));
+      // Show every account except the signed-in staff member's own, so an
+      // administrator can manage other staff (tourism officers, moderators, admins).
+      const currentUserId = (() => {
+        try {
+          const stored = JSON.parse(getStoredSession() || '{}');
+          return stored.user_id || stored.id || null;
+        } catch { return null; }
+      })();
+      const users = (data.users || []).filter((user) => user.id !== currentUserId);
       setUsers(users);
       computeStats(users);
     } catch (err) {
@@ -119,8 +146,8 @@ export default function ManageUsersPage() {
           supabase.from('info_user_posts').select('status')
         ]);
 
-        const statuses = Array.from(new Set((statusesData || []).map(r => r.status).filter(Boolean)));
-        if (statuses.length) setUserStatuses(statuses);
+        const statuses = (statusesData || []).map(r => r.status).filter(Boolean);
+        setUserStatuses(Array.from(new Set([...DEFAULT_USER_STATUSES, ...statuses])));
 
         const postStats = Array.from(new Set((postsData || []).map(r => r.status).filter(Boolean)));
         if (postStats.length) setPostStatuses(postStats);
@@ -286,14 +313,17 @@ export default function ManageUsersPage() {
     if (!confirm('Are you sure you want to delete this comment? This action cannot be undone.')) return;
     
     try {
-      const { error } = await supabase
-        .from('content_comments')
-        .delete()
-        .eq('id', commentId);
-      
-      if (error) throw error;
-      
-      showToast('Comment deleted successfully!');
+      const response = await fetch('/info/api/admin/moderation/user-content', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: 'comment', contentId: commentId, userId: selectedUser.id }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete comment.')
+
+      const warning = [result.notificationWarning, result.auditWarning].filter(Boolean).join(' ')
+      showToast(warning || 'Comment deleted successfully!', Boolean(warning))
       await fetchUserComments(selectedUser.id);
     } catch (err) {
       showToast('Failed to delete comment: ' + err.message, true);
@@ -304,14 +334,17 @@ export default function ManageUsersPage() {
     if (!confirm('Are you sure you want to delete this post? This action cannot be undone.')) return;
     
     try {
-      const { error } = await supabase
-        .from('info_user_posts')
-        .delete()
-        .eq('id', postId);
-      
-      if (error) throw error;
-      
-      showToast('Post deleted successfully!');
+      const response = await fetch('/info/api/admin/moderation/user-content', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType: 'post', contentId: postId, userId: selectedUser.id }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete post.')
+
+      const warning = [result.notificationWarning, result.auditWarning].filter(Boolean).join(' ')
+      showToast(warning || 'Post deleted successfully!', Boolean(warning))
       await fetchUserPosts(selectedUser.id);
     } catch (err) {
       showToast('Failed to delete post: ' + err.message, true);
@@ -348,13 +381,17 @@ export default function ManageUsersPage() {
   // ─── Modal helpers ─────────────────────────────────────────────────────────
   const openCreateModal = () => {
     setSelectedUser(null);
-    setUserForm({ full_name: '', email: '', password: '', user_type: 'tourist', status: 'active', points: 0 });
+    setUserForm({ full_name: '', email: '', password: '', user_type: 'tourist', status: 'active', points: 0, permissions: EMPTY_OVERRIDES });
     setShowUserModal(true);
   };
 
   const openEditModal = (u) => {
     setSelectedUser(u);
-    setUserForm({ full_name: u.full_name || '', email: u.email || '', password: '', user_type: u.user_type, status: u.status || 'active', points: u.points || 0 });
+    setUserForm({
+      full_name: u.full_name || '', email: u.email || '', password: '', user_type: u.user_type,
+      status: u.status || 'active', points: u.points || 0,
+      permissions: u.permission_overrides || EMPTY_OVERRIDES,
+    });
     setShowUserModal(true);
   };
 
@@ -383,24 +420,48 @@ export default function ManageUsersPage() {
 
     setSaving(true);
     try {
-      const payload = {
-        full_name: userForm.full_name.trim(),
-        email: userForm.email.trim(),
-        user_type: userForm.user_type,
-        status: userForm.status,
-        points: parseInt(userForm.points) || 0,
-        updated_at: new Date().toISOString(),
+      // Accounts, roles and passwords go through the admin API so that the
+      // password is hashed by Supabase Auth (never stored in info_users) and
+      // role changes are audited and force a fresh sign-in.
+      const callUsersApi = async (method, body) => {
+        const response = await fetch('/info/api/admin/users', {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.success) throw new Error(result.message || 'Request failed');
+        return result;
       };
-      if (userForm.password.trim()) payload.password = userForm.password.trim();
 
-      let error;
-      if (selectedUser) {
-        ({ error } = await supabase.from('info_users').update(payload).eq('id', selectedUser.id));
+      const password = userForm.password.trim();
+      let resultMessage = 'User updated successfully!';
+
+      if (!selectedUser) {
+        const result = await callUsersApi('POST', {
+          full_name: userForm.full_name.trim(),
+          email: userForm.email.trim(),
+          password,
+          role: userForm.user_type,
+        });
+        resultMessage = result.message || 'User created successfully!';
       } else {
-        ({ error } = await supabase.from('info_users').insert([{ ...payload, created_at: new Date().toISOString() }]));
+        // One audited server call: name/email (also the sign-in email),
+        // status, points, role, password and custom permissions.
+        const roleChanged = userForm.user_type !== selectedUser.user_type;
+        const result = await callUsersApi('PATCH', {
+          userId: selectedUser.id,
+          full_name: userForm.full_name.trim(),
+          email: userForm.email.trim(),
+          ...(selectedUser.status === 'pending_deletion' ? {} : { status: userForm.status }),
+          points: parseInt(userForm.points) || 0,
+          ...(roleChanged ? { role: userForm.user_type } : {}),
+          ...(password ? { password } : {}),
+          ...(OVERRIDE_ROLES.includes(userForm.user_type) ? { permissions: userForm.permissions } : {}),
+        });
+        resultMessage = result.message || resultMessage;
       }
-      if (error) throw error;
-      showToast(selectedUser ? 'User updated successfully!' : 'User created successfully!');
+      showToast(resultMessage);
       closeAllModals();
       await fetchUsers();
     } catch (err) {
@@ -443,8 +504,13 @@ export default function ManageUsersPage() {
   // ─── Quick status change ───────────────────────────────────────────────────
   const updateStatus = async (userId, newStatus) => {
     try {
-      const { error } = await supabase.from('info_users').update({ status: newStatus, updated_at: new Date().toISOString() }).eq('id', userId);
-      if (error) throw error;
+      const response = await fetch('/info/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, status: newStatus }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || 'Request failed');
       showToast(`Status updated to ${newStatus}`);
       await fetchUsers();
     } catch (err) {
@@ -461,8 +527,13 @@ export default function ManageUsersPage() {
 
     setSaving(true);
     try {
-      const { error } = await supabase.from('info_users').update({ points: newPoints, updated_at: new Date().toISOString() }).eq('id', selectedUser.id);
-      if (error) throw error;
+      const response = await fetch('/info/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedUser.id, points: newPoints }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || 'Request failed');
 
       if (pointsAdjust.reason.trim()) {
         await supabase.from('reward_history').insert([{
@@ -522,6 +593,7 @@ export default function ManageUsersPage() {
       tourist: 'bg-blue-100 text-blue-800',
       business: 'bg-yellow-100 text-yellow-800',
       admin: 'bg-red-100 text-red-800',
+      tourism_officer: 'bg-emerald-100 text-emerald-800',
       moderator: 'bg-purple-100 text-purple-800',
     };
     return map[type] || 'bg-gray-100 text-gray-800';
@@ -594,6 +666,7 @@ export default function ManageUsersPage() {
           <AdminStatCard label="Tourists" value={stats.tourists} icon="profile" tone="info" />
           <AdminStatCard label="Businesses" value={stats.businesses} icon="edit" tone="warning" />
           <AdminStatCard label="Moderators" value={stats.moderators} icon="users" tone="violet" />
+          <AdminStatCard label="Staff accounts" value={stats.staff} icon="users" tone="violet" meta="Administrators and municipal staff" />
           <AdminStatCard label="Active" value={stats.active} icon="check" tone="success" />
           <AdminStatCard label="Suspended" value={stats.suspended} icon="warning" tone="danger" />
           <AdminStatCard label="Pending" value={stats.pending} icon="arrow" tone="neutral" />
@@ -636,7 +709,7 @@ export default function ManageUsersPage() {
               className="px-3 py-2 border border-gray-200 rounded-2xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="all">All Statuses</option>
-              {userStatuses.map(s => <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>)}
+              {userStatuses.map(s => <option key={s} value={s}>{formatStatusLabel(s)}</option>)}
             </select>
 
             <select
@@ -672,7 +745,7 @@ export default function ManageUsersPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Points</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Joined</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Login</th>
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th className="admin-table-actions-header px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -697,7 +770,7 @@ export default function ManageUsersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2.5 py-0.5 text-xs rounded-full font-medium capitalize ${getTypeBadge(u.user_type)}`}>
-                          {u.user_type}
+                          {String(u.user_type || '').replace('_', ' ')}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -714,7 +787,7 @@ export default function ManageUsersPage() {
                               className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${getStatusBadge(u.status)}`}
                             >
                               {userStatuses.filter(s => s !== 'pending_deletion').map(s => (
-                                <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>
+                                <option key={s} value={s}>{formatStatusLabel(s)}</option>
                               ))}
                             </select>
                           )}
@@ -727,7 +800,7 @@ export default function ManageUsersPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1">
-                          <span className="text-yellow-500 text-xs">⭐</span>
+                          <Star className="h-3.5 w-3.5 fill-current text-yellow-500" aria-hidden="true" />
                           <span className="text-sm font-semibold text-gray-700">{(u.points || 0).toLocaleString()}</span>
                         </div>
                       </td>
@@ -736,28 +809,28 @@ export default function ManageUsersPage() {
                         {u.last_login ? formatDate(u.last_login) : <span className="text-gray-300">Never</span>}
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-center gap-1.5">
                           <button
                             onClick={() => openActivityModal(u)}
                             title="View Activity (Posts, Feedback, Ratings)"
                             className="p-1.5 rounded-lg hover:bg-purple-50 text-purple-600 transition-colors text-sm"
-                          >📋</button>
+                          ><ClipboardList className="h-4 w-4" aria-hidden="true" /></button>
                           <button
                             onClick={() => openPointsModal(u)}
                             title="Adjust Points"
                             className="p-1.5 rounded-lg hover:bg-yellow-50 text-yellow-600 transition-colors text-sm"
-                          >⭐</button>
+                          ><Star className="h-4 w-4" aria-hidden="true" /></button>
                           <button
                             onClick={() => openEditModal(u)}
                             title="Edit User"
                             className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors text-sm"
                           ><Icon name="edit" className="w-4 h-4" /></button>
-                          {u.status !== 'pending_deletion' && !['admin', 'administrator', 'moderator'].includes(String(u.user_type).toLowerCase()) ? (
+                          {u.status !== 'pending_deletion' && !['admin', 'administrator', 'tourism_officer', 'moderator'].includes(String(u.user_type).toLowerCase()) ? (
                             <button
                               onClick={() => openDeleteModal(u)}
                               title="Schedule account deletion"
                               className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors text-sm"
-                            >🗑️</button>
+                            ><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
                           ) : null}
                         </div>
                       </td>
@@ -769,44 +842,14 @@ export default function ManageUsersPage() {
           </div>
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-gray-400">
-              Page {currentPage} of {totalPages} · {filteredUsers.length} results
-            </p>
-            <div className="flex gap-1">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >← Prev</button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                .reduce((acc, p, idx, arr) => {
-                  if (idx > 0 && arr[idx - 1] !== p - 1) acc.push('...');
-                  acc.push(p);
-                  return acc;
-                }, [])
-                .map((p, idx) =>
-                  p === '...' ? (
-                    <span key={idx} className="px-2 py-1.5 text-xs text-gray-400">…</span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => setCurrentPage(p)}
-                      className={`px-3 py-1.5 text-xs border rounded-full transition-colors ${p === currentPage ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                    >{p}</button>
-                  )
-                )}
-              <button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-1.5 text-xs border border-gray-200 rounded-full text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-              >Next <Icon name="arrow" className="inline-block w-4 h-4 ml-2" /></button>
-            </div>
-          </div>
-        )}
+        <AdminPagination
+          page={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredUsers.length}
+          pageSize={USERS_PER_PAGE}
+          itemLabel="users"
+          onPageChange={setCurrentPage}
+        />
       </div>
 
       {/* Activity Modal */}
@@ -1098,9 +1141,11 @@ export default function ManageUsersPage() {
                   <select
                     value={userForm.user_type}
                     onChange={e => setUserForm(p => ({ ...p, user_type: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white"
+                    disabled={!isSuperAdmin(adminUser?.role)}
+                    title={isSuperAdmin(adminUser?.role) ? undefined : 'Only an administrator can change roles'}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white disabled:bg-gray-100 disabled:text-gray-500"
                   >
-                    {userTypes.map(t => <option key={t} value={t}>{String(t).charAt(0).toUpperCase() + String(t).slice(1)}</option>)}
+                    {userTypes.map(t => <option key={t} value={t}>{getAdminRoleLabel(t) === 'Staff' ? String(t).charAt(0).toUpperCase() + String(t).slice(1) : getAdminRoleLabel(t)}</option>)}
                   </select>
                 </div>
                 <div>
@@ -1111,7 +1156,7 @@ export default function ManageUsersPage() {
                     disabled={selectedUser?.status === 'pending_deletion'}
                     className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white"
                   >
-                    {userStatuses.filter(s => s !== 'pending_deletion' || selectedUser?.status === 'pending_deletion').map(s => <option key={s} value={s}>{String(s).charAt(0).toUpperCase() + String(s).slice(1)}</option>)}
+                    {userStatuses.filter(s => s !== 'pending_deletion' || selectedUser?.status === 'pending_deletion').map(s => <option key={s} value={s}>{formatStatusLabel(s)}</option>)}
                   </select>
                 </div>
               </div>
@@ -1127,6 +1172,41 @@ export default function ManageUsersPage() {
                   placeholder="0"
                 />
               </div>
+
+              {selectedUser && OVERRIDE_ROLES.includes(userForm.user_type) && isSuperAdmin(adminUser?.role) && (
+                <fieldset className="rounded-2xl border border-gray-200 p-3">
+                  <legend className="px-1 text-sm font-medium text-gray-700">Permissions</legend>
+                  <p className="mb-2 text-xs text-gray-500">Ticked boxes follow the {getAdminRoleLabel(userForm.user_type)} role by default. Changes apply at the user&apos;s next sign-in. User management and system settings stay administrator-only.</p>
+                  <div className="space-y-1.5">
+                    {Object.entries(PERMISSION_LABELS).map(([permission, label]) => {
+                      const fromRole = hasPermission(userForm.user_type, permission);
+                      const granted = userForm.permissions.grant.includes(permission);
+                      const revoked = userForm.permissions.revoke.includes(permission);
+                      const checked = granted || (fromRole && !revoked);
+                      const canToggle = checked ? REVOCABLE_PERMISSIONS.includes(permission) : GRANTABLE_PERMISSIONS.includes(permission);
+                      return (
+                        <label key={permission} className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={!canToggle}
+                            onChange={(event) => setUserForm((current) => {
+                              const grant = current.permissions.grant.filter((item) => item !== permission);
+                              const revoke = current.permissions.revoke.filter((item) => item !== permission);
+                              if (event.target.checked && !fromRole) grant.push(permission);
+                              if (!event.target.checked && fromRole) revoke.push(permission);
+                              return { ...current, permissions: { grant, revoke } };
+                            })}
+                          />
+                          <span>{label}</span>
+                          {granted ? <span className="rounded-full bg-emerald-50 px-2 text-[10px] font-semibold text-emerald-700">added</span> : null}
+                          {revoked ? <span className="rounded-full bg-red-50 px-2 text-[10px] font-semibold text-red-700">removed</span> : null}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 mt-6">
@@ -1241,7 +1321,7 @@ export default function ManageUsersPage() {
 
       {/* Toast */}
       {toastMessage && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2.5 rounded-full text-white text-sm z-50 shadow-lg animate-slide-in ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
+        <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           <span className="inline-block mr-2">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span> {toastMessage.message}
         </div>
       )}

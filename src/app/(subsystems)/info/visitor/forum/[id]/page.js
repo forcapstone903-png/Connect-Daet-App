@@ -110,7 +110,7 @@ export default function PublicThreadDetailPage() {
           `
           )
           .eq('id', threadId)
-          .eq('status', 'published')
+          .in('status', ['published', 'closed'])
           .maybeSingle()
 
         if (threadError) {
@@ -212,36 +212,33 @@ export default function PublicThreadDetailPage() {
         return
       }
 
-      const { error } = await supabase.from('forum_replies').insert({
-        thread_id: threadId,
-        user_id: userId,
-        content: replyContent.trim(),
-        status: 'active',
+      const response = await fetch('/info/api/forum-replies', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threadId, content: replyContent.trim() }),
       })
-
-      if (error) {
-        console.error('Error posting reply:', error)
-        alert('Failed to post reply')
-      } else {
-        setReplyContent('')
-        const { data: newReplies } = await supabase
-          .from('forum_replies')
-          .select(
-            `
-            *,
-            info_users(full_name)
-          `
-          )
-          .eq('thread_id', threadId)
-          .order('is_best_answer', { ascending: false })
-          .order('likes', { ascending: false })
-          .order('created_at', { ascending: true })
-
-        setReplies(newReplies || [])
+      const result = await response.json()
+      if (!response.ok || !result?.success) {
+        throw new Error(result?.message || 'Failed to post reply.')
       }
+
+      setReplyContent('')
+      const { data: newReplies } = await supabase
+        .from('forum_replies')
+        .select(`
+          *,
+          info_users(full_name)
+        `)
+        .eq('thread_id', threadId)
+        .order('is_best_answer', { ascending: false })
+        .order('likes', { ascending: false })
+        .order('created_at', { ascending: true })
+
+      setReplies(newReplies || [])
     } catch (error) {
       console.error('Error submitting reply:', error)
-      alert('An error occurred. Please try again.')
+      alert(error.message || 'An error occurred. Please try again.')
     } finally {
       setSubmittingReply(false)
     }
@@ -409,7 +406,7 @@ export default function PublicThreadDetailPage() {
             </div>
 
             <div className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold flex-shrink-0 ${getStatusColor(thread.status)}`}>
-              {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' ? '🔒' : '📦'} {thread.status === 'active' ? 'published' : thread.status}
+              {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' || thread.status === 'closed' ? '🔒' : '📦'} {thread.status === 'closed' ? 'locked' : thread.status === 'active' ? 'published' : thread.status}
             </div>
           </div>
 
@@ -450,7 +447,7 @@ export default function PublicThreadDetailPage() {
         </div>
 
         {/* Reply Form */}
-        {thread.status !== 'locked' && thread.status !== 'archived' && (
+        {thread.status !== 'locked' && thread.status !== 'closed' && thread.status !== 'archived' && (
           userId ? <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-5">
             <h3 className="mb-4 text-sm font-bold text-slate-900">Share Your Reply</h3>
 

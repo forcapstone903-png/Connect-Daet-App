@@ -1,21 +1,40 @@
 // app/(subsystems)/info/admin/tourist-spots/page.js
 'use client';
 
-import { startTransition, useState, useEffect, useMemo, useCallback } from 'react';
+import { startTransition, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Archive, Bookmark, ChevronLeft, ChevronRight, Eye, LayoutGrid, List, MapPin, MoreHorizontal, Pencil, Share2, Star, Trash2 } from 'lucide-react';
+import { Archive, Bookmark, Eye, LayoutGrid, List, MapPin, MoreHorizontal, Pencil, Share2, Star, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 import Comments from '@/app/(subsystems)/info/components/user/Comments';
-import { getCacheKey, invalidatePersistentCache } from '@/lib/cache';
+import {
+  getCacheKey,
+  getPersistentCache,
+  invalidatePersistentCache,
+  setPersistentCache,
+} from '@/lib/cache';
+import {
+  normalizeCoordinates,
+  touristSpotGeocodeCacheKey,
+  TOURIST_SPOT_GEOCODE_CACHE_TTL_MS,
+} from '@/lib/touristSpotGeocoding.mjs';
+import {
+  DAET_BARANGAYS,
+  DEFAULT_CATEGORIES,
+  LISTINGS_CACHE_VERSION,
+  LISTING_TYPES,
+  PRICE_RANGES,
+  getListingTypeLabel,
+} from '@/lib/listings.mjs';
 import {
   AdminBadge,
   AdminButton,
   AdminEmptyState,
   AdminLoadingScreen,
+  AdminPagination,
   AdminPanel,
   AdminSearch,
   AdminShell,
@@ -23,15 +42,46 @@ import {
   AdminToolbar,
 } from '@/app/(subsystems)/info/components/admin';
 
-const DEFAULT_SPOT_CATEGORIES = [
-  { value: 'beach', label: 'Beach', color: 'bg-cyan-100 text-cyan-700' },
-  { value: 'historical', label: 'Historical', color: 'bg-amber-100 text-amber-700' },
-  { value: 'nature', label: 'Nature', color: 'bg-emerald-100 text-emerald-700' },
-  { value: 'cultural', label: 'Cultural', color: 'bg-purple-100 text-purple-700' },
-  { value: 'religious', label: 'Religious', color: 'bg-indigo-100 text-indigo-700' },
-  { value: 'park', label: 'Park', color: 'bg-green-100 text-green-700' },
-  { value: 'market', label: 'Market', color: 'bg-orange-100 text-orange-700' },
-];
+const CATEGORY_COLORS = {
+  beach: 'bg-cyan-100 text-cyan-700',
+  historical: 'bg-amber-100 text-amber-700',
+  nature: 'bg-emerald-100 text-emerald-700',
+  cultural: 'bg-purple-100 text-purple-700',
+  religious: 'bg-indigo-100 text-indigo-700',
+  park: 'bg-green-100 text-green-700',
+  market: 'bg-orange-100 text-orange-700',
+};
+
+const toCategoryOption = (value) => ({
+  value,
+  label: String(value).replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  color: CATEGORY_COLORS[value] || 'bg-gray-100 text-gray-700',
+});
+
+const DEFAULT_SPOT_CATEGORIES = [...new Set(Object.values(DEFAULT_CATEGORIES).flat())].map(toCategoryOption);
+
+const EMPTY_SPOT_FORM = {
+  name: '',
+  listing_type: 'attraction',
+  description: '',
+  location: '',
+  barangay: '',
+  latitude: '',
+  longitude: '',
+  category: '',
+  tags: '',
+  opening_hours: '',
+  entrance_fee: '',
+  price_range: '',
+  contact_number: '',
+  email: '',
+  website: '',
+  facebook_url: '',
+  image_url: '',
+  gallery_images: [],
+  status: 'active',
+  featured: false,
+};
 
 const DEFAULT_STATUS_OPTIONS = [
   { value: 'active', label: 'Active' },
@@ -40,9 +90,123 @@ const DEFAULT_STATUS_OPTIONS = [
   { value: 'closed', label: 'Closed' },
 ];
 
-const PUBLIC_SPOTS_CACHE_KEY = getCacheKey('places', 'public', 'all', 'daet-content-v1');
+const PUBLIC_SPOTS_CACHE_KEY = getCacheKey('places', 'public', 'all', LISTINGS_CACHE_VERSION);
 
 const invalidatePublicSpotsCache = () => invalidatePersistentCache(PUBLIC_SPOTS_CACHE_KEY);
+
+function splitSpotName(name) {
+  const words = String(name || 'Unnamed tourist spot')
+    .split(/\s+/)
+    .map((word) => word.length > 17 ? `${word.slice(0, 16)}…` : word);
+  const lines = [''];
+
+  for (const word of words) {
+    const lastLine = lines.length - 1;
+    const nextLine = lines[lastLine] ? `${lines[lastLine]} ${word}` : word;
+    if (nextLine.length <= 17) {
+      lines[lastLine] = nextLine;
+    } else if (lines.length < 2) {
+      lines.push(word);
+    } else {
+      lines[1] = `${lines[1].slice(0, 14)}…`;
+      break;
+    }
+  }
+
+  return lines;
+}
+
+function PopularTouristSpotsLineChart({ data }) {
+  const chartData = data.map((spot) => {
+    const views = Number(spot.views);
+    return {
+      ...spot,
+      name: spot.name || 'Unnamed tourist spot',
+      views: Number.isFinite(views) ? Math.max(0, views) : 0,
+    };
+  });
+  const maxViews = Math.max(...chartData.map((spot) => spot.views), 0);
+  let axisMax = Math.max(maxViews, 1);
+  let tickCount = axisMax <= 3 ? axisMax : 4;
+  if (tickCount === 4) axisMax = Math.ceil(axisMax / tickCount) * tickCount;
+
+  const plot = { left: 58, right: 620, top: 20, bottom: 176 };
+  const points = chartData.map((spot, index) => {
+    const x = chartData.length === 1
+      ? (plot.left + plot.right) / 2
+      : plot.left + (index / (chartData.length - 1)) * (plot.right - plot.left);
+    const y = plot.bottom - (spot.views / axisMax) * (plot.bottom - plot.top);
+    return { ...spot, x, y };
+  });
+  const linePath = points
+    .map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'} ${x} ${y}`)
+    .join(' ');
+  const ticks = Array.from({ length: tickCount + 1 }, (_, index) => (
+    axisMax - (index * axisMax / tickCount)
+  ));
+
+  return (
+    <figure className="min-w-0" aria-label="Popular tourist spots by unique account views">
+      <div className="mb-2 flex items-center gap-2 text-xs text-slate-600">
+        <span className="h-0.5 w-4 bg-blue-600" aria-hidden="true" />
+        Unique account views
+      </div>
+      <div className="w-full overflow-x-auto">
+        <svg
+          className="block h-auto min-w-[560px] w-full"
+          viewBox="0 0 680 232"
+          role="img"
+          aria-labelledby="popular-spots-line-title popular-spots-line-description"
+        >
+          <title id="popular-spots-line-title">Popular tourist spots</title>
+          <desc id="popular-spots-line-description">
+            A line chart comparing unique account views for the top tourist spots over the last 90 days.
+          </desc>
+
+          {ticks.map((tick) => {
+            const y = plot.bottom - (tick / axisMax) * (plot.bottom - plot.top);
+            return (
+              <g key={tick}>
+                <line x1={plot.left} x2={plot.right} y1={y} y2={y} stroke="#e2e8f0" />
+                <text x={plot.left - 10} y={y + 4} textAnchor="end" fill="#64748b" fontSize="11">
+                  {tick.toLocaleString()}
+                </text>
+              </g>
+            );
+          })}
+
+          <path d={linePath} fill="none" stroke="#2563eb" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+          {points.map((spot) => (
+            <g key={spot.id || spot.name}>
+              <circle cx={spot.x} cy={spot.y} r="5" fill="white" stroke="#2563eb" strokeWidth="3">
+                <title>{`${spot.name}: ${spot.views.toLocaleString()} views`}</title>
+              </circle>
+              <text
+                x={spot.x}
+                y={spot.y <= plot.top + 12 ? spot.y + 20 : spot.y - 9}
+                textAnchor="middle"
+                fill="#334155"
+                fontSize="10"
+              >
+                {spot.views.toLocaleString()}
+              </text>
+              <text x={spot.x} y={plot.bottom + 18} textAnchor="middle" fill="#475569" fontSize="10">
+                {splitSpotName(spot.name).map((line, index) => (
+                  <tspan key={`${spot.name}-${index}`} x={spot.x} dy={index === 0 ? 0 : 12}>{line}</tspan>
+                ))}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+      <ul className="sr-only">
+        {points.map((spot) => (
+          <li key={spot.id || spot.name}>{spot.name}: {spot.views.toLocaleString()} unique account views.</li>
+        ))}
+      </ul>
+    </figure>
+  );
+}
 
 export default function TouristSpotsManagement() {
   const router = useRouter();
@@ -66,6 +230,9 @@ export default function TouristSpotsManagement() {
   const [viewMode, setViewMode] = useState('grid');
   const [selectedSpotIds, setSelectedSpotIds] = useState(new Set());
   const [categoryDraft, setCategoryDraft] = useState('');
+  const [categoryType, setCategoryType] = useState('attraction');
+  // Managed list from listing_categories (null = API unavailable, free text allowed).
+  const [managedCategories, setManagedCategories] = useState(null);
   const [galleryUrls, setGalleryUrls] = useState([]);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -74,27 +241,112 @@ export default function TouristSpotsManagement() {
   const [currentSpotPage, setCurrentSpotPage] = useState(1);
   const SPOTS_PER_PAGE = 9;
 
-  const [spotForm, setSpotForm] = useState({
-    name: '',
-    description: '',
-    location: '',
-    latitude: '',
-    longitude: '',
-    category: '',
-    opening_hours: '',
-    entrance_fee: '',
-    contact_number: '',
-    image_url: '',
-    gallery_images: [],
-    rating: 0,
-    status: 'active',
-    featured: false
-  });
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [spotForm, setSpotForm] = useState(EMPTY_SPOT_FORM);
+  const [geocoding, setGeocoding] = useState(false);
+  const [geocodeMessage, setGeocodeMessage] = useState('');
+  const geocodeRequestRef = useRef(0);
+  const resolvedGeocodeKeyRef = useRef('');
 
   const showToast = useCallback((message, isError = false) => {
     setToastMessage({ message, isError });
     setTimeout(() => setToastMessage(null), 3000);
   }, []);
+
+  const lookupCoordinates = async ({ refresh = false } = {}) => {
+    const location = spotForm.location.trim();
+    const barangay = spotForm.barangay.trim();
+    if (!location) return;
+
+    const cacheKey = touristSpotGeocodeCacheKey(location, barangay);
+    if (!refresh && cacheKey === resolvedGeocodeKeyRef.current
+      && String(spotForm.latitude) !== '' && String(spotForm.longitude) !== '') return;
+
+    const requestId = ++geocodeRequestRef.current;
+    setGeocoding(true);
+    setGeocodeMessage('Looking up coordinates from the address...');
+
+    try {
+      if (refresh) invalidatePersistentCache(cacheKey);
+      const cachedCoordinates = refresh
+        ? null
+        : normalizeCoordinates(getPersistentCache(cacheKey)?.data);
+      if (cachedCoordinates) {
+        resolvedGeocodeKeyRef.current = cacheKey;
+        setSpotForm((previous) => ({
+          ...previous,
+          latitude: String(cachedCoordinates.latitude),
+          longitude: String(cachedCoordinates.longitude),
+        }));
+        setGeocodeMessage('Coordinates loaded from the saved address lookup.');
+        return;
+      }
+
+      const params = new URLSearchParams({ location, barangay });
+      if (refresh) params.set('refresh', '1');
+      const response = await fetch(`/info/api/admin/tourist-spots/geocode?${params}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      const result = await response.json().catch(() => ({}));
+      if (requestId !== geocodeRequestRef.current) return;
+
+      if (response.status === 404) {
+        setGeocodeMessage(result.message || 'No matching address found. Enter coordinates manually.');
+        return;
+      }
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Address lookup is temporarily unavailable.');
+      }
+
+      const coordinates = normalizeCoordinates(result.coordinates);
+      if (!coordinates) throw new Error('The address lookup returned invalid coordinates.');
+
+      setPersistentCache(cacheKey, coordinates, TOURIST_SPOT_GEOCODE_CACHE_TTL_MS);
+      resolvedGeocodeKeyRef.current = cacheKey;
+      setSpotForm((previous) => (
+        previous.location.trim() === location && previous.barangay.trim() === barangay
+          ? {
+            ...previous,
+            latitude: String(coordinates.latitude),
+            longitude: String(coordinates.longitude),
+          }
+          : previous
+      ));
+      setGeocodeMessage('Coordinates filled from the address. Review them before saving.');
+    } catch (error) {
+      if (requestId === geocodeRequestRef.current) {
+        console.error('Tourist-spot address lookup failed:', error);
+        setGeocodeMessage(error.message || 'Address lookup is temporarily unavailable. Enter coordinates manually.');
+      }
+    } finally {
+      if (requestId === geocodeRequestRef.current) setGeocoding(false);
+    }
+  };
+
+  const updateAddressField = (field, value) => {
+    geocodeRequestRef.current += 1;
+    resolvedGeocodeKeyRef.current = '';
+    setGeocoding(false);
+    setGeocodeMessage('');
+    setSpotForm((previous) => ({
+      ...previous,
+      [field]: value,
+      latitude: '',
+      longitude: '',
+    }));
+  };
+
+  const updateCoordinateField = (field, value) => {
+    geocodeRequestRef.current += 1;
+    setGeocoding(false);
+    const nextForm = { ...spotForm, [field]: value };
+    resolvedGeocodeKeyRef.current = nextForm.latitude !== '' && nextForm.longitude !== ''
+      ? touristSpotGeocodeCacheKey(nextForm.location, nextForm.barangay)
+      : '';
+    setSpotForm(nextForm);
+    setGeocodeMessage('');
+  };
 
   const fetchSpots = useCallback(async () => {
     setSpotsLoading(true);
@@ -119,26 +371,52 @@ export default function TouristSpotsManagement() {
     }
   }, [showToast]);
 
+  const loadManagedCategories = useCallback(async () => {
+    try {
+      const response = await fetch('/info/api/admin/listing-categories', { credentials: 'same-origin', cache: 'no-store' });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || 'Categories unavailable');
+      setManagedCategories(result.categories || []);
+    } catch (error) {
+      console.error('Managed listing categories unavailable:', error);
+      setManagedCategories(null);
+    }
+  }, []);
+
   // Load distinct categories and statuses from DB to replace hardcoded lists
   useEffect(() => {
     const loadLookups = async () => {
       try {
         const { data, error } = await supabase.from('info_tourist_spots').select('category, status');
         if (error) throw error;
-        const cats = Array.from(new Set((data || []).map(r => r.category).filter(Boolean)));
-        if (cats.length) {
-          setSpotCategories(cats.map(v => ({ value: v, label: String(v).charAt(0).toUpperCase() + String(v).slice(1), color: 'bg-gray-100 text-gray-700' })));
+        // Keep the suggested categories for every listing type and add any
+        // custom ones already used in the database.
+        const cats = Array.from(new Set([
+          ...DEFAULT_SPOT_CATEGORIES.map((cat) => cat.value),
+          ...(data || []).map(r => r.category).filter(Boolean),
+        ]));
+        setSpotCategories(cats.map(toCategoryOption));
+        const discoveredStatuses = (data || []).map(r => r.status).filter(Boolean);
+        const statusOptions = new Map(DEFAULT_STATUS_OPTIONS.map((status) => [status.value, status]));
+        for (const value of discoveredStatuses) {
+          if (!statusOptions.has(value)) {
+            statusOptions.set(value, {
+              value,
+              label: String(value).replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()),
+            });
+          }
         }
-        const stats = Array.from(new Set((data || []).map(r => r.status).filter(Boolean)));
-        if (stats.length) setSpotStatuses(stats.map(v => ({ value: v, label: String(v).charAt(0).toUpperCase() + String(v).slice(1) })));
+        setSpotStatuses([...statusOptions.values()]);
       } catch (e) {
         console.error('Error loading tourist spots lookups:', e);
       }
+      await loadManagedCategories();
     };
     loadLookups();
-  }, []);
+  }, [loadManagedCategories]);
 
   const saveSpot = async () => {
+    if (geocoding) return;
     if (!spotForm.name.trim() || !spotForm.location.trim() || !spotForm.category) {
       showToast('Please fill in all required fields', true);
       return;
@@ -146,22 +424,11 @@ export default function TouristSpotsManagement() {
 
     setSaving(true);
     try {
+      // Validation and normalisation happen server-side (src/lib/listings.mjs).
+      // Rating is not sent: it is calculated from visitor reviews.
       const spotData = {
-        name: spotForm.name,
-        description: spotForm.description || '',
-        location: spotForm.location,
-        latitude: spotForm.latitude ? parseFloat(spotForm.latitude) : null,
-        longitude: spotForm.longitude ? parseFloat(spotForm.longitude) : null,
-        category: spotForm.category,
-        opening_hours: spotForm.opening_hours || '',
-        entrance_fee: spotForm.entrance_fee ? parseFloat(spotForm.entrance_fee) : null,
-        contact_number: spotForm.contact_number || '',
-        image_url: spotForm.image_url || null,
-        gallery_images: spotForm.gallery_images?.length ? spotForm.gallery_images : null,
-        rating: spotForm.rating || 0,
-        status: spotForm.status,
-        featured: !!spotForm.featured,
-        created_by: user?.id
+        ...spotForm,
+        gallery_images: spotForm.gallery_images?.length ? spotForm.gallery_images : [],
       };
 
       let response;
@@ -185,7 +452,7 @@ export default function TouristSpotsManagement() {
       }
 
       invalidatePublicSpotsCache();
-      showToast(editingSpot ? 'Spot updated successfully!' : 'Spot created successfully!');
+      showToast(editingSpot ? 'Listing updated successfully!' : 'Listing created successfully!');
       fetchSpots();
       closeModal();
     } catch (err) {
@@ -208,9 +475,9 @@ export default function TouristSpotsManagement() {
     const nextStatus = confirmingSpot.status === 'inactive' ? 'active' : 'inactive'
     try {
       const response = await fetch(`/info/api/admin/tourist-spots/${confirmingSpot.id}`, {
-        method: 'PUT',
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...confirmingSpot, status: nextStatus })
+        body: JSON.stringify({ action: nextStatus === 'inactive' ? 'archive' : 'restore' })
       });
 
       if (!response.ok) throw new Error('Failed to archive spot');
@@ -261,15 +528,16 @@ export default function TouristSpotsManagement() {
     if (selectedSpotIds.size === 0) return;
 
     try {
-      const query = supabase
-        .from('info_tourist_spots')
-        .update(newStatus === 'featured'
-          ? { featured: true, updated_at: new Date().toISOString() }
-          : { status: newStatus, updated_at: new Date().toISOString() })
-        .in('id', Array.from(selectedSpotIds));
-      const { error } = await query;
-
-      if (error) throw error;
+      const response = await fetch('/info/api/admin/tourist-spots', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ids: Array.from(selectedSpotIds),
+          action: newStatus === 'featured' ? 'feature' : newStatus === 'inactive' ? 'archive' : 'restore',
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || 'Request failed');
       invalidatePublicSpotsCache();
       showToast(newStatus === 'featured' ? `${selectedSpotIds.size} spots featured` : `${selectedSpotIds.size} spots updated`, false);
       setSelectedSpotIds(new Set());
@@ -286,12 +554,13 @@ export default function TouristSpotsManagement() {
 
     try {
       const ids = Array.from(selectedSpotIds);
-      const { error } = await supabase
-        .from('info_tourist_spots')
-        .delete()
-        .in('id', ids);
-
-      if (error) throw error;
+      const response = await fetch('/info/api/admin/tourist-spots', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) throw new Error(result.message || 'Request failed');
       invalidatePublicSpotsCache();
       showToast(`${ids.length} spots deleted`, false);
       setSelectedSpotIds(new Set());
@@ -303,44 +572,46 @@ export default function TouristSpotsManagement() {
     }
   };
 
-  const openCreateModal = useCallback(() => {
+  const openCreateModal = useCallback((initialType = 'attraction') => {
+    geocodeRequestRef.current += 1;
+    resolvedGeocodeKeyRef.current = '';
+    setGeocoding(false);
+    setGeocodeMessage('');
     setEditingSpot(null);
     setGalleryUrls([]);
-    setSpotForm({
-      name: '',
-      description: '',
-      location: '',
-      latitude: '',
-      longitude: '',
-      category: '',
-      opening_hours: '',
-      entrance_fee: '',
-      contact_number: '',
-      image_url: '',
-      gallery_images: [],
-      rating: 0,
-      status: 'active',
-      featured: false
-    });
+    const listingType = LISTING_TYPES.some((type) => type.value === initialType) ? initialType : 'attraction';
+    setSpotForm({ ...EMPTY_SPOT_FORM, listing_type: listingType });
     setShowModal(true);
   }, []);
 
   const openEditModal = (spot) => {
+    geocodeRequestRef.current += 1;
+    resolvedGeocodeKeyRef.current = String(spot.latitude ?? '') !== '' && String(spot.longitude ?? '') !== ''
+      ? touristSpotGeocodeCacheKey(spot.location || '', spot.barangay || '')
+      : '';
+    setGeocoding(false);
+    setGeocodeMessage('');
     setEditingSpot(spot);
     setGalleryUrls(spot.gallery_images || []);
     setSpotForm({
       name: spot.name || '',
+      listing_type: spot.listing_type || 'attraction',
       description: spot.description || '',
       location: spot.location || '',
-      latitude: spot.latitude || '',
-      longitude: spot.longitude || '',
+      barangay: spot.barangay || '',
+      latitude: spot.latitude ?? '',
+      longitude: spot.longitude ?? '',
       category: spot.category || '',
+      tags: (spot.tags || []).join(', '),
       opening_hours: spot.opening_hours || '',
-      entrance_fee: spot.entrance_fee || '',
+      entrance_fee: spot.entrance_fee ?? '',
+      price_range: spot.price_range || '',
       contact_number: spot.contact_number || '',
+      email: spot.email || '',
+      website: spot.website || '',
+      facebook_url: spot.facebook_url || '',
       image_url: spot.image_url || '',
       gallery_images: spot.gallery_images || [],
-      rating: spot.rating || 0,
       status: spot.status || 'active',
       featured: spot.featured || false
     });
@@ -348,6 +619,10 @@ export default function TouristSpotsManagement() {
   };
 
   const closeModal = () => {
+    geocodeRequestRef.current += 1;
+    resolvedGeocodeKeyRef.current = '';
+    setGeocoding(false);
+    setGeocodeMessage('');
     setShowModal(false);
     setShowCategoryModal(false);
     setShowPreviewModal(false);
@@ -376,32 +651,50 @@ export default function TouristSpotsManagement() {
     }));
   };
 
-  const addCategory = () => {
-    const value = categoryDraft.trim();
-    if (!value) return;
-    const newCategory = value.toLowerCase().replace(/\s+/g, '-');
-    const alreadyExists = (spotCategories || []).some((cat) => cat.value === newCategory);
-    if (alreadyExists) {
-      showToast('Category already exists', true);
-      return;
-    }
-    setSpotCategories(prev => [...(prev || []), { value: newCategory, label: value, color: 'bg-gray-100 text-gray-700' }]);
-    setCategoryDraft('');
-    setShowCategoryModal(false);
-    showToast('Category added');
+  const callCategoriesApi = async (method, body) => {
+    const response = await fetch('/info/api/admin/listing-categories', {
+      method,
+      credentials: 'same-origin',
+      cache: 'no-store',
+      ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.success) throw new Error(result.message || 'Category request failed.');
+    return result;
   };
 
-  const removeCategory = (categoryValue) => {
-    if ((spotCategories || []).length <= 1) {
-      showToast('At least one category must remain', true);
-      return;
+  const addCategory = async () => {
+    const value = categoryDraft.trim();
+    if (!value) return;
+    try {
+      await callCategoriesApi('POST', { listing_type: categoryType, name: value });
+      setCategoryDraft('');
+      await loadManagedCategories();
+      showToast('Category saved');
+    } catch (error) {
+      showToast(error.message, true);
     }
-    const updated = (spotCategories || []).filter((cat) => cat.value !== categoryValue);
-    setSpotCategories(updated);
-    if (spotForm.category === categoryValue) {
-      setSpotForm((prev) => ({ ...prev, category: '' }));
+  };
+
+  const setCategoryActive = async (category, isActive) => {
+    try {
+      await callCategoriesApi('PATCH', { id: category.id, is_active: isActive });
+      await loadManagedCategories();
+      showToast(isActive ? 'Category shown again' : 'Category hidden from new listings');
+    } catch (error) {
+      showToast(error.message, true);
     }
-    showToast('Category removed');
+  };
+
+  const deleteCategory = async (category) => {
+    if (!window.confirm(`Delete the category "${category.name}"?`)) return;
+    try {
+      await callCategoriesApi('DELETE', { id: category.id });
+      await loadManagedCategories();
+      showToast('Category deleted');
+    } catch (error) {
+      showToast(error.message, true);
+    }
   };
 
   const getCategoryDisplay = (category) => {
@@ -426,12 +719,14 @@ export default function TouristSpotsManagement() {
   };
 
   const filteredSpots = useMemo(() => {
+    const query = searchTerm.toLowerCase();
     const filtered = spots.filter(spot => {
-    const matchesSearch = String(spot.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          String(spot.location || '').toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || spot.category === categoryFilter;
-    const matchesStatus = statusFilter === 'all' || spot.status === statusFilter;
-    return matchesSearch && matchesCategory && matchesStatus;
+      const matchesSearch = [spot.name, spot.location, spot.barangay, ...(spot.tags || [])]
+        .some((value) => String(value || '').toLowerCase().includes(query));
+      const matchesType = typeFilter === 'all' || (spot.listing_type || 'attraction') === typeFilter;
+      const matchesCategory = categoryFilter === 'all' || spot.category === categoryFilter;
+      const matchesStatus = statusFilter === 'all' || spot.status === statusFilter;
+      return matchesSearch && matchesType && matchesCategory && matchesStatus;
     });
     return filtered.sort((a, b) => {
       if (sortBy === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
@@ -439,7 +734,13 @@ export default function TouristSpotsManagement() {
       if (sortBy === 'rating') return Number(b.rating || 0) - Number(a.rating || 0);
       return new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0);
     });
-  }, [spots, searchTerm, categoryFilter, statusFilter, sortBy]);
+  }, [spots, searchTerm, typeFilter, categoryFilter, statusFilter, sortBy]);
+
+  const typeCounts = useMemo(() => spots.reduce((counts, spot) => {
+    const type = spot.listing_type || 'attraction';
+    counts[type] = (counts[type] || 0) + 1;
+    return counts;
+  }, {}), [spots]);
 
   const totalSpotPages = Math.ceil(filteredSpots.length / SPOTS_PER_PAGE);
   const paginatedSpots = filteredSpots.slice(
@@ -547,13 +848,13 @@ export default function TouristSpotsManagement() {
     <AdminShell
       user={user}
       eyebrow="Content"
-      title="Tourist Spot Management"
-      description="Manage Daet's tourist attractions, destinations, and featured places."
+      title="Places Directory"
+      description="Manage Daet's attractions, accommodations, restaurants, and local businesses."
       headerIcon="attractions"
       actions={(
         <>
           <AdminButton variant="secondary" size="sm" onClick={() => setShowCategoryModal(true)}>Categories</AdminButton>
-          <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Add New Tourist Spot</AdminButton>
+          <AdminButton variant="primary" icon="plus" onClick={() => openCreateModal(typeFilter)}>Add Listing</AdminButton>
         </>
       )}
     >
@@ -574,23 +875,9 @@ export default function TouristSpotsManagement() {
               description="Destinations ranked by unique signed-in accounts over the last 90 days."
               bodyClassName="!pt-0"
             >
-              <div className="space-y-4">
-                {analyticsSummary.topSpots.length ? analyticsSummary.topSpots.map((spot) => {
-                  const maxViews = Math.max(...analyticsSummary.topSpots.map((item) => item.views), 1);
-                  const width = spot.views ? Math.max((spot.views / maxViews) * 100, 2) : 0;
-                  return (
-                    <div key={spot.id} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-3 text-sm">
-                        <span className="min-w-0 truncate font-semibold text-slate-800">{spot.name}</span>
-                        <span className="shrink-0 text-xs tabular-nums text-slate-500">{spot.views.toLocaleString()} views</span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                        <div className="h-full rounded-full bg-blue-500 transition-[width]" style={{ width: `${width}%` }} />
-                      </div>
-                    </div>
-                  );
-                }) : <p className="text-sm text-slate-500">No tourist spots to rank yet.</p>}
-              </div>
+              {analyticsSummary.topSpots.length
+                ? <PopularTouristSpotsLineChart data={analyticsSummary.topSpots} />
+                : <p className="text-sm text-slate-500">No tourist spots to rank yet.</p>}
             </AdminPanel>
 
             <AdminPanel
@@ -633,8 +920,8 @@ export default function TouristSpotsManagement() {
           </div>
 
           <AdminPanel
-            title="Tourist spots"
-            description={`All tourist spots · ${filteredSpots.length} ${filteredSpots.length === 1 ? 'spot' : 'spots'} found`}
+            title={typeFilter === 'all' ? 'All listings' : getListingTypeLabel(typeFilter, { plural: true })}
+            description={`${filteredSpots.length} ${filteredSpots.length === 1 ? 'listing' : 'listings'} found`}
             actions={(
               <div className="flex rounded-xl border border-slate-200 p-1" role="group" aria-label="Tourist spot view">
                 <button type="button" onClick={() => setViewMode('grid')} aria-pressed={viewMode === 'grid'} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold ${viewMode === 'grid' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
@@ -647,6 +934,24 @@ export default function TouristSpotsManagement() {
             )}
             bodyClassName="!p-0"
           >
+            <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-4 py-2 sm:px-5" role="tablist" aria-label="Listing type">
+              {[{ value: 'all', label: 'All' }, ...LISTING_TYPES].map((type) => {
+                const count = type.value === 'all' ? spots.length : (typeCounts[type.value] || 0);
+                const selected = typeFilter === type.value;
+                return (
+                  <button
+                    key={type.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    onClick={() => { setCurrentSpotPage(1); setSelectedSpotIds(new Set()); setTypeFilter(type.value); }}
+                    className={`shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold ${selected ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                  >
+                    {type.value === 'all' ? 'All' : type.plural} <span className="tabular-nums text-slate-400">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
             <AdminToolbar className="border-b border-slate-100 px-4 py-3 sm:px-5">
               <AdminSearch
                 value={searchTerm}
@@ -694,7 +999,7 @@ export default function TouristSpotsManagement() {
                   icon="attractions"
                   title={spots.length ? 'No tourist spots found' : 'No Tourist Spots'}
                   description={spots.length ? 'Try adjusting your search or filters.' : 'There are currently no tourist destinations in the system.'}
-                  action={!spots.length ? <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Add Tourist Spot</AdminButton> : null}
+                  action={!spots.length ? <AdminButton variant="primary" icon="plus" onClick={() => openCreateModal(typeFilter)}>Add Listing</AdminButton> : null}
                 />
               </div>
             ) : viewMode === 'grid' ? (
@@ -733,6 +1038,7 @@ export default function TouristSpotsManagement() {
                           {spot.featured ? <span className="absolute bottom-2 left-2"><AdminBadge tone="brand"><Star className="mr-1 h-3 w-3 fill-current" />Featured</AdminBadge></span> : null}
                         </div>
                         <div className="flex flex-1 flex-col p-2.5 sm:p-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-600">{getListingTypeLabel(spot.listing_type)}</p>
                           <h3 className="truncate text-sm font-bold text-slate-900">{spot.name}</h3>
                           <p className="mt-1 flex items-center gap-1 truncate text-[10px] text-slate-500"><MapPin className="h-3 w-3 shrink-0 text-slate-400" />{spot.location}</p>
                           <p className="mt-2 min-h-8 line-clamp-2 text-[11px] leading-4 text-slate-600">{spot.description || 'No description provided.'}</p>
@@ -812,14 +1118,14 @@ export default function TouristSpotsManagement() {
 
             {totalSpotPages > 1 ? (
               <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-3 sm:px-5">
-                <span className="text-xs text-slate-500">
-                  Showing {(currentSpotPage - 1) * SPOTS_PER_PAGE + 1}–{Math.min(currentSpotPage * SPOTS_PER_PAGE, filteredSpots.length)} of {filteredSpots.length}
-                </span>
-                <div className="ml-auto flex items-center gap-2">
-                  <button type="button" onClick={() => setCurrentSpotPage((page) => Math.max(1, page - 1))} disabled={currentSpotPage === 1} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
-                  <span className="text-xs font-semibold text-slate-700">Page {currentSpotPage} of {totalSpotPages}</span>
-                  <button type="button" onClick={() => setCurrentSpotPage((page) => Math.min(totalSpotPages, page + 1))} disabled={currentSpotPage === totalSpotPages} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
-                </div>
+                <AdminPagination
+                  page={currentSpotPage}
+                  totalPages={totalSpotPages}
+                  totalItems={filteredSpots.length}
+                  pageSize={SPOTS_PER_PAGE}
+                  itemLabel="spots"
+                  onPageChange={setCurrentSpotPage}
+                />
               </div>
             ) : null}
           </AdminPanel>
@@ -830,43 +1136,122 @@ export default function TouristSpotsManagement() {
       {showModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">{editingSpot ? 'Edit Tourist Spot' : 'Add New Tourist Spot'}</h3>
-            
-            <div className="grid grid-cols-2 gap-4">
-              <p className="col-span-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Basic information</p>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Spot Name *</label>
-                <input type="text" value={spotForm.name} onChange={e => setSpotForm(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="e.g., Bagasbas Beach" />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-                <select value={spotForm.category} onChange={e => setSpotForm(p => ({ ...p, category: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
-                  <option value="">Select category</option>
-                  {(spotCategories || []).map(cat => (<option key={cat.value} value={cat.value}>{cat.label}</option>))}
+            <h3 className="text-xl font-bold text-gray-800 mb-4">
+              {editingSpot ? `Edit ${getListingTypeLabel(spotForm.listing_type)}` : `Add ${getListingTypeLabel(spotForm.listing_type)}`}
+            </h3>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <p className="sm:col-span-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Basic information</p>
+              <div>
+                <label htmlFor="spot-listing-type" className="block text-sm font-medium text-gray-700 mb-1">Listing type *</label>
+                <select id="spot-listing-type" value={spotForm.listing_type} onChange={e => setSpotForm(p => ({ ...p, listing_type: e.target.value, category: '' }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
+                  {LISTING_TYPES.map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
                 </select>
               </div>
-              <div className="col-span-2">
+              <div>
+                <label htmlFor="spot-category" className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+                {managedCategories ? (
+                  <select
+                    id="spot-category"
+                    value={spotForm.category}
+                    onChange={e => setSpotForm(p => ({ ...p, category: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-white"
+                  >
+                    <option value="">Choose a category</option>
+                    {managedCategories
+                      .filter((cat) => cat.listing_type === spotForm.listing_type && (cat.is_active || cat.slug === spotForm.category))
+                      .map((cat) => <option key={cat.id} value={cat.slug}>{cat.name}{cat.is_active ? '' : ' (hidden)'}</option>)}
+                  </select>
+                ) : (
+                  <>
+                    <input
+                      id="spot-category"
+                      list="spot-category-options"
+                      value={spotForm.category}
+                      onChange={e => setSpotForm(p => ({ ...p, category: e.target.value.toLowerCase() }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-xl"
+                      placeholder={`e.g., ${(DEFAULT_CATEGORIES[spotForm.listing_type] || [])[0] || 'beach'}`}
+                    />
+                    <datalist id="spot-category-options">
+                      {[...new Set([...(DEFAULT_CATEGORIES[spotForm.listing_type] || []), ...(spotCategories || []).map((cat) => cat.value)])].map((value) => <option key={value} value={value} />)}
+                    </datalist>
+                  </>
+                )}
+                <button type="button" onClick={() => { setCategoryType(spotForm.listing_type); setShowCategoryModal(true); }} className="mt-1 text-xs font-semibold text-blue-600 hover:underline">Manage categories</button>
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="spot-name" className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
+                <input id="spot-name" type="text" value={spotForm.name} onChange={e => setSpotForm(p => ({ ...p, name: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="e.g., Bagasbas Beach" />
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="spot-tags" className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+                <input id="spot-tags" type="text" value={spotForm.tags} onChange={e => setSpotForm(p => ({ ...p, tags: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="surfing, family friendly, sunset view" />
+                <p className="mt-1 text-xs text-gray-500">Separate with commas. Used in search.</p>
+              </div>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea value={spotForm.description} onChange={e => setSpotForm(p => ({ ...p, description: e.target.value }))} rows="4" className="w-full px-3 py-2 border border-gray-300 rounded-xl resize-none" placeholder="Detailed description of the tourist spot..." />
               </div>
 
-              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Location</p>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Address / Area *</label>
-                <input type="text" value={spotForm.location} onChange={e => setSpotForm(p => ({ ...p, location: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="Barangay, Daet" />
+              <p className="sm:col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Location</p>
+              <div>
+                <label htmlFor="spot-location" className="block text-sm font-medium text-gray-700 mb-1">Address / Area *</label>
+                <input
+                  id="spot-location"
+                  type="text"
+                  value={spotForm.location}
+                  onChange={(e) => updateAddressField('location', e.target.value)}
+                  onBlur={(e) => {
+                    if (!['spot-barangay', 'refresh-spot-geocode'].includes(e.relatedTarget?.id)) {
+                      void lookupCoordinates();
+                    }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl"
+                  placeholder="Street, Daet"
+                />
               </div>
-              <div className="grid grid-cols-2 gap-4 col-span-2">
+              <div>
+                <label htmlFor="spot-barangay" className="block text-sm font-medium text-gray-700 mb-1">Barangay</label>
+                <select
+                  id="spot-barangay"
+                  value={spotForm.barangay}
+                  onChange={(e) => updateAddressField('barangay', e.target.value)}
+                  onBlur={(e) => {
+                    if (e.relatedTarget?.id !== 'refresh-spot-geocode') void lookupCoordinates();
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl"
+                >
+                  <option value="">Not set</option>
+                  {DAET_BARANGAYS.map((barangay) => <option key={barangay} value={barangay}>{barangay}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4 sm:col-span-2">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Latitude</label>
-                  <input type="text" value={spotForm.latitude} onChange={e => setSpotForm(p => ({ ...p, latitude: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="14.1122" />
+                  <input type="text" value={spotForm.latitude} onChange={e => updateCoordinateField('latitude', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="14.1122" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Longitude</label>
-                  <input type="text" value={spotForm.longitude} onChange={e => setSpotForm(p => ({ ...p, longitude: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="122.9553" />
+                  <input type="text" value={spotForm.longitude} onChange={e => updateCoordinateField('longitude', e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="122.9553" />
                 </div>
               </div>
+              <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs text-gray-500" aria-live="polite">
+                  {geocoding ? 'Looking up coordinates from the address...' : geocodeMessage || 'Coordinates are suggested when you leave the address fields.'}
+                  {' '}© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap contributors</a>
+                </p>
+                <button
+                  id="refresh-spot-geocode"
+                  type="button"
+                  onClick={() => void lookupCoordinates({ refresh: true })}
+                  disabled={geocoding || !spotForm.location.trim()}
+                  className="text-xs font-semibold text-blue-700 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Refresh coordinates
+                </button>
+              </div>
 
-              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Visitor information</p>
+              <p className="sm:col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Visitor information</p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Opening Hours</label>
                 <input type="text" value={spotForm.opening_hours} onChange={e => setSpotForm(p => ({ ...p, opening_hours: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="e.g., 8:00 AM - 6:00 PM" />
@@ -875,13 +1260,36 @@ export default function TouristSpotsManagement() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Entrance Fee (PHP)</label>
                 <input type="number" value={spotForm.entrance_fee} onChange={e => setSpotForm(p => ({ ...p, entrance_fee: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="0 for free" />
               </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
-                <input type="text" value={spotForm.contact_number} onChange={e => setSpotForm(p => ({ ...p, contact_number: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="(054) 123-4567" />
+              {spotForm.listing_type !== 'attraction' ? (
+                <div>
+                  <label htmlFor="spot-price-range" className="block text-sm font-medium text-gray-700 mb-1">Price range</label>
+                  <select id="spot-price-range" value={spotForm.price_range} onChange={e => setSpotForm(p => ({ ...p, price_range: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
+                    <option value="">Not set</option>
+                    {PRICE_RANGES.map((range) => <option key={range} value={range}>{range}</option>)}
+                  </select>
+                </div>
+              ) : null}
+
+              <p className="sm:col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Contact details</p>
+              <div>
+                <label htmlFor="spot-contact" className="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
+                <input id="spot-contact" type="tel" value={spotForm.contact_number} onChange={e => setSpotForm(p => ({ ...p, contact_number: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="(054) 123-4567" />
+              </div>
+              <div>
+                <label htmlFor="spot-email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input id="spot-email" type="email" value={spotForm.email} onChange={e => setSpotForm(p => ({ ...p, email: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="info@example.com" />
+              </div>
+              <div>
+                <label htmlFor="spot-website" className="block text-sm font-medium text-gray-700 mb-1">Website (optional)</label>
+                <input id="spot-website" type="url" value={spotForm.website} onChange={e => setSpotForm(p => ({ ...p, website: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="https://" />
+              </div>
+              <div>
+                <label htmlFor="spot-facebook" className="block text-sm font-medium text-gray-700 mb-1">Facebook page (optional)</label>
+                <input id="spot-facebook" type="url" value={spotForm.facebook_url} onChange={e => setSpotForm(p => ({ ...p, facebook_url: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="https://facebook.com/..." />
               </div>
 
-              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Media</p>
-              <div className="col-span-2">
+              <p className="sm:col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Media</p>
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Featured Image</label>
                 <MediaUpload
                   bucket="tourist-spots"
@@ -894,7 +1302,7 @@ export default function TouristSpotsManagement() {
                   maxSizeMB={5}
                 />
               </div>
-              <div className="col-span-2">
+              <div className="sm:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Gallery Images</label>
                 <MediaUpload
                   bucket="tourist-spots"
@@ -918,7 +1326,7 @@ export default function TouristSpotsManagement() {
                 )}
               </div>
 
-              <p className="col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Publication</p>
+              <p className="sm:col-span-2 mt-2 border-b border-gray-100 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-blue-700">Publication</p>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select value={spotForm.status} onChange={e => setSpotForm(p => ({ ...p, status: e.target.value }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl">
@@ -935,17 +1343,16 @@ export default function TouristSpotsManagement() {
                 </label>
               </div>
 
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Rating (out of 5)</label>
-                <input type="number" step="0.1" min="0" max="5" value={spotForm.rating || 0} onChange={e => setSpotForm(p => ({ ...p, rating: Number(e.target.value) || 0 }))} className="w-full px-3 py-2 border border-gray-300 rounded-xl" placeholder="4.8" />
-              </div>
-              
+              <p className="sm:col-span-2 text-xs text-gray-500">
+                Rating is calculated automatically from visitor reviews{editingSpot ? ` (currently ${Number(editingSpot.rating || 0).toFixed(1)} from ${Number(editingSpot.review_count || 0)} reviews)` : ''}.
+              </p>
+
             </div>
             
             <div className="flex justify-end gap-3 mt-6">
               <button type="button" onClick={closeModal} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600 hover:bg-gray-50">Cancel</button>
-              <button type="button" onClick={saveSpot} disabled={saving} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50">
-                {saving ? 'Saving...' : (editingSpot ? 'Save Changes' : 'Save Tourist Spot')}
+              <button type="button" onClick={saveSpot} disabled={saving || geocoding} className="px-5 py-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving...' : geocoding ? 'Finding coordinates...' : (editingSpot ? 'Save Changes' : 'Save Listing')}
               </button>
             </div>
           </div>
@@ -955,27 +1362,41 @@ export default function TouristSpotsManagement() {
       {showCategoryModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-lg p-6 shadow-xl">
-            <h3 className="text-xl font-bold text-gray-800 mb-4">Manage Categories</h3>
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={categoryDraft}
-                  onChange={(e) => setCategoryDraft(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-xl"
-                  placeholder="Add new category"
-                />
-                <button onClick={addCategory} className="bg-blue-600 text-white px-4 py-2 rounded-xl">Add</button>
+            <h3 className="text-xl font-bold text-gray-800 mb-1">Manage Categories</h3>
+            <p className="mb-4 text-xs text-gray-500">Saved for everyone. Hidden categories stay on existing listings but cannot be picked for new ones.</p>
+            {managedCategories ? (
+              <div className="space-y-3">
+                <select value={categoryType} onChange={(e) => setCategoryType(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-xl bg-white">
+                  {LISTING_TYPES.map((type) => <option key={type.value} value={type.value}>{type.plural}</option>)}
+                </select>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={categoryDraft}
+                    onChange={(e) => setCategoryDraft(e.target.value)}
+                    maxLength={60}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-xl"
+                    placeholder="Add new category"
+                  />
+                  <button type="button" onClick={() => void addCategory()} className="bg-blue-600 text-white px-4 py-2 rounded-xl">Add</button>
+                </div>
+                <ul className="max-h-72 divide-y divide-gray-100 overflow-y-auto">
+                  {managedCategories.filter((category) => category.listing_type === categoryType).map((category) => (
+                    <li key={category.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                      <span className={category.is_active ? 'text-gray-800' : 'text-gray-400 line-through'}>
+                        {category.name} <span className="text-xs text-gray-400">· {category.usage} listing{category.usage === 1 ? '' : 's'}</span>
+                      </span>
+                      <span className="flex gap-2">
+                        <button type="button" onClick={() => void setCategoryActive(category, !category.is_active)} className="text-xs font-semibold text-blue-600">{category.is_active ? 'Hide' : 'Show'}</button>
+                        {!category.usage ? <button type="button" onClick={() => void deleteCategory(category)} className="text-xs font-semibold text-red-600">Delete</button> : null}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {(spotCategories || []).map((category) => (
-                  <span key={category.value} className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${category.color}`}>
-                    {category.label}
-                    <button type="button" onClick={() => removeCategory(category.value)} className="text-current opacity-70 hover:opacity-100">Remove</button>
-                  </span>
-                ))}
-              </div>
-            </div>
+            ) : (
+              <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-800">The managed category list is unavailable (apply database migration 102). Categories can still be typed freely.</p>
+            )}
             <div className="flex justify-end mt-5">
               <button onClick={() => setShowCategoryModal(false)} className="px-4 py-2 border border-gray-300 rounded-full text-gray-600">Close</button>
             </div>
@@ -1114,7 +1535,7 @@ export default function TouristSpotsManagement() {
 
       {/* Toast */}
       {toastMessage && (
-        <div className={`fixed bottom-5 right-5 px-4 py-2 rounded-full text-white text-sm z-40 ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
+        <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           {toastMessage.isError ? 'Warning' : 'Success'} {toastMessage.message}
         </div>
       )}

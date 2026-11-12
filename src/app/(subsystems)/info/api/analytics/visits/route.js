@@ -1,6 +1,7 @@
 import { createHash, createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { authorizeAdminApi } from '@/lib/adminApiAuth'
 import { getServerSession } from '@/lib/serverAuth'
 import { isValidAnalyticsVisitorId, normalizeTrackedPublicPath } from '@/lib/siteAnalytics'
 
@@ -33,14 +34,8 @@ function isSameOriginRequest(request) {
 }
 
 export async function GET(request) {
-  const session = getServerSession(request)
-  if (!session?.user_id) {
-    return response({ success: false, message: 'Administrator access is required.' }, 401)
-  }
-
-  if (String(session.role || '').trim().toLowerCase() !== 'admin') {
-    return response({ success: false, message: 'Administrator access is required.' }, 403)
-  }
+  const authorization = authorizeAdminApi(request)
+  if (authorization.response) return authorization.response
 
   if (!adminSupabase) {
     return response({ success: false, message: 'Visitor analytics is not configured.' }, 500)
@@ -80,8 +75,10 @@ export async function POST(request) {
     const body = await request.json()
     const visitorId = body?.visitorId
     const pagePath = normalizeTrackedPublicPath(body?.pathname)
+    const allowedDeviceTypes = new Set(['mobile', 'tablet', 'desktop', 'unknown'])
+    const deviceType = body?.deviceType == null ? 'unknown' : String(body.deviceType)
 
-    if (!isValidAnalyticsVisitorId(visitorId) || !pagePath) {
+    if (!isValidAnalyticsVisitorId(visitorId) || !pagePath || !allowedDeviceTypes.has(deviceType)) {
       return response({ success: false, message: 'Invalid visitor analytics event.' }, 400)
     }
 
@@ -97,6 +94,7 @@ export async function POST(request) {
     const { error } = await adminSupabase.rpc('record_site_page_view', {
       p_visitor_hash: visitorHash,
       p_page_path: pagePath,
+      p_device_type: deviceType,
     })
 
     if (error) throw error

@@ -1,19 +1,25 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
-import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
+import { getStaffRoleLabel, normalizeStaffRole } from '@/lib/staffRoles.mjs'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
+import EngagementSection from './EngagementSection'
 
 export default function AnalyticsAndReportsPage() {
   const router = useRouter();
   const [adminUser, setAdminUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState('');
+  const [analyticsReport, setAnalyticsReport] = useState(null);
+  const [days, setDays] = useState(30);
+  const [bucket, setBucket] = useState('day');
+  const [exportingFormat, setExportingFormat] = useState('');
+  const requestIdRef = useRef(0);
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -34,6 +40,7 @@ export default function AnalyticsAndReportsPage() {
   const [categoryData, setCategoryData] = useState([]);
   const [latestReports, setLatestReports] = useState([]);
   const [toast, setToast] = useState(null);
+  const isAdministrator = normalizeStaffRole(adminUser?.role) === 'admin';
 
   const showToast = useCallback((message, isError = false) => {
     setToast({ message, isError });
@@ -41,73 +48,61 @@ export default function AnalyticsAndReportsPage() {
   }, []);
 
   const fetchAnalytics = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
+    setAnalyticsError('');
     try {
-      const [usersRes, eventsRes, spotsRes, blogsRes, feedbackRes, inquiriesRes, visitorResponse] = await Promise.all([
-        supabase.from('info_users').select('id, status, user_type, last_login, created_at'),
-        supabase.from('info_events').select('id, created_at'),
-        supabase.from('info_tourist_spots').select('id, name, created_at'),
-        supabase.from('info_blogs').select('id, created_at'),
-        supabase.from('info_feedback').select('id, rating, created_at'),
-        supabase.from('info_inquiries').select('id, status, category, created_at'),
-        fetch('/info/api/analytics/visits', { credentials: 'same-origin', cache: 'no-store' }),
-      ]);
-
-      const visitorResult = await visitorResponse.json();
-      if (!visitorResponse.ok || !visitorResult.success) {
-        throw new Error(visitorResult.message || 'Unable to load visitor statistics.');
-      }
-      if (usersRes.error) throw usersRes.error;
-      if (eventsRes.error) throw eventsRes.error;
-      if (spotsRes.error) throw spotsRes.error;
-      if (blogsRes.error) throw blogsRes.error;
-      if (feedbackRes.error) throw feedbackRes.error;
-      if (inquiriesRes.error) throw inquiriesRes.error;
-
-      const users = usersRes.data || [];
-      const events = eventsRes.data || [];
-      const spots = spotsRes.data || [];
-      const blogs = blogsRes.data || [];
-      const feedback = feedbackRes.data || [];
-      const inquiries = inquiriesRes.data || [];
-
-      const avgRating = feedback.length
-        ? (feedback.reduce((acc, item) => acc + (Number(item.rating) || 0), 0) / feedback.length).toFixed(1)
-        : '0.0';
-
-      const categoryBreakdown = [
-        { label: 'Safety', value: inquiries.filter((item) => item.category === 'safety').length },
-        { label: 'Booking', value: inquiries.filter((item) => item.category === 'booking').length },
-        { label: 'Feedback', value: inquiries.filter((item) => item.category === 'feedback').length },
-        { label: 'Reports', value: inquiries.filter((item) => item.category === 'report').length },
-        { label: 'General', value: inquiries.filter((item) => item.category === 'general').length },
-      ].filter((item) => item.value > 0).sort((a, b) => b.value - a.value);
-
-      const reports = [
-        { title: 'Visitor satisfaction', value: `${avgRating}/5`, tone: 'emerald' },
-        { title: 'Event engagement', value: `${events.length} live listings`, tone: 'sky' },
-        { title: 'Open issues', value: `${inquiries.filter((item) => item.status === 'open').length} items`, tone: 'amber' },
-        { title: 'Content reach', value: `${blogs.length + spots.length} entries`, tone: 'violet' },
-      ];
-
-      setStats({
-        totalUsers: users.length,
-        activeUsers: users.filter((user) => user.status === 'active').length,
-        totalEvents: events.length,
-        totalSpots: spots.length,
-        totalBlogs: blogs.length,
-        totalFeedback: feedback.length,
-        openInquiries: inquiries.filter((item) => item.status === 'open').length,
-        avgRating: Number(avgRating),
+      const response = await fetch(`/info/api/admin/analytics?days=${days}&bucket=${bucket}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
       });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to load analytics.');
+      }
 
-      setVisitorMetrics(visitorResult.metrics);
-      setCategoryData(categoryBreakdown);
-      setLatestReports(reports);
+      if (requestId !== requestIdRef.current) return;
+      const report = result.analytics;
+      const summary = report.summary;
+      setAnalyticsReport(report);
+      setStats({
+        totalUsers: summary.totalUsers,
+        activeUsers: summary.activeUsers,
+        totalEvents: summary.totalEvents,
+        totalSpots: summary.totalPlaces,
+        totalBlogs: summary.totalBlogs,
+        totalFeedback: summary.feedbackCount,
+        openInquiries: summary.openInquiries,
+        avgRating: Number(summary.averageRating),
+      });
+      setVisitorMetrics({
+        days: report.days,
+        pageViews: summary.pageViews,
+        uniqueVisitors: summary.uniqueVisitors,
+        daily: report.traffic || [],
+        topPages: report.topPages || [],
+      });
+      setCategoryData((report.inquiryCategories || []).map((item) => ({
+        label: item.category || 'General',
+        value: item.count,
+      })));
+      setLatestReports([
+        { title: 'Average review rating', value: `${summary.averageRating}/5`, tone: 'emerald' },
+        { title: 'Sent alerts', value: `${summary.sentAlerts} broadcasts`, tone: 'sky' },
+        { title: 'Open inquiries', value: `${summary.openInquiries} items`, tone: 'amber' },
+        { title: 'Active destinations', value: `${summary.totalPlaces} places`, tone: 'violet' },
+      ]);
     } catch (err) {
       console.error('Analytics fetch error:', err);
-      showToast('Failed to load analytics.', true);
+      if (requestId === requestIdRef.current) {
+        setAnalyticsReport(null);
+        setAnalyticsError(err.message || 'Failed to load analytics.');
+        showToast('Failed to load analytics.', true);
+      }
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
     }
-  }, [showToast]);
+  }, [days, bucket, showToast]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -125,39 +120,36 @@ export default function AnalyticsAndReportsPage() {
 
       setAdminUser(userData);
       await fetchAnalytics();
-      setLoading(false);
     };
 
     checkAuth();
   }, [fetchAnalytics, router]);
 
-  const exportSummary = () => {
-    const rows = [
-      ['Metric', 'Value'],
-      ['Total Users', stats.totalUsers],
-      ['Active Users', stats.activeUsers],
-      ['Total Events', stats.totalEvents],
-      ['Tourist Spots', stats.totalSpots],
-      ['Blogs', stats.totalBlogs],
-      ['Feedback Entries', stats.totalFeedback],
-      ['Open Inquiries', stats.openInquiries],
-      ['Average Rating', `${stats.avgRating}`],
-      ['Page Views (30 days)', visitorMetrics.pageViews],
-      ['Estimated Unique Visitors (30 days)', visitorMetrics.uniqueVisitors],
-    ];
+  const exportReport = async (format) => {
+    setExportingFormat(format);
+    try {
+      const response = await fetch(`/info/api/admin/analytics?days=${days}&bucket=${bucket}&format=${format}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const result = await response.json();
+        throw new Error(result.message || `Unable to export ${format.toUpperCase()} report.`);
+      }
 
-    const csv = rows
-      .map((row) => row.map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `daet_analytics_summary_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-    showToast('Analytics summary exported.');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `connect-daet-analytics-${days}-days-${bucket}-${new Date().toISOString().slice(0, 10)}.${format}`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast(`${format.toUpperCase()} report downloaded.`);
+    } catch (error) {
+      showToast(error.message || `Unable to export ${format.toUpperCase()} report.`, true);
+    } finally {
+      setExportingFormat('');
+    }
   };
 
   const handleLogout = async () => {
@@ -181,11 +173,6 @@ export default function AnalyticsAndReportsPage() {
     const hashId = window.location.hash.slice(1);
     const section = targetId || hashId;
 
-    if (tab === 'engagement') {
-      router.replace('/info/admin/engagement');
-      return;
-    }
-
     if (section) document.getElementById(section)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [loading, router]);
 
@@ -202,21 +189,50 @@ export default function AnalyticsAndReportsPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <AdminSidebar user={adminUser} roleLabel="Administrator" onLogout={handleLogout} />
+      <AdminSidebar user={adminUser} roleLabel={getStaffRoleLabel(adminUser?.role)} onLogout={handleLogout} />
 
       <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         <AdminPageHeader
           eyebrow="Insights"
           title="Analytics & reporting"
-          description="Monitor engagement, response pressure, and system health across the tourism platform."
+          description="Explore traffic, audience growth, reviews, alert reach, and staff operations."
           icon="analytics"
           actions={
             <>
               <AdminButton onClick={() => window.print()}>Print</AdminButton>
-              <AdminButton variant="primary" icon="downloads" onClick={exportSummary}>Export summary</AdminButton>
+              <AdminButton disabled={Boolean(exportingFormat)} onClick={() => void exportReport('pdf')}>
+                {exportingFormat === 'pdf' ? 'Preparing PDF...' : 'Download PDF'}
+              </AdminButton>
+              <AdminButton variant="primary" icon="downloads" disabled={Boolean(exportingFormat)} onClick={() => void exportReport('xlsx')}>
+                {exportingFormat === 'xlsx' ? 'Preparing Excel...' : 'Export Excel'}
+              </AdminButton>
             </>
           }
         />
+
+        {analyticsError ? (
+          <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+            <p className="font-semibold">Analytics could not be loaded.</p>
+            <p className="mt-1">{analyticsError}</p>
+            <p className="mt-2 text-xs">If this deployment has not been migrated yet, apply migration 100 before retrying.</p>
+            <AdminButton className="mt-4" onClick={() => void fetchAnalytics()} disabled={loading}>Retry</AdminButton>
+          </div>
+        ) : analyticsReport ? (
+          <>
+        <nav aria-label="Analytics sections" className="mb-6 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            { href: '#visitors', label: 'Visitor Statistics', detail: 'Traffic and device mix' },
+            { href: '#growth', label: 'Growth and ratings', detail: 'Registrations and visitor reviews' },
+            { href: '#alerts', label: 'Alert reach', detail: 'Delivery and open rates' },
+            { href: '#engagement', label: 'User Engagement', detail: 'Reactions, shares, and comments' },
+            { href: '#reports', label: 'Export Reports', detail: 'Review and download summaries' },
+          ].map((item) => (
+            <a key={item.href} href={item.href} className="rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-blue-300 hover:bg-blue-50/50">
+              <span className="block text-sm font-bold text-slate-800">{item.label}</span>
+              <span className="mt-1 block text-xs text-slate-500">{item.detail}</span>
+            </a>
+          ))}
+        </nav>
 
         <AdminStatGrid>
           <AdminStatCard label="Users" value={stats.totalUsers} icon="users" tone="brand" meta="Registered accounts" />
@@ -225,13 +241,39 @@ export default function AnalyticsAndReportsPage() {
           <AdminStatCard label="Average rating" value={`${stats.avgRating}/5`} icon="star" tone="warning" meta="Visitor feedback" />
         </AdminStatGrid>
 
-        <div className="mb-6 grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
-          <div id="visitors" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-5 flex items-center justify-between">
+        <div className="mb-6 grid items-stretch gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,0.8fr)]">
+          <div id="visitors" className="scroll-mt-6 min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Visitor statistics</p>
-                <h3 className="mt-2 text-lg font-bold text-slate-800">Last 30 days</h3>
-                <p className="mt-1 text-xs text-slate-500">Estimated unique visitors count consented browsers, not verified people.</p>
+                <h3 className="mt-2 text-lg font-bold text-slate-800">{bucket === 'day' ? 'Daily' : bucket === 'week' ? 'Weekly' : 'Monthly'} traffic, last {days} days</h3>
+                <p className="mt-1 text-xs text-slate-500">Estimated visitors are distinct consented browsers, not verified people.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                Group by
+                <select
+                  value={bucket}
+                  onChange={(event) => setBucket(event.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                >
+                  <option value="day">Day</option>
+                  <option value="week">Week</option>
+                  <option value="month">Month</option>
+                </select>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                Reporting period
+                <select
+                  value={days}
+                  onChange={(event) => setDays(Number(event.target.value))}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+                >
+                  <option value={7}>7 days</option>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </label>
               </div>
             </div>
 
@@ -253,13 +295,11 @@ export default function AnalyticsAndReportsPage() {
                   <span className="inline-flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" />Unique visitors</span>
                 </div>
                 <div className="overflow-x-auto pb-2">
-                  <div className="flex h-56 min-w-[720px] items-end gap-2">
+                  <div className={`flex h-56 items-end gap-2 ${bucket === 'day' ? 'min-w-[720px]' : 'min-w-[320px]'}`}>
                     {visitorMetrics.daily.map((day) => {
-                      const label = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        timeZone: 'UTC',
-                      });
+                      const label = new Date(`${day.date}T00:00:00Z`).toLocaleDateString('en-US', bucket === 'month'
+                        ? { month: 'short', year: '2-digit', timeZone: 'UTC' }
+                        : { month: 'numeric', day: 'numeric', timeZone: 'UTC' });
                       const pageHeight = (day.pageViews / maxTrendValue) * 100;
                       const visitorHeight = (day.uniqueVisitors / maxTrendValue) * 100;
 
@@ -299,8 +339,18 @@ export default function AnalyticsAndReportsPage() {
             </div>
           </div>
 
-          <div id="reports" className="scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Key reports</p>
+          <div className="w-full min-w-0 max-w-full space-y-4 overflow-hidden">
+          <div id="reports" className="scroll-mt-6 w-full min-w-0 max-w-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Export reports</p>
+                <h3 className="mt-2 text-lg font-bold text-slate-800">Key reports</h3>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <AdminButton disabled={Boolean(exportingFormat)} onClick={() => void exportReport('pdf')}>PDF</AdminButton>
+                <AdminButton variant="primary" icon="downloads" disabled={Boolean(exportingFormat)} onClick={() => void exportReport('xlsx')}>Excel</AdminButton>
+              </div>
+            </div>
             <div className="mt-4 space-y-3">
               {latestReports.map((item) => (
                 <div key={item.title} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
@@ -310,6 +360,148 @@ export default function AnalyticsAndReportsPage() {
               ))}
             </div>
           </div>
+          <div id="growth" className="scroll-mt-6 grid min-w-0 gap-4">
+            <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Audience growth</p>
+              <h3 className="mt-2 text-lg font-bold text-slate-800">New registrations</h3>
+              <p className="mt-1 text-xs text-slate-500">{analyticsReport.summary.newUsers.toLocaleString()} new users in the selected period</p>
+              {analyticsReport.userGrowth.some((day) => day.newUsers > 0) ? (
+                <div className="mt-5 flex h-40 items-end gap-1 overflow-x-auto">
+                  {analyticsReport.userGrowth.map((day) => {
+                    const peak = Math.max(...analyticsReport.userGrowth.map((item) => item.newUsers), 1)
+                    const height = Math.max(day.newUsers ? (day.newUsers / peak) * 100 : 0, day.newUsers ? 4 : 0)
+                    return (
+                      <div key={day.date} className="flex h-full min-w-2 flex-1 flex-col items-center justify-end">
+                        <div title={`${day.date}: ${day.newUsers} new users`} className="w-full rounded-t bg-violet-500" style={{ height: `${height}%` }} />
+                        <span className="mt-2 text-[9px] text-slate-500">{new Date(`${day.date}T00:00:00Z`).getUTCDate()}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No registrations were recorded in this period.</p>}
+            </section>
+
+            <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Ratings and reviews</p>
+              <h3 className="mt-2 text-lg font-bold text-slate-800">Daily average rating</h3>
+              <p className="mt-1 text-xs text-slate-500">Based on submitted attraction and event reviews.</p>
+              {analyticsReport.ratingsTrend.some((day) => day.reviewCount > 0) ? (
+                <div className="mt-5 flex h-40 items-end gap-1 overflow-x-auto">
+                  {analyticsReport.ratingsTrend.map((day) => (
+                    <div key={day.date} className="flex h-full min-w-2 flex-1 flex-col items-center justify-end">
+                      <div title={`${day.date}: ${day.averageRating}/5 from ${day.reviewCount} reviews`} className="w-full rounded-t bg-amber-400" style={{ height: `${day.reviewCount ? Math.max((day.averageRating / 5) * 100, 4) : 0}%` }} />
+                      <span className="mt-2 text-[9px] text-slate-500">{new Date(`${day.date}T00:00:00Z`).getUTCDate()}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : <p className="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No attraction or event reviews were recorded in this period.</p>}
+            </section>
+          </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Device breakdown</p>
+            <h3 className="mt-2 text-lg font-bold text-slate-800">Consented visitor screen categories</h3>
+            <p className="mt-1 text-xs text-slate-500">Only coarse mobile, tablet, desktop, or legacy-unknown categories are stored.</p>
+            {analyticsReport.devices.length ? (
+              <div className="mt-4 space-y-4">
+                {analyticsReport.devices.map((device) => {
+                  const maxViews = Math.max(...analyticsReport.devices.map((item) => item.pageViews), 1)
+                  const label = device.deviceType === 'unknown' ? 'Unknown / legacy' : `${device.deviceType[0].toUpperCase()}${device.deviceType.slice(1)}`
+                  return (
+                    <div key={device.deviceType}>
+                      <div className="mb-1 flex items-center justify-between gap-3 text-sm text-slate-600">
+                        <span>{label}</span>
+                        <span className="font-semibold text-slate-800">{device.pageViews.toLocaleString()} views</span>
+                      </div>
+                      <div className="h-2.5 rounded-full bg-slate-100">
+                        <div className="h-2.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400" style={{ width: `${(device.pageViews / maxViews) * 100}%` }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            ) : <p className="mt-4 text-sm text-slate-500">Device statistics appear as consented visits are recorded.</p>}
+          </section>
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Destination popularity</p>
+            <h3 className="mt-2 text-lg font-bold text-slate-800">Most-viewed places</h3>
+            {analyticsReport.popularDestinations.length ? (
+              <ol className="mt-4 space-y-3">
+                {analyticsReport.popularDestinations.map((place, index) => (
+                  <li key={place.id} className="flex items-center justify-between gap-3 rounded-xl bg-slate-50 px-3 py-2.5">
+                    <span className="min-w-0 truncate text-sm font-semibold text-slate-700">{index + 1}. {place.name}</span>
+                    <span className="shrink-0 text-xs text-slate-500">{place.pageViews.toLocaleString()} views</span>
+                  </li>
+                ))}
+              </ol>
+            ) : <p className="mt-4 text-sm text-slate-500">No destination views were recorded in this period.</p>}
+          </section>
+        </div>
+
+        <section id="alerts" className="mt-4 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Alert reach</p>
+              <h3 className="mt-2 text-lg font-bold text-slate-800">Broadcast delivery and opens</h3>
+              <p className="mt-1 text-xs text-slate-500">{analyticsReport.summary.alertsOpened.toLocaleString()} inbox opens from {analyticsReport.summary.alertsDelivered.toLocaleString()} deliveries</p>
+            </div>
+            <p className="text-sm font-bold text-slate-700">{analyticsReport.summary.alertsDelivered ? `${Math.round((analyticsReport.summary.alertsOpened / analyticsReport.summary.alertsDelivered) * 100)}% opened` : 'No deliveries'}</p>
+          </div>
+          {analyticsReport.alertActivity.length ? (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[640px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                  <tr><th className="px-3 py-2">Alert</th><th className="px-3 py-2">Category</th><th className="px-3 py-2">Sent</th><th className="px-3 py-2">Delivered</th><th className="px-3 py-2">Opened</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {analyticsReport.alertActivity.map((alert) => (
+                    <tr key={alert.id}>
+                      <td className="max-w-[280px] truncate px-3 py-3 font-semibold text-slate-800">{alert.title}</td>
+                      <td className="px-3 py-3 capitalize text-slate-600">{alert.category}</td>
+                      <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-500">{new Date(alert.sentAt).toLocaleDateString()}</td>
+                      <td className="px-3 py-3 text-slate-700">{alert.delivered.toLocaleString()}</td>
+                      <td className="px-3 py-3 text-slate-700">{alert.opened.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No alerts were sent in this period.</p>}
+        </section>
+
+        {isAdministrator && (
+          <section id="staff-activity" className="mt-4 scroll-mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Staff operations</p>
+            <h3 className="mt-2 text-lg font-bold text-slate-800">Staff activity</h3>
+            <p className="mt-1 text-xs text-slate-500">Actions recorded in the system audit log during the selected period.</p>
+            {analyticsReport.staffActivity.length ? (
+              <div className="mt-4 overflow-x-auto">
+                <table className="w-full min-w-[560px] text-left text-sm">
+                  <thead className="border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-[0.16em] text-slate-500">
+                    <tr><th className="px-3 py-2">Staff member</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Actions</th><th className="px-3 py-2">Last activity</th></tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analyticsReport.staffActivity.map((staff) => (
+                      <tr key={staff.email}>
+                        <td className="px-3 py-3 font-semibold text-slate-800">{staff.name}</td>
+                        <td className="px-3 py-3 capitalize text-slate-600">{staff.role.replaceAll('_', ' ')}</td>
+                        <td className="px-3 py-3 text-slate-700">{staff.actionCount.toLocaleString()}</td>
+                        <td className="whitespace-nowrap px-3 py-3 text-xs text-slate-500">{new Date(staff.lastActivity).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No staff actions were recorded in this period.</p>}
+          </section>
+        )}
+
+        <div className="mt-6">
+          <EngagementSection />
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
@@ -367,10 +559,12 @@ export default function AnalyticsAndReportsPage() {
             </div>
           </div>
         </div>
-      </div>
+            </>
+          ) : null}
+        </div>
 
       {toast && (
-        <div className={`fixed bottom-5 right-5 z-[60] rounded-full border px-4 py-2 text-sm font-medium shadow-lg ${toast.isError ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+        <div role={toast.isError ? 'alert' : 'status'} aria-live={toast.isError ? 'assertive' : 'polite'} className={`admin-toast ${toast.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           {toast.message}
         </div>
       )}

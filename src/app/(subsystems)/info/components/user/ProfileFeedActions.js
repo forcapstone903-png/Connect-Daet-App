@@ -25,6 +25,20 @@ export default function ProfileFeedActions({ post, userId, onRepost, postActionM
   const router = useRouter()
   const contentType = getContentType(post)
   const contentId = post.original_content_id || (post.isRepost ? post.original_post?.id : post.id)
+  const reportTableByType = {
+    announcement: 'info_announcements',
+    blog: 'info_blogs',
+    event: 'info_events',
+    forum: 'forum_threads',
+    user_post: 'info_user_posts',
+    tourist_spot: 'info_tourist_spots',
+  }
+  const authorId = post.reposted_by || post.user_id || post.created_by || post.author?.id
+  const canReport = Boolean(userId && authorId && String(authorId) !== String(userId))
+  const reportItemTable = canReport
+    ? post.isRepost ? 'reposts' : reportTableByType[contentType]
+    : undefined
+  const reportItemId = post.isRepost ? post.repost_id : contentId
   const [isSaved, setIsSaved] = useState(false)
 
   useEffect(() => {
@@ -70,7 +84,11 @@ export default function ProfileFeedActions({ post, userId, onRepost, postActionM
       originalPost={{ ...post, id: contentId }}
       shareUrl={post.href}
       heartOnly
-      postActionMenuProps={postActionMenuProps}
+      postActionMenuProps={{
+        ...postActionMenuProps,
+        reportItemTable,
+        reportItemId: reportItemTable ? reportItemId : undefined,
+      }}
     />
   )
 }

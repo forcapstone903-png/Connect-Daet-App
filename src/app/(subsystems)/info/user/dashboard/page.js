@@ -63,6 +63,7 @@ import { trackUserActivity } from '@/lib/trackActivity'
 import { getPostImages } from '@/lib/postMedia'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
+import FrequentlyAskedQuestions from '@/app/(subsystems)/info/components/FrequentlyAskedQuestions'
 
 // Database table constants
 const TABLES = {
@@ -1098,6 +1099,32 @@ export default function UserDashboardPage() {
     const loadDashboard = async () => {
       const loadUserSignals = async (currentUserId) => {
         try {
+          const loadFavorites = async () => {
+            const favorites = []
+            let page = 1
+            let pageCount = 1
+
+            while (page <= pageCount) {
+              const response = await fetch(`/info/api/user/favorites?page=${page}&pageSize=100`, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+              })
+              const result = await response.json().catch(() => ({}))
+              if (!response.ok || !result.success) {
+                throw new Error(result.message || `Unable to load saved items (${response.status}).`)
+              }
+              if (!Array.isArray(result.favorites) || !Number.isInteger(result.pagination?.pages)) {
+                throw new Error('The saved items response is invalid.')
+              }
+
+              favorites.push(...result.favorites)
+              pageCount = result.pagination.pages
+              page += 1
+            }
+
+            return { data: favorites, error: null }
+          }
+
           const [activityResult, reactionResult, favoriteResult, preferenceResult] = await Promise.all([
             supabase
               .from(TABLES.ACTIVITY_LOG)
@@ -1110,14 +1137,7 @@ export default function UserDashboardPage() {
               .select('content_type, content_id, reaction_type, created_at')
               .eq('user_id', currentUserId)
               .limit(100),
-            fetch('/info/api/user/favorites', { credentials: 'same-origin', cache: 'no-store' })
-              .then(async (response) => {
-                const result = await response.json().catch(() => ({}))
-                if (!response.ok || !result.success) {
-                  throw new Error(result.message || `Unable to load saved items (${response.status}).`)
-                }
-                return { data: result.favorites || [], error: null }
-              }),
+            loadFavorites(),
             supabase
               .from(TABLES.FEED_PREFERENCES)
               .select('preferred_categories')
@@ -1846,7 +1866,7 @@ export default function UserDashboardPage() {
     <main className="tourism-shell dashboard-shell medium-home relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
       <UserTopHeader edgeToEdgeMobile />
       {toastMessage && (
-        <div role="status" aria-live="polite" className="usr-toast fixed left-1/2 top-[76px] z-[60] max-w-[calc(100%-2rem)] -translate-x-1/2 truncate rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl lg:top-6">
+        <div role="status" aria-live="polite" className="usr-toast fixed left-1/2 top-[76px] z-[2147483647] max-w-[calc(100%-2rem)] -translate-x-1/2 truncate rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl lg:top-6">
           {toastMessage}
         </div>
       )}
@@ -2023,6 +2043,14 @@ export default function UserDashboardPage() {
                 {visibleFeed.map((item, index) => {
                   const itemKey = `${item.type}-${item.id}`
                   const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'blog' ? 'blog' : item.type === 'post' ? 'user_post' : item.type === 'announcement' ? 'announcement' : item.type === 'tourist_spot' ? 'tourist_spot' : 'event'
+                  const reportTableByType = {
+                    blog: 'info_blogs',
+                    event: 'info_events',
+                    forum_thread: 'forum_threads',
+                    user_post: 'info_user_posts',
+                    announcement: 'info_announcements',
+                    tourist_spot: 'info_tourist_spots',
+                  }
                   // Comments, reactions and share counts all key on the
                   // original content: info_comments rows are foreign-keyed to
                   // the original content tables, so a repost row id can never
@@ -2033,6 +2061,12 @@ export default function UserDashboardPage() {
                   const actionContentType = item.is_repost ? (item.original_content_type || contentType) : contentType
                   const isSaved = savedItems.has(itemKey)
                   const author = item.author || (item.type === 'event' ? { id: item.created_by, full_name: 'Daet Tourism Admin', user_type: 'admin' } : null)
+                  const reportOwnerId = item.is_repost ? item.reposted_by || item.user_id : author?.id
+                  const reportItemTable = item.is_repost ? 'reposts' : reportTableByType[actionContentType]
+                  const reportItemId = item.is_repost ? item.repost_id || item.id : actionContentId
+                  const canReportItem = Boolean(
+                    userId && reportOwnerId && String(reportOwnerId) !== String(userId) && reportItemTable
+                  )
                   const isOwnAuthor = Boolean(userId && author?.id && String(author.id) === String(userId))
                   const isFollowingAuthor = author?.id
                     ? followingUserIds.has(author.id) || followedSuggestions.has(author.id)
@@ -2142,14 +2176,19 @@ export default function UserDashboardPage() {
 
                         <Link
                           href={item.href}
-                          aria-label={`Open ${item.title}`}
+                          aria-label={`Open ${item.title || contentTypeLabel}`}
                           className={`medium-home-post-body${postThumbnailUrl || postThumbnailVideoUrl ? ' has-thumbnail' : ''}`}
                         >
                           <div className="medium-home-post-copy">
                             <span className="medium-home-post-title">
-                              <h2>{item.title}</h2>
+                              <h2>{item.title || contentTypeLabel}</h2>
                             </span>
                             {contentText && <p className="medium-home-post-excerpt">{contentText}</p>}
+                            {item.type === 'post' && (
+                              <span className="mt-2 inline-flex text-xs font-bold text-sky-700">
+                                Read full post
+                              </span>
+                            )}
                           </div>
                           {(postThumbnailUrl || postThumbnailVideoUrl) && (
                             <span className="medium-home-post-thumbnail" aria-hidden="true">
@@ -2178,6 +2217,8 @@ export default function UserDashboardPage() {
                                   visibility={item.visibility}
                                   contentType={actionContentType}
                                   contentId={actionContentId}
+                                  reportItemTable={canReportItem ? reportItemTable : undefined}
+                                  reportItemId={canReportItem ? reportItemId : undefined}
                                   userId={userId}
                                   contentTitle={item.title}
                                   shareUrl={item.href}
@@ -2297,6 +2338,7 @@ export default function UserDashboardPage() {
 
           </aside>
         </div>
+        <FrequentlyAskedQuestions audience="user" />
         <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Back to top" title="Back to top" className="usr-press usr-lift fixed bottom-8 right-8 z-20 hidden h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-lg hover:text-sky-700 lg:flex">
           <ArrowUp className="h-4 w-4" aria-hidden="true" />
         </button>

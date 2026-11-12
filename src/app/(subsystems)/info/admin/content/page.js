@@ -35,7 +35,7 @@ export default async function AdminContentPage({ searchParams }) {
 
   return (
     <main className="min-h-screen bg-slate-50 px-5 py-10 sm:px-8">
-      <div className="mx-auto max-w-6xl">
+      <div>
         <Link href="/info/admin/dashboard" className="text-sm font-semibold text-sky-700 hover:text-sky-900">
           ← Admin dashboard
         </Link>

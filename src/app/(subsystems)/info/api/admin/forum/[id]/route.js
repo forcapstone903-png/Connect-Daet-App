@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { publicErrorMessage } from '@/lib/publicError'
+import { notifyContentAuthorOfDeletion } from '@/lib/contentDeletionNotifications.mjs'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -27,7 +29,7 @@ export async function GET(request, { params }) {
       .single()
 
     if (error) {
-      return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -36,7 +38,7 @@ export async function GET(request, { params }) {
     }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Forum thread detail error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to load thread details' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to load thread details') }, { status: 500 })
   }
 }
 
@@ -59,13 +61,16 @@ export async function PUT(request, { params }) {
         .select('id')
         .eq('name', String(body.category || '').trim())
         .maybeSingle()
-      if (categoryError) return NextResponse.json({ success: false, message: categoryError.message }, { status: 500 })
+      if (categoryError) return NextResponse.json({ success: false, message: publicErrorMessage(categoryError) }, { status: 500 })
       if (!category) return NextResponse.json({ success: false, message: 'Choose an existing forum category.' }, { status: 400 })
       update.category_id = category.id
     }
 
-    if (update.title === '' || update.content === '') {
-      return NextResponse.json({ success: false, message: 'Title and content cannot be empty.' }, { status: 400 })
+    if (update.title === '' || update.content === '' || (update.title && update.title.length > 200) || (update.content && update.content.length > 50000)) {
+      return NextResponse.json({ success: false, message: 'Title and content must be non-empty, with a 200-character title and 50,000-character content limit.' }, { status: 400 })
+    }
+    if (update.status && !['draft', 'pending', 'published', 'closed', 'archived', 'rejected'].includes(update.status)) {
+      return NextResponse.json({ success: false, message: 'Choose a valid forum thread status.' }, { status: 400 })
     }
     if (Object.keys(update).length === 1) {
       return NextResponse.json({ success: false, message: 'No thread changes were provided.' }, { status: 400 })
@@ -80,35 +85,52 @@ export async function PUT(request, { params }) {
       .single()
 
     if (error) {
-      return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, thread: data }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Forum thread update error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to update thread' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to update thread') }, { status: 500 })
   }
 }
 
 export async function DELETE(request, { params }) {
-  const { response: authError } = authorizeAdminApi(request)
-  if (authError) return authError
+  const authorization = authorizeAdminApi(request)
+  if (authorization.response) return authorization.response
   if (!adminSupabase) return missingConfig()
   const { id: threadId } = await params
 
   try {
-    const { error } = await adminSupabase
+    const { data: deleted, error } = await adminSupabase
       .from('forum_threads')
       .delete()
       .eq('id', threadId)
+      .select('id, created_by, title')
+      .maybeSingle()
 
     if (error) {
-      return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
+    }
+    if (!deleted) {
+      return NextResponse.json({ success: false, message: 'Forum thread not found.' }, { status: 404 })
     }
 
-    return NextResponse.json({ success: true, message: 'Thread deleted successfully' })
+    const notification = await notifyContentAuthorOfDeletion(adminSupabase, {
+      authorId: deleted.created_by,
+      actorId: authorization.session.user_id,
+      contentType: 'forum topic',
+      contentTitle: deleted.title,
+    })
+
+    return NextResponse.json({
+      success: true,
+      message: 'Thread deleted successfully',
+      notificationSent: notification.sent,
+      notificationWarning: notification.warning,
+    })
   } catch (error) {
     console.error('Forum thread delete error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to delete thread' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to delete thread') }, { status: 500 })
   }
 }

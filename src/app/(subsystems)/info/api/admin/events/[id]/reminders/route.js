@@ -1,4 +1,5 @@
 import sgMail from '@sendgrid/mail'
+import { getEmailSender } from '@/lib/emailSettings'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
@@ -49,20 +50,23 @@ export async function POST(request, { params }) {
   const attendees = registrations || []
   if (!attendees.length) return respond({ success: true, sent: 0, failed: 0, message: 'There are no confirmed attendees.' })
 
-  const apiKey = process.env.SENDGRID_API_KEY?.trim()
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL?.trim()
+  const sender = await getEmailSender()
+  if (!sender.settings.event_reminder_emails_enabled) {
+    return respond({ success: false, message: 'Event reminder emails are turned off in Settings → Email.' }, 409)
+  }
   const send = async (registration) => {
     if (!registration.info_users?.email) return { status: 'failed', error: 'No email address is associated with this attendee.' }
-    if (!apiKey || !fromEmail) return { status: 'not_configured', error: 'Email delivery is not configured.' }
+    if (!sender.configured) return { status: 'not_configured', error: 'Email delivery is not configured.' }
     const user = registration.info_users
     const dateTime = [event.start_date, event.start_time].filter(Boolean).join(' ')
-    sgMail.setApiKey(apiKey)
+    sgMail.setApiKey(sender.apiKey)
     try {
       await sgMail.send({
         to: user.email,
-        from: fromEmail,
+        from: sender.from,
+        replyTo: sender.replyTo,
         subject: `Reminder: ${event.title}`,
-        text: `Hello ${user.full_name || 'there'},\n\nThis is a reminder about "${event.title}".\n${dateTime ? `Date and time: ${dateTime}\n` : ''}${event.location ? `Location: ${event.location}\n` : ''}\nWe look forward to seeing you.`,
+        text: `Hello ${user.full_name || 'there'},\n\nThis is a reminder about "${event.title}".\n${dateTime ? `Date and time: ${dateTime}\n` : ''}${event.location ? `Location: ${event.location}\n` : ''}\nWe look forward to seeing you.${sender.footerText}`,
       })
       return { status: 'sent', error: null }
     } catch (error) {

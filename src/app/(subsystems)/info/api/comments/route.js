@@ -2,7 +2,9 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { normalizeMentionName, parseMentionCandidates } from '@/lib/mentions'
-import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
+import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
+import { notifyModerators } from '@/lib/adminNotifications'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -267,7 +269,7 @@ export async function DELETE(request) {
     return NextResponse.json({ success: true, commentId })
   } catch (error) {
     console.error('Comment delete route error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to delete the comment.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to delete the comment.') }, { status: 500 })
   }
 }
 
@@ -277,6 +279,9 @@ export async function POST(request) {
     if (!session?.user_id) {
       return NextResponse.json({ success: false, message: 'Please sign in to post a comment.' }, { status: 401 })
     }
+    const isModerator = ['admin', 'administrator', 'moderator'].includes(
+      String(session.role || '').trim().toLowerCase()
+    )
 
     const body = await request.json()
     const contentType = String(body.contentType || '').trim()
@@ -294,7 +299,7 @@ export async function POST(request) {
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
-    const restriction = await getActivePublishingRestriction(adminSupabase, session.user_id)
+    const restriction = await getActiveCommentRestriction(adminSupabase, session.user_id)
     if (restriction) {
       return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting comments.' }, { status: 403 })
     }
@@ -314,14 +319,14 @@ export async function POST(request) {
         gif_url: gifUrl,
         sticker_url: stickerUrl,
         relevance_score: 0,
-        status: 'active',
+        status: isModerator ? 'active' : 'pending',
       })
       .select('id, content_type, content_id, user_id, parent_id, body, gif_url, sticker_url, relevance_score, status, created_at')
       .single()
 
     if (error) {
       console.error('Comment insert error:', error)
-      return NextResponse.json({ success: false, message: error.message || 'Unable to post comment.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post comment.') }, { status: 400 })
     }
 
     const actor = await adminSupabase.from('info_users').select('full_name').eq('id', session.user_id).maybeSingle()
@@ -370,13 +375,21 @@ export async function POST(request) {
     const mentionedUserIds = new Set(mentionRows.map((mention) => mention.user_id))
     const notificationRows = rows.filter((row) => !(row.type === 'comment' && mentionedUserIds.has(row.user_id)))
 
-    if (notificationRows.length > 0) {
+    if (data.status === 'active' && notificationRows.length > 0) {
       await dedupeAndInsertNotifications(adminSupabase, notificationRows)
     }
+    if (data.status === 'pending') {
+      await notifyModerators(adminSupabase, {
+        actorId: session.user_id,
+        title: 'Community comment awaiting approval',
+        message: `A new comment on a ${contentType.replace(/_/g, ' ')} needs review.`,
+        link: '/info/admin/moderation',
+      })
+    }
 
-    return NextResponse.json({ success: true, comment: data })
+    return NextResponse.json({ success: true, comment: data, pending: data.status === 'pending' })
   } catch (error) {
     console.error('Comment submit route error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to post comment.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post comment.') }, { status: 500 })
   }
 }

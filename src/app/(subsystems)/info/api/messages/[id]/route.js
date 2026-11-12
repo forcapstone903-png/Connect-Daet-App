@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -46,7 +47,7 @@ export async function GET(request, { params }) {
       .order('created_at', { ascending: true }),
   ])
 
-  if (usersError) return NextResponse.json({ success: false, message: usersError.message }, { status: 500 })
+  if (usersError) return NextResponse.json({ success: false, message: publicErrorMessage(usersError) }, { status: 500 })
   const usersById = new Map((users || []).map((user) => [user.id, user]))
   if (pinsError || pinActivitiesError) return NextResponse.json({ success: false, message: pinsError?.message || pinActivitiesError?.message }, { status: 500 })
   const pinnedMessageIds = new Set((pins || []).map((pin) => pin.message_id))
@@ -61,7 +62,7 @@ export async function GET(request, { params }) {
       .or(`and(sender_id.eq.${currentUserId},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${currentUserId})`)
       .order('created_at', { ascending: true })
 
-    if (messagesFallbackError) return NextResponse.json({ success: false, message: messagesFallbackError.message }, { status: 500 })
+    if (messagesFallbackError) return NextResponse.json({ success: false, message: publicErrorMessage(messagesFallbackError) }, { status: 500 })
     return NextResponse.json({
       success: true,
       current_user: usersById.get(currentUserId) || { id: currentUserId, full_name: 'You', profile_image_url: null },
@@ -76,7 +77,7 @@ export async function GET(request, { params }) {
     }, { headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' } })
   }
 
-  if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
+  if (messagesError) return NextResponse.json({ success: false, message: publicErrorMessage(messagesError) }, { status: 500 })
 
   return NextResponse.json({
     success: true,
@@ -128,7 +129,7 @@ export async function PATCH(request, { params }) {
         .gt('created_at', message.created_at)
         .limit(1)
         .maybeSingle()
-      if (replyError) return NextResponse.json({ success: false, message: replyError.message }, { status: 500 })
+      if (replyError) return NextResponse.json({ success: false, message: publicErrorMessage(replyError) }, { status: 500 })
       if (reply) return NextResponse.json({ success: false, message: 'This message can no longer be edited because the recipient has already replied.' }, { status: 403 })
       const nextMetadata = { ...metadata, edited: true }
       const result = await adminSupabase.from('direct_messages').update({ body: nextBody, metadata: nextMetadata }).eq('id', message.id)
@@ -172,7 +173,7 @@ export async function PATCH(request, { params }) {
       .eq('sender_id', otherUserId)
       .eq('recipient_id', userId)
       .is('read_at', null)
-    if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     return NextResponse.json({ success: true, marked_read: true })
   }
 
@@ -188,7 +189,7 @@ export async function PATCH(request, { params }) {
   const { error } = await adminSupabase
     .from('message_conversation_settings')
     .upsert({ user_id: userId, other_user_id: otherUserId, ...updatePayload }, { onConflict: 'user_id,other_user_id' })
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
 
   return NextResponse.json({ success: true, ...updatePayload })
 }
@@ -242,7 +243,7 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ success: false, message: 'Invalid deletion option.' }, { status: 400 })
   }
 
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
 
   return NextResponse.json({ success: true, message_id: messageId })
 }

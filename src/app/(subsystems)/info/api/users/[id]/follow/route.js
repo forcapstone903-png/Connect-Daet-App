@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -92,6 +93,26 @@ export async function POST(request, { params }) {
   if (!targetUserId || viewerId === targetUserId) return NextResponse.json({ success: false, message: 'You cannot follow this user.' }, { status: 400 })
 
   try {
+    const [viewerBlockResult, targetBlockResult] = await Promise.all([
+      adminSupabase
+        .from('user_blocks')
+        .select('blocker_id')
+        .eq('blocker_id', viewerId)
+        .eq('blocked_id', targetUserId)
+        .limit(1),
+      adminSupabase
+        .from('user_blocks')
+        .select('blocker_id')
+        .eq('blocker_id', targetUserId)
+        .eq('blocked_id', viewerId)
+        .limit(1),
+    ])
+    if (viewerBlockResult.error) throw viewerBlockResult.error
+    if (targetBlockResult.error) throw targetBlockResult.error
+    if (viewerBlockResult.data?.length || targetBlockResult.data?.length) {
+      return NextResponse.json({ success: false, message: 'You cannot follow an account involved in a block.' }, { status: 403 })
+    }
+
     const [{ data: existingRow, error: existingError }, { data: targetProfile, error: targetProfileError }] = await Promise.all([
       adminSupabase
       .from('user_follows')
@@ -176,7 +197,7 @@ export async function POST(request, { params }) {
 
     if (insertError && insertError.code !== '23505') {
       console.error('Follow insert failed:', insertError)
-      return NextResponse.json({ success: false, message: insertError.message || 'Unable to follow this user.' }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(insertError, 'Unable to follow this user.') }, { status: 500 })
     }
     const { error: clearRequestError } = await adminSupabase
       .from('follow_requests')
@@ -243,7 +264,7 @@ export async function DELETE(request, { params }) {
 
   if (error) {
     console.error('Follow delete failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to unfollow this user.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to unfollow this user.') }, { status: 500 })
   }
   const { error: requestError } = await adminSupabase
     .from('follow_requests')

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { fileMatchesDeclaredType, safeObjectName } from '@/lib/uploadValidation'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -92,8 +93,10 @@ export async function POST(request) {
     return response({ success: false, message: 'Use a supported image or video file up to 20 MB.' }, 400)
   }
 
-  const safeName = file.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(-120) || 'upload'
-  const objectPath = `${ADMIN_MEDIA_PREFIX}${session.user_id}/${randomUUID()}-${safeName}`
+  if (!fileMatchesDeclaredType(await file.arrayBuffer(), file.type)) {
+    return response({ success: false, message: 'The file content does not match its type.' }, 400)
+  }
+  const objectPath = `${ADMIN_MEDIA_PREFIX}${session.user_id}/${randomUUID()}-${safeObjectName(file.name, file.type)}`
   const { error: uploadError } = await client.storage.from(BUCKET).upload(objectPath, file, {
     contentType: file.type,
     upsert: false,

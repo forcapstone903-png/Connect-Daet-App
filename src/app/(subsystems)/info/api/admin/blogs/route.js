@@ -17,6 +17,7 @@ async function getCount(client, status, adminId) {
   let query = client.from('info_blogs').select('id', { count: 'exact', head: true })
   if (status) query = query.eq('approval_status', status)
   if (status === 'approved') query = query.eq('status', 'published')
+  if (status === 'draft') query = query.eq('created_by', adminId)
   if (!status) query = query.or(`approval_status.neq.draft,created_by.eq.${adminId}`)
   const { count, error } = await query
   if (error) throw error
@@ -46,12 +47,13 @@ export async function GET(request) {
 
   const params = new URL(request.url).searchParams
   try {
-    const [totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedResult] = await Promise.all([
+    const [totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedResult] = await Promise.all([
       getCount(client, null, authorization.session.user_id),
       getCount(client, 'pending', authorization.session.user_id),
       getCount(client, 'approved', authorization.session.user_id),
       getCount(client, 'rejected', authorization.session.user_id),
       getCount(client, 'changes_requested', authorization.session.user_id),
+      getCount(client, 'draft', authorization.session.user_id),
       client.from('info_moderation')
         .select('id', { count: 'exact', head: true })
         .eq('reported_item_table', 'info_blogs')
@@ -81,12 +83,12 @@ export async function GET(request) {
         success: true,
         history,
         pagination: { page, pageSize, total: count || 0, pages: Math.ceil((count || 0) / pageSize) },
-        stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedPosts: reportedResult.count || 0 },
+        stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedPosts: reportedResult.count || 0 },
       }, { headers: { 'Cache-Control': 'private, no-store' } })
     }
 
     const status = params.get('status') || 'pending'
-    if (!['all', 'pending', 'approved', 'rejected', 'changes_requested', 'reported'].includes(status)) {
+    if (!['all', 'pending', 'approved', 'rejected', 'changes_requested', 'reported', 'draft'].includes(status)) {
       return NextResponse.json({ success: false, message: 'Invalid approval status filter.' }, { status: 400 })
     }
     const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1)
@@ -133,7 +135,7 @@ export async function GET(request) {
           success: true,
           posts: [],
           pagination: { page, pageSize, total: 0, pages: 0 },
-          stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedPosts: reportedResult.count || 0 },
+          stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedPosts: reportedResult.count || 0 },
         }, { headers: { 'Cache-Control': 'private, no-store' } })
       }
     }
@@ -202,7 +204,7 @@ export async function GET(request) {
       posts,
       adminId: authorization.session.user_id,
       pagination: { page, pageSize, total: count || 0, pages: Math.ceil((count || 0) / pageSize) },
-      stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, reportedPosts: reportedResult.count || 0 },
+      stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedPosts: reportedResult.count || 0 },
     }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Admin blog moderation list failed:', error)

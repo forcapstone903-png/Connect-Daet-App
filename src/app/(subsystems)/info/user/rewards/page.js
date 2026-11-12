@@ -51,6 +51,8 @@ export default function UserRewardsPage() {
   const [profile, setProfile] = useState({ full_name: 'Traveler', points: 0, level: 1, avatar_url: '' })
   const [userId, setUserId] = useState('')
   const [pointsHistory, setPointsHistory] = useState([])
+  const [activityHistory, setActivityHistory] = useState([])
+  const [activityHistoryError, setActivityHistoryError] = useState('')
   const [rewards, setRewards] = useState([])
   const [badgeMilestones, setBadgeMilestones] = useState(DEFAULT_REWARD_SETTINGS.milestones)
   const [rewardCatalogError, setRewardCatalogError] = useState('')
@@ -101,7 +103,7 @@ export default function UserRewardsPage() {
         const weekStart = new Date()
         weekStart.setUTCHours(0, 0, 0, 0)
         weekStart.setUTCDate(weekStart.getUTCDate() - 6)
-        const [{ data: userData }, { data: pointsRows }, { data: badgeRows }, { data: leaderboardRows }, { data: activityRows }, { data: weekActivityRows, error: weekActivityError }] = await Promise.all([
+        const [{ data: userData }, { data: pointsRows }, { data: badgeRows }, { data: leaderboardRows }, { data: activityRows, error: activityError }, { data: weekActivityRows, error: weekActivityError }] = await Promise.all([
           supabase
             .from('info_users')
             .select('id, full_name, profile_image_url, points, level, created_at')
@@ -125,7 +127,7 @@ export default function UserRewardsPage() {
             .limit(5),
           supabase
             .from('user_activity_log')
-            .select('*')
+            .select('id, activity_type, entity_type, entity_id, description, created_at')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(8),
@@ -156,6 +158,16 @@ export default function UserRewardsPage() {
           points: Number(entry.points || 0),
           created_at: entry.created_at,
         })))
+        if (activityError) {
+          console.error('Rewards activity history load failed:', activityError)
+          setActivityHistoryError('Your recent activity could not be loaded.')
+        } else {
+          setActivityHistory((activityRows || []).map((entry) => ({
+            ...entry,
+            title: entry.description || String(entry.activity_type || 'Activity').replace(/_/g, ' '),
+          })))
+          setActivityHistoryError('')
+        }
         setBadges(allBadges)
         setLeaderboard((leaderboardRows || []).map((entry) => ({
           id: entry.id,
@@ -368,6 +380,29 @@ export default function UserRewardsPage() {
                   </li>
                 )}
               </ul>
+            </div>
+
+            <div className="usr-card usr-enter usr-rewards-history-card p-4 sm:p-5">
+              <div className="profile-overview-heading">
+                <div>
+                  <p className="profile-overview-eyebrow">Your account</p>
+                  <h3>Recent activity</h3>
+                </div>
+                <Sparkles aria-hidden="true" />
+              </div>
+              {activityHistoryError ? (
+                <p role="alert" className="mt-3 text-sm text-red-700">{activityHistoryError}</p>
+              ) : activityHistory.length ? (
+                <ul className="profile-point-history">
+                  {activityHistory.map((entry) => (
+                    <li key={entry.id}>
+                      <span><strong>{entry.title}</strong><small>{formatDate(entry.created_at)}</small></span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-slate-500">Your community activity will appear here.</p>
+              )}
             </div>
           </section>
 

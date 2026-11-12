@@ -3,7 +3,8 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
-import { notifyAdministrators } from '@/lib/adminNotifications'
+import { notifyAdministrators, notifyModerators } from '@/lib/adminNotifications'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -29,7 +30,7 @@ export async function GET(request, { params }) {
     .eq('created_by', userId)
     .maybeSingle()
 
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
   return NextResponse.json({ success: true, blog: data }, {
     headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
@@ -92,7 +93,7 @@ export async function PATCH(request, { params }) {
     .eq('id', blogId)
     .eq('created_by', userId)
     .maybeSingle()
-  if (existingBlogError) return NextResponse.json({ success: false, message: existingBlogError.message }, { status: 400 })
+  if (existingBlogError) return NextResponse.json({ success: false, message: publicErrorMessage(existingBlogError) }, { status: 400 })
   if (!existingBlog) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
 
   const contentWasEdited = ['title', 'content', 'excerpt', 'category', 'tags', 'slug'].some((key) => (
@@ -147,15 +148,20 @@ export async function PATCH(request, { params }) {
     ;({ data, error } = await applyUpdate({ ...updatePayload, ...savedMediaPayload }))
   }
 
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
   if (isSubmission || editingApproved) {
-    await notifyAdministrators(adminSupabase, {
+    const notification = {
+      actorId: userId,
       title: 'Blog awaiting approval',
       message: `A blog submission needs review: ${data.title}`,
       type: 'warning',
       link: '/info/admin/blogs?status=pending',
-    })
+    }
+    await Promise.all([
+      notifyAdministrators(adminSupabase, notification),
+      notifyModerators(adminSupabase, notification),
+    ])
   }
   const warning = omittedColumns.length
     ? `The story was updated, but these optional fields need a database migration: ${[...new Set(omittedColumns)].join(', ')}.`
@@ -177,10 +183,10 @@ export async function DELETE(request, { params }) {
     .eq('id', blogId)
     .eq('created_by', userId)
     .maybeSingle()
-  if (lookupError) return NextResponse.json({ success: false, message: lookupError.message }, { status: 400 })
+  if (lookupError) return NextResponse.json({ success: false, message: publicErrorMessage(lookupError) }, { status: 400 })
   if (!blog) return NextResponse.json({ success: false, message: 'Blog not found or not owned by you.' }, { status: 404 })
 
   const { error } = await adminSupabase.from('info_blogs').delete().eq('id', blogId).eq('created_by', userId)
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   return NextResponse.json({ success: true, blog_id: blogId })
 }

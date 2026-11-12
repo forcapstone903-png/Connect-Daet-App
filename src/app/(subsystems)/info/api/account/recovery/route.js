@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendAccountLifecycleEmail } from '@/lib/accountLifecycleEmail'
+import { getAppSetting } from '@/lib/appSettingsServer'
+import { checkLoginLockout, clearLoginFailures, recordLoginFailure } from '@/lib/loginLockout'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -45,11 +47,30 @@ export async function POST(request) {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   })
 
+  // Same failed-password lockout as sign-in, shared per email address, so this
+  // endpoint cannot be used to guess passwords without limit.
+  try {
+    const lockedUntil = await checkLoginLockout(adminSupabase, email)
+    if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
+      return response({ success: false, message: 'Too many failed attempts. Try again later.' }, 429)
+    }
+  } catch (lockoutError) {
+    console.error('Recovery lockout check failed:', { code: lockoutError.code || null })
+    return response({ success: false, message: 'Account recovery is temporarily unavailable.' }, 503)
+  }
+
   try {
     const { data: authData, error: authError } = await authClient.auth.signInWithPassword({ email, password })
     if (authError || !authData?.user?.id || !authData.session?.access_token) {
+      if (!authError || /invalid login credentials/i.test(authError.message || '')) {
+        const lockedUntil = await recordLoginFailure(adminSupabase, email, await getAppSetting('security', adminSupabase))
+        if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
+          return response({ success: false, message: 'Too many failed attempts. Try again later.' }, 429)
+        }
+      }
       return response({ success: false, message: 'The email or password is incorrect.' }, 401)
     }
+    await clearLoginFailures(adminSupabase, email)
 
     const { data: account, error: accountError } = await adminSupabase
       .from('info_users')

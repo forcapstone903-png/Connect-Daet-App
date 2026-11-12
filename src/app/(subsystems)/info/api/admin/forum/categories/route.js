@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -20,7 +21,7 @@ export async function GET(request) {
   if (!client) return NextResponse.json({ success: false, message: 'Forum administration is not configured.' }, { status: 500 })
 
   const { data, error } = await client.from('forum_categories').select('id, name, description').order('name')
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
   return NextResponse.json({ success: true, categories: data || [] }, { headers: { 'Cache-Control': 'private, no-store' } })
 }
 

@@ -1,4 +1,4 @@
-const PUBLIC_PATHS = ['/info/login', '/info/register', '/info/forgot-password', '/info/reset-password', '/info/account-recovery', '/info/confirm', '/info/callback', '/', '/info/visitor', '/info/access-denied', '/info/maintenance']
+const PUBLIC_PATHS = ['/info/login', '/info/register', '/info/forgot-password', '/info/reset-password', '/info/account-recovery', '/info/confirm', '/info/callback', '/', '/info/visitor', '/info/access-denied', '/info/maintenance', '/info/about', '/info/contact', '/info/community-guidelines', '/info/legal']
 
 function normalizePathname(pathname = '') {
   const normalized = String(pathname || '/').trim()

@@ -484,7 +484,8 @@ export default function UserNotificationsPage() {
     if (notification.type === 'event') return BellRing
     if (notification.type === 'announcement') return Sparkles
     if (notification.type === 'activity') return MessageCircle
-    if (notification.type === 'warning' || notification.type === 'error') return ShieldAlert
+    if (notification.type === 'warning' || notification.type === 'error' || notification.type === 'alert') return ShieldAlert
+    if (notification.type === 'alert_all_clear') return BellRing
     return Bell
   }
 

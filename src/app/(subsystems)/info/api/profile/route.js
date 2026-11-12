@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -30,7 +31,7 @@ export async function GET(request) {
     })
     let { data: account, error: accountError } = await adminSupabase
       .from('info_users')
-      .select('id, email, full_name, username, phone_number, email_verified, profile_image_url, last_login')
+      .select('id, email, full_name, username, phone_number, address, email_verified, profile_image_url, last_login')
       .eq('id', session.user_id)
       .maybeSingle()
 
@@ -40,7 +41,7 @@ export async function GET(request) {
     if (accountError && isMissingUsernameColumn(accountError)) {
       const fallbackResult = await adminSupabase
         .from('info_users')
-        .select('id, email, full_name, phone_number, email_verified, profile_image_url, last_login')
+        .select('id, email, full_name, phone_number, address, email_verified, profile_image_url, last_login')
         .eq('id', session.user_id)
         .maybeSingle()
       account = fallbackResult.data
@@ -58,6 +59,7 @@ export async function GET(request) {
         email: account.email || '',
         emailVerified: Boolean(account.email_verified),
         phoneNumber: account.phone_number || '',
+        address: account.address || '',
         avatarUrl: account.profile_image_url || '',
         lastLoginAt: account.last_login || null,
       },
@@ -168,6 +170,6 @@ export async function PATCH(request) {
     if (error.code === '23505') {
       return NextResponse.json({ success: false, message: 'That username is already in use.' }, { status: 409 })
     }
-    return NextResponse.json({ success: false, message: error.message || 'Unable to update your profile.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to update your profile.') }, { status: 500 })
   }
 }

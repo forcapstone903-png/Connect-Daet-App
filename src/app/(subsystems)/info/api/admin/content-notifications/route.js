@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { getAppSetting } from '@/lib/appSettingsServer'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
+import { publicErrorMessage } from '@/lib/publicError'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -168,7 +170,12 @@ export async function POST(request) {
 
     if (followsError) throw followsError
 
-    const followerIds = (follows || []).map((follow) => follow.follower_id).filter(Boolean)
+    // Settings -> Notifications can switch off follower fan-out; audience
+    // notifications (e.g. announcements) are still delivered.
+    const { follower_notifications_enabled: followersEnabled } = await getAppSetting('notifications', adminSupabase)
+    const followerIds = followersEnabled
+      ? (follows || []).map((follow) => follow.follower_id).filter(Boolean)
+      : []
     const recipientIds = [...new Set([...audienceRecipientIds, ...followerIds].filter((id) => id && id !== currentUserId))]
 
     if (!recipientIds.length) {
@@ -220,6 +227,6 @@ export async function POST(request) {
     return NextResponse.json({ success: true, inserted, recipients: recipientIds.length })
   } catch (error) {
     console.error('Content notification creation failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to create notifications.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to create notifications.') }, { status: 500 })
   }
 }

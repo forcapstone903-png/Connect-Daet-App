@@ -181,9 +181,10 @@ export default function FileManagementPage() {
           title="Media library"
           description="Manage administrator uploads stored in Supabase Storage."
           icon="image"
+          className="!mb-4"
         />
 
-        <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+        <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-5 text-blue-900">
           Uploads are durably stored in the public media bucket and can be viewed by anyone with the URL. Upload only approved public-site images or videos; upload and delete operations require an administrator session. Automatic image optimization is not available.
         </div>
 
@@ -234,7 +235,7 @@ export default function FileManagementPage() {
       </div>
 
       {toast && (
-        <div role={toast.isError ? 'alert' : 'status'} className={`fixed bottom-5 right-5 max-w-xl rounded-2xl px-4 py-3 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-700' : 'bg-emerald-700'}`}>
+        <div role={toast.isError ? 'alert' : 'status'} aria-live={toast.isError ? 'assertive' : 'polite'} className={`admin-toast ${toast.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           {toast.message}
         </div>
       )}

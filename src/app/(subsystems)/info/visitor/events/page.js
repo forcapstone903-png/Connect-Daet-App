@@ -43,6 +43,7 @@ export default function EventsIndexPage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
+  const [location, setLocation] = useState('all')
   const [retryKey, setRetryKey] = useState(0)
   const refreshEventsRef = useRef(null)
   const realtime = useRealtimeRefresh({
@@ -101,19 +102,29 @@ export default function EventsIndexPage() {
     return ['all', ...set]
   }, [events])
 
+  const locations = useMemo(() => {
+    const values = events.flatMap((event) => [event.location, event.venue])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+    return [...new Set(values)].sort((a, b) => a.localeCompare(b))
+  }, [events])
+
   const filteredEvents = useMemo(() => {
     const q = search.trim().toLowerCase()
     return events.filter((event) => {
       const matchesCategory = category === 'all' || event.category === category
+      const matchesLocation = location === 'all'
+        || event.location?.trim() === location
+        || event.venue?.trim() === location
       const matchesSearch =
         !q ||
         event.title?.toLowerCase().includes(q) ||
         event.description?.toLowerCase().includes(q) ||
         event.location?.toLowerCase().includes(q) ||
         event.venue?.toLowerCase().includes(q)
-      return matchesCategory && matchesSearch
+      return matchesCategory && matchesLocation && matchesSearch
     })
-  }, [events, search, category])
+  }, [events, search, category, location])
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
@@ -152,6 +163,17 @@ export default function EventsIndexPage() {
               className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
             />
           </div>
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+            Location
+            <select
+              value={location}
+              onChange={(event) => setLocation(event.target.value)}
+              className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700"
+            >
+              <option value="all">All locations</option>
+              {locations.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -197,15 +219,16 @@ export default function EventsIndexPage() {
           <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-8 text-center">
             <CalendarDays className="mx-auto h-10 w-10 text-slate-300" />
             <p className="mt-3 text-sm font-semibold text-slate-700">
-              {search || category !== 'all' ? 'No events match your filters.' : 'No upcoming events have been published yet.'}
+              {search || category !== 'all' || location !== 'all' ? 'No events match your filters.' : 'No upcoming events have been published yet.'}
             </p>
             <p className="mt-1 text-sm text-slate-500">Check back soon — new events are added regularly.</p>
-            {search && (
+            {(search || category !== 'all' || location !== 'all') && (
               <button
                 type="button"
                 onClick={() => {
                   setSearch('')
                   setCategory('all')
+                  setLocation('all')
                 }}
                 className="mt-4 text-sm font-semibold text-sky-600 transition hover:text-sky-800"
               >

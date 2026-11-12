@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -60,7 +61,7 @@ export async function PATCH(request, { params }) {
     }, { status: 400 })
   }
 
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Post not found or not owned by you.' }, { status: 404 })
   return NextResponse.json({ success: true, post: data })
 }
@@ -79,7 +80,7 @@ export async function DELETE(request, { params }) {
     .eq('id', postId)
     .eq('user_id', userId)
     .maybeSingle()
-  if (lookupError) return NextResponse.json({ success: false, message: lookupError.message }, { status: 400 })
+  if (lookupError) return NextResponse.json({ success: false, message: publicErrorMessage(lookupError) }, { status: 400 })
   if (!post) return NextResponse.json({ success: false, message: 'Post not found or not owned by you.' }, { status: 404 })
 
   const { error: repostError } = await adminSupabase
@@ -87,9 +88,9 @@ export async function DELETE(request, { params }) {
     .delete()
     .eq('original_content_type', 'user_post')
     .eq('original_content_id', postId)
-  if (repostError) return NextResponse.json({ success: false, message: repostError.message }, { status: 400 })
+  if (repostError) return NextResponse.json({ success: false, message: publicErrorMessage(repostError) }, { status: 400 })
 
   const { error } = await adminSupabase.from('info_user_posts').delete().eq('id', postId).eq('user_id', userId)
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   return NextResponse.json({ success: true, post_id: postId })
 }

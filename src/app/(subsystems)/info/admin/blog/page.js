@@ -266,6 +266,31 @@ export default function BlogManagement() {
     if (!selectedBlogs.length) return;
 
     try {
+      if (status === 'draft') {
+        const reason = window.prompt('Optional comment about why these blogs are being unpublished:');
+        if (reason === null) return;
+
+        const response = await fetch('/info/api/admin/moderation', {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'unpublish-blogs',
+            blogIds: selectedBlogs,
+            reason: reason.trim(),
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to unpublish the selected blogs.');
+        }
+
+        setSelectedBlogs([]);
+        await fetchBlogs();
+        showToast(result.notificationWarning || `Unpublished ${result.updatedCount} blogs.`, Boolean(result.notificationWarning));
+        return;
+      }
+
       const payload = {
         status,
         published_at: status === 'published' ? new Date().toISOString() : null,
@@ -752,7 +777,7 @@ export default function BlogManagement() {
       )}
 
       {toastMessage && (
-        <div className={`fixed bottom-5 right-5 px-4 py-2 rounded-full text-white text-sm z-40 ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
+        <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           <span className="inline-block mr-2">{toastMessage.isError ? <Icon name="warning" className="w-4 h-4" /> : <Icon name="check" className="w-4 h-4" />}</span>
           {toastMessage.message}
         </div>

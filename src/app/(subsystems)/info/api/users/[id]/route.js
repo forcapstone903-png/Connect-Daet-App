@@ -301,17 +301,24 @@ export async function GET(request, { params }) {
       }
     }).filter(Boolean)
 
-    const relatedIds = [...new Set((followRows || []).flatMap((row) => [row.follower_id, row.following_id]).filter((id) => id && id !== profileId))]
+    const relatedIds = canViewProfileContent
+      ? [...new Set((followRows || []).flatMap((row) => [row.follower_id, row.following_id]).filter((id) => id && id !== profileId))]
+      : []
     const { data: relatedUsers } = relatedIds.length
       ? await adminSupabase.from('info_users').select('id, full_name, profile_image_url, user_type').in('id', relatedIds)
       : { data: [] }
     const relatedUsersById = new Map((relatedUsers || []).map((user) => [user.id, user]))
-    const followers = (followRows || []).filter((row) => row.following_id === profileId).map((row) => relatedUsersById.get(row.follower_id) || { id: row.follower_id, full_name: 'Community member' })
-    const following = (followRows || []).filter((row) => row.follower_id === profileId).map((row) => relatedUsersById.get(row.following_id) || { id: row.following_id, full_name: 'Community member' })
+    const followers = canViewProfileContent
+      ? (followRows || []).filter((row) => row.following_id === profileId).map((row) => relatedUsersById.get(row.follower_id) || { id: row.follower_id, full_name: 'Community member' })
+      : []
+    const following = canViewProfileContent
+      ? (followRows || []).filter((row) => row.follower_id === profileId).map((row) => relatedUsersById.get(row.following_id) || { id: row.following_id, full_name: 'Community member' })
+      : []
     const followerIds = new Set((followRows || []).filter((row) => row.following_id === profileId).map((row) => row.follower_id))
-    const friends = (followRows || [])
+    const friends = canViewProfileContent ? (followRows || [])
       .filter((row) => row.follower_id === profileId && followerIds.has(row.following_id))
       .map((row) => relatedUsersById.get(row.following_id) || { id: row.following_id, full_name: 'Community member' })
+      : []
 
     return NextResponse.json({
       success: true,
@@ -324,10 +331,10 @@ export async function GET(request, { params }) {
       following,
       friends,
       friends_count: friends.length,
-      followers_count: followersCount || 0,
-      following_count: followingCount || 0,
+      followers_count: canViewProfileContent ? followersCount || 0 : 0,
+      following_count: canViewProfileContent ? followingCount || 0 : 0,
       blocked_ids: (blockedRows || []).map((row) => row.blocked_id),
-      profile: {
+      profile: canViewProfileContent ? {
         ...userData,
         full_name: profileData?.full_name || userData.full_name,
         profile_image_url: userData.profile_image_url || profileData?.profile_image_url || null,
@@ -337,6 +344,11 @@ export async function GET(request, { params }) {
         country: profileData?.country || userData.country,
         earned_badges: earnedBadges || [],
         is_private: privacyLevel !== 'public',
+      } : {
+        id: userData.id,
+        full_name: profileData?.full_name || userData.full_name,
+        profile_image_url: userData.profile_image_url || profileData?.profile_image_url || null,
+        is_private: true,
       },
       content: {
         user_posts: canViewProfileContent && !(archivedOnly && viewerId === profileId) ? attachEngagement(visibleUserPosts, 'user_post') : [],

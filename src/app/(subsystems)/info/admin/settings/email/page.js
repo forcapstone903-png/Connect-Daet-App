@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
+import { DEFAULT_EMAIL_SETTINGS } from '@/lib/siteSettings.mjs';
 
 async function readJsonResponse(response) {
   const text = await response.text();
@@ -15,6 +16,21 @@ async function readJsonResponse(response) {
 export default function AdminSettingsEmail() {
   const [emailStatus, setEmailStatus] = useState({ status: 'loading', fromEmail: null, error: '' });
   const [sending, setSending] = useState(false);
+  const [emailForm, setEmailForm] = useState(DEFAULT_EMAIL_SETTINGS);
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    fetch('/info/api/admin/settings', { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await readJsonResponse(response);
+        if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load email settings.');
+        if (active) setEmailForm({ ...DEFAULT_EMAIL_SETTINGS, ...data.settings?.email });
+      })
+      .catch((error) => { if (active) setSettingsError(error.message); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -46,8 +62,8 @@ export default function AdminSettingsEmail() {
 
   return (
     <SettingsShell
-      title="Email & Notifications"
-      subtitle="Check server-side email delivery and send a real test message."
+      title="Email"
+      subtitle="Sender details, which emails are sent, and a delivery test."
     >
       {(showToast) => {
         const sendTestEmail = async () => {
@@ -71,6 +87,25 @@ export default function AdminSettingsEmail() {
         };
 
         const configured = emailStatus.status === 'configured';
+
+        const saveEmailSettings = async () => {
+          setSavingEmail(true);
+          try {
+            const response = await fetch('/info/api/admin/settings', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: 'email', value: emailForm }),
+            });
+            const data = await readJsonResponse(response);
+            if (!response.ok || !data.success) throw new Error(data.message || 'Unable to save email settings.');
+            setEmailForm({ ...DEFAULT_EMAIL_SETTINGS, ...data.setting?.value });
+            showToast('Email settings saved.');
+          } catch (error) {
+            showToast(error.message || 'Unable to save email settings.', true);
+          } finally {
+            setSavingEmail(false);
+          }
+        };
 
         return (
           <div className="space-y-6">
@@ -112,10 +147,39 @@ export default function AdminSettingsEmail() {
             </section>
 
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-slate-800">Notification preferences</h2>
-              <p className="mt-2 text-sm text-slate-600">
-                Per-admin email alerts and weekly summaries are not implemented. Their previous browser-only toggles did not change notification delivery and have been removed.
-              </p>
+              <h2 className="text-lg font-bold text-slate-800">Sender and content</h2>
+              {settingsError ? <p role="alert" className="mt-2 text-sm text-red-700">{settingsError}</p> : null}
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <label className="text-sm font-medium text-slate-700">
+                  Sender name
+                  <input value={emailForm.sender_name} onChange={(event) => setEmailForm((current) => ({ ...current, sender_name: event.target.value }))} maxLength={80} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" />
+                  <span className="mt-1 block text-xs font-normal text-slate-500">Shown as the “From” name; the address stays the verified SendGrid sender.</span>
+                </label>
+                <label className="text-sm font-medium text-slate-700">
+                  Reply-to address
+                  <input type="email" value={emailForm.reply_to} onChange={(event) => setEmailForm((current) => ({ ...current, reply_to: event.target.value }))} maxLength={254} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" placeholder="tourism@daet.gov.ph" />
+                  <span className="mt-1 block text-xs font-normal text-slate-500">Optional. Where replies to system emails go.</span>
+                </label>
+                <label className="text-sm font-medium text-slate-700 md:col-span-2">
+                  Footer text
+                  <textarea value={emailForm.footer_text} onChange={(event) => setEmailForm((current) => ({ ...current, footer_text: event.target.value }))} maxLength={500} rows={2} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2" placeholder="Daet Municipal Tourism Office · Daet, Camarines Norte" />
+                </label>
+              </div>
+              <fieldset className="mt-4 space-y-2">
+                <legend className="text-sm font-medium text-slate-700">Optional emails</legend>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={emailForm.security_emails_enabled} onChange={(event) => setEmailForm((current) => ({ ...current, security_emails_enabled: event.target.checked }))} />
+                  Password changed / reset notices
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input type="checkbox" checked={emailForm.event_reminder_emails_enabled} onChange={(event) => setEmailForm((current) => ({ ...current, event_reminder_emails_enabled: event.target.checked }))} />
+                  Event reminder emails sent by staff
+                </label>
+                <p className="text-xs text-slate-500">Account deletion notices are always sent. Password-recovery links are sent by Supabase Auth and configured there.</p>
+              </fieldset>
+              <button type="button" onClick={() => void saveEmailSettings()} disabled={savingEmail || Boolean(settingsError)} className="mt-4 rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {savingEmail ? 'Saving…' : 'Save email settings'}
+              </button>
             </section>
           </div>
         );

@@ -1047,7 +1047,7 @@ export default function CreateBlogPage() {
         {success ? (
           <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800">
             <CheckCircle2 className="h-5 w-5 shrink-0" />
-            <div><p className="font-bold">{shareType === 'blog' && successStatus === 'draft' ? 'Your story was saved as a draft.' : shareType === 'blog' ? 'Your story was submitted for administrator approval.' : shareType === 'event' ? 'Your event was submitted to the administrator for approval. It will only be published after approval.' : `Your ${shareType === 'forum' ? 'discussion' : 'feedback'} was submitted.`}</p></div>
+            <div><p className="font-bold">{shareType === 'blog' && successStatus === 'draft' ? 'Your story was saved as a draft.' : shareType === 'blog' ? 'Your story was submitted for administrator approval.' : shareType === 'event' ? 'Your event was submitted to the administrator for approval. It will only be published after approval.' : shareType === 'forum' ? 'Your discussion was submitted for moderator approval.' : 'Your feedback was submitted.'}</p></div>
           </div>
         ) : previewMode ? (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

@@ -24,8 +24,8 @@ export default function ShareToDMDialog({ contentType, contentId, userId, onClos
     try {
       const { data, error: searchError } = await supabase
         .from('info_users')
-        .select('id, full_name, email')
-        .or(`full_name.ilike.%${term}%,email.ilike.%${term}%`)
+        .select('id, full_name')
+        .ilike('full_name', `%${term}%`)
         .limit(5)
       if (searchError) throw searchError
       setUsers(data || [])
@@ -102,7 +102,6 @@ export default function ShareToDMDialog({ contentType, contentId, userId, onClos
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 text-xs font-bold text-blue-700 dark:bg-blue-950 dark:text-blue-200">{(user.full_name || 'U')[0].toUpperCase()}</span>
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-semibold">{user.full_name || 'Community member'}</span>
-                  <span className="block truncate text-xs text-slate-500 dark:text-[#a0aabd]">{user.email}</span>
                 </span>
               </button>
             ))}

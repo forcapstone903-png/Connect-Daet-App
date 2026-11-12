@@ -1,12 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
-
-const BACKUP_FORMAT = 'connect-daet-admin-data'
-const BACKUP_VERSION = 1
+import { publicErrorMessage } from '@/lib/publicError'
+import {
+  BACKUP_TABLES,
+  createAdminDataBackup,
+  removeCredentials,
+  validateAdminDataBackup,
+} from '@/lib/adminDataBackup'
 const MAX_BACKUP_BYTES = 50 * 1024 * 1024
-const PAGE_SIZE = 1000
-const WRITE_BATCH_SIZE = 500
 
 function restoreError(message, restoredRows, restoredTables) {
   const error = new Error(message)
@@ -14,61 +16,6 @@ function restoreError(message, restoredRows, restoredTables) {
   error.restoredTables = restoredTables
   return error
 }
-
-const BACKUP_TABLES = [
-  'info_users',
-  'system_categories',
-  'forum_categories',
-  'hashtags',
-  'profiles',
-  'user_activity_log',
-  'user_points',
-  'user_badges',
-  'reward_history',
-  'user_feed_preferences',
-  'user_favorites',
-  'follows',
-  'user_follows',
-  'user_blocks',
-  'info_announcements',
-  'info_blogs',
-  'info_events',
-  'info_tourist_spots',
-  'info_user_posts',
-  'info_feedback',
-  'info_inquiries',
-  'info_audit_log',
-  'info_moderation',
-  'info_notifications',
-  'notifications',
-  'info_comments',
-  'forum_threads',
-  'content_reactions',
-  'content_comments',
-  'mentions',
-  'content_hashtags',
-  'hashtag_follows',
-  'content_shares',
-  'reposts',
-  'content_polls',
-  'poll_votes',
-  'attraction_ratings',
-  'review_helpfulness',
-  'share_analytics',
-  'daily_feedback_questions',
-  'daily_feedback_votes',
-  'event_registrations',
-  'user_polls',
-  'user_poll_votes',
-  'comment_point_rewards',
-  'direct_messages',
-  'message_conversation_settings',
-  'direct_message_reactions',
-  'pinned_messages',
-  'pinned_message_activity',
-  'forum_replies',
-  'forum_subscriptions',
-]
 
 const SELF_REFERENCES = {
   info_comments: ['parent_id'],
@@ -99,65 +46,12 @@ function missingConfig() {
   }, 500)
 }
 
-function removeCredentials(table, row) {
-  const safeRow = { ...row }
-  if (table === 'info_users') delete safeRow.password
-  return safeRow
-}
-
-async function getTableRows(table, sizeTracker) {
-  const rows = []
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await adminSupabase
-      .from(table)
-      .select('*')
-      .order('id', { ascending: true })
-      .range(offset, offset + PAGE_SIZE - 1)
-
-    if (error) throw new Error(`Unable to back up ${table}: ${error.message}`)
-
-    const page = data || []
-    for (const row of page) {
-      const safeRow = removeCredentials(table, row)
-      sizeTracker.bytes += Buffer.byteLength(JSON.stringify(safeRow), 'utf8')
-      if (sizeTracker.bytes > MAX_BACKUP_BYTES) {
-        throw new Error('The database snapshot exceeds the 50 MB limit supported by this download workflow.')
-      }
-      rows.push(safeRow)
-    }
-    if (page.length < PAGE_SIZE) return rows
-  }
-}
-
-async function getBackup() {
-  const tables = {}
-  const sizeTracker = { bytes: 0 }
-  for (const table of BACKUP_TABLES) {
-    tables[table] = await getTableRows(table, sizeTracker)
-  }
-
-  const backup = {
-    format: BACKUP_FORMAT,
-    version: BACKUP_VERSION,
-    createdAt: new Date().toISOString(),
-    restoreMode: 'merge',
-    excludedData: ['passwords', 'password-reset records', 'push-subscription credentials', 'page-view telemetry', 'media files', 'server-side maintenance settings'],
-    tables,
-  }
-  const body = JSON.stringify(backup, null, 2)
-  if (Buffer.byteLength(body, 'utf8') > MAX_BACKUP_BYTES) {
-    throw new Error('The database snapshot exceeds the 50 MB limit supported by this download workflow.')
-  }
-
-  return body
-}
-
 async function validateTables() {
   const failedTables = []
 
   for (const table of BACKUP_TABLES) {
     const { error } = await adminSupabase.from(table).select('id').limit(1)
-    if (error) failedTables.push({ table, message: error.message })
+    if (error) failedTables.push({ table, message: publicErrorMessage(error) })
   }
 
   if (failedTables.length) {
@@ -170,61 +64,6 @@ async function validateTables() {
   }
 
   return jsonResponse({ success: true, tablesChecked: BACKUP_TABLES.length })
-}
-
-function validateBackup(backup) {
-  if (!backup || typeof backup !== 'object' || Array.isArray(backup)) {
-    return 'Backup must be a JSON object.'
-  }
-  if (backup.format !== BACKUP_FORMAT || backup.version !== BACKUP_VERSION) {
-    return 'This backup format or version is not supported.'
-  }
-  if (!backup.tables || typeof backup.tables !== 'object' || Array.isArray(backup.tables)) {
-    return 'Backup is missing its tables object.'
-  }
-
-  const unknownTables = Object.keys(backup.tables).filter((table) => !BACKUP_TABLES.includes(table))
-  if (unknownTables.length) return `Backup contains unsupported tables: ${unknownTables.join(', ')}.`
-
-  const missingTables = BACKUP_TABLES.filter((table) => !Object.hasOwn(backup.tables, table))
-  if (missingTables.length) return `Backup is incomplete; missing tables: ${missingTables.join(', ')}.`
-
-  for (const table of BACKUP_TABLES) {
-    const rows = backup.tables[table]
-    if (!Array.isArray(rows)) return `Backup table "${table}" must contain an array.`
-
-    const ids = new Set()
-    for (const row of rows) {
-      if (!row || typeof row !== 'object' || Array.isArray(row) || typeof row.id !== 'string' || !row.id.trim()) {
-        return `Backup table "${table}" contains a row without a valid id.`
-      }
-      if (ids.has(row.id)) return `Backup table "${table}" contains duplicate id "${row.id}".`
-      ids.add(row.id)
-    }
-  }
-
-  return null
-}
-
-async function preserveExistingUserPasswords(userRows) {
-  const passwordsById = new Map()
-  const userIds = userRows.map((row) => row.id)
-
-  for (let offset = 0; offset < userIds.length; offset += WRITE_BATCH_SIZE) {
-    const ids = userIds.slice(offset, offset + WRITE_BATCH_SIZE)
-    const { data, error } = await adminSupabase
-      .from('info_users')
-      .select('id, password')
-      .in('id', ids)
-
-    if (error) throw new Error(`Unable to preserve existing user passwords: ${error.message}`)
-    for (const user of data || []) passwordsById.set(user.id, user.password)
-  }
-
-  return userRows.map((row) => ({
-    ...removeCredentials('info_users', row),
-    password: passwordsById.get(row.id) ?? null,
-  }))
 }
 
 async function preflightTables() {
@@ -256,57 +95,34 @@ async function readRequestBody(request) {
   }
 }
 
+// Restore runs inside one database function (migration 102), so the whole
+// snapshot is applied in a single transaction: if any row fails, nothing is
+// written. Rows are merged by id and nothing missing from the snapshot is
+// deleted. Stored passwords are never written (the column is skipped).
 async function mergeBackup(backup) {
   await preflightTables()
 
-  const records = new Map()
+  const tables = {}
   for (const table of BACKUP_TABLES) {
-    let rows = backup.tables[table].map((row) => removeCredentials(table, row))
-    if (table === 'info_users') rows = await preserveExistingUserPasswords(rows)
-    records.set(table, rows)
+    tables[table] = backup.tables[table].map((row) => removeCredentials(table, row))
   }
 
-  let restoredRows = 0
-  let restoredTables = 0
-
-  for (const table of BACKUP_TABLES) {
-    const rows = records.get(table)
-    for (let offset = 0; offset < rows.length; offset += WRITE_BATCH_SIZE) {
-      const batch = rows.slice(offset, offset + WRITE_BATCH_SIZE).map((row) => {
-        const firstPassRow = { ...row }
-        for (const field of SELF_REFERENCES[table] || []) firstPassRow[field] = null
-        return firstPassRow
-      })
-
-      const { error } = await adminSupabase.from(table).upsert(batch, { onConflict: 'id' })
-      if (error) {
-        throw restoreError(
-          `Restore stopped at "${table}" after merging ${restoredRows} rows: ${error.message}`,
-          restoredRows,
-          restoredTables
-        )
-      }
-      restoredRows += batch.length
+  const { data, error } = await adminSupabase.rpc('admin_restore_backup', {
+    p_tables: tables,
+    p_table_order: BACKUP_TABLES,
+    p_self_refs: SELF_REFERENCES,
+  })
+  if (error) {
+    if (['PGRST202', '42883'].includes(error.code)) {
+      throw restoreError('Restore needs database migration 102 (admin_restore_backup). Nothing was changed.', 0, 0)
     }
-    if (rows.length) restoredTables += 1
+    throw restoreError(`Restore failed and was rolled back; nothing was changed. ${error.message}`, 0, 0)
   }
-
-  for (const [table, fields] of Object.entries(SELF_REFERENCES)) {
-    const rows = records.get(table) || []
-    for (let offset = 0; offset < rows.length; offset += WRITE_BATCH_SIZE) {
-      const batch = rows.slice(offset, offset + WRITE_BATCH_SIZE)
-      const { error } = await adminSupabase.from(table).upsert(batch, { onConflict: 'id' })
-      if (error) {
-        throw restoreError(
-          `Restore merged ${restoredRows} rows but could not restore ${fields.join(', ')} in "${table}": ${error.message}`,
-          restoredRows,
-          restoredTables
-        )
-      }
-    }
+  return {
+    restoredRows: Number(data?.restoredRows) || 0,
+    restoredTables: Number(data?.restoredTables) || 0,
+    transactional: true,
   }
-
-  return { restoredRows, restoredTables }
 }
 
 export async function GET(request) {
@@ -319,12 +135,12 @@ export async function GET(request) {
       return await validateTables()
     } catch (error) {
       console.error('Admin backup validation error:', error)
-      return jsonResponse({ success: false, message: error.message || 'Unable to validate backup tables.' }, 500)
+      return jsonResponse({ success: false, message: publicErrorMessage(error, 'Unable to validate backup tables.') }, 500)
     }
   }
 
   try {
-    const body = await getBackup()
+    const body = await createAdminDataBackup(adminSupabase)
     const filename = `connect-daet-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
     return new Response(body, {
       headers: {
@@ -335,7 +151,7 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('Admin database backup error:', error)
-    return jsonResponse({ success: false, message: error.message || 'Unable to create a database snapshot.' }, 500)
+    return jsonResponse({ success: false, message: publicErrorMessage(error, 'Unable to create a database snapshot.') }, 500)
   }
 }
 
@@ -362,7 +178,7 @@ export async function POST(request) {
       return jsonResponse({ success: false, message: 'The selected file is not valid JSON.' }, 400)
     }
 
-    const validationError = validateBackup(backup)
+    const validationError = validateAdminDataBackup(backup)
     if (validationError) return jsonResponse({ success: false, message: validationError }, 400)
 
     const result = await mergeBackup(backup)
@@ -371,12 +187,8 @@ export async function POST(request) {
     console.error('Admin database restore error:', error)
     return jsonResponse({
       success: false,
-      message: error.message || 'Unable to restore the database snapshot.',
-      ...(Number.isInteger(error.restoredRows) ? {
-        partialRestore: error.restoredRows > 0,
-        restoredRows: error.restoredRows,
-        restoredTables: error.restoredTables,
-      } : {}),
+      message: publicErrorMessage(error, 'Unable to restore the database snapshot.'),
+      partialRestore: false,
     }, 500)
   }
 }

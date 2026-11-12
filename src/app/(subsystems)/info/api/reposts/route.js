@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,7 +24,7 @@ function normalizeContentType(value) {
 }
 
 const ORIGINAL_TABLES = {
-  blog: { table: 'info_blogs', authorColumn: 'created_by', select: 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, status' },
+  blog: { table: 'info_blogs', authorColumn: 'created_by', select: 'id, created_by, title, excerpt, content, featured_image, images, videos, media_layout, published_at, created_at, status, approval_status' },
   event: { table: 'info_events', authorColumn: 'created_by', select: 'id, created_by, title, description, featured_image, images, start_date, created_at, status, approval_status' },
   forum_thread: { table: 'forum_threads', authorColumn: 'created_by', select: 'id, created_by, title, content, created_at, status' },
   announcement: { table: 'info_announcements', authorColumn: 'created_by', select: 'id, created_by, title, content, image_url, video_url, published_at, created_at, status' },
@@ -103,7 +104,12 @@ async function getOriginalContent(adminSupabase, contentType, contentId) {
   let query = adminSupabase.from(definition.table).select(definition.select).eq('id', contentId)
   if (contentType === 'user_post' || contentType === 'forum_thread') query = query.in('status', ['active', 'published'])
   else if (contentType === 'event') query = query.in('status', ['published', 'cancelled', 'completed']).eq('approval_status', 'approved')
-  else if (contentType === 'blog' || contentType === 'announcement') query = query.eq('status', 'published')
+  else if (contentType === 'blog') {
+    query = query
+      .eq('status', 'published')
+      .eq('approval_status', 'approved')
+      .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
+  } else if (contentType === 'announcement') query = query.eq('status', 'published')
   else if (contentType === 'tourist_spot') query = query.eq('status', 'active')
 
   const { data, error } = await query.maybeSingle()
@@ -167,7 +173,7 @@ export async function POST(request) {
   const { data: existingRepost, error: existingRepostError } = await selectRepostsForContent(adminSupabase, userId, contentType, contentId)
 
   if (existingRepostError) {
-    return NextResponse.json({ success: false, message: existingRepostError.message || 'Unable to check repost.' }, { status: 400 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(existingRepostError, 'Unable to check repost.') }, { status: 400 })
   }
 
   if (existingRepost) {
@@ -210,7 +216,7 @@ export async function POST(request) {
       return NextResponse.json({ success: true, repost: duplicate, original: originalResult.data, alreadyReposted: true })
     }
     console.error('Repost insert failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to repost.' }, { status: 400 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to repost.') }, { status: 400 })
   }
 
   if (originalResult.authorId !== userId) {
@@ -272,6 +278,6 @@ export async function DELETE(request) {
     .eq('original_content_type', contentType)
     .eq('original_content_id', contentId)
     .eq('status', 'active')
-  if (error) return NextResponse.json({ success: false, message: error.message || 'Unable to undo repost.' }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to undo repost.') }, { status: 400 })
   return NextResponse.json({ success: true })
 }

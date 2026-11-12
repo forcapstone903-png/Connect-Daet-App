@@ -16,7 +16,8 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
-import { AdminStatCard } from '@/app/(subsystems)/info/components/admin';
+import { AdminPagination, AdminStatCard } from '@/app/(subsystems)/info/components/admin';
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh';
 
 const EVENT_CATEGORIES = [
   { value: 'festival', label: 'Festival' },
@@ -84,6 +85,23 @@ export default function AdminEventsPage() {
   const [registrationsByEvent, setRegistrationsByEvent] = useState({});
   const [registrationSaving, setRegistrationSaving] = useState(false);
   const [reminderSending, setReminderSending] = useState(false);
+  const eventRefreshRef = useRef(null);
+  const realtime = useRealtimeRefresh({
+    channelName: 'admin-events-calendar',
+    tables: ['info_events'],
+  });
+  const { setRefreshCallback } = realtime;
+
+  useEffect(() => {
+    if (!selectedEventDetails || showEventModal) return undefined;
+
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setSelectedEventDetails(null);
+    };
+
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [selectedEventDetails, showEventModal]);
   
   const [filters, setFilters] = useState({
     status: 'all',
@@ -128,12 +146,6 @@ export default function AdminEventsPage() {
   const getRegistrationsForEvent = useCallback((eventId) => (
     registrationsByEvent[eventId] || []
   ), [registrationsByEvent]);
-
-  const addNotification = (title, message, type = 'info') => {
-    const notifications = JSON.parse(localStorage.getItem('admin_notifications') || '[]');
-    notifications.unshift({ id: Date.now(), title, message, type, timestamp: new Date().toISOString(), read: false });
-    localStorage.setItem('admin_notifications', JSON.stringify(notifications.slice(0, 50)));
-  };
 
   const createContentNotifications = async ({ type, title, message, link, contentId }) => {
     try {
@@ -222,13 +234,21 @@ export default function AdminEventsPage() {
       
       setEvents(formattedEvents);
       updateStats(formattedEvents);
-      return formattedEvents;
+      return true;
     } catch (err) {
       console.error('Error fetching events:', err);
       showToast(`Failed to load events: ${err.message}`, true);
-      return [];
+      return false;
     }
   }, [filters, getRegistrationsForEvent]);
+
+  useEffect(() => {
+    eventRefreshRef.current = fetchEvents;
+  }, [fetchEvents]);
+
+  useEffect(() => {
+    setRefreshCallback(() => eventRefreshRef.current?.() ?? false);
+  }, [setRefreshCallback]);
 
   const saveEvent = async () => {
     const { id, title, start_date, end_date, location, description, category, 
@@ -301,8 +321,6 @@ export default function AdminEventsPage() {
       
       await fetchEvents();
       showToast(id ? 'Event updated successfully!' : 'Event created successfully!', false);
-      addNotification(id ? 'Event Updated' : 'Event Created', 
-        `${title} has been ${id ? 'updated' : 'added'} to the calendar.`, 'success');
       closeModal();
     } catch (err) {
       try {
@@ -322,16 +340,18 @@ export default function AdminEventsPage() {
     
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('info_events')
-        .delete()
-        .eq('id', selectedEvent.id);
-      
-      if (error) throw error;
+      const response = await fetch('/info/api/admin/events', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [selectedEvent.id] }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete the event.')
       
       await fetchEvents();
-      showToast(`"${selectedEvent.title}" deleted successfully`, false);
-      addNotification('Event Deleted', `"${selectedEvent.title}" has been removed.`, 'warning');
+      const warning = [result.notificationWarning, result.skippedWarning].filter(Boolean).join(' ')
+      showToast(warning || `"${selectedEvent.title}" deleted successfully`, Boolean(warning));
       setShowDeleteConfirm(false);
       setSelectedEvent(null);
     } catch (err) {
@@ -348,16 +368,18 @@ export default function AdminEventsPage() {
     setSaving(true);
     try {
       const ids = Array.from(selectedEventIds);
-      const { error } = await supabase
-        .from('info_events')
-        .delete()
-        .in('id', ids);
-      
-      if (error) throw error;
+      const response = await fetch('/info/api/admin/events', {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete the selected events.')
       
       await fetchEvents();
-      showToast(`${ids.length} event(s) deleted successfully`, false);
-      addNotification('Bulk Delete', `${ids.length} events have been removed.`, 'warning');
+      const warning = [result.notificationWarning, result.skippedWarning].filter(Boolean).join(' ')
+      showToast(warning || `${result.deleted} event(s) deleted successfully`, Boolean(warning));
       setSelectedEventIds(new Set());
       setShowBulkModal(false);
     } catch (err) {
@@ -383,7 +405,6 @@ export default function AdminEventsPage() {
       
       await fetchEvents();
       showToast(`${ids.length} event(s) updated to ${newStatus}`, false);
-      addNotification('Bulk Update', `${ids.length} events changed to ${newStatus}.`, 'info');
       setSelectedEventIds(new Set());
       setBulkAction('');
     } catch (err) {
@@ -601,7 +622,6 @@ export default function AdminEventsPage() {
     setSelectedMedia(null);
     setBulkAction('');
     setTagInput('');
-    setNewRegistrant({ name: '', email: '', status: 'confirmed' });
     setEventForm({
       id: '', title: '', description: '', location: '', start_date: '', end_date: '',
       start_time: '', end_time: '', category: 'festival', is_free: true, ticket_price: '',
@@ -889,6 +909,8 @@ export default function AdminEventsPage() {
       </div>
     );
   }
+
+  const isEventDetailsModalOpen = Boolean(selectedEventDetails && !showEventModal);
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -1203,31 +1225,58 @@ export default function AdminEventsPage() {
           </div>
         </div>
 
-        {/* Event details and both event lists share one panel. */}
-        <div className="mt-6 overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)]">
-          <div className="p-5">
-            <div className="mb-4 flex items-center justify-between">
+        <div
+          className={isEventDetailsModalOpen
+            ? 'fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:p-5'
+            : 'mt-6 overflow-hidden rounded-[2rem] border border-sky-100 bg-white shadow-[0_20px_50px_rgba(15,23,42,0.04)]'}
+          onMouseDown={(event) => {
+            if (isEventDetailsModalOpen && event.target === event.currentTarget) {
+              setSelectedEventDetails(null);
+            }
+          }}
+        >
+          <div
+            className={isEventDetailsModalOpen
+              ? 'mx-auto max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-4 text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.3)] sm:p-6'
+              : 'p-5'}
+            role={isEventDetailsModalOpen ? 'dialog' : undefined}
+            aria-modal={isEventDetailsModalOpen ? 'true' : undefined}
+            aria-labelledby="event-details-heading"
+          >
+            <div className="mb-5 flex items-center justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Details</p>
-              <h3 className="text-lg font-bold text-gray-800">Event Details</h3>
+                <p className="text-[10px] font-bold uppercase tracking-[0.22em] text-violet-700">Event overview</p>
+                <h3 id="event-details-heading" className="mt-1 text-xl font-bold text-slate-900">Event Details</h3>
               </div>
-              {selectedEventDetails && (
-                <button onClick={() => openEditModal(selectedEventDetails)} className="text-sm text-blue-600 hover:underline">
-                  Edit Event
-                </button>
-              )}
+              <div className="flex items-center gap-3">
+                {selectedEventDetails && (
+                  <button onClick={() => openEditModal(selectedEventDetails)} className="rounded-xl bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100">
+                    Edit Event
+                  </button>
+                )}
+                {isEventDetailsModalOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEventDetails(null)}
+                    className="rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    aria-label="Close event details"
+                  >
+                    <span aria-hidden="true" className="block text-lg leading-4">×</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {selectedEventDetails ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
+            <div className="grid min-w-0 grid-cols-1 gap-4 text-sm md:grid-cols-2">
+              <div className="min-w-0">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Search event</p>
                 <input
                   list="event-details-titles"
                   value={eventDetailsSearch}
                   onChange={(e) => handleEventDetailsSearch(e.target.value)}
-                  placeholder="Search event title"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="Search by event title"
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
                 <datalist id="event-details-titles">
                   {events.map((event) => (
@@ -1235,14 +1284,17 @@ export default function AdminEventsPage() {
                   ))}
                 </datalist>
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Category</p>
-                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: `${getCategoryColor(selectedEventDetails.category)}20`, color: getCategoryColor(selectedEventDetails.category) }}>
+              <div className="min-w-0">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Category</p>
+                <span
+                  className="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                  style={{ backgroundColor: `${getCategoryColor(selectedEventDetails.category)}20`, color: getCategoryColor(selectedEventDetails.category) }}
+                >
                   {selectedEventDetails.category}
                 </span>
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Status</p>
+              <div className="min-w-0">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
                 <select
                   value={selectedEventDetails.status}
                   onChange={async (e) => {
@@ -1261,47 +1313,47 @@ export default function AdminEventsPage() {
                       showToast(`Failed to update status: ${error.message}`, true);
                     }
                   }}
-                  className="w-full px-2 py-1.5 border border-gray-200 rounded-full text-xs focus:ring-2 focus:ring-blue-500"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
                 >
                   {EVENT_STATUSES.map(status => (
                     <option key={status.value} value={status.value}>{status.label}</option>
                   ))}
                 </select>
               </div>
-              <div>
-                <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Date</p>
-                <p>{new Date(selectedEventDetails.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} 
+              <div className="min-w-0">
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Date</p>
+                <p className="font-medium text-slate-800">{new Date(selectedEventDetails.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   {selectedEventDetails.start !== selectedEventDetails.end && ` → ${new Date(selectedEventDetails.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
                 </p>
               </div>
               {selectedEventDetails.location && (
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Location</p>
-                  <p>{selectedEventDetails.location}</p>
+                <div className="min-w-0">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Location</p>
+                  <p className="break-words font-medium text-slate-800">{selectedEventDetails.location}</p>
                 </div>
               )}
               {selectedEventDetails.organizer && (
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Organizer</p>
-                  <p>{selectedEventDetails.organizer}</p>
+                <div className="min-w-0">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Organizer</p>
+                  <p className="break-words font-medium text-slate-800">{selectedEventDetails.organizer}</p>
                 </div>
               )}
               {selectedEventDetails.description && (
-                <div className="md:col-span-2">
-                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Description</p>
-                  <p className="text-gray-600 leading-relaxed">{selectedEventDetails.description}</p>
+                <div className="min-w-0 md:col-span-2">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Description</p>
+                  <p className="whitespace-pre-wrap break-words leading-relaxed text-slate-700">{selectedEventDetails.description}</p>
                 </div>
               )}
               
               {/* Capacity */}
-              <div className="md:col-span-2 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-xs uppercase tracking-wide text-gray-400">Capacity</p>
-                  <span className="text-xs font-medium text-gray-600">
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Capacity</p>
+                  <span className="text-xs font-semibold text-slate-700">
                     {getRegistrationsForEvent(selectedEventDetails.id).filter((entry) => entry.status === 'confirmed').length}/{selectedEventDetails.max_attendees || 'Unlimited'} filled
                   </span>
                 </div>
-                <div className="w-full h-2 rounded-full bg-gray-200 overflow-hidden">
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500"
                     style={{
@@ -1312,52 +1364,53 @@ export default function AdminEventsPage() {
                 <button
                   onClick={() => sendReminder(selectedEventDetails.id)}
                   disabled={reminderSending}
-                  className="mt-3 w-full bg-blue-600 text-white rounded-full px-3 py-1.5 text-xs font-medium hover:bg-blue-700"
+                  className="mt-4 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {reminderSending ? 'Sending reminders…' : `Email reminder to ${getRegistrationsForEvent(selectedEventDetails.id).filter((entry) => entry.status === 'confirmed').length} confirmed attendees`}
                 </button>
               </div>
 
               {/* Registrations */}
-              <div className="md:col-span-2 rounded-2xl border border-gray-200 bg-white p-3">
-                <div className="flex justify-between items-center mb-2">
-                  <p className="text-xs uppercase tracking-wide text-gray-400">Registrations</p>
-                  <span className="text-xs text-gray-500">{getRegistrationsForEvent(selectedEventDetails.id).length} total</span>
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 md:col-span-2">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-bold text-slate-800">Registrations</p>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">{getRegistrationsForEvent(selectedEventDetails.id).length} total</span>
                 </div>
 
-                <div className="grid grid-cols-[1fr_1fr_80px] gap-2 mb-2 text-[10px] uppercase tracking-wide text-gray-400">
+                <div className="mb-2 grid grid-cols-[minmax(0,1fr)_auto_auto] gap-3 border-b border-slate-100 pb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   <span>Name</span>
                   <span>Status</span>
                   <span className="text-right">Action</span>
                 </div>
 
-                <div className="space-y-2 max-h-40 overflow-y-auto">
+                <div className="max-h-56 space-y-2 overflow-y-auto">
                   {getRegistrationsForEvent(selectedEventDetails.id).length > 0 ? (
                     getRegistrationsForEvent(selectedEventDetails.id).map((registration) => (
-                      <div key={registration.id} className="grid grid-cols-[1fr_1fr_80px] gap-2 items-center rounded-xl bg-gray-50 px-2 py-1.5 text-xs">
-                        <div>
-                          <p className="font-medium text-gray-700">{registration.name}</p>
-                          <p className="text-[10px] text-gray-400">{registration.email}</p>
+                      <div key={registration.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 text-xs">
+                        <div className="min-w-0">
+                          <p className="truncate font-semibold text-slate-800">{registration.name}</p>
+                          <p className="truncate text-[10px] text-slate-500">{registration.email}</p>
                         </div>
                         <select
                           value={registration.status}
                           onChange={(e) => updateRegistrationStatus(selectedEventDetails.id, registration.id, e.target.value)}
                           disabled={registrationSaving}
-                          className="px-1.5 py-1 border border-gray-200 rounded-full text-[10px] bg-white"
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-700 disabled:opacity-60"
                         >
                           <option value="confirmed">Confirmed</option>
                           <option value="cancelled">Cancelled</option>
                         </select>
                         <button
                           onClick={() => updateRegistrationStatus(selectedEventDetails.id, registration.id, 'cancelled')}
-                          className="text-right text-red-500 hover:text-red-700"
+                          disabled={registrationSaving}
+                          className="text-right font-semibold text-red-600 hover:text-red-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Remove
                         </button>
                       </div>
                     ))
                   ) : (
-                    <p className="text-xs text-gray-400 py-2">No registrations yet.</p>
+                    <p className="rounded-xl bg-slate-50 px-3 py-4 text-sm text-slate-500">No registrations yet.</p>
                   )}
                 </div>
 
@@ -1365,11 +1418,11 @@ export default function AdminEventsPage() {
 
               {/* Tags */}
               {(selectedEventDetails.tags || []).length > 0 && (
-                <div className="md:col-span-2">
-                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Tags</p>
+                <div className="min-w-0 md:col-span-2">
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Tags</p>
                   <div className="flex flex-wrap gap-2">
                     {selectedEventDetails.tags.map((tag, idx) => (
-                      <span key={`${tag}-${idx}`} className="bg-blue-50 text-blue-700 px-2 py-1 rounded-full text-xs font-medium">
+                      <span key={`${tag}-${idx}`} className="rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
                         #{tag}
                       </span>
                     ))}
@@ -1378,15 +1431,15 @@ export default function AdminEventsPage() {
               )}
             </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="grid grid-cols-1 gap-4 text-sm">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-400 mb-1">Title</p>
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Find an event</p>
                   <input
                     list="event-details-titles"
                     value={eventDetailsSearch}
                     onChange={(e) => handleEventDetailsSearch(e.target.value)}
-                    placeholder="Search event title"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="Search by event title"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-200"
                   />
                   <datalist id="event-details-titles">
                     {events.map((event) => (
@@ -1554,34 +1607,14 @@ export default function AdminEventsPage() {
 
           {totalEventPages > 1 && (
             <div className="flex items-center justify-between px-5 py-4 border-t border-gray-100">
-              <div className="text-xs font-medium text-gray-500">
-                Page {currentEventPage} of {totalEventPages} · {filteredEvents.length} results
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setCurrentEventPage((page) => Math.max(1, page - 1))}
-                  disabled={currentEventPage === 1}
-                  className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                {Array.from({ length: totalEventPages }, (_, i) => i + 1).map((page) => (
-                  <button
-                    key={page}
-                    onClick={() => setCurrentEventPage(page)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-medium border ${page === currentEventPage ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {page}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setCurrentEventPage((page) => Math.min(totalEventPages, page + 1))}
-                  disabled={currentEventPage === totalEventPages}
-                  className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
+              <AdminPagination
+                page={currentEventPage}
+                totalPages={totalEventPages}
+                totalItems={filteredEvents.length}
+                pageSize={EVENTS_PER_PAGE}
+                itemLabel="events"
+                onPageChange={setCurrentEventPage}
+              />
             </div>
           )}
         </div>
@@ -2057,11 +2090,9 @@ export default function AdminEventsPage() {
 
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2">
-          <div className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-white text-sm shadow-lg max-w-[90vw] animate-toast-in ${toastMessage.isError ? 'bg-red-600' : 'bg-green-500'}`}>
-            <span className="shrink-0">{toastMessage.isError ? '⚠️' : '✅'}</span>
-            <span className="break-words">{toastMessage.message}</span>
-          </div>
+        <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
+          <span className="shrink-0">{toastMessage.isError ? '⚠️' : '✅'}</span>
+          <span>{toastMessage.message}</span>
         </div>
       )}
 

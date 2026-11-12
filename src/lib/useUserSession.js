@@ -1,20 +1,22 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { getAuthCookieFromDocument } from './authCookies'
 
-export function useUserSession() {
-  // Lazy initialization for session - reads cookie synchronously on first render
-  const [session, setSession] = useState(() => {
-    if (typeof window === 'undefined') return null
-    return getAuthCookieFromDocument()
-  })
-  const [loading, setLoading] = useState(() => typeof window === 'undefined')
+const subscribeToCookie = () => () => {}
+const getServerCookieSnapshot = () => null
+const getClientLoadingSnapshot = () => false
+const getServerLoadingSnapshot = () => true
 
-  useEffect(() => {
-    // Cookie may have changed since initial mount (e.g. after login/logout)
-    const sessionData = getAuthCookieFromDocument()
-    setSession(sessionData)
-    setLoading(false)
-  }, [])
+export function useUserSession() {
+  const rawSession = useSyncExternalStore(
+    subscribeToCookie,
+    () => {
+      const session = getAuthCookieFromDocument()
+      return session ? JSON.stringify(session) : null
+    },
+    getServerCookieSnapshot
+  )
+  const session = useMemo(() => rawSession ? JSON.parse(rawSession) : null, [rawSession])
+  const loading = useSyncExternalStore(subscribeToCookie, getClientLoadingSnapshot, getServerLoadingSnapshot)
 
   const logout = useCallback(async () => {
     try {

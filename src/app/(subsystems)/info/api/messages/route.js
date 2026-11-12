@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -30,19 +31,19 @@ export async function GET(request) {
       .order('created_at', { ascending: false })
       .limit(1000))
   }
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
 
   const { data: settings, error: settingsError } = await adminSupabase
     .from('message_conversation_settings')
     .select('other_user_id, is_archived, is_muted, is_deleted')
     .eq('user_id', userId)
-  if (settingsError) return NextResponse.json({ success: false, message: settingsError.message }, { status: 500 })
+  if (settingsError) return NextResponse.json({ success: false, message: publicErrorMessage(settingsError) }, { status: 500 })
   const settingsByUser = new Map((settings || []).map((setting) => [setting.other_user_id, setting]))
 
   let rows = (data || []).filter((message) => !message.deleted_for?.includes(userId))
   const participantIds = [...new Set(rows.flatMap((message) => [message.sender_id, message.recipient_id]).filter((id) => id !== userId))]
   const allUserIds = [...new Set([userId, ...participantIds])]
-  const [{ data: users, error: usersError }, { data: profiles, error: profilesError }, { data: followRows, error: followsError }] = await Promise.all([
+  const [{ data: users, error: usersError }, { data: profiles, error: profilesError }, { data: followRows, error: followsError }, { data: blockRows, error: blocksError }] = await Promise.all([
     allUserIds.length
       ? adminSupabase.from('info_users').select('id, full_name, email, profile_image_url').in('id', allUserIds)
       : Promise.resolve({ data: [], error: null }),
@@ -52,24 +53,29 @@ export async function GET(request) {
     participantIds.length
       ? adminSupabase.from('user_follows').select('following_id').eq('follower_id', userId).in('following_id', participantIds)
       : Promise.resolve({ data: [], error: null }),
+    participantIds.length
+      ? adminSupabase.from('user_blocks').select('blocker_id, blocked_id').or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`)
+      : Promise.resolve({ data: [], error: null }),
   ])
-  if (usersError) return NextResponse.json({ success: false, message: usersError.message }, { status: 500 })
-  if (profilesError) return NextResponse.json({ success: false, message: profilesError.message }, { status: 500 })
-  if (followsError) return NextResponse.json({ success: false, message: followsError.message }, { status: 500 })
+  if (usersError) return NextResponse.json({ success: false, message: publicErrorMessage(usersError) }, { status: 500 })
+  if (profilesError) return NextResponse.json({ success: false, message: publicErrorMessage(profilesError) }, { status: 500 })
+  if (followsError) return NextResponse.json({ success: false, message: publicErrorMessage(followsError) }, { status: 500 })
+  if (blocksError) return NextResponse.json({ success: false, message: publicErrorMessage(blocksError) }, { status: 500 })
 
   const followedIds = new Set((followRows || []).map((row) => row.following_id))
-  const privateIds = new Set((profiles || [])
+  const blockedIds = new Set((blockRows || []).map((row) => row.blocker_id === userId ? row.blocked_id : row.blocker_id))
+  const restrictedIds = new Set((profiles || [])
     .filter((profile) => {
       const privacyLevel = profile.is_public === false
         ? (['followers', 'private'].includes(profile.privacy_level) ? profile.privacy_level : 'followers')
         : profile.privacy_level || 'public'
-      return privacyLevel === 'private'
+      return privacyLevel !== 'public'
     })
     .map((profile) => profile.user_id)
     .filter((id) => !followedIds.has(id)))
   rows = rows.filter((message) => {
     const otherUserId = message.sender_id === userId ? message.recipient_id : message.sender_id
-    return !privateIds.has(otherUserId)
+    return !restrictedIds.has(otherUserId) && !blockedIds.has(otherUserId)
   })
 
   const usersById = new Map((users || []).map((user) => [user.id, user]))
@@ -168,15 +174,25 @@ export async function POST(request) {
     .eq('id', recipientId)
     .eq('status', 'active')
     .maybeSingle()
-  if (recipientError) return NextResponse.json({ success: false, message: recipientError.message }, { status: 500 })
+  if (recipientError) return NextResponse.json({ success: false, message: publicErrorMessage(recipientError) }, { status: 500 })
   if (!recipient) return NextResponse.json({ success: false, message: 'Recipient not found.' }, { status: 404 })
+
+  const { data: blockRows, error: blocksError } = await adminSupabase
+    .from('user_blocks')
+    .select('blocker_id')
+    .or(`and(blocker_id.eq.${senderId},blocked_id.eq.${recipientId}),and(blocker_id.eq.${recipientId},blocked_id.eq.${senderId})`)
+    .limit(1)
+  if (blocksError) return NextResponse.json({ success: false, message: publicErrorMessage(blocksError) }, { status: 500 })
+  if (blockRows?.length) {
+    return NextResponse.json({ success: false, message: 'Messaging is unavailable because one of these accounts has blocked the other.' }, { status: 403 })
+  }
 
   const { data: recipientProfile, error: recipientProfileError } = await adminSupabase
     .from('profiles')
     .select('privacy_level, is_public, privacy_preferences')
     .eq('user_id', recipientId)
     .maybeSingle()
-  if (recipientProfileError) return NextResponse.json({ success: false, message: recipientProfileError.message }, { status: 500 })
+  if (recipientProfileError) return NextResponse.json({ success: false, message: publicErrorMessage(recipientProfileError) }, { status: 500 })
 
   const messagingAccess = await getPrivateProfileMessagingAccess(adminSupabase, senderId, recipientId)
   if (messagingAccess.error) {
@@ -209,7 +225,7 @@ export async function POST(request) {
     ])
 
     const relationshipError = existingMessageError || senderFollowError || recipientFollowError
-    if (relationshipError) return NextResponse.json({ success: false, message: relationshipError.message }, { status: 500 })
+    if (relationshipError) return NextResponse.json({ success: false, message: publicErrorMessage(relationshipError) }, { status: 500 })
     if (!existingMessage && (!senderFollowsRecipient || !recipientFollowsSender)) {
       return NextResponse.json({ success: false, message: 'This user only accepts messages from connections.' }, { status: 403 })
     }
@@ -258,7 +274,7 @@ export async function POST(request) {
     insertError = fallbackResult.error
   }
 
-  if (insertError) return NextResponse.json({ success: false, message: insertError.message }, { status: 500 })
+  if (insertError) return NextResponse.json({ success: false, message: publicErrorMessage(insertError) }, { status: 500 })
 
   const { data } = { data: messageRecord }
 

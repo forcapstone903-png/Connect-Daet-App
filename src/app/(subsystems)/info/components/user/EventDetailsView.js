@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { loginUrlFor } from '@/lib/loginPrompt'
 import {
   ChevronLeft,
   Bell,
@@ -421,7 +422,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
 
   const toggleEventRegistration = async () => {
     if (!userId) {
-      router.push('/info/login')
+      router.push(loginUrlFor('Sign in to register for this event.'))
       return
     }
     if (registrationLoading || !event) return
@@ -707,7 +708,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
 
   const toggleBookmark = async () => {
     if (!userId) {
-      router.push('/info/login')
+      router.push(loginUrlFor('Sign in to save this event to your trip.'))
       return
     }
     if (saving) return
@@ -736,7 +737,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   const toggleOrganizerFollow = async () => {
     if (!organizer?.id || organizerFollowLoading) return
     if (!userId) {
-      router.push('/info/login')
+      router.push(loginUrlFor('Sign in to follow organizers.'))
       return
     }
 
@@ -772,7 +773,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
 
   const toggleEventReaction = async (targetReaction) => {
     if (!userId) {
-      router.push('/info/login')
+      router.push(loginUrlFor('Sign in to react to events.'))
       return
     }
     if (reactionLoading) return

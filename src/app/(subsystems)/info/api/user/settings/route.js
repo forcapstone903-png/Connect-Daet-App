@@ -15,10 +15,7 @@ const DEFAULT_NOTIFICATIONS = {
 }
 const DEFAULT_PRIVACY = {
   privacyLevel: 'public',
-  showOnlineStatus: true,
-  showActivity: true,
   allowMessagesFrom: 'everyone',
-  allowMentions: true,
   searchable: true,
   autoApproveFollowRequests: false,
 }
@@ -93,10 +90,7 @@ export async function PUT(request) {
     const privacyLevel = ['public', 'followers', 'private'].includes(privacy.privacyLevel) ? privacy.privacyLevel : DEFAULT_PRIVACY.privacyLevel
     const normalizedPrivacy = {
       privacyLevel,
-      showOnlineStatus: typeof privacy.showOnlineStatus === 'boolean' ? privacy.showOnlineStatus : DEFAULT_PRIVACY.showOnlineStatus,
-      showActivity: typeof privacy.showActivity === 'boolean' ? privacy.showActivity : DEFAULT_PRIVACY.showActivity,
       allowMessagesFrom: ['everyone', 'connections'].includes(privacy.allowMessagesFrom) ? privacy.allowMessagesFrom : DEFAULT_PRIVACY.allowMessagesFrom,
-      allowMentions: typeof privacy.allowMentions === 'boolean' ? privacy.allowMentions : DEFAULT_PRIVACY.allowMentions,
       searchable: typeof privacy.searchable === 'boolean' ? privacy.searchable : DEFAULT_PRIVACY.searchable,
       autoApproveFollowRequests: typeof privacy.autoApproveFollowRequests === 'boolean'
         ? privacy.autoApproveFollowRequests

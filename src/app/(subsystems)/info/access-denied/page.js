@@ -1,9 +1,21 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ShieldAlert, ChevronLeft, Lock } from 'lucide-react'
+import { performLogout } from '@/lib/clientLogout'
 
 export default function AccessDeniedPage() {
+  const router = useRouter()
+  const [leaving, setLeaving] = useState(false)
+
+  const handleBackToLogin = async () => {
+    setLeaving(true)
+    await performLogout()
+    router.replace('/info/login')
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-4 py-12">
       <div className="w-full max-w-lg rounded-[2rem] border border-slate-200 bg-white p-8 shadow-[0_25px_80px_rgba(15,23,42,0.08)]">
@@ -27,13 +39,15 @@ export default function AccessDeniedPage() {
         </div>
 
         <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-          <Link
-            href="/info/login"
+          <button
+            type="button"
+            onClick={handleBackToLogin}
+            disabled={leaving}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
           >
             <ChevronLeft className="h-4 w-4" />
-            Back to login
-          </Link>
+            {leaving ? 'Signing out…' : 'Back to login'}
+          </button>
           <Link
             href="/"
             className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"

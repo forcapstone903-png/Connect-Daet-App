@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
+import BackupSchedulingPanel from '../_components/BackupSchedulingPanel';
 
 const MAINTENANCE_API = '/info/api/admin/settings/maintenance';
 const DEFAULT_MESSAGE = 'We are currently performing scheduled maintenance. Please check back soon.';
@@ -141,12 +142,7 @@ export default function AdminSettingsMaintenance() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-2 text-lg font-bold text-slate-800">Backup scheduling</h2>
-              <p className="text-sm text-slate-600">
-                Automated backup schedules, cloud locations, media inclusion, and retention are not configured by this page. Use the on-demand database snapshot tool; it does not create scheduled backups.
-              </p>
-            </section>
+            <BackupSchedulingPanel showToast={showToast} />
           </div>
         );
       }}

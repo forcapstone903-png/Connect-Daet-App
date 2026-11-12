@@ -221,6 +221,8 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
                       visibility={item.visibility}
                       contentType={originalType}
                       contentId={originalId}
+                      reportItemTable={!isOwnRepost ? 'reposts' : undefined}
+                      reportItemId={!isOwnRepost ? item.repost_id : undefined}
                       userId={userId}
                       contentTitle={original.title}
                       shareUrl={originalHref}
@@ -263,6 +265,8 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
             visibility={item.visibility}
             contentType={originalType}
             contentId={originalId}
+            reportItemTable={!isOwnRepost ? 'reposts' : undefined}
+            reportItemId={!isOwnRepost ? item.repost_id : undefined}
             userId={userId}
             contentTitle={original.title}
             shareUrl={originalHref}

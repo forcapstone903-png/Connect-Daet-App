@@ -2,69 +2,56 @@ import { NextResponse } from 'next/server'
 import { getSupabase, isSupabaseConfigured } from '@/lib/supabase'
 import { getAppUrl } from '@/lib/supabaseConfig'
 import { maskEmail } from '@/lib/safeLogging'
+import { getSettingsClient } from '@/lib/appSettingsServer'
+import { clientIp, consumeRateLimit } from '@/lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+// The reply is the same whether or not the address is registered, so this
+// endpoint cannot be used to discover accounts. Limited per IP and per email.
+const GENERIC_SUCCESS = {
+  success: true,
+  message: 'If this email has an unverified account, a new verification email has been sent.',
+}
 
 export async function POST(request) {
   try {
-    if (!isSupabaseConfigured()) {
-      return NextResponse.json(
-        {
-          error: 'Supabase is not configured. Please check environment variables.',
-          details: 'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY',
-        },
-        { status: 500 }
-      )
+    const supabase = isSupabaseConfigured() ? getSupabase() : null
+    if (!supabase || typeof supabase.auth?.resend !== 'function') {
+      console.error('Resend verification: Supabase is not configured.')
+      return NextResponse.json({ success: false, error: 'Email verification is temporarily unavailable.' }, { status: 503 })
     }
 
-    const supabase = getSupabase()
-
-    if (!supabase || !supabase.auth || typeof supabase.auth.resend !== 'function') {
-      return NextResponse.json(
-        { error: 'Supabase client not properly initialized' },
-        { status: 500 }
-      )
-    }
-
-    const body = await request.json()
+    const body = await request.json().catch(() => null)
     const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : ''
-
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { error: 'Valid email is required' },
-        { status: 400 }
-      )
+      return NextResponse.json({ success: false, error: 'Valid email is required' }, { status: 400 })
+    }
+
+    const adminClient = getSettingsClient()
+    const [byIp, byEmail] = await Promise.all([
+      consumeRateLimit(adminClient, { scope: 'resend-ip', key: clientIp(request), max: 10, windowSeconds: 3600 }),
+      consumeRateLimit(adminClient, { scope: 'resend-email', key: email, max: 3, windowSeconds: 3600 }),
+    ])
+    if (byIp.unavailable || byEmail.unavailable) {
+      return NextResponse.json({ success: false, error: 'Email verification is temporarily unavailable.' }, { status: 503 })
+    }
+    if (!byIp.allowed || !byEmail.allowed) {
+      return NextResponse.json({ success: false, error: 'Too many requests. Please wait before trying again.' }, { status: 429 })
     }
 
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email,
-      options: {
-        emailRedirectTo: `${getAppUrl(request)}/info/confirm`,
-      },
+      options: { emailRedirectTo: `${getAppUrl(request)}/info/confirm` },
     })
-
     if (error) {
-      console.error('🔴 Verification resend error:', error)
-      return NextResponse.json(
-        { error: error.message || 'Failed to resend verification email' },
-        { status: 400 }
-      )
+      console.error('Verification resend failed:', { email: maskEmail(email), code: error.code || null, status: error.status || null })
     }
-
-    console.log('✅ Verification email resent to:', maskEmail(email))
-    return NextResponse.json({
-      success: true,
-      message: 'A new verification email has been sent.',
-    })
+    return NextResponse.json(GENERIC_SUCCESS)
   } catch (error) {
-    console.error('🔴 Resend verification API error:', error)
-    return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error.message,
-      },
-      { status: 500 }
-    )
+    console.error('Resend verification API error:', { message: error?.message })
+    return NextResponse.json({ success: false, error: 'Unable to resend the verification email right now.' }, { status: 500 })
   }
 }

@@ -7,20 +7,21 @@ import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 
-const buildInitialTemplates = () => {
-  if (typeof window === 'undefined') return DEFAULT_TEMPLATES;
+// Templates are shared by all administrators and stored server-side in
+// admin_app_settings ('messaging'); defaults are used until one is saved.
+const SETTINGS_API = '/info/api/admin/settings';
 
-  try {
-    const savedTemplates = JSON.parse(localStorage.getItem(STORAGE_KEYS.templates) || 'null');
-    return Array.isArray(savedTemplates) && savedTemplates.length ? savedTemplates : DEFAULT_TEMPLATES;
-  } catch {
-    return DEFAULT_TEMPLATES;
-  }
-};
-
-const STORAGE_KEYS = {
-  templates: 'daet_admin_message_templates',
-};
+async function saveTemplatesToServer(templates) {
+  const response = await fetch(SETTINGS_API, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: 'messaging', value: { templates } }),
+  });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.success) throw new Error(result.message || 'Unable to save templates.');
+  return result.setting?.value?.templates || templates;
+}
 
 const readStoredSession = () => {
   if (typeof window === 'undefined') return null;
@@ -34,9 +35,9 @@ const readStoredSession = () => {
 };
 
 const DEFAULT_TEMPLATES = [
-  { id: 1, name: 'Event Reminder', category: 'Announcement', subject: 'Upcoming Event Reminder', body: 'Hello {{firstName}}, this is a reminder about the upcoming event in Daet. Please check the details and confirm your attendance.' },
-  { id: 2, name: 'Booking Follow-up', category: 'Service', subject: 'Booking Follow-Up', body: 'Hi {{firstName}}, we hope you enjoyed your visit. We would love to hear your feedback about your experience with us.' },
-  { id: 3, name: 'System Update', category: 'Update', subject: 'Platform Update', body: 'Hello {{firstName}}, we have rolled out a new update to improve your experience. Please review the latest changes.' },
+  { id: 'default-1', name: 'Event Reminder', category: 'Announcement', subject: 'Upcoming Event Reminder', body: 'Hello {{firstName}}, this is a reminder about the upcoming event in Daet. Please check the details and confirm your attendance.' },
+  { id: 'default-2', name: 'Booking Follow-up', category: 'Service', subject: 'Booking Follow-Up', body: 'Hi {{firstName}}, we hope you enjoyed your visit. We would love to hear your feedback about your experience with us.' },
+  { id: 'default-3', name: 'System Update', category: 'Update', subject: 'Platform Update', body: 'Hello {{firstName}}, we have rolled out a new update to improve your experience. Please review the latest changes.' },
 ];
 
 const CATEGORY_OPTIONS = ['Announcement', 'Service', 'Update', 'Alert', 'Promotion'];
@@ -56,7 +57,7 @@ export default function AdminMessagingPage() {
   });
   const [messages, setMessages] = useState([]);
   const [recipients, setRecipients] = useState([]);
-  const [templates, setTemplates] = useState(() => buildInitialTemplates());
+  const [templates, setTemplates] = useState(DEFAULT_TEMPLATES);
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, isError = false) => {
@@ -102,8 +103,16 @@ export default function AdminMessagingPage() {
   }, [router, user]);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.templates, JSON.stringify(templates));
-  }, [templates]);
+    let active = true;
+    fetch(SETTINGS_API, { credentials: 'same-origin', cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => {
+        const saved = result?.settings?.messaging?.templates;
+        if (active && Array.isArray(saved) && saved.length) setTemplates(saved);
+      })
+      .catch((error) => console.error('Message templates load failed:', error));
+    return () => { active = false; };
+  }, []);
 
   const filteredMessages = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -173,15 +182,20 @@ export default function AdminMessagingPage() {
     }
 
     const nextTemplate = {
-      id: Date.now(),
+      id: `t-${Date.now()}`,
       name: `${messageForm.category} Template`,
       category: messageForm.category,
       subject: messageForm.subject,
       body: messageForm.body,
     };
 
-    setTemplates((prev) => [nextTemplate, ...prev]);
-    showToast('Template saved successfully.');
+    const nextTemplates = [nextTemplate, ...templates].slice(0, 50);
+    saveTemplatesToServer(nextTemplates)
+      .then((saved) => {
+        setTemplates(saved);
+        showToast('Template saved for all administrators.');
+      })
+      .catch((error) => showToast(error.message || 'Unable to save the template.', true));
   };
 
   const handleReply = async (messageId) => {
@@ -423,7 +437,7 @@ export default function AdminMessagingPage() {
       </div>
 
       {toast && (
-        <div className={`fixed bottom-5 right-5 z-50 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-600' : 'bg-emerald-600'}`}>
+        <div role={toast.isError ? 'alert' : 'status'} aria-live={toast.isError ? 'assertive' : 'polite'} className={`admin-toast ${toast.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
           {toast.msg}
         </div>
       )}

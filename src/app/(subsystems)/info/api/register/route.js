@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { clientIp, consumeRateLimit } from '@/lib/rateLimit'
 import bcrypt from 'bcryptjs'
 import { getAppUrl, getSupabaseAuthConfig } from '@/lib/supabaseConfig'
 import { buildInfoUserRecord } from '@/lib/infoUserData'
 import { isDuplicateEmailError } from '@/lib/authFlow'
-import { isPasswordValid } from '@/lib/passwordPolicy'
-import { maskEmail, sanitizeRegistrationBodyForLog } from '@/lib/safeLogging'
+import { describePasswordPolicy, isPasswordValid } from '@/lib/passwordPolicy'
+import { getPasswordPolicy } from '@/lib/appSettingsServer'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -15,15 +17,12 @@ export async function GET() {
 }
 
 export async function POST(request) {
-  console.log('📝 ====== REGISTRATION API CALLED ======')
-  console.log('📝 Request method:', request.method)
   
   try {
     // Parse JSON body safely
     let body = null
     try {
       const rawText = await request.text()
-      console.log('📝 Raw request body received:', rawText ? '[BODY RECEIVED]' : '[EMPTY BODY]')
       body = rawText ? JSON.parse(rawText) : {}
     } catch (e) {
       console.error('📝 Failed to parse request body:', e.message)
@@ -50,9 +49,17 @@ export async function POST(request) {
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
     const adminSupabase = serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
 
+    // 5 sign-ups per IP address per hour.
+    const limit = await consumeRateLimit(adminSupabase, { scope: 'register', key: clientIp(request), max: 5, windowSeconds: 3600 })
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { success: false, message: limit.unavailable ? 'Registration is temporarily unavailable. Please try again later.' : 'Too many sign-up attempts. Please try again later.' },
+        { status: limit.unavailable ? 503 : 429 }
+      )
+    }
+
     const { full_name, email, password } = body
     const normalizedEmail = email?.toLowerCase().trim()
-    console.log('📝 Parsed body:', sanitizeRegistrationBodyForLog(body))
     
     // Validate input
     if (!full_name || !normalizedEmail || typeof password !== 'string' || !password) {
@@ -62,9 +69,10 @@ export async function POST(request) {
       )
     }
 
-    if (!isPasswordValid(password)) {
+    const passwordPolicy = await getPasswordPolicy()
+    if (!isPasswordValid(password, passwordPolicy)) {
       return NextResponse.json(
-        { success: false, message: 'Password must be at most 128 characters and meet all listed strength requirements.' },
+        { success: false, message: describePasswordPolicy(passwordPolicy) },
         { status: 400 }
       )
     }
@@ -87,7 +95,6 @@ export async function POST(request) {
       )
     }
 
-    console.log('📝 Attempting to register user:', maskEmail(normalizedEmail))
 
     if (!adminSupabase) {
       console.error('❌ Missing SUPABASE_SERVICE_ROLE_KEY for profile insertion')
@@ -110,11 +117,6 @@ export async function POST(request) {
       },
     })
 
-    console.log('📝 Supabase sign-up result:', {
-      userId: authData?.user?.id || null,
-      sessionCreated: Boolean(authData?.session),
-      errorCode: authError?.code || null,
-    })
     if (authError) {
       console.error('🔴 Auth registration error:', authError)
       
@@ -141,7 +143,6 @@ export async function POST(request) {
       )
     }
 
-    console.log('✅ User registered in Auth:', authData.user.id)
 
     // Create user profile in info_users table using service role client
     const hashedPassword = await bcrypt.hash(password, 12)
@@ -154,7 +155,6 @@ export async function POST(request) {
       mobileNumber: null,
     })
 
-    console.log('📝 Creating user profile via admin client for user id:', userData?.id)
 
     // Try to insert the user profile
     const { data: profileData, error: profileError } = await adminSupabase
@@ -163,7 +163,6 @@ export async function POST(request) {
       .select()
       .single()
 
-    console.log('📝 profile insert result:', { profileData, profileError: profileError ? profileError.message : null })
     if (profileError) {
       console.error('🔴 Profile creation error:', profileError)
       
@@ -190,10 +189,8 @@ export async function POST(request) {
           warning: 'Profile creation had issues'
         })
       } else {
-        console.log('✅ User profile created with upsert for user id:', upsertData?.id)
       }
     } else {
-      console.log('✅ User profile created for user id:', profileData?.id)
     }
 
     const { error: publicProfileError } = await adminSupabase
@@ -224,7 +221,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('🔴 API error:', error)
     return NextResponse.json(
-      { success: false, message: 'Internal server error: ' + error.message },
+      { success: false, message: 'Internal server error.' },
       { status: 500 }
     )
   }

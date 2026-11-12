@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Archive, Bookmark, Globe2, Link2, Lock, MoreHorizontal, Pencil, Send, Trash2, Users, X } from 'lucide-react'
+import { Archive, Bookmark, Flag, Globe2, Link2, Lock, MoreHorizontal, Pencil, Send, Trash2, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import ShareToDMDialog from './ShareToDMDialog'
@@ -14,7 +14,7 @@ const PRIVACY_OPTIONS = [
 
 const privacyLabel = (value) => PRIVACY_OPTIONS.find((option) => option.value === value)?.label || 'Public'
 
-export default function PostActionMenu({ isRepost = false, visibility = 'public', contentType, contentId, userId, contentTitle, shareUrl, onEdit, onRemoveNote, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink, isSaved = false, onToggleSave }) {
+export default function PostActionMenu({ isRepost = false, visibility = 'public', contentType, contentId, userId, contentTitle, shareUrl, reportItemTable, reportItemId, onEdit, onRemoveNote, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink, isSaved = false, onToggleSave }) {
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -23,6 +23,7 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
   const [privacyError, setPrivacyError] = useState('')
   const [currentVisibility, setCurrentVisibility] = useState(visibility || 'public')
   const [shareDMOpen, setShareDMOpen] = useState(false)
+  const [reporting, setReporting] = useState(false)
 
   useEffect(() => {
     if (!open && !privacyOpen) return undefined
@@ -129,6 +130,34 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
     }
   }
 
+  const reportContent = async () => {
+    const reason = window.prompt(`Why are you reporting this ${isRepost ? 'repost' : 'content'}?`, 'Inappropriate content')?.trim()
+    if (!reason) return
+    setReporting(true)
+    try {
+      const response = await fetch('/info/api/reports', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reportType: isRepost ? 'repost' : contentType || 'content',
+          reason,
+          itemId: reportItemId,
+          itemTable: reportItemTable,
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to submit this report.')
+      setOpen(false)
+      window.alert('Thanks. Your report was submitted for review.')
+    } catch (error) {
+      console.error('Content report failed:', error)
+      window.alert(error?.message || 'Unable to submit this report right now.')
+    } finally {
+      setReporting(false)
+    }
+  }
+
   const PrivacyIcon = PRIVACY_OPTIONS.find((option) => option.value === currentVisibility)?.icon || Globe2
 
   return (
@@ -148,6 +177,7 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
           {onDelete && <button type="button" onClick={() => chooseAction(onDelete)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50" role="menuitem"><Trash2 className="h-4 w-4" />{isRepost ? 'Delete Repost' : 'Delete'}</button>}
           {onHide && <button type="button" onClick={() => chooseAction(onHide)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Archive className="h-4 w-4" />Hide post</button>}
           {onNotInterested && <button type="button" onClick={() => chooseAction(onNotInterested)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><X className="h-4 w-4" />Not interested</button>}
+          {reportItemTable && reportItemId && userId && <button type="button" disabled={reporting} onClick={() => { void reportContent() }} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50" role="menuitem"><Flag className="h-4 w-4" />{reporting ? 'Submitting report…' : 'Report'}</button>}
           {onToggleSave && <button type="button" onClick={() => chooseAction(onToggleSave)} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Bookmark className={`h-4 w-4 ${isSaved ? 'fill-current' : ''}`} />{isSaved ? 'Remove from saved' : 'Save post'}</button>}
           {contentType && contentId && <button type="button" onClick={() => { setOpen(false); setShareDMOpen(true) }} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Send className="h-4 w-4 text-blue-600" />Share to DM</button>}
           {contentType && contentId && <button type="button" onClick={shareOnFacebook} className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-xs font-semibold text-slate-800 hover:bg-slate-100" role="menuitem"><Globe2 className="h-4 w-4 text-blue-600" />Share on Facebook</button>}

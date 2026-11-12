@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, Bookmark, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, Trophy, UserRound, X } from 'lucide-react'
+import { Bell, Bookmark, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, ShieldAlert, Siren, Trophy, UserRound, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -43,7 +43,9 @@ const navItems = [
   { href: '/info/user/blogs/new', labelKey: 'common.createPost', icon: PlusCircle, highlight: true },
   { href: '/info/user/dashboard', labelKey: 'common.home', icon: Home },
   { href: '/info/user/profile', labelKey: 'common.profile', icon: UserRound },
+  { href: '/info/user/moderation-appeals', label: 'Posting appeals', icon: ShieldAlert },
   { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
+  { href: '/info/visitor/alerts', labelKey: 'common.alerts', icon: Siren },
   { href: '/info/user/rewards', labelKey: 'common.rewards', icon: Trophy },
 ]
 
@@ -416,7 +418,7 @@ export default function MobileNav({ mobileOnly = false }) {
           </span>
         </Link>
         <nav aria-label="Main" className="flex-1 space-y-1 px-3 py-5">
-          {navItems.map(({ href, labelKey, icon: Icon, highlight }) => {
+          {navItems.map(({ href, labelKey, label, icon: Icon, highlight }) => {
             const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
             return (
               <Link
@@ -432,7 +434,7 @@ export default function MobileNav({ mobileOnly = false }) {
                 }`}
               >
                 <Icon className="h-5 w-5 shrink-0" />
-                <span className="flex-1">{t(labelKey)}</span>
+                <span className="flex-1">{label || t(labelKey)}</span>
                 {labelKey === 'common.rewards' && (
                   <span className="shrink-0 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${userPoints} points`}>
                     {userPoints.toLocaleString()} pts
@@ -498,7 +500,7 @@ export default function MobileNav({ mobileOnly = false }) {
               </button>
             </div>
             <nav aria-label="Main" className="usr-navigation-drawer-nav flex-1 space-y-1 overflow-y-auto px-3 py-4">
-              {navItems.map(({ href, labelKey, icon: Icon, highlight }) => {
+              {navItems.map(({ href, labelKey, label, icon: Icon, highlight }) => {
                 const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
                 return (
                   <Link
@@ -511,7 +513,7 @@ export default function MobileNav({ mobileOnly = false }) {
                     }`}
                   >
                     <Icon className="h-5 w-5 shrink-0" />
-                    <span className="flex-1 text-sm">{t(labelKey)}</span>
+                    <span className="flex-1 text-sm">{label || t(labelKey)}</span>
                     {labelKey === 'common.rewards' && (
                       <span className="shrink-0 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-bold text-white" aria-label={`${userPoints} points`}>
                         {userPoints.toLocaleString()} pts

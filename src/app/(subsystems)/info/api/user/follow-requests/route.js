@@ -92,6 +92,26 @@ export async function PATCH(request) {
     if (!followRequest) return errorResponse('This follow request is no longer pending.', 409)
 
     if (action === 'approve') {
+      const [viewerBlockResult, requesterBlockResult] = await Promise.all([
+        adminSupabase
+          .from('user_blocks')
+          .select('blocker_id')
+          .eq('blocker_id', viewerId)
+          .eq('blocked_id', requesterId)
+          .limit(1),
+        adminSupabase
+          .from('user_blocks')
+          .select('blocker_id')
+          .eq('blocker_id', requesterId)
+          .eq('blocked_id', viewerId)
+          .limit(1),
+      ])
+      if (viewerBlockResult.error) throw viewerBlockResult.error
+      if (requesterBlockResult.error) throw requesterBlockResult.error
+      if (viewerBlockResult.data?.length || requesterBlockResult.data?.length) {
+        return errorResponse('This follow request cannot be approved while either account has blocked the other.', 403)
+      }
+
       const { error: followError } = await adminSupabase
         .from('user_follows')
         .upsert({ follower_id: requesterId, following_id: viewerId }, { onConflict: 'follower_id,following_id' })

@@ -59,7 +59,8 @@ function getMobileNavigationTitle(pathname) {
     '/info/visitor/events': 'Events',
     '/info/visitor/forum': 'Forums',
     '/info/visitor/search': 'Search',
-    '/info/visitor/tourist-spots': 'Tourist spots',
+    '/info/visitor/tourist-spots': 'Places',
+    '/info/visitor/alerts': 'Alerts',
   }
   if (titles[path]) return titles[path]
   if (/^\/info\/user\/blogs\/new$/.test(path)) return 'Create post'
@@ -67,7 +68,8 @@ function getMobileNavigationTitle(pathname) {
   if (/^\/info\/user\/blogs\/[^/]+$/.test(path) || /^\/info\/visitor\/blog\/[^/]+$/.test(path)) return 'Blog post'
   if (/^\/info\/user\/forums\/[^/]+$/.test(path) || /^\/info\/visitor\/forum\/[^/]+$/.test(path)) return 'Forum'
   if (/^\/info\/user\/events\/[^/]+$/.test(path) || /^\/info\/visitor\/events\/[^/]+$/.test(path)) return 'Event'
-  if (/^\/info\/visitor\/tourist-spots\/[^/]+$/.test(path)) return 'Tourist spot'
+  if (/^\/info\/visitor\/tourist-spots\/[^/]+$/.test(path)) return 'Place'
+  if (/^\/info\/visitor\/alerts\/[^/]+$/.test(path)) return 'Alert'
   if (/^\/info\/user\/posts\/[^/]+$/.test(path)) return 'Post'
   if (/^\/info\/user\/profile\/[^/]+$/.test(path)) return 'Profile'
   if (/^\/info\/user\/messaging\/[^/]+\/pinned$/.test(path)) return 'Pinned messages'
@@ -81,6 +83,7 @@ function getMobileBackHref(pathname) {
   if (path === '/info/visitor/search') return '/info/visitor'
   if (path.startsWith('/info/visitor/events/')) return '/info/visitor/events'
   if (path.startsWith('/info/visitor/tourist-spots/')) return '/info/visitor/tourist-spots'
+  if (path.startsWith('/info/visitor/alerts/')) return '/info/visitor/alerts'
   if (path.startsWith('/info/visitor/forum/')) return '/info/visitor/forum'
   if (path.startsWith('/info/visitor/blog/')) return '/info/visitor'
   if (path.startsWith('/info/visitor/')) return '/info/visitor'
@@ -441,11 +444,6 @@ export default function UserTopHeader({
     }
   }
 
-  const unreadActivityCount = unreadAlerts + unreadMessages
-  const profileButtonLabel = unreadActivityCount > 0
-    ? `${t('common.profile')}, ${unreadActivityCount} unread messages or notifications`
-    : t('common.profile')
-
   return (
     <>
       {standaloneNavigation && !desktopOnly && <MobileNav mobileOnly />}
@@ -715,7 +713,7 @@ export default function UserTopHeader({
             <button
               type="button"
               onClick={() => setProfileMenuOpen((open) => !open)}
-              aria-label={profileButtonLabel}
+              aria-label={t('common.profile')}
               aria-haspopup="menu"
               aria-expanded={profileMenuOpen}
               className="usr-header-profile-trigger usr-press relative flex h-10 w-10 items-center justify-center overflow-visible rounded-full border border-white/20 bg-slate-700 text-sm font-bold text-white transition hover:border-sky-300"
@@ -723,11 +721,6 @@ export default function UserTopHeader({
               <span className="usr-header-profile-image absolute inset-0 flex items-center justify-center overflow-hidden rounded-full">
                 {identity.avatarUrl ? <img src={identity.avatarUrl} alt="" className="h-full w-full rounded-full object-cover" /> : getInitials(identity.name)}
               </span>
-              {unreadActivityCount > 0 && (
-                <span aria-hidden="true" className="absolute -right-1 -top-1 z-10 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-[#171717] bg-red-600 px-1 text-[9px] font-bold leading-none text-white">
-                  {unreadActivityCount > 99 ? '99+' : unreadActivityCount}
-                </span>
-              )}
             </button>
             {profileMenuOpen && (
               <div role="menu" className="usr-pop-in absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-800 shadow-2xl">
@@ -803,7 +796,7 @@ export default function UserTopHeader({
                 href="/info/user/notifications"
                 aria-label={unreadAlerts > 0 ? `${t('common.notifications')}, ${unreadAlerts} unread` : t('common.notifications')}
                 title={t('common.notifications')}
-                className="usr-press relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700 dark:hover:bg-slate-700 dark:hover:text-blue-300"
+                className="usr-press relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700 dark:hover:bg-slate-700 dark:hover:text-blue-300"
               >
                 <Bell className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
                 {unreadAlerts > 0 && (
@@ -816,7 +809,7 @@ export default function UserTopHeader({
                 href="/info/user/rewards"
                 aria-label={`${t('common.rewards')}: ${userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} points`}
                 title={t('common.rewards')}
-                className="usr-mobile-rewards-trigger usr-press flex h-10 items-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
+                className="usr-mobile-rewards-trigger usr-press flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
               >
                 <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
                 <span className="text-xs font-extrabold tabular-nums">{userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts</span>

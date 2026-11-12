@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -69,7 +70,7 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error('Daily feedback load failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to load daily feedback.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to load daily feedback.') }, { status: 500 })
   }
 }
 
@@ -139,6 +140,6 @@ export async function POST(request) {
     return NextResponse.json({ success: true, response })
   } catch (error) {
     console.error('Daily feedback update failed:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to save daily feedback.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to save daily feedback.') }, { status: 500 })
   }
 }

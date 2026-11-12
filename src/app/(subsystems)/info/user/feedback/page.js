@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import Link from 'next/link'
 import {
   AlertCircle,
@@ -20,16 +20,8 @@ import { getStoredSession } from '@/lib/authCookies'
 import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
-function readStoredSession() {
-  if (typeof window === 'undefined') return null
-
-  try {
-    const raw = getStoredSession()
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
+const subscribeToStoredSession = () => () => {}
+const getServerStoredSession = () => null
 
 const FEEDBACK_CATEGORIES = ['suggestion', 'praise', 'inquiry']
 const COMPLAINT_CATEGORIES = ['cleanliness', 'safety', 'infrastructure', 'service']
@@ -49,14 +41,37 @@ function formatDate(dateValue) {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+async function fetchSubmissions(userId) {
+  const [feedbackResult, complaintResult] = await Promise.all([
+    supabase.from('info_feedback').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+    supabase.from('info_inquiries').select('*').eq('user_id', userId).order('created_at', { ascending: false }),
+  ])
+  if (feedbackResult.error) throw feedbackResult.error
+  if (complaintResult.error) throw complaintResult.error
+
+  return [
+    ...(feedbackResult.data || []).map((item) => ({ ...item, kind: 'feedback', table: 'info_feedback' })),
+    ...(complaintResult.data || []).map((item) => ({ ...item, kind: 'complaint', table: 'info_inquiries' })),
+  ]
+}
+
 export default function UserFeedbackPage() {
-  const [session, setSession] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const rawSession = useSyncExternalStore(subscribeToStoredSession, getStoredSession, getServerStoredSession)
+  const session = useMemo(() => {
+    try {
+      return rawSession ? JSON.parse(rawSession) : null
+    } catch {
+      return null
+    }
+  }, [rawSession])
+  const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
+  const [submissionsLoaded, setSubmissionsLoaded] = useState(false)
+  const loading = Boolean(userId) && !submissionsLoaded
   const [submissions, setSubmissions] = useState([])
   const [kind, setKind] = useState('feedback')
   const [form, setForm] = useState({
     category: 'suggestion',
-    title: '',
+    title: 'General feedback',
     message: '',
     rating: 5,
     images: [],
@@ -66,52 +81,53 @@ export default function UserFeedbackPage() {
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
 
-  const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
-
-  useEffect(() => {
-    const currentSession = readStoredSession()
-    setSession(currentSession)
-
-    if (currentSession) {
-      loadSubmissions(currentSession)
-    } else {
-      setLoading(false)
-    }
-  }, [])
-
-  const loadSubmissions = async (currentSession) => {
-    const currentUserId = currentSession?.user_id || currentSession?.id || currentSession?.userId || currentSession?.sub || ''
-    if (!currentUserId) {
-      setLoading(false)
-      return
-    }
-
+  const loadSubmissions = async (currentUserId) => {
     try {
-      const [feedbackResult, complaintResult] = await Promise.all([
-        supabase.from('info_feedback').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false }),
-        supabase.from('info_inquiries').select('*').eq('user_id', currentUserId).order('created_at', { ascending: false }),
-      ])
-
-      const merged = [
-        ...(feedbackResult.data || []).map((item) => ({ ...item, kind: 'feedback', table: 'info_feedback' })),
-        ...(complaintResult.data || []).map((item) => ({ ...item, kind: 'complaint', table: 'info_inquiries' })),
-      ]
-
+      const merged = await fetchSubmissions(currentUserId)
       setSubmissions(merged)
     } catch (error) {
       console.error('Failed to load user feedback:', error)
+      setNotice('Unable to load your previous submissions. Please try again later.')
     } finally {
-      setLoading(false)
+      setSubmissionsLoaded(true)
     }
   }
 
   useEffect(() => {
-    if (kind === 'feedback') {
-      setForm((previous) => ({ ...previous, category: FEEDBACK_CATEGORIES[0], title: previous.title || 'General feedback' }))
-    } else {
-      setForm((previous) => ({ ...previous, category: COMPLAINT_CATEGORIES[0], title: previous.title || 'Complaint regarding the location' }))
+    if (!userId) return undefined
+
+    let ignore = false
+    fetchSubmissions(userId)
+      .then((items) => {
+        if (ignore) return
+        setSubmissions(items)
+        setSubmissionsLoaded(true)
+      })
+      .catch((error) => {
+        if (ignore) return
+        console.error('Failed to load user feedback:', error)
+        setNotice('Unable to load your previous submissions. Please try again later.')
+        setSubmissionsLoaded(true)
+      })
+
+    return () => {
+      ignore = true
     }
-  }, [kind])
+  }, [userId])
+
+  const handleKindChange = (event) => {
+    const nextKind = event.target.value
+    const isFeedback = nextKind === 'feedback'
+    const defaultTitle = isFeedback ? 'General feedback' : 'Complaint regarding the location'
+    setKind(nextKind)
+    setForm((previous) => ({
+      ...previous,
+      category: isFeedback ? FEEDBACK_CATEGORIES[0] : COMPLAINT_CATEGORIES[0],
+      title: !previous.title || ['General feedback', 'Complaint regarding the location'].includes(previous.title)
+        ? defaultTitle
+        : previous.title,
+    }))
+  }
 
   const submitFeedback = async (event) => {
     event.preventDefault()
@@ -164,7 +180,7 @@ export default function UserFeedbackPage() {
       setForm({ category: kind === 'feedback' ? FEEDBACK_CATEGORIES[0] : COMPLAINT_CATEGORIES[0], title: '', message: '', rating: 5, images: [] })
       setEditingId(null)
       setEditingTable(null)
-      await loadSubmissions({ user_id: userId })
+      await loadSubmissions(userId)
     } catch (error) {
       console.error('Submission failed:', error)
       setNotice(error?.message || 'Unable to save the form right now.')
@@ -252,7 +268,7 @@ export default function UserFeedbackPage() {
             <SectionTabs
               label="Submission type"
               value={kind}
-              onChange={setKind}
+              onChange={handleKindChange}
               options={[
                 { value: 'feedback', label: 'Submit feedback' },
                 { value: 'complaint', label: 'Submit complaint' },
@@ -386,7 +402,7 @@ export default function UserFeedbackPage() {
 
                       {item.admin_response ? (
                         <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-700">
-                          <span className="font-semibold">Admin response:</span> {item.admin_response}
+                          <span className="font-semibold">Response from the tourism office{item.responded_at ? ` (${formatDate(item.responded_at)})` : ''}:</span> {item.admin_response}
                         </div>
                       ) : null}
 

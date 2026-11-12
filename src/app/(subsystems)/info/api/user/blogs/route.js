@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
-import { notifyAdministrators } from '@/lib/adminNotifications'
+import { notifyAdministrators, notifyModerators } from '@/lib/adminNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -138,12 +138,17 @@ export async function POST(request) {
     }
 
     if (body.status === 'published') {
-      await notifyAdministrators(adminSupabase, {
+      const notification = {
+        actorId: userId,
         title: 'Blog awaiting approval',
         message: `A new blog submission needs review: ${title}`,
         type: 'warning',
         link: '/info/admin/blogs?status=pending',
-      })
+      }
+      await Promise.all([
+        notifyAdministrators(adminSupabase, notification),
+        notifyModerators(adminSupabase, notification),
+      ])
     }
 
     const warning = omittedColumns.length

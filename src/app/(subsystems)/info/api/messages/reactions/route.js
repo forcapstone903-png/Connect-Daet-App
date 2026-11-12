@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { getPrivateProfileMessagingAccess } from '@/lib/serverPrivacy'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,7 +24,7 @@ export async function GET(request) {
     .select('id, sender_id, recipient_id')
     .in('id', ids)
     .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
-  if (messagesError) return NextResponse.json({ success: false, message: messagesError.message }, { status: 500 })
+  if (messagesError) return NextResponse.json({ success: false, message: publicErrorMessage(messagesError) }, { status: 500 })
 
   const accessibleMessageIds = []
   for (const message of messages || []) {
@@ -38,7 +39,7 @@ export async function GET(request) {
     .from('direct_message_reactions')
     .select('message_id, user_id, reaction')
     .in('message_id', accessibleMessageIds)
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
   return NextResponse.json({ success: true, reactions: data || [] })
 }
 
@@ -71,6 +72,6 @@ export async function POST(request) {
     .upsert({ message_id: messageId, user_id: userId, reaction }, { onConflict: 'message_id,user_id' })
     .select('message_id, user_id, reaction')
     .single()
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
   return NextResponse.json({ success: true, reaction: data })
 }

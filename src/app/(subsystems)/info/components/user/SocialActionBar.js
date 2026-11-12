@@ -6,6 +6,29 @@ import ShareRepost from './ShareRepost'
 import PostActionMenu from './PostActionMenu'
 
 export default function SocialActionBar({ contentType, contentId, userId, commentCount = 0, onToggleComments, isSaved = false, onToggleSave, onRepost, originalPost = null, repostContentType, repostContentId, heartOnly = false, compactFeed = false, postOptions = null, postActionMenuProps = {}, shareUrl, showOverflowMenu = true }) {
+  const reportTableByType = {
+    announcement: 'info_announcements',
+    blog: 'info_blogs',
+    event: 'info_events',
+    forum: 'forum_threads',
+    forum_thread: 'forum_threads',
+    post: 'info_user_posts',
+    user_post: 'info_user_posts',
+    tourist_spot: 'info_tourist_spots',
+  }
+  const authorId = originalPost?.author?.id || originalPost?.created_by || originalPost?.user_id
+  const canReportOriginal = Boolean(userId && contentId && authorId && String(authorId) !== String(userId))
+  const hasExplicitReportTable = Object.prototype.hasOwnProperty.call(postActionMenuProps, 'reportItemTable')
+  const reportItemTable = hasExplicitReportTable
+    ? postActionMenuProps.reportItemTable
+    : canReportOriginal ? reportTableByType[contentType] : undefined
+  const reportItemId = postActionMenuProps.reportItemId || contentId
+  const resolvedMenuProps = {
+    ...postActionMenuProps,
+    reportItemTable,
+    reportItemId: reportItemTable ? reportItemId : undefined,
+  }
+
   const copyContentLink = async () => {
     try {
       const url = new URL(shareUrl || window.location.href, window.location.origin).toString()
@@ -68,13 +91,13 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
           </button>
           {showOverflowMenu && (postOptions || (
             <PostActionMenu
-              {...postActionMenuProps}
+              {...resolvedMenuProps}
               contentType={contentType}
               contentId={contentId}
               userId={userId}
               contentTitle={originalPost?.title}
               shareUrl={shareUrl}
-              onCopyLink={postActionMenuProps.onCopyLink || copyContentLink}
+              onCopyLink={resolvedMenuProps.onCopyLink || copyContentLink}
             />
           ))}
         </>
@@ -96,12 +119,13 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
           {showOverflowMenu && <div className="flex items-center justify-center">
             {postOptions || (
               <PostActionMenu
+                {...resolvedMenuProps}
                 contentType={contentType}
                 contentId={contentId}
                 userId={userId}
                 contentTitle={originalPost?.title}
                 shareUrl={shareUrl}
-                onCopyLink={copyContentLink}
+                onCopyLink={resolvedMenuProps.onCopyLink || copyContentLink}
               />
             )}
           </div>}

@@ -6,88 +6,15 @@ import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar'
 import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin'
 import { Icon } from '@/app/(subsystems)/info/components/Icon'
 import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession, clearAuthCookie } from '@/lib/authCookies'
+import { getStoredSession, clearAuthCookie, updateStoredSession } from '@/lib/authCookies'
+import AdminProfilePhoto from './AdminProfilePhoto'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: 'profile' },
   { id: 'profile', label: 'Profile', icon: 'edit' },
   { id: 'password', label: 'Change Password', icon: 'lock' },
-  { id: '2fa', label: '2FA Settings', icon: 'lock' },
   { id: 'sessions', label: 'Sessions', icon: 'analytics' },
 ]
-
-// ─── Minimal RFC-6238 TOTP helpers (works entirely in the browser) ─────────
-const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-
-function base32Decode(input) {
-  const cleaned = String(input).replace(/=+$/g, '').toUpperCase().replace(/\s/g, '')
-  const bytes = []
-  let bits = 0
-  let value = 0
-  for (const char of cleaned) {
-    const idx = BASE32_ALPHABET.indexOf(char)
-    if (idx === -1) continue
-    value = (value << 5) | idx
-    bits += 5
-    if (bits >= 8) {
-      bytes.push((value >>> (bits - 8)) & 0xff)
-      bits -= 8
-    }
-  }
-  return new Uint8Array(bytes)
-}
-
-function generateRandomSecret() {
-  const randomBytes = new Uint8Array(20)
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
-    crypto.getRandomValues(randomBytes)
-  } else {
-    for (let i = 0; i < randomBytes.length; i++) randomBytes[i] = Math.floor(Math.random() * 256)
-  }
-  let secret = ''
-  for (const byte of randomBytes) {
-    secret += BASE32_ALPHABET[byte & 31]
-  }
-  return secret
-}
-
-async function calculateTOTP(secretBase32) {
-  const key = await crypto.subtle.importKey(
-    'raw', base32Decode(secretBase32), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
-  )
-  const counter = Math.floor(Date.now() / 1000 / 30)
-  const counterBuffer = new ArrayBuffer(8)
-  const view = new DataView(counterBuffer)
-  view.setUint32(0, Math.floor(counter / 2 ** 32))
-  view.setUint32(4, counter >>> 0)
-  const signature = new Uint8Array(await crypto.subtle.sign('HMAC', key, counterBuffer))
-  const offset = signature[signature.length - 1] & 0x0f
-  const bin =
-    ((signature[offset] & 0x7f) << 24) |
-    (signature[offset + 1] << 16) |
-    (signature[offset + 2] << 8) |
-    signature[offset + 3]
-  return (bin % 1000000).toString().padStart(6, '0')
-}
-
-function twoFAStorageKey(userId) {
-  return `daet_2fa_${userId || 'anon'}`
-}
-
-function loadTwoFactor(userId) {
-  if (typeof window === 'undefined') return { enabled: false, secret: '' }
-  try {
-    const raw = localStorage.getItem(twoFAStorageKey(userId))
-    return raw ? JSON.parse(raw) : { enabled: false, secret: '' }
-  } catch {
-    return { enabled: false, secret: '' }
-  }
-}
-
-function saveTwoFactor(userId, settings) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(twoFAStorageKey(userId), JSON.stringify(settings))
-}
 
 const DEFAULT_PROFILE = {
   full_name: '', user_name: '', email: '', phone_number: '', bio: '',
@@ -111,16 +38,11 @@ export default function AdminAccountPage() {
   // Profile
   const [profile, setProfile] = useState(DEFAULT_PROFILE)
   const [savingProfile, setSavingProfile] = useState(false)
+  const [uploadingProfilePhoto, setUploadingProfilePhoto] = useState(false)
 
   // Password
   const [passwordForm, setPasswordForm] = useState({ current: '', newPassword: '', confirm: '' })
   const [changingPassword, setChangingPassword] = useState(false)
-
-  // 2FA
-  const [twoFactor, setTwoFactor] = useState({ enabled: false, secret: '' })
-  const [pendingSecret, setPendingSecret] = useState('')
-  const [twoFACode, setTwoFACode] = useState('')
-  const [twoFAError, setTwoFAError] = useState('')
 
   // Sessions
   const [sessions, setSessions] = useState([])
@@ -164,24 +86,43 @@ export default function AdminAccountPage() {
       const fetchProfileAndSessions = async () => {
         // Session data paints the page immediately; the network result refines it.
         if (isActive) {
-          setTwoFactor(loadTwoFactor(userData.id))
           setUser(userData)
           setProfile((prev) => ({
             ...DEFAULT_PROFILE,
             ...prev,
             full_name: userData.full_name || userData.user_name || '',
             email: userData.email || userData.user_email || '',
+            profile_image_url: userData.profile_image_url || '',
           }))
           setLoading(false)
         }
         try {
-          const [{ data: dbProfile, error: profileError }, sessionRows] = await Promise.all([
-            supabase.from('info_users').select('*').eq('id', userData.id).maybeSingle(),
+          // Public columns from the table; private ones (email, phone,
+          // address, last sign-in) from the signed-session profile API.
+          const [profileResult, privateResult, sessionRows] = await Promise.all([
+            supabase.from('info_users')
+              .select('id, full_name, user_type, status, profile_image_url, bio, city, country, points, created_at, updated_at')
+              .eq('id', userData.id)
+              .maybeSingle(),
+            fetch('/info/api/profile', { credentials: 'same-origin', cache: 'no-store' })
+              .then((response) => (response.ok ? response.json() : null))
+              .catch(() => null),
             loadSessions(userData.id),
           ])
           if (!isActive) return
-          if (!profileError && dbProfile) {
-            setProfile((prev) => ({ ...DEFAULT_PROFILE, ...prev, ...dbProfile }))
+          const privateProfile = privateResult?.profile
+          if (!profileResult.error && profileResult.data) {
+            setProfile((prev) => ({
+              ...DEFAULT_PROFILE,
+              ...prev,
+              ...profileResult.data,
+              ...(privateProfile ? {
+                email: privateProfile.email,
+                phone_number: privateProfile.phoneNumber,
+                address: privateProfile.address,
+                last_login: privateProfile.lastLoginAt,
+              } : {}),
+            }))
           }
           setSessions(sessionRows)
         } catch (err) {
@@ -202,15 +143,47 @@ export default function AdminAccountPage() {
     setSavingProfile(true)
     try {
       const updates = {
-        full_name: profile.full_name || user.full_name,
-        phone_number: profile.phone_number || null,
-        bio: profile.bio || null,
-        address: profile.address || null,
-        city: profile.city || null,
+        full_name: String(profile.full_name || '').trim() || user.full_name || '',
+        phone_number: String(profile.phone_number || '').trim() || null,
+        bio: String(profile.bio || '').trim() || null,
+        address: String(profile.address || '').trim() || null,
+        city: String(profile.city || '').trim() || null,
+        profile_image_url: profile.profile_image_url || null,
+        updated_at: new Date().toISOString(),
       }
       const adminUserId = user.user_id || user.id
-      const { error } = await supabase.from('info_users').update(updates).eq('id', adminUserId)
-      if (error) throw error
+      const { error: userError } = await supabase.from('info_users').update(updates).eq('id', adminUserId)
+      if (userError) throw userError
+
+      const profileUpdates = {
+        user_id: adminUserId,
+        full_name: updates.full_name,
+        bio: updates.bio,
+        city: updates.city,
+        address: updates.address,
+        profile_image_url: updates.profile_image_url,
+        updated_at: updates.updated_at,
+      }
+      const { data: existingProfile, error: profileLookupError } = await supabase
+        .from('profiles')
+        .select('user_id')
+        .eq('user_id', adminUserId)
+        .maybeSingle()
+      if (profileLookupError) throw profileLookupError
+
+      const profileWrite = existingProfile
+        ? await supabase.from('profiles').update(profileUpdates).eq('user_id', adminUserId)
+        : await supabase.from('profiles').insert(profileUpdates)
+      if (profileWrite.error) throw profileWrite.error
+
+      const updatedUser = {
+        ...user,
+        full_name: updates.full_name,
+        profile_image_url: updates.profile_image_url,
+      }
+      updateStoredSession(updatedUser)
+      setUser(updatedUser)
+      setProfile((current) => ({ ...current, ...updates }))
       showToast('Profile updated successfully')
     } catch (err) {
       console.error('Profile update error:', err)
@@ -237,17 +210,20 @@ export default function AdminAccountPage() {
 
     setChangingPassword(true)
     try {
-      const { error: verifyError } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: passwordForm.current,
+      const response = await fetch('/info/api/user/password', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword: passwordForm.current,
+          newPassword: passwordForm.newPassword,
+          signOutOthers: false,
+        }),
       })
-      if (verifyError) {
-        showToast('Current password is incorrect', true)
-        return
+      const result = await response.json()
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to change your password.')
       }
-
-      const { error: updateError } = await supabase.auth.updateUser({ password: passwordForm.newPassword })
-      if (updateError) throw updateError
 
       showToast('Password changed successfully')
       setPasswordForm({ current: '', newPassword: '', confirm: '' })
@@ -259,69 +235,10 @@ export default function AdminAccountPage() {
     }
   }
 
-  const handleEnable2FABegin = () => {
-    const secret = generateRandomSecret()
-    setPendingSecret(secret)
-    setTwoFACode('')
-    setTwoFAError('')
-  }
-
-  const handleVerify2FA = async () => {
-    const secret = pendingSecret || twoFactor.secret
-    if (!secret) return
-    if (!/^\d{6}$/.test(twoFACode.trim())) {
-      setTwoFAError('Enter the 6-digit code from your authenticator app')
-      return
-    }
-
-    const code = twoFACode.trim()
-    const expected = await calculateTOTP(secret)
-    if (expected !== code) {
-      setTwoFAError('Invalid code. Please try again.')
-      return
-    }
-
-    if (pendingSecret) {
-      const settings = { enabled: true, secret }
-      setTwoFactor(settings)
-      saveTwoFactor(user.id, settings)
-      setPendingSecret('')
-      showToast('Two-factor authentication enabled')
-    } else {
-      const settings = { enabled: false, secret: '' }
-      setTwoFactor(settings)
-      saveTwoFactor(user.id, settings)
-      showToast('Two-factor authentication disabled')
-    }
-    setTwoFACode('')
-    setTwoFAError('')
-  }
-
-  const handleDisable2FA = async () => {
-    if (!twoFactor.secret) return
-    const code = twoFACode.trim()
-    if (!/^\d{6}$/.test(code)) {
-      setTwoFAError('Enter the 6-digit code from your authenticator app')
-      return
-    }
-    const expected = await calculateTOTP(twoFactor.secret)
-    if (expected !== code) {
-      setTwoFAError('Invalid code. Please try again.')
-      return
-    }
-    const settings = { enabled: false, secret: '' }
-    setTwoFactor(settings)
-    saveTwoFactor(user.id, settings)
-    setTwoFACode('')
-    setTwoFAError('')
-    showToast('Two-factor authentication disabled')
-  }
-
   const handleSignOutOthers = () => {
     clearAuthCookie()
     showToast('Session reset. Please sign in again on other devices.', false)
   }
-
 
   if (loading) {
     return (
@@ -379,10 +296,6 @@ export default function AdminAccountPage() {
     )
   }
 
-  const otpauthUri = pendingSecret
-    ? `otpauth://totp/Daet%20Tourism:${encodeURIComponent(profile.email || user.email)}?secret=${pendingSecret}&issuer=Daet%20Tourism&algorithm=SHA1&digits=6&period=30`
-    : ''
-
   const tabBar = (
     <div className="mb-6 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
       {TABS.map((tab) => (
@@ -429,9 +342,16 @@ return (
         {activeTab === 'overview' && (
           <div className="min-w-0 space-y-6">
             <div className={`${cardClass} flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center`}>
-              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-sky-600 to-emerald-500 text-xl font-black text-white">
-                {(profile.full_name || user.full_name || 'A').charAt(0).toUpperCase()}
-              </div>
+              <AdminProfilePhoto
+                userId={user.user_id || user.id}
+                value={profile.profile_image_url}
+                name={profile.full_name || user.full_name || 'Administrator'}
+                onChange={(profile_image_url) => setProfile((current) => ({ ...current, profile_image_url }))}
+                onError={(message) => showToast(message, true)}
+                onUploadStateChange={setUploadingProfilePhoto}
+                disabled={savingProfile}
+                compact
+              />
               <div className="min-w-0 flex-1">
                 <h2 className="text-xl font-bold text-slate-900">{profile.full_name || user.full_name || 'Administrator'}</h2>
                 <p className="break-all text-sm text-slate-600">{profile.email || user.email}</p>
@@ -440,14 +360,16 @@ return (
               <div className="flex flex-wrap gap-3">
                 <button onClick={() => setActiveTab('profile')} className="rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700">Edit profile</button>
                 <button onClick={() => setActiveTab('password')} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Security</button>
+                <button onClick={handleSaveProfile} disabled={savingProfile || uploadingProfilePhoto} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {savingProfile ? 'Saving…' : 'Save changes'}
+                </button>
               </div>
             </div>
 
-            <div className="grid min-w-0 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 { label: 'Account role', value: String(user.role).replace(/_/g, ' '), icon: 'profile', color: 'text-slate-900' },
                 { label: 'Status', value: profile.status || 'Active', icon: 'check', color: 'text-emerald-600' },
-                { label: '2FA status', value: twoFactor.enabled ? 'Enabled' : 'Disabled', icon: 'lock', color: twoFactor.enabled ? 'text-emerald-600' : 'text-amber-600' },
                 { label: 'Points', value: String(profile.points ?? 0), icon: 'star', color: 'text-blue-600' },
               ].map((stat) => (
                 <div key={stat.label} className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -459,10 +381,9 @@ return (
               ))}
             </div>
 
-            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {[
                 { title: 'Change Password', desc: 'Update your account password', icon: 'lock', target: 'password' },
-                { title: '2FA Settings', desc: 'Add an extra layer of security', icon: 'lock', target: '2fa' },
                 { title: 'Profile', desc: 'Update your personal information', icon: 'profile', target: 'profile' },
                 { title: 'Sessions', desc: 'View and manage active sessions', icon: 'analytics', target: 'sessions' },
               ].map((item) => (
@@ -482,31 +403,59 @@ return (
         )}
 {/* ── Profile ──────────────────────────────────────────────────────── */}
         {activeTab === 'profile' && (
-          <div className="max-w-2xl space-y-6">
+          <div className="w-full space-y-6">
             <div className={cardClass}>
-              <h3 className="text-lg font-bold text-slate-900">Profile Information</h3>
-              <p className="mt-1 text-sm text-slate-500">These details are shown across your account.</p>
+              <div className="mb-6 border-b border-slate-100 pb-5">
+                <h3 className="text-lg font-bold text-slate-900">Profile Information</h3>
+                <p className="mt-1 text-sm text-slate-500">These details are shown across your account.</p>
+              </div>
 
-              <label className={labelClass}>Full name</label>
-              <input className={inputClass} value={profile.full_name || ''} onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))} placeholder="Your full name" />
+              <div className="mb-7 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+                <AdminProfilePhoto
+                  userId={user.user_id || user.id}
+                  value={profile.profile_image_url}
+                  name={profile.full_name || user.full_name || 'Administrator'}
+                  onChange={(profile_image_url) => setProfile((current) => ({ ...current, profile_image_url }))}
+                  onError={(message) => showToast(message, true)}
+                  onUploadStateChange={setUploadingProfilePhoto}
+                  disabled={savingProfile}
+                />
+              </div>
 
-              <label className={labelClass}>Email</label>
-              <input className={`${inputClass} opacity-60`} value={profile.email || user.email || ''} disabled />
+              <div className="grid gap-x-5 sm:grid-cols-2">
+                <div>
+                  <label className={labelClass}>Full name</label>
+                  <input className={inputClass} value={profile.full_name || ''} onChange={(e) => setProfile((p) => ({ ...p, full_name: e.target.value }))} placeholder="Your full name" />
+                </div>
 
-              <label className={labelClass}>Phone number</label>
-              <input className={inputClass} value={profile.phone_number || ''} onChange={(e) => setProfile((p) => ({ ...p, phone_number: e.target.value }))} placeholder="+63 ..." />
+                <div>
+                  <label className={labelClass}>Email</label>
+                  <input className={`${inputClass} opacity-60`} value={profile.email || user.email || ''} disabled />
+                </div>
 
-              <label className={labelClass}>City</label>
-              <input className={inputClass} value={profile.city || ''} onChange={(e) => setProfile((p) => ({ ...p, city: e.target.value }))} placeholder="Daet" />
+                <div>
+                  <label className={labelClass}>Phone number</label>
+                  <input className={inputClass} value={profile.phone_number || ''} onChange={(e) => setProfile((p) => ({ ...p, phone_number: e.target.value }))} placeholder="+63 ..." />
+                </div>
 
-              <label className={labelClass}>Address</label>
-              <input className={inputClass} value={profile.address || ''} onChange={(e) => setProfile((p) => ({ ...p, address: e.target.value }))} placeholder="Street / Barangay" />
+                <div>
+                  <label className={labelClass}>City</label>
+                  <input className={inputClass} value={profile.city || ''} onChange={(e) => setProfile((p) => ({ ...p, city: e.target.value }))} placeholder="Daet" />
+                </div>
 
-              <label className={labelClass}>Bio</label>
-              <textarea rows={3} className={inputClass} value={profile.bio || ''} onChange={(e) => setProfile((p) => ({ ...p, bio: e.target.value }))} placeholder="Tell visitors about yourself" />
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Address</label>
+                  <input className={inputClass} value={profile.address || ''} onChange={(e) => setProfile((p) => ({ ...p, address: e.target.value }))} placeholder="Street / Barangay" />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className={labelClass}>Bio</label>
+                  <textarea rows={4} className={inputClass} value={profile.bio || ''} onChange={(e) => setProfile((p) => ({ ...p, bio: e.target.value }))} placeholder="Tell visitors about yourself" />
+                </div>
+              </div>
 
               <div className="mt-6 flex items-center gap-3">
-                <button onClick={handleSaveProfile} disabled={savingProfile} className="rounded-full bg-gradient-to-r from-sky-600 to-emerald-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:opacity-50">
+                <button onClick={handleSaveProfile} disabled={savingProfile || uploadingProfilePhoto} className="rounded-full bg-gradient-to-r from-sky-600 to-emerald-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 disabled:opacity-50">
                   {savingProfile ? 'Saving...' : 'Save changes'}
                 </button>
               </div>
@@ -516,7 +465,7 @@ return (
 
         {/* ── Change Password ──────────────────────────────────────────────── */}
         {activeTab === 'password' && (
-          <div className="max-w-xl space-y-6">
+          <div className="w-full space-y-6">
             <div className={cardClass}>
               <h3 className="text-lg font-bold text-slate-900">Change Password</h3>
               <p className="mt-1 text-sm text-slate-500">Your password must be at least 8 characters with a mix of letters, numbers, and symbols.</p>
@@ -538,59 +487,9 @@ return (
             </div>
           </div>
         )}
-{/* ── 2FA ──────────────────────────────────────────────────────────── */}
-        {activeTab === '2fa' && (
-          <div className="max-w-xl space-y-6">
-            <div className={cardClass}>
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Two-factor authentication</h3>
-                  <p className="mt-1 text-sm text-slate-500">Protect your account with a time-based code from an authenticator app (Google Authenticator, Authy, etc.).</p>
-                </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${twoFactor.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                  {twoFactor.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-
-              {!twoFactor.enabled && !pendingSecret && (
-                <button onClick={handleEnable2FABegin} className="mt-6 rounded-full bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-700">
-                  Enable 2FA
-                </button>
-              )}
-
-              {!twoFactor.enabled && pendingSecret && (
-                <div className="mt-6 space-y-4 rounded-2xl border border-sky-100 bg-sky-50/60 p-5">
-                  <p className="text-sm font-semibold text-slate-700">Step 1 — Add this secret to your authenticator app</p>
-                  <p className="text-xs text-slate-500">Open your authenticator app, choose &quot;Manual entry&quot;, and paste the secret below (or type it in).</p>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3 font-mono text-xs break-all text-slate-800">{pendingSecret}</div>
-                  <p className="text-xs text-slate-500">Scan-compatible URI:</p>
-                  <div className="rounded-xl border border-slate-200 bg-white p-3 font-mono text-[11px] break-all text-slate-500">{otpauthUri}</div>
-
-                  <p className="text-sm font-semibold text-slate-700">Step 2 — Verify the 6-digit code</p>
-                  <div className="flex items-center gap-3">
-                    <input value={twoFACode} onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} placeholder="000000" className={`${inputClass} w-44 font-mono text-center tracking-[0.3em]`} />
-                    <button onClick={handleVerify2FA} className="rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">Verify &amp; enable</button>
-                  </div>
-                  {twoFAError && <p className="text-xs font-medium text-red-600">{twoFAError}</p>}
-                </div>
-              )}
-
-              {twoFactor.enabled && (
-                <div className="mt-6 space-y-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-5">
-                  <p className="text-sm text-emerald-800">2FA is enabled for this account. Enter the current code to disable it.</p>
-                  <div className="flex items-center gap-3">
-                    <input value={twoFACode} onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))} maxLength={6} placeholder="000000" className={`${inputClass} w-44 font-mono text-center tracking-[0.3em]`} />
-                    <button onClick={handleDisable2FA} className="rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800">Disable 2FA</button>
-                  </div>
-                  {twoFAError && <p className="text-xs font-medium text-red-600">{twoFAError}</p>}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 {/* ── Sessions ─────────────────────────────────────────────────────── */}
         {activeTab === 'sessions' && (
-          <div className="max-w-2xl space-y-6">
+          <div className="w-full space-y-6">
             <div className={cardClass}>
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
@@ -626,7 +525,7 @@ return (
         )}
 
         {toast && (
-          <div className={`fixed bottom-5 right-5 z-[60] rounded-full border px-4 py-2 text-sm font-medium shadow-lg ${toast.isError ? 'border-red-200 bg-red-50 text-red-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+          <div role={toast.isError ? 'alert' : 'status'} aria-live={toast.isError ? 'assertive' : 'polite'} className={`admin-toast ${toast.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
             {toast.message}
           </div>
         )}

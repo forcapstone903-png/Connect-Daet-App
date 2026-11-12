@@ -4,7 +4,8 @@ import { getAdminAuthorizationStatus } from '@/lib/adminRolePolicy.mjs'
 
 export function authorizeAdminApi(request) {
   const session = getServerSession(request)
-  const status = getAdminAuthorizationStatus(session)
+  const pathname = request.nextUrl?.pathname || new URL(request.url).pathname
+  const status = getAdminAuthorizationStatus(session, pathname, request.method)
 
   if (status === 401) {
     return {
@@ -20,7 +21,7 @@ export function authorizeAdminApi(request) {
     return {
       session: null,
       response: NextResponse.json(
-        { success: false, message: 'Administrator access is required.' },
+        { success: false, message: 'Your role does not have access to this action.' },
         { status: 403 }
       ),
     }

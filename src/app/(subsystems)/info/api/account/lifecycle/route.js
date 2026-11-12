@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { clearSecureSessionCookie, getServerSession } from '@/lib/serverAuth'
 import { sendAccountLifecycleEmail } from '@/lib/accountLifecycleEmail'
+import { getAppSetting } from '@/lib/appSettingsServer'
+import { verifyPasswordWithLockout } from '@/lib/loginLockout'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -112,11 +114,18 @@ export async function POST(request) {
       const authClient = createClient(supabaseUrl, anonKey, {
         auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       })
-      const { data: authData, error: authError } = await authClient.auth.signInWithPassword({
+      const verification = await verifyPasswordWithLockout({
+        adminClient: adminSupabase,
+        authClient,
         email: userData.user.email,
         password,
+        security: await getAppSetting('security', adminSupabase),
       })
-      if (authError || authData?.user?.id !== session.user_id || !authData.session?.access_token) {
+      if (verification.locked) {
+        return response({ success: false, message: 'Too many incorrect password attempts. Try again later.' }, 429)
+      }
+      const authData = verification.authData
+      if (!verification.ok || authData?.user?.id !== session.user_id || !authData.session?.access_token) {
         return response({ success: false, message: 'Your current password is incorrect.' }, 401)
       }
       verifiedEmail = userData.user.email

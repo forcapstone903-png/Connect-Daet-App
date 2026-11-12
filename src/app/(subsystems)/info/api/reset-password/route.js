@@ -1,7 +1,8 @@
 import { createHmac } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-import { isPasswordValid } from '@/lib/passwordPolicy'
+import { describePasswordPolicy, isPasswordValid } from '@/lib/passwordPolicy'
+import { getPasswordPolicy } from '@/lib/appSettingsServer'
 import { sendPasswordSecurityEmail } from '@/lib/securityEmail'
 import { createSessionAdminClient, revokeUserSessions } from '@/lib/sessionVersions'
 
@@ -40,8 +41,9 @@ export async function POST(request) {
   if (typeof newPassword !== 'string' || !newPassword || !accessToken) {
     return response({ success: false, message: 'The reset link is invalid or expired. Request a new link.' }, 400)
   }
-  if (newPassword.length > 128 || !isPasswordValid(newPassword)) {
-    return response({ success: false, message: 'Meet all password requirements before saving.' }, 400)
+  const passwordPolicy = await getPasswordPolicy()
+  if (!isPasswordValid(newPassword, passwordPolicy)) {
+    return response({ success: false, message: describePasswordPolicy(passwordPolicy) }, 400)
   }
 
   const supabase = createClient(supabaseUrl, anonKey, {

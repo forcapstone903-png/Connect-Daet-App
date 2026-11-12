@@ -1,8 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, ImageOff, X } from 'lucide-react';
+
+const subscribeToMount = () => () => {};
+const getMountedSnapshot = () => true;
+const getServerMountedSnapshot = () => false;
 
 /**
  * Shared full-screen image slideshow / lightbox.
@@ -21,11 +25,9 @@ export default function MediaLightbox({ items, startIndex = 0, onClose }) {
   const total = safeItems.length;
   const [index, setIndex] = useState(() => Math.min(Math.max(startIndex, 0), Math.max(total - 1, 0)));
   const [failed, setFailed] = useState(() => new Set());
-  const [mounted, setMounted] = useState(false);
+  const mounted = useSyncExternalStore(subscribeToMount, getMountedSnapshot, getServerMountedSnapshot);
   const touchStartRef = useRef(null);
   const thumbsRef = useRef(null);
-
-  useEffect(() => setMounted(true), []);
 
   // Keep the active thumbnail visible inside the strip.
   useEffect(() => {

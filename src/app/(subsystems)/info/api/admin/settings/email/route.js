@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import sgMail from '@sendgrid/mail'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
+import { getEmailSender } from '@/lib/emailSettings'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -75,12 +76,14 @@ export async function POST(request) {
       return response({ success: false, message: 'No email address is associated with this administrator account.' }, 400)
     }
 
+    const sender = await getEmailSender()
     sgMail.setApiKey(apiKey)
     await sgMail.send({
       to: admin.email,
-      from: fromEmail,
+      from: sender.from || fromEmail,
+      replyTo: sender.replyTo,
       subject: 'Connect Daet email delivery test',
-      text: 'This is a test email initiated from the Connect Daet administrator settings.',
+      text: `This is a test email initiated from the Connect Daet administrator settings.${sender.footerText}`,
       html: '<p>This is a test email initiated from the Connect Daet administrator settings.</p>',
     })
 

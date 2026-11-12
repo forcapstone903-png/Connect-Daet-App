@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import {
@@ -206,6 +207,7 @@ export default function PublicBlogDetailPage() {
           .eq('id', blogId)
           .eq('status', 'published')
           .eq('approval_status', 'approved')
+          .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
           .single()
 
         if (blogError) {
@@ -215,7 +217,7 @@ export default function PublicBlogDetailPage() {
           if (blogData.created_by) {
             const [authorResult, profileResult] = await Promise.all([
               supabase.from('info_users')
-                .select('id, full_name, email, profile_image_url, user_type')
+                .select('id, full_name, profile_image_url, user_type')
                 .eq('id', blogData.created_by)
                 .maybeSingle(),
               supabase.from('profiles')
@@ -314,6 +316,7 @@ export default function PublicBlogDetailPage() {
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
             .eq('approval_status', 'approved')
+            .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
             .eq('created_by', articleAuthorId)
             .neq('id', blogId)
             .order('published_at', { ascending: false })
@@ -324,6 +327,7 @@ export default function PublicBlogDetailPage() {
                 .select('id, title, excerpt, featured_image, published_at, category')
                 .eq('status', 'published')
                 .eq('approval_status', 'approved')
+                .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
                 .eq('category', articleCategory)
                 .neq('id', blogId)
                 .neq('created_by', articleAuthorId)
@@ -335,6 +339,7 @@ export default function PublicBlogDetailPage() {
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
             .eq('approval_status', 'approved')
+            .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
             .neq('id', blogId)
             .order('views', { ascending: false, nullsFirst: false })
             .limit(4),
@@ -358,6 +363,7 @@ export default function PublicBlogDetailPage() {
               .select('id, title, excerpt, featured_image, published_at, category')
               .eq('status', 'published')
               .eq('approval_status', 'approved')
+              .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
               .in('category', interestCategories)
               .neq('id', blogId)
               .neq('created_by', articleAuthorId)
@@ -821,7 +827,7 @@ export default function PublicBlogDetailPage() {
             {blog.content && (
               <div
                 className="medium-article-content prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: addContentHeadingIds(blog.content).replace(/\n/g, '<br />') }}
+                dangerouslySetInnerHTML={{ __html: addContentHeadingIds(sanitizeRichText(blog.content)).replace(/\n/g, '<br />') }}
               />
             )}
           </div>

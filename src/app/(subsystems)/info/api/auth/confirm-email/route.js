@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -36,7 +37,7 @@ export async function POST(request) {
     if (error) {
       console.error('Email verification error:', error)
       return NextResponse.json(
-        { success: false, message: error.message || 'Unable to verify email.' },
+        { success: false, message: publicErrorMessage(error, 'Unable to verify email.') },
         { status: 400 }
       )
     }
@@ -64,7 +65,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('Confirm email API error:', error)
     return NextResponse.json(
-      { success: false, message: 'Internal server error: ' + error.message },
+      { success: false, message: 'Internal server error.' },
       { status: 500 }
     )
   }

@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession, setSecureSessionCookie } from '@/lib/serverAuth'
-import { isPasswordValid } from '@/lib/passwordPolicy'
+import { describePasswordPolicy, isPasswordValid } from '@/lib/passwordPolicy'
+import { getAppSetting, getPasswordPolicy } from '@/lib/appSettingsServer'
+import { verifyPasswordWithLockout } from '@/lib/loginLockout'
 import { sendPasswordSecurityEmail } from '@/lib/securityEmail'
 import { createSessionAdminClient, revokeUserSessions } from '@/lib/sessionVersions'
 
@@ -48,8 +50,9 @@ export async function POST(request) {
   if (typeof currentPassword !== 'string' || typeof newPassword !== 'string' || !currentPassword || !newPassword) {
     return response({ success: false, message: 'Enter your current password and a new password.' }, 400)
   }
-  if (newPassword.length > 128 || !isPasswordValid(newPassword)) {
-    return response({ success: false, message: 'Meet all password requirements before saving.' }, 400)
+  const passwordPolicy = await getPasswordPolicy()
+  if (!isPasswordValid(newPassword, passwordPolicy)) {
+    return response({ success: false, message: describePasswordPolicy(passwordPolicy) }, 400)
   }
   if (currentPassword === newPassword) {
     return response({ success: false, message: 'Your new password must be different from your current password.' }, 400)
@@ -70,11 +73,17 @@ export async function POST(request) {
       return response({ success: false, message: 'Unable to verify this account. Please try again.' }, 500)
     }
 
-    const { data: authResult, error: authError } = await supabase.auth.signInWithPassword({
+    const verification = await verifyPasswordWithLockout({
+      adminClient: adminSupabase,
+      authClient: supabase,
       email: user.email,
       password: currentPassword,
+      security: await getAppSetting('security', adminSupabase),
     })
-    if (authError || authResult?.user?.id !== session.user_id) {
+    if (verification.locked) {
+      return response({ success: false, message: 'Too many incorrect password attempts. Try again later.' }, 429)
+    }
+    if (!verification.ok || verification.authData.user.id !== session.user_id) {
       return response({ success: false, message: 'Your current password is incorrect.' }, 401)
     }
 
@@ -133,7 +142,8 @@ export async function POST(request) {
         { id: session.user_id, user_type: session.role },
         false,
         sessionVersion,
-        remainingTtl
+        remainingTtl,
+        { perms: session.perms, idleSeconds: Number(session.idle) || 0 }
       )
     }
     return result

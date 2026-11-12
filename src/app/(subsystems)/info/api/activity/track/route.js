@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { buildActivityMeta, buildActivityMessage, buildUserNotificationMessage, buildUserNotificationTitle } from '@/lib/trackActivity'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -77,32 +78,84 @@ export async function GET(request) {
   if (scope === 'recent' && !isAdmin) {
     return NextResponse.json({ success: false, message: 'Administrator access is required.' }, { status: 403 })
   }
-  const requestedLimit = Number.parseInt(new URL(request.url).searchParams.get('limit') || '', 10)
+  const searchParams = new URL(request.url).searchParams
+  const isPaginated = scope === 'recent' && searchParams.has('page')
+  const requestedLimit = Number.parseInt(searchParams.get('limit') || '', 10)
   const recentLimit = Number.isInteger(requestedLimit) ? Math.min(100, Math.max(1, requestedLimit)) : 8
+  const requestedPage = Number.parseInt(searchParams.get('page') || '', 10)
+  const page = Number.isInteger(requestedPage) ? Math.max(1, requestedPage) : 1
+  const activityType = String(searchParams.get('activityType') || '').trim().slice(0, 60)
+  const search = String(searchParams.get('search') || '').trim().replace(/[^a-zA-Z0-9\s@.-]/g, '').slice(0, 100)
+  const from = searchParams.get('from') || ''
+  const to = searchParams.get('to') || ''
+  const before = searchParams.get('before') || ''
+  const isDate = (value) => {
+    if (!value) return true
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    const date = new Date(`${value}T00:00:00Z`)
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  }
+
+  if (isPaginated && (!isDate(from) || !isDate(to))) {
+    return NextResponse.json({ success: false, message: 'Date filters must use YYYY-MM-DD format.' }, { status: 400 })
+  }
+  if (isPaginated && before && (before.length > 40 || Number.isNaN(Date.parse(before)))) {
+    return NextResponse.json({ success: false, message: 'The export snapshot timestamp is invalid.' }, { status: 400 })
+  }
+  if (isPaginated && from && to && from > to) {
+    return NextResponse.json({ success: false, message: 'The start date must be on or before the end date.' }, { status: 400 })
+  }
 
   try {
     let query = adminSupabase
       .from('user_activity_log')
-      .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)')
+      .select('id, user_id, activity_type, entity_type, entity_id, description, metadata, created_at, info_users!user_activity_log_user_id_fkey(full_name, email)', isPaginated ? { count: 'exact' } : undefined)
       .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
       .limit(scope === 'recent' ? recentLimit : 20)
 
-    if (scope !== 'recent') {
+    if (isPaginated) {
+      if (activityType) query = query.eq('activity_type', activityType)
+      if (search) query = query.or(`description.ilike.%${search}%,activity_type.ilike.%${search}%,entity_type.ilike.%${search}%`)
+      if (from) query = query.gte('created_at', `${from}T00:00:00.000Z`)
+      if (to) {
+        const toExclusive = new Date(`${to}T00:00:00.000Z`)
+        toExclusive.setUTCDate(toExclusive.getUTCDate() + 1)
+        query = query.lt('created_at', toExclusive.toISOString())
+      }
+      if (before) query = query.lte('created_at', before)
+      const start = (page - 1) * recentLimit
+      query = query.range(start, start + recentLimit - 1)
+    } else if (scope !== 'recent') {
       query = query
         .eq('user_id', session.user_id)
         .in('activity_type', ['login', 'logout', 'sign_in', 'sign_out', 'session', 'auth'])
     }
 
-    const { data, error } = await query
+    const { data, error, count } = await query
     if (error) throw error
-    return NextResponse.json({ success: true, activities: data || [] }, {
+    return NextResponse.json({
+      success: true,
+      activities: data || [],
+      ...(isPaginated ? { total: count || 0, page, limit: recentLimit } : {}),
+    }, {
       headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },
     })
   } catch (error) {
     console.error('Activity read error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to load activity.' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to load activity.') }, { status: 500 })
   }
 }
+
+// Notification links must stay on this site (no external or protocol-relative URLs).
+function safeInternalLink(value) {
+  const link = typeof value === 'string' ? value.trim() : ''
+  if (!link.startsWith('/info/') || link.startsWith('//') || link.includes('\\') || link.length > 300) return null
+  return link
+}
+
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const OWNER_LOOKUP_TYPES = new Set(['blog', 'post', 'user_post', 'event', 'forum', 'forum_thread', 'comment', 'article', 'announcement'])
 
 async function resolveOwnerUserId(entityType, entityId) {
   if (!entityType || !entityId) return null
@@ -229,7 +282,7 @@ export async function POST(request) {
       actorName = actor.full_name || (actor.email || '').split('@')[0] || 'A user'
     }
 
-    const contentTitle = metadata.contentTitle || metadata.title || entityType || 'content'
+    const contentTitle = String(metadata.contentTitle || metadata.title || entityType || 'content').slice(0, 120)
     const recordDescription = description || buildActivityMessage({ actorName, activityType, contentTitle, entityType })
     const { error: activityError } = await adminSupabase.from('user_activity_log').insert({
       user_id: userId,
@@ -242,7 +295,7 @@ export async function POST(request) {
 
     if (activityError) {
       console.error('Activity insert error:', activityError)
-      return NextResponse.json({ success: false, message: activityError.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(activityError) }, { status: 500 })
     }
 
     if (activityType === 'content_impression') {
@@ -252,16 +305,20 @@ export async function POST(request) {
     const meta = buildActivityMeta(activityType)
     const message = buildActivityMessage({ actorName, activityType, contentTitle, entityType })
 
-    const explicitOwnerId = metadata.ownerUserId || metadata.postOwnerId || metadata.recipientUserId || metadata.contentOwnerId || null
-    const explicitOwnerIds = [metadata.ownerUserId, metadata.postOwnerId, metadata.recipientUserId, metadata.contentOwnerId]
-      .filter((value) => value && String(value).trim() !== '')
-      .map((value) => String(value))
-    const resolvedOwnerId = explicitOwnerIds[0] || await resolveOwnerUserId(entityType, entityId)
+    // The recipient is looked up from the content itself whenever the type is
+    // known; a client-supplied owner is only used (one id, verified to exist)
+    // for content types the server cannot resolve.
+    const canResolveOwner = OWNER_LOOKUP_TYPES.has(String(entityType || '').toLowerCase())
+    const clientOwnerId = [metadata.ownerUserId, metadata.postOwnerId, metadata.recipientUserId, metadata.contentOwnerId]
+      .map((value) => String(value || '').trim())
+      .find((value) => UUID_TEXT.test(value)) || null
+    const resolvedOwnerId = canResolveOwner ? await resolveOwnerUserId(entityType, entityId) : clientOwnerId
+    const explicitOwnerIds = resolvedOwnerId ? [resolvedOwnerId] : []
     const notificationPostId = metadata.postId || metadata.contentId || entityId || null
-    const notificationPostOwnerId = resolvedOwnerId || metadata.ownerUserId || metadata.postOwnerId || metadata.contentOwnerId || userId || null
+    const notificationPostOwnerId = resolvedOwnerId || userId || null
     let ownerIsAdmin = false
 
-    let targetLink = metadata.link || metadata.href || metadata.action_url || routeForEntity(entityType, entityId)
+    let targetLink = safeInternalLink(metadata.link || metadata.href || metadata.action_url) || routeForEntity(entityType, entityId)
     if (!targetLink && entityType === 'comment' && metadata.contentType && metadata.contentId) {
       targetLink = routeForEntity(metadata.contentType, metadata.contentId)
     }
@@ -272,6 +329,7 @@ export async function POST(request) {
         .select('id, user_type')
         .eq('id', resolvedOwnerId)
         .maybeSingle()
+      if (!owner) explicitOwnerIds.length = 0
       ownerIsAdmin = owner?.user_type === 'admin'
     }
 
@@ -316,13 +374,15 @@ export async function POST(request) {
         if (ownerCandidate && ownerCandidate !== userId && !ownerIsAdmin) recipientUserIds.add(ownerCandidate)
       }
 
-      if (resolvedOwnerId && resolvedOwnerId !== userId && !ownerIsAdmin) recipientUserIds.add(resolvedOwnerId)
     }
 
-    if (metadata?.mentionedUserIds?.length) {
-      for (const mentionedId of metadata.mentionedUserIds) {
-        if (mentionedId && mentionedId !== userId) recipientUserIds.add(mentionedId)
-      }
+    // Mentions: at most 10 distinct, existing accounts.
+    const mentionIds = Array.isArray(metadata?.mentionedUserIds)
+      ? [...new Set(metadata.mentionedUserIds.map(String).filter((id) => UUID_TEXT.test(id) && id !== userId))].slice(0, 10)
+      : []
+    if (mentionIds.length) {
+      const { data: mentionedUsers } = await adminSupabase.from('info_users').select('id').in('id', mentionIds)
+      for (const mentioned of mentionedUsers || []) recipientUserIds.add(mentioned.id)
     }
 
     if (recipientUserIds.size > 0) {
@@ -335,7 +395,6 @@ export async function POST(request) {
       }
 
       for (const recipientUserId of recipientUserIds) {
-        const targetLink = metadata.link || metadata.href || metadata.action_url || routeForEntity(entityType, entityId)
         if (!targetLink) continue
 
         if (await shouldSkipNotification(recipientUserId, targetLink)) continue
@@ -367,7 +426,7 @@ export async function POST(request) {
   } catch (error) {
     console.error('Track activity error:', error)
     return NextResponse.json(
-      { success: false, message: error.message || 'Unable to track activity' },
+      { success: false, message: publicErrorMessage(error, 'Unable to track activity') },
       { status: 500 }
     )
   }

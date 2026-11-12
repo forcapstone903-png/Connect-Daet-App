@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -26,7 +27,7 @@ export async function GET(request) {
     .limit(500)
 
   const { data: followRows, error: followError } = await followQuery
-  if (followError) return NextResponse.json({ success: false, message: followError.message || 'Unable to load followers.' }, { status: 500 })
+  if (followError) return NextResponse.json({ success: false, message: publicErrorMessage(followError, 'Unable to load followers.') }, { status: 500 })
 
   const followerIds = [...new Set((followRows || []).map((row) => row.follower_id).filter(Boolean))]
   if (!followerIds.length) return NextResponse.json({ success: true, users: [] })
@@ -42,7 +43,7 @@ export async function GET(request) {
   if (query) usersQuery = usersQuery.ilike('full_name', `%${query}%`)
 
   const { data: users, error: usersError } = await usersQuery
-  if (usersError) return NextResponse.json({ success: false, message: usersError.message || 'Unable to search followers.' }, { status: 500 })
+  if (usersError) return NextResponse.json({ success: false, message: publicErrorMessage(usersError, 'Unable to search followers.') }, { status: 500 })
 
   return NextResponse.json({ success: true, users: users || [] })
 }

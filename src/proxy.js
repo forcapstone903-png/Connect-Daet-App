@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
 import publicRoutes from './lib/publicRoutes'
-import { clearSecureSessionCookie, getServerSession } from './lib/serverAuth'
+import {
+  clearSecureSessionCookie,
+  getServerSession,
+  isSessionIdleExpired,
+  refreshSecureSessionActivity,
+  sessionNeedsActivityRefresh,
+} from './lib/serverAuth'
+import { canAccessAdminPage, getStaffHomePath, isStaffRole, normalizeStaffRole } from './lib/staffRoles.mjs'
 
 // Routes that already-authenticated users should never sit on. Sitting on these
 // was the source of the flicker/glitch: pages like /visitor pushed an authed
@@ -53,6 +60,8 @@ const MAINTENANCE_EXEMPT_PATHS = new Set([
   '/info/account-recovery',
   '/info/api/account/recovery',
   '/info/api/cron/account-deletions',
+  '/info/api/cron/backups',
+  '/info/api/cron/alerts',
   '/info/api/logout',
   '/info/api/forgot-password',
   '/info/api/reset-password',
@@ -189,7 +198,22 @@ async function getMaintenanceSettings() {
   }
 }
 
+// Idle timeout (Settings -> Security): a page navigation or a write counts as
+// activity and slides last_active forward; background GET polling does not,
+// so an unattended tab still signs out.
 export async function proxy(request) {
+  const response = await handleRequest(request)
+  const session = getServerSession(request)
+  const isActivity = request.method !== 'GET'
+    || !(request.nextUrl.pathname.startsWith('/info/api/') || request.nextUrl.pathname.startsWith('/_next') || request.nextUrl.pathname.includes('.'))
+  const cookieCleared = response.cookies.get('daet_secure_session')?.value === ''
+  if (session && isActivity && !cookieCleared && !isSessionIdleExpired(session) && sessionNeedsActivityRefresh(session)) {
+    refreshSecureSessionActivity(response, session)
+  }
+  return response
+}
+
+async function handleRequest(request) {
   const { pathname } = request.nextUrl
   const normalizedPathname = pathname.replace(/\/+$/, '') || '/'
 
@@ -279,14 +303,19 @@ export async function proxy(request) {
     )
   }
 
-  if (loggedIn && !isStaticOrAsset && !sessionVersionCurrent) {
+  const idleExpired = loggedIn && !isStaticOrAsset && isSessionIdleExpired(serverSession)
+
+  if (loggedIn && !isStaticOrAsset && (!sessionVersionCurrent || idleExpired)) {
     loggedIn = false
+    const expiredMessage = idleExpired
+      ? 'You were signed out after a period of inactivity. Please sign in again.'
+      : 'Your session has expired. Please sign in again.'
     const isApiRoute = pathname === '/info/api' || pathname.startsWith('/info/api/')
     let response
 
     if (isApiRoute && !AUTH_INDEPENDENT_API_PATHS.has(normalizedPathname)) {
       response = NextResponse.json(
-        { success: false, message: 'Your session has expired. Please sign in again.' },
+        { success: false, message: expiredMessage },
         { status: 401, headers: { 'Cache-Control': 'no-store' } }
       )
     } else if (isApiRoute) {
@@ -300,7 +329,7 @@ export async function proxy(request) {
     } else {
       const deletionPending = await isAccountDeletionPending(serverSession.user_id)
       const loginUrl = new URL(deletionPending ? '/info/account-recovery' : '/info/login', request.url)
-      if (!deletionPending) loginUrl.searchParams.set('message', 'Your session has expired. Please sign in again.')
+      if (!deletionPending) loginUrl.searchParams.set('message', expiredMessage)
       response = NextResponse.redirect(loginUrl)
     }
 
@@ -308,19 +337,24 @@ export async function proxy(request) {
     return response
   }
 
-  const role = String(serverSession?.role || '').trim().toLowerCase()
-  const isAdmin = loggedIn && (role === 'admin' || role === 'administrator')
+  // "isAdmin" here means any back-office staff role (admin, tourism officer,
+  // moderator). Which admin pages each role may open is checked further down.
+  const isAdmin = loggedIn && isStaffRole(serverSession?.role)
   const isAdminRoute = pathname === '/info/admin' || pathname.startsWith('/info/admin/')
   const isVisitorRoute = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
-  const isVisitorTouristSpotDetailRoute = /^\/info\/visitor\/tourist-spots\/[^/]+$/.test(normalizedPathname)
+  // The places directory (list + detail) is shared by guests and signed-in
+  // users, so it is exempt from the "signed-in users leave /info/visitor" rule.
+  const isVisitorTouristSpotDetailRoute = /^\/info\/visitor\/(tourist-spots|alerts)(\/[^/]+)?$/.test(normalizedPathname)
 
   if (loggedIn && isVisitorRoute && !isVisitorTouristSpotDetailRoute) {
     return NextResponse.redirect(
-      new URL(isAdmin ? '/info/admin/dashboard' : '/info/user/dashboard', request.url)
+      new URL(isAdmin ? getStaffHomePath(serverSession.role) : '/info/user/dashboard', request.url)
     )
   }
 
-  if (!isAdmin && !isAdminRoute && !isStaticOrAsset && !MAINTENANCE_EXEMPT_PATHS.has(normalizedPathname)) {
+  // Public safety alerts stay reachable during maintenance mode.
+  const isAlertPath = /^\/info\/(api\/alerts|visitor\/alerts)(\/|$)/.test(normalizedPathname)
+  if (!isAdmin && !isAdminRoute && !isStaticOrAsset && !isAlertPath && !MAINTENANCE_EXEMPT_PATHS.has(normalizedPathname)) {
     const maintenance = await getMaintenanceSettings()
     if (maintenance?.enabled) {
       if (pathname === '/info/api' || pathname.startsWith('/info/api/')) {
@@ -349,7 +383,7 @@ export async function proxy(request) {
   // Logged-in users go straight to their dashboard instead of a landing/auth page.
   if (loggedIn && AUTHD_ONLY_EXIT.has(normalizedPathname)) {
     return NextResponse.redirect(
-      new URL(isAdmin ? '/info/admin/dashboard' : '/info/user/dashboard', request.url)
+      new URL(isAdmin ? getStaffHomePath(serverSession.role) : '/info/user/dashboard', request.url)
     )
   }
 
@@ -368,6 +402,9 @@ export async function proxy(request) {
   if (!loggedIn) {
     const loginUrl = new URL('/info/login', request.url)
     loginUrl.searchParams.set('message', 'Please sign in to continue.')
+    if (normalizedPathname.startsWith('/info/user/')) {
+      loginUrl.searchParams.set('redirect', `${normalizedPathname}${request.nextUrl.search}`)
+    }
     return NextResponse.redirect(loginUrl)
   }
 
@@ -376,6 +413,22 @@ export async function proxy(request) {
     !isAdmin
   ) {
     return NextResponse.redirect(new URL('/info/access-denied?reason=admin', request.url))
+  }
+
+  // Role-based page access inside the console (see src/lib/staffRoles.mjs).
+  if (
+    isAdminRoute
+    && normalizedPathname === '/info/admin/dashboard'
+    && normalizeStaffRole(serverSession.role) !== 'admin'
+    && isStaffRole(serverSession.role)
+  ) {
+    return NextResponse.redirect(new URL(getStaffHomePath(serverSession.role), request.url))
+  }
+
+  if (isAdminRoute && !canAccessAdminPage(serverSession.role, normalizedPathname, serverSession.perms)) {
+    const dashboardUrl = new URL(getStaffHomePath(serverSession.role), request.url)
+    dashboardUrl.searchParams.set('denied', '1')
+    return NextResponse.redirect(dashboardUrl)
   }
 
   return NextResponse.next()

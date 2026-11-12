@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -60,7 +61,7 @@ export async function GET(request) {
       failed += 1
       console.error('Scheduled admin message status update failed:', {
         messageId: message.id,
-        error: updateError.message,
+        error: publicErrorMessage(updateError),
       })
       continue
     }
@@ -69,7 +70,7 @@ export async function GET(request) {
       failed += 1
       console.error('Scheduled admin message inbox delivery failed:', {
         messageId: message.id,
-        error: notificationError.message,
+        error: publicErrorMessage(notificationError),
       })
     } else {
       delivered += 1

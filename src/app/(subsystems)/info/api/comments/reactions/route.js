@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -87,7 +88,7 @@ export async function POST(request) {
         hint: error?.hint,
         raw: error,
       })
-      return NextResponse.json({ success: false, message: error.message || 'Unable to react to comment.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to react to comment.') }, { status: 400 })
     }
 
     if (commentRow?.user_id && commentRow.user_id !== session.user_id) {
@@ -199,7 +200,7 @@ export async function DELETE(request) {
         hint: error?.hint,
         raw: error,
       })
-      return NextResponse.json({ success: false, message: error.message || 'Unable to remove comment reaction.' }, { status: 400 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to remove comment reaction.') }, { status: 400 })
     }
 
     return NextResponse.json({ success: true })

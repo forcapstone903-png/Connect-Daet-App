@@ -1,20 +1,91 @@
 'use client'
 
-import { Suspense, useState, useEffect } from 'react'
+import { Suspense, useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { ChevronDown, Menu, X } from 'lucide-react'
 import { performLogout } from '@/lib/clientLogout'
+import sidebarBackground from '@/app/(subsystems)/info/assets/images/rename_sidebar.png'
 import { Icon } from './Icon'
 import ConfirmationModal from './ConfirmationModal'
+import { STAFF_ROLES, canAccessAdminPage, getStaffHomePath, getStaffRoleLabel, hasPermission, normalizeStaffRole } from '@/lib/staffRoles.mjs'
 
-const navigationSections = [
+const adminNavigationSections = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    modules: [
+      { id: 'dashboard', label: 'Dashboard', iconName: 'dashboard', href: '/info/admin/dashboard' },
+    ],
+  },
+  {
+    id: 'accounts',
+    label: 'Accounts & Access',
+    modules: [
+      { id: 'users', label: 'Staff & Tourist Accounts', iconName: 'users', href: '/info/admin/users' },
+    ],
+  },
+  {
+    id: 'public-information',
+    label: 'Public Information',
+    modules: [
+      { id: 'faqs', label: 'Frequently Asked Questions', iconName: 'feedback', href: '/info/admin/faqs' },
+    ],
+  },
+  {
+    id: 'reports',
+    label: 'Reports & Oversight',
+    modules: [
+      { id: 'analytics-dashboard', label: 'Analytics & Exports', iconName: 'analytics', href: '/info/admin/analytics' },
+      { id: 'activity-logs', label: 'Audit & Activity Logs', iconName: 'analytics', href: '/info/admin/activity-logs' },
+    ],
+  },
+  {
+    id: 'system',
+    label: 'System Administration',
+    modules: [
+      {
+        id: 'settings',
+        label: 'System Settings',
+        iconName: 'settings',
+        items: [
+          { href: '/info/admin/settings/general', label: 'General Site Info', iconName: 'settings', exact: true },
+          { href: '/info/admin/settings/appearance', label: 'Branding & Appearance', iconName: 'image', exact: true },
+          { href: '/info/admin/settings/categories', label: 'Alert & Place Categories', iconName: 'content', exact: true },
+          { href: '/info/admin/announcement-settings', label: 'Notification Settings', iconName: 'notifications', exact: true },
+          { href: '/info/admin/settings/security', label: 'Security Policy', iconName: 'lock', exact: true },
+          { href: '/info/admin/settings/login-security', label: 'Failed Sign-ins', iconName: 'lock', exact: true },
+          { href: '/info/admin/settings/email', label: 'Email Delivery', iconName: 'notifications', exact: true },
+        ],
+      },
+      { id: 'notifications-inbox', label: 'Notification Inbox', iconName: 'notifications', badgeKey: 'unreadNotifications', href: '/info/admin/notifications/inbox' },
+      { id: 'staff-chat', label: 'Staff Chat', iconName: 'forum', href: '/info/admin/staff-chat' },
+      { id: 'data', label: 'Backup & Restore', iconName: 'data', href: '/info/admin/data/backups' },
+    ],
+  },
+  {
+    id: 'account',
+    label: 'Account',
+    modules: [
+      { id: 'my-account', label: 'My Account', iconName: 'profile', href: '/info/admin/account' },
+    ],
+  },
+]
+
+const staffNavigationSections = [
   {
     id: 'main',
     label: 'Main',
     modules: [
-      { id: 'dashboard', label: 'Dashboard', iconName: 'dashboard', href: '/info/admin/dashboard', requiredRoles: ['admin'] },
+      { id: 'dashboard', label: 'Dashboard', iconName: 'dashboard', href: '/info/admin/dashboard' },
+    ],
+  },
+  {
+    id: 'alerts',
+    label: 'Real-time Alerts',
+    modules: [
+      { id: 'alerts', label: 'Alert Broadcasts', iconName: 'warning', href: '/info/admin/alerts' },
     ],
   },
   {
@@ -26,21 +97,18 @@ const navigationSections = [
         label: 'Blog',
         iconName: 'blog',
         badgeKey: 'pendingApprovals',
-        requiredRoles: ['admin'],
         href: '/info/admin/blogs?status=all',
       },
       {
         id: 'tourist-spots',
-        label: 'Tourist Spots',
+        label: 'Places Directory',
         iconName: 'attractions',
-        requiredRoles: ['admin', 'content_manager'],
         href: '/info/admin/tourist-spots',
       },
       {
         id: 'events',
         label: 'Events',
         iconName: 'events',
-        requiredRoles: ['admin', 'content_manager'],
         items: [
           { href: '/info/admin/events', label: 'All Events', iconName: 'events', exact: true },
           { href: '/info/admin/event-approvals', label: 'Event Approvals', iconName: 'moderation' },
@@ -50,26 +118,31 @@ const navigationSections = [
         id: 'announcements',
         label: 'Announcements',
         iconName: 'notifications',
-        requiredRoles: ['admin'],
         href: '/info/admin/announcement',
       },
       {
         id: 'forum',
         label: 'Forum',
         iconName: 'forum',
-        requiredRoles: ['admin', 'moderator'],
-        items: [
-          { href: '/info/admin/forum', label: 'Topics', iconName: 'forum', exact: true },
-          { href: '/info/admin/engagement', label: 'Engagement', iconName: 'analytics' },
-          { href: '/info/admin/moderation', label: 'Reported Content', iconName: 'moderation' },
-        ],
+        href: '/info/admin/forum',
       },
       {
         id: 'feedback',
         label: 'Feedback',
         iconName: 'feedback',
-        requiredRoles: ['admin', 'moderator'],
         href: '/info/admin/feedback',
+      },
+      {
+        id: 'faqs',
+        label: 'Frequently Asked Questions',
+        iconName: 'feedback',
+        href: '/info/admin/faqs',
+      },
+      {
+        id: 'reviews',
+        label: 'Reviews',
+        iconName: 'feedback',
+        href: '/info/admin/reviews',
       },
     ],
   },
@@ -77,19 +150,31 @@ const navigationSections = [
     id: 'people',
     label: 'People',
     modules: [
-      { id: 'users', label: 'Users', iconName: 'users', href: '/info/admin/users', requiredRoles: ['admin', 'moderator'] },
-      { id: 'people-engagement', label: 'User Engagement', iconName: 'analytics', href: '/info/admin/engagement', requiredRoles: ['admin', 'moderator'] },
-      { id: 'activity-logs', label: 'Activity Logs', iconName: 'analytics', href: '/info/admin/activity-logs', requiredRoles: ['admin'] },
+      { id: 'users', label: 'Users', iconName: 'users', href: '/info/admin/users' },
+      { id: 'activity-logs', label: 'Activity Logs', iconName: 'analytics', href: '/info/admin/activity-logs' },
+    ],
+  },
+  {
+    id: 'communication',
+    label: 'Communication',
+    modules: [
+      { id: 'staff-chat', label: 'Staff Chat', iconName: 'forum', href: '/info/admin/staff-chat' },
+    ],
+  },
+  {
+    id: 'moderation',
+    label: 'Moderation',
+    modules: [
+      { id: 'reported-content', label: 'Reported Content', iconName: 'moderation', href: '/info/admin/moderation', exact: true },
+      { id: 'moderation-notifications', label: 'Post Notifications', iconName: 'notifications', badgeKey: 'unreadNotifications', href: '/info/admin/moderation/notifications' },
+      { id: 'community-guidelines', label: 'Community Guidelines', iconName: 'content', href: '/info/admin/community-guidelines' },
     ],
   },
   {
     id: 'analytics',
     label: 'Analytics',
     modules: [
-      { id: 'visitor-statistics', label: 'Visitor Statistics', iconName: 'analytics', href: '/info/admin/analytics/visitors', requiredRoles: ['admin', 'analyst'] },
-      { id: 'popular-content', label: 'Popular Content', iconName: 'analytics', href: '/info/admin/analytics/content', requiredRoles: ['admin', 'analyst'] },
-      { id: 'analytics-engagement', label: 'User Engagement', iconName: 'analytics', href: '/info/admin/analytics/engagement', requiredRoles: ['admin', 'analyst'] },
-      { id: 'export-reports', label: 'Export Reports', iconName: 'data', href: '/info/admin/analytics/reports', requiredRoles: ['admin', 'analyst'] },
+      { id: 'analytics-dashboard', label: 'Analytics Dashboard', iconName: 'analytics', href: '/info/admin/analytics' },
     ],
   },
   {
@@ -100,23 +185,13 @@ const navigationSections = [
         id: 'notifications',
         label: 'Notifications',
         iconName: 'notifications',
-        requiredRoles: ['admin'],
         items: [
+          { href: '/info/admin/notifications/inbox', label: 'Inbox', iconName: 'notifications', exact: true },
           { href: '/info/admin/notifications/send', label: 'Send Announcement', iconName: 'notifications' },
-          { href: '/info/admin/notifications/history', label: 'History', iconName: 'clock' },
         ],
       },
-      { id: 'media-library', label: 'Media Library', iconName: 'image', href: '/info/admin/file-management', requiredRoles: ['admin'] },
-      {
-        id: 'data',
-        label: 'Data',
-        iconName: 'data',
-        requiredRoles: ['admin'],
-        items: [
-          { href: '/info/admin/data/retention', label: 'Data Retention', iconName: 'warning', warning: true },
-          { href: '/info/admin/data/backups', label: 'Backup & Restore', iconName: 'data', warning: true },
-        ],
-      },
+      { id: 'media-library', label: 'Media Library', iconName: 'image', href: '/info/admin/file-management' },
+      { id: 'data', label: 'Data', iconName: 'data', href: '/info/admin/data' },
     ],
   },
   {
@@ -127,10 +202,10 @@ const navigationSections = [
         id: 'settings',
         label: 'Settings',
         iconName: 'settings',
-        requiredRoles: ['admin'],
         items: [
           { href: '/info/admin/settings/general', label: 'General', iconName: 'settings', exact: true },
-          { href: '/info/admin/settings/email', label: 'Email & Notifications', iconName: 'notifications', exact: true },
+          { href: '/info/admin/settings/categories', label: 'Categories', iconName: 'content', exact: true },
+          { href: '/info/admin/settings/email', label: 'Email', iconName: 'notifications', exact: true },
           { href: '/info/admin/settings/security', label: 'Security', iconName: 'lock', exact: true },
           { href: '/info/admin/settings/maintenance', label: 'Maintenance Mode', iconName: 'warning', exact: true },
           { href: '/info/admin/settings/appearance', label: 'Appearance', iconName: 'image', exact: true },
@@ -147,7 +222,6 @@ const navigationSections = [
         id: 'my-account',
         label: 'My Account',
         iconName: 'profile',
-        requiredRoles: ['admin', 'content_manager', 'moderator', 'analyst'],
         href: '/info/admin/account',
       },
     ],
@@ -162,30 +236,84 @@ export default function AdminSidebar(props) {
   )
 }
 
-function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogout, userRole = 'admin' }) {
+function AdminSidebarContent({ user, roleLabel: pageRoleLabel = 'System Administrator', onLogout, userRole: userRoleProp }) {
+  // Menus are filtered with the same rules the proxy enforces, so a staff
+  // member never sees a link that would redirect them away.
+  const userRole = normalizeStaffRole(userRoleProp || user?.role || user?.user_type || '')
+  const roleLabel = userRole === STAFF_ROLES.ADMIN ? pageRoleLabel : getStaffRoleLabel(userRole)
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const navRef = useRef(null)
   const [openGroups, setOpenGroups] = useState(() =>
     Object.fromEntries(
-      navigationSections.flatMap((section) =>
+      [...adminNavigationSections, ...staffNavigationSections].flatMap((section) =>
         section.modules.filter((module) => module.items).map((module) => [module.id, false])
       )
     )
   )
   const [pendingApprovals, setPendingApprovals] = useState(null)
+  const [permissionOverrides, setPermissionOverrides] = useState(null)
 
+  // Per-person permission overrides live in the signed session; read them so
+  // the menu matches what the proxy will actually allow.
+  useEffect(() => {
+    if (!userRole || userRole === STAFF_ROLES.ADMIN) return undefined
+    let active = true
+    fetch('/info/api/admin/me', { credentials: 'same-origin', cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result) => { if (active && result?.success) setPermissionOverrides(result.overrides) })
+      .catch(() => {})
+    return () => { active = false }
+  }, [userRole])
+  const [unreadNotifications, setUnreadNotifications] = useState(null)
+
+  useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return undefined
+
+    const storageKey = 'connect-daet-admin-sidebar-scroll'
+    try {
+      const savedScrollTop = Number(window.sessionStorage.getItem(storageKey))
+      if (Number.isFinite(savedScrollTop)) nav.scrollTop = savedScrollTop
+    } catch (error) {
+      console.warn('Unable to restore admin sidebar scroll position:', error)
+    }
+
+    const saveScrollPosition = () => {
+      try {
+        window.sessionStorage.setItem(storageKey, String(nav.scrollTop))
+      } catch (error) {
+        console.warn('Unable to save admin sidebar scroll position:', error)
+      }
+    }
+
+    nav.addEventListener('scroll', saveScrollPosition, { passive: true })
+    return () => {
+      saveScrollPosition()
+      nav.removeEventListener('scroll', saveScrollPosition)
+    }
+  }, [])
+
+  const staffHomePath = getStaffHomePath(userRole)
+  const navigationSections = userRole === STAFF_ROLES.ADMIN
+    ? adminNavigationSections
+    : staffNavigationSections
   const filteredSections = navigationSections
     .map((section) => ({
       ...section,
       modules: section.modules
-        .filter((module) => module.requiredRoles.includes(userRole))
         .map((module) => ({
           ...module,
-          items: module.items?.filter((item) => !item.requiredRoles || item.requiredRoles.includes(userRole)),
+          href: module.id === 'dashboard' ? staffHomePath : module.href,
+        }))
+        .filter((module) => module.items || canAccessAdminPage(userRole, module.href, permissionOverrides))
+        .map((module) => ({
+          ...module,
+          items: module.items?.filter((item) => canAccessAdminPage(userRole, item.href, permissionOverrides)),
         }))
         .filter((module) => !module.items || module.items.length > 0),
     }))
@@ -211,10 +339,12 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
   }
   const isModuleActive = (module) => module.items
     ? module.items.some(isItemActive)
-    : isActive(module.href)
+    : module.exact
+      ? normalizeHref(pathname) === normalizeHref(module.href)
+      : isActive(module.href)
 
   useEffect(() => {
-    if (userRole !== 'admin') return undefined
+    if (!hasPermission(userRole, 'moderation.manage')) return undefined
 
     let active = true
     fetch('/info/api/admin/blogs?status=all&pageSize=1', {
@@ -234,6 +364,34 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
 
     return () => {
       active = false
+    }
+  }, [userRole])
+
+  useEffect(() => {
+    if (!hasPermission(userRole, 'moderation.manage')) return undefined
+
+    let active = true
+    const loadUnreadNotifications = async () => {
+      try {
+        const response = await fetch('/info/api/notifications', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        const result = await response.json()
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to load staff notifications.')
+        }
+        if (active) setUnreadNotifications(Number(result.unread_count) || 0)
+      } catch (error) {
+        console.error('Unable to load the staff notification badge:', error)
+      }
+    }
+
+    void loadUnreadNotifications()
+    const intervalId = window.setInterval(loadUnreadNotifications, 30_000)
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
     }
   }, [userRole])
 
@@ -293,28 +451,55 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
         />
       )}
 
-      <div id="admin-navigation-drawer" className={`admin-sidebar-drawer fixed left-0 top-0 z-30 flex h-dvh min-h-0 ${sidebarWidth} max-lg:w-[min(22rem,calc(100vw-1rem))] max-lg:max-w-[calc(100vw-1rem)] flex-col border-r transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <div id="admin-navigation-drawer" className={`admin-sidebar-drawer admin-sidebar-branded fixed left-0 top-0 z-30 flex h-dvh min-h-0 ${sidebarWidth} max-lg:w-[min(22rem,calc(100vw-1rem))] max-lg:max-w-[calc(100vw-1rem)] flex-col border-r transition-all duration-300 lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="admin-sidebar-scenic" aria-hidden="true">
+          <Image
+            src={sidebarBackground}
+            alt=""
+            fill
+            sizes={isCollapsed ? '5rem' : '(max-width: 1023px) 95vw, 18rem'}
+            quality={75}
+            className="admin-sidebar-scenic-image"
+          />
+          <div className="admin-sidebar-scenic-overlay" />
+        </div>
+
         {/* Brand */}
-        <div className="admin-sidebar-brand border-b px-4 py-4">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="admin-sidebar-logo flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl">
+        <div className={`admin-sidebar-brand border-b px-4 py-4 ${isCollapsed ? 'is-collapsed' : ''}`}>
+          <div className={`admin-sidebar-brand-head ${isCollapsed ? 'is-collapsed' : ''}`}>
+            <button
+              type="button"
+              onClick={() => {
+                setIsCollapsed(!isCollapsed)
+                if (mobileOpen) setMobileOpen(false)
+              }}
+              className="admin-sidebar-brand-lockup"
+              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              aria-expanded={!isCollapsed}
+              aria-controls="admin-navigation-drawer"
+            >
+              <div className={`admin-sidebar-brand-mark-wrap ${isCollapsed ? 'is-collapsed' : ''}`}>
                 <Image
-                  src="/logo.png"
-                  alt="Connect Daet logo"
-                  width={40}
-                  height={40}
-                  className="h-full w-full object-contain p-1"
+                  src="/daet-brand.png"
+                  alt="Connect Daet emblem"
+                  width={220}
+                  height={147}
+                  sizes={isCollapsed ? '130px' : '170px'}
+                  quality={75}
+                  className="admin-sidebar-brand-mark"
                 />
               </div>
               {!isCollapsed && (
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold tracking-[0.04em]">Connect Daet</p>
-                  <p className="admin-sidebar-kicker truncate text-[10px] font-semibold uppercase tracking-[0.18em]">Admin Console</p>
-                </div>
+                <>
+                  <p className="admin-sidebar-brand-title">Connect Daet</p>
+                  <p className="admin-sidebar-kicker">
+                    {userRole === STAFF_ROLES.ADMIN ? 'Admin Console' : `${roleLabel} Console`}
+                  </p>
+                </>
               )}
-            </div>
-            <div className="flex items-center gap-1">
+            </button>
+            <div className="admin-sidebar-brand-actions">
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}
@@ -323,23 +508,23 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
               >
                 <X className="h-4 w-4" />
               </button>
-              <button
-                type="button"
-                onClick={() => setIsCollapsed(!isCollapsed)}
-                className="admin-sidebar-icon-button hidden flex-shrink-0 rounded-lg p-1.5 transition-all lg:block"
-                title={isCollapsed ? 'Expand' : 'Collapse'}
-                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-              >
-                <Icon name={isCollapsed ? 'expand' : 'collapse'} className="h-4 w-4" />
-              </button>
             </div>
           </div>
 
           {/* Signed-in administrator */}
           {!isCollapsed && (
             <div className="admin-sidebar-operator mt-4 flex min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5">
-              <div className="admin-sidebar-avatar flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold uppercase">
-                {initials}
+              <div className="admin-sidebar-avatar relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold uppercase">
+                {user?.profile_image_url ? (
+                  <Image
+                    src={user.profile_image_url}
+                    alt=""
+                    fill
+                    sizes="36px"
+                    unoptimized
+                    className="object-cover"
+                  />
+                ) : initials}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="admin-sidebar-name truncate text-xs font-bold">{userName}</p>
@@ -350,7 +535,7 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
           )}
         </div>
 
-      <nav className="admin-sidebar-nav min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3" aria-label="Admin navigation">
+      <nav ref={navRef} className="admin-sidebar-nav min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3" aria-label="Admin navigation">
         {filteredSections.map((section, sectionIndex) => (
           <section key={section.id} className={`admin-nav-section-group admin-nav-section-${section.id}`}>
             {!isCollapsed && (
@@ -359,7 +544,11 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
             {section.modules.map((module) => {
               const active = isModuleActive(module)
               const expanded = Boolean(openGroups[module.id] || active && module.items)
-              const badge = module.badgeKey === 'pendingApprovals' ? pendingApprovals : module.badge
+              const badge = module.badgeKey === 'pendingApprovals'
+                ? pendingApprovals
+                : module.badgeKey === 'unreadNotifications'
+                  ? unreadNotifications
+                  : module.badge
 
               return (
                 <div key={module.id} className={`admin-nav-entry ${module.items ? 'admin-nav-entry-group' : ''}`}>
@@ -427,7 +616,14 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
                     >
                       <Icon name={module.iconName} className="h-[18px] w-[18px] flex-shrink-0" />
                       {!isCollapsed && <span className="flex-1 truncate">{module.label}</span>}
-                      {badge > 0 && <span className="admin-nav-badge admin-nav-badge-pending" aria-label={`${badge} pending approvals`}>{badge}</span>}
+                      {badge > 0 && (
+                        <span
+                          className="admin-nav-badge admin-nav-badge-pending"
+                          aria-label={module.badgeKey === 'unreadNotifications' ? `${badge} unread notifications` : `${badge} pending approvals`}
+                        >
+                          {badge}
+                        </span>
+                      )}
                     </Link>
                   )}
                 </div>
@@ -438,9 +634,24 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
       </nav>
 
       <div className="admin-sidebar-footer shrink-0 border-t p-3">
-        <div className={`admin-sidebar-account flex items-center ${isCollapsed ? 'justify-center' : 'gap-2.5'}`}>
-          <div className="admin-sidebar-avatar flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold uppercase" title={isCollapsed ? userName : undefined}>
-            {initials}
+        <div className={`admin-sidebar-account flex items-center ${isCollapsed ? 'is-collapsed justify-center' : 'gap-2.5'}`}>
+          <div
+            className="admin-sidebar-avatar relative flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-bold uppercase"
+            title={isCollapsed ? userName : undefined}
+            role={isCollapsed ? 'img' : undefined}
+            aria-label={isCollapsed ? userName : undefined}
+            tabIndex={isCollapsed ? 0 : undefined}
+          >
+            {user?.profile_image_url ? (
+              <Image
+                src={user.profile_image_url}
+                alt=""
+                fill
+                sizes="36px"
+                unoptimized
+                className="object-cover"
+              />
+            ) : initials}
           </div>
           {!isCollapsed && (
             <div className="min-w-0 flex-1">
@@ -451,16 +662,17 @@ function AdminSidebarContent({ user, roleLabel = 'System Administrator', onLogou
               </p>
             </div>
           )}
+          {isCollapsed && <span className="admin-sidebar-account-tooltip" aria-hidden="true">{userName}</span>}
         </div>
         <button
           type="button"
           onClick={handleLogoutClick}
-          className="admin-nav-logout mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold"
+          className={`admin-nav-logout mt-2 flex w-full items-center justify-center gap-3 rounded-lg py-2.5 text-sm font-semibold ${isCollapsed ? 'px-0' : 'px-3'}`}
           title={isCollapsed ? 'Logout' : undefined}
           aria-label="Logout"
         >
           <Icon name="logout" className="h-[18px] w-[18px] flex-shrink-0" />
-          {!isCollapsed && <span className="flex-1 text-left">Logout</span>}
+          {!isCollapsed && <span>Logout</span>}
         </button>
       </div>
     </div>

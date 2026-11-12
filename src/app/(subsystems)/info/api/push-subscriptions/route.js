@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
+import { validatePushSubscription } from '@/lib/pushSubscriptionValidation.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -33,25 +34,8 @@ export async function POST(request) {
     } catch {
       return response({ success: false, message: 'A valid push subscription is required.' }, 400)
     }
-    const subscription = body?.subscription
-    let parsedEndpoint
-    try {
-      parsedEndpoint = new URL(subscription?.endpoint)
-    } catch {
-      return response({ success: false, message: 'Invalid push subscription.' }, 400)
-    }
-
-    if (
-      typeof subscription?.endpoint !== 'string'
-      || subscription.endpoint.length > 2048
-      || parsedEndpoint.protocol !== 'https:'
-      || typeof subscription?.keys?.p256dh !== 'string'
-      || !subscription.keys.p256dh
-      || subscription.keys.p256dh.length > 512
-      || typeof subscription?.keys?.auth !== 'string'
-      || !subscription.keys.auth
-      || subscription.keys.auth.length > 512
-    ) {
+    const subscription = validatePushSubscription(body?.subscription)
+    if (!subscription) {
       return response({ success: false, message: 'Invalid push subscription.' }, 400)
     }
 

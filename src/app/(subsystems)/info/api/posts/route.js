@@ -7,7 +7,8 @@ export const runtime = 'nodejs'
 
 import { notifyFollowers } from '@/lib/notificationAudience'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
-import { notifyAdministrators } from '@/lib/adminNotifications'
+import { notifyAdministrators, notifyModerators } from '@/lib/adminNotifications'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export async function POST(request) {
   try {
@@ -41,6 +42,9 @@ export async function POST(request) {
     }
 
     if (shareType === 'forum') {
+      const isModerator = ['admin', 'administrator', 'moderator'].includes(
+        String(session.role || '').trim().toLowerCase()
+      )
       const title = String(body.forumForm?.title || '').trim()
       const content = String(body.forumForm?.content || '').trim()
       const tags = Array.isArray(body.forumForm?.tags) ? body.forumForm.tags.filter(Boolean) : []
@@ -54,7 +58,7 @@ export async function POST(request) {
       const extendedPayload = {
         title,
         content,
-        status: 'published',
+        status: isModerator ? 'published' : 'pending',
         created_by: userId,
         tags,
         image_urls: attachments,
@@ -84,7 +88,7 @@ export async function POST(request) {
           .insert({
             title,
             content: [content, footer].filter(Boolean).join('\n\n'),
-            status: 'published',
+            status: isModerator ? 'published' : 'pending',
             created_by: userId,
           })
           .select('id')
@@ -94,20 +98,36 @@ export async function POST(request) {
       }
 
       if (error) {
-        return NextResponse.json({ success: false, message: error.message || 'Unable to create forum discussion.' }, { status: 500 })
+        return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to create forum discussion.') }, { status: 500 })
       }
 
-      await notifyFollowers(adminSupabase, {
-        authorId: userId,
-        type: 'forum',
-        link: `/info/user/forums/${data.id}`,
-        postId: data.id,
-        title: 'New forum discussion',
-        actionText: 'started a new discussion',
-        subject: title,
-      })
+      if (isModerator) {
+        await notifyFollowers(adminSupabase, {
+          authorId: userId,
+          type: 'forum',
+          link: `/info/user/forums/${data.id}`,
+          postId: data.id,
+          title: 'New forum discussion',
+          actionText: 'started a new discussion',
+          subject: title,
+        })
+      } else {
+        await notifyModerators(adminSupabase, {
+          actorId: userId,
+          title: 'Forum discussion awaiting approval',
+          message: `A forum discussion needs review: ${title}`,
+          type: 'warning',
+          link: '/info/admin/moderation',
+        })
+      }
 
-      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/dashboard', warning })
+      return NextResponse.json({
+        success: true,
+        id: data?.id,
+        status: isModerator ? 'published' : 'pending',
+        destination: '/info/user/dashboard',
+        warning,
+      })
     }
 
     if (shareType === 'event') {
@@ -248,7 +268,7 @@ export async function POST(request) {
         .single()
 
       if (error) {
-        return NextResponse.json({ success: false, message: error.message || 'Unable to submit complaint.' }, { status: 500 })
+        return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to submit complaint.') }, { status: 500 })
       }
 
       const { error: notificationError } = await adminSupabase
@@ -336,7 +356,7 @@ export async function POST(request) {
       }
 
       if (error) {
-        return NextResponse.json({ success: false, message: error.message || 'Unable to submit feedback.' }, { status: 500 })
+        return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to submit feedback.') }, { status: 500 })
       }
 
       const { error: notificationError } = await adminSupabase

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -63,7 +64,7 @@ export async function PATCH(request, { params }) {
     return NextResponse.json({ success: true, repost: legacy.data, legacySchema: true })
   }
 
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Repost not found or not owned by you.' }, { status: 404 })
   return NextResponse.json({ success: true, repost: data })
 }
@@ -98,7 +99,7 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ success: true, repost: legacy.data, legacySchema: true })
   }
 
-  if (error) return NextResponse.json({ success: false, message: error.message }, { status: 400 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 400 })
   if (!data) return NextResponse.json({ success: false, message: 'Repost not found or not owned by you.' }, { status: 404 })
   return NextResponse.json({ success: true, repost: data })
 }

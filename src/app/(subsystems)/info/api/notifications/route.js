@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -25,7 +26,7 @@ async function attachActorProfiles(adminSupabase, notifications) {
 function applyNotificationPreferences(query, preferences = {}) {
   const suppressedTypes = []
   if (preferences.newFollowers === false) suppressedTypes.push('follow')
-  if (preferences.forumMentions === false) suppressedTypes.push('comment')
+  if (preferences.forumMentions === false) suppressedTypes.push('comment', 'mention')
   if (preferences.announcementAlerts === false) suppressedTypes.push('announcement')
   return suppressedTypes.length ? query.not('type', 'in', `(${suppressedTypes.join(',')})`) : query
 }
@@ -79,7 +80,7 @@ export async function GET(request) {
   } catch (error) {
     console.error('Notifications fetch failed:', error)
     return NextResponse.json(
-      { success: false, message: error.message || 'Unable to load notifications.' },
+      { success: false, message: publicErrorMessage(error, 'Unable to load notifications.') },
       { status: 500 }
     )
   }
@@ -136,7 +137,7 @@ export async function PATCH(request) {
   } catch (error) {
     console.error('Notification update failed:', error)
     return NextResponse.json(
-      { success: false, message: error.message || 'Unable to update notification.' },
+      { success: false, message: publicErrorMessage(error, 'Unable to update notification.') },
       { status: 500 }
     )
   }
@@ -170,7 +171,7 @@ export async function DELETE(request) {
   } catch (error) {
     console.error('Notification history deletion failed:', error)
     return NextResponse.json(
-      { success: false, message: error.message || 'Unable to delete notification history.' },
+      { success: false, message: publicErrorMessage(error, 'Unable to delete notification history.') },
       { status: 500 }
     )
   }

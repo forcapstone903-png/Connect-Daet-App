@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import Image from 'next/image'
 import { useParams, useRouter } from 'next/navigation'
 import {
@@ -149,6 +150,8 @@ export default function BlogDetailPage() {
   const router = useRouter()
   const blogId = params?.id
   const [blog, setBlog] = useState(null)
+  const [blogLoadIssue, setBlogLoadIssue] = useState({ blogId: '', message: '' })
+  const [blogRetryKey, setBlogRetryKey] = useState(0)
   const [comments, setComments] = useState([])
   const [commentLoadError, setCommentLoadError] = useState('')
   const [commentReloadKey, setCommentReloadKey] = useState(0)
@@ -192,6 +195,7 @@ export default function BlogDetailPage() {
   const articleId = blog?.id || ''
   const articleAuthorId = blog?.created_by || blog?.info_users?.id || ''
   const articleCategory = blog?.category || ''
+  const blogLoadError = blogLoadIssue.blogId === blogId ? blogLoadIssue.message : ''
 
   useEffect(() => {
     let ignore = false
@@ -232,16 +236,51 @@ export default function BlogDetailPage() {
 
         const { data: blogData, error: blogError } = await supabase
           .from('info_blogs')
-          .select('*, info_users(id, full_name, email, profile_image_url, user_type)')
+          .select('*')
           .eq('id', blogId)
-          .eq('status', 'published')
-          .eq('approval_status', 'approved')
-          .single()
+          // RLS allows public access only to approved, published blogs, and
+          // separately allows authors to view their own submissions.
+          .maybeSingle()
 
         if (blogError) {
-          console.error('Error loading blog:', blogError)
+          console.error('Error loading blog:', {
+            code: blogError.code,
+            message: blogError.message,
+            details: blogError.details,
+            hint: blogError.hint,
+          })
+          if (!ignore) {
+            setBlogLoadIssue({ blogId, message: 'Unable to load this story right now. Please try again.' })
+          }
         } else if (blogData && !ignore) {
-          setBlog(blogData)
+          let blogAuthor = null
+          if (blogData.created_by) {
+            const { data: authorData, error: authorError } = await supabase
+              .from('info_users')
+              .select('id, full_name, profile_image_url, user_type')
+              .eq('id', blogData.created_by)
+              .maybeSingle()
+            if (authorError) {
+              console.error('Blog author profile load failed:', {
+                code: authorError.code,
+                message: authorError.message,
+                details: authorError.details,
+                hint: authorError.hint,
+              })
+            } else {
+              blogAuthor = authorData
+            }
+          }
+          if (ignore) return
+
+          const blogWithAuthor = { ...blogData, info_users: blogAuthor }
+          setBlog(blogWithAuthor)
+          setBlogLoadIssue({ blogId, message: '' })
+          if (blogWithAuthor.status !== 'published' || blogWithAuthor.approval_status !== 'approved') {
+            setLoading(false)
+            return
+          }
+
           setShareCount(readLocalStorage(`${STORAGE_KEYS.shareCounts}_${blogId}`, 0))
 
           const { data: reactionRows, error: reactionError } = await supabase
@@ -317,7 +356,10 @@ export default function BlogDetailPage() {
         if (!ignore) setLoading(false)
       } catch (error) {
         console.error('Blog fetch failed:', error)
-        if (!ignore) setLoading(false)
+        if (!ignore) {
+          setBlogLoadIssue({ blogId, message: 'Unable to load this story right now. Please try again.' })
+          setLoading(false)
+        }
       }
     }
 
@@ -326,7 +368,7 @@ export default function BlogDetailPage() {
     return () => {
       ignore = true
     }
-  }, [blogId])
+  }, [blogId, blogRetryKey])
 
   useEffect(() => {
     if (!blogId) return undefined
@@ -418,6 +460,7 @@ export default function BlogDetailPage() {
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
             .eq('approval_status', 'approved')
+            .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
             .eq('created_by', articleAuthorId)
             .neq('id', articleId)
             .order('published_at', { ascending: false })
@@ -428,6 +471,7 @@ export default function BlogDetailPage() {
                 .select('id, title, excerpt, featured_image, published_at, category')
                 .eq('status', 'published')
                 .eq('approval_status', 'approved')
+                .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
                 .eq('category', articleCategory)
                 .neq('id', articleId)
                 .neq('created_by', articleAuthorId)
@@ -439,6 +483,7 @@ export default function BlogDetailPage() {
             .select('id, title, excerpt, featured_image, published_at, category')
             .eq('status', 'published')
             .eq('approval_status', 'approved')
+            .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
             .neq('id', articleId)
             .order('views', { ascending: false, nullsFirst: false })
             .limit(4),
@@ -463,6 +508,7 @@ export default function BlogDetailPage() {
               .select('id, title, excerpt, featured_image, published_at, category')
               .eq('status', 'published')
               .eq('approval_status', 'approved')
+              .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
               .in('category', interestCategories)
               .neq('id', articleId)
               .neq('created_by', articleAuthorId)
@@ -1096,9 +1142,24 @@ export default function BlogDetailPage() {
         <UserTopHeader detailMode />
         <div className="usr-empty-state max-w-xl">
           <FileText className="mx-auto h-10 w-10 text-slate-300" aria-hidden="true" />
-          <p className="mt-3 text-sm font-semibold text-slate-700">Article not found</p>
-          <p className="mt-1 text-xs text-slate-500">This story may have been unpublished, archived, or removed by its author.</p>
+          <p className="mt-3 text-sm font-semibold text-slate-700">{blogLoadError ? 'Unable to load article' : 'Article not found'}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {blogLoadError || 'This story may have been unpublished, archived, or removed by its author.'}
+          </p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
+            {blogLoadError && (
+              <button
+                type="button"
+                onClick={() => {
+                  setBlogLoadIssue({ blogId: '', message: '' })
+                  setLoading(true)
+                  setBlogRetryKey((current) => current + 1)
+                }}
+                className="usr-section-secondary"
+              >
+                Try again
+              </button>
+            )}
             <Link href="/info/user/dashboard" className="usr-section-primary hidden lg:inline-flex">Back to feed</Link>
           </div>
         </div>
@@ -1110,6 +1171,28 @@ export default function BlogDetailPage() {
     { ...blog.info_users, name: blog.info_users?.email },
     'Daet community member',
   )
+  const isPubliclyPublished = blog.status === 'published' && blog.approval_status === 'approved'
+  const isBlogAuthor = Boolean(userId && userId === blog.created_by)
+  const submissionStatus = blog.status === 'archived'
+    ? 'Archived'
+    : blog.approval_status === 'pending'
+      ? 'Pending approval'
+      : blog.approval_status === 'rejected'
+        ? 'Rejected'
+        : blog.approval_status === 'changes_requested'
+          ? 'Changes requested'
+          : blog.approval_status === 'draft'
+            ? 'Draft'
+            : 'Not published'
+  const submissionDescription = blog.status === 'archived'
+    ? 'This story is archived and is not publicly visible.'
+    : blog.approval_status === 'pending'
+      ? 'This submission is awaiting administrator review and is visible only to you and administrators.'
+      : ['rejected', 'changes_requested'].includes(blog.approval_status)
+        ? 'Only you and administrators can see this story. Update it and resubmit when you are ready.'
+        : blog.approval_status === 'draft'
+          ? 'This draft is visible only to you and has not been submitted for review.'
+          : 'This story is not publicly visible.'
   const renderArticleCards = (items) => (
     <div className="medium-article-recommendation-grid">
       {items.map((item) => (
@@ -1156,35 +1239,66 @@ export default function BlogDetailPage() {
                 <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
                   <span className="inline-flex items-center gap-1"><Clock className="h-3.5 w-3.5" />{calculateReadTime(blog.content)} min read</span>
                   <span>•</span>
-                  <span>{formatDate(blog.published_at)}</span>
-                  <span>•</span>
-                  <span>{shareCount} shares</span>
+                  <span>{formatDate(isPubliclyPublished ? blog.published_at : blog.submitted_at || blog.created_at)}</span>
+                  {isPubliclyPublished && (
+                    <>
+                      <span>•</span>
+                      <span>{shareCount} shares</span>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="ml-auto flex shrink-0 items-center gap-1 pt-1 text-xs text-slate-600 sm:text-sm">
-              <div className="flex items-center gap-1">
-                <Eye className="h-4 w-4" />
-                <span>{(blog.views || 0) + 1}</span>
+            {isPubliclyPublished && (
+              <div className="ml-auto flex shrink-0 items-center gap-1 pt-1 text-xs text-slate-600 sm:text-sm">
+                <div className="flex items-center gap-1">
+                  <Eye className="h-4 w-4" />
+                  <span>{(blog.views || 0) + 1}</span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
           </header>
 
-          <div className="medium-article-top-actions medium-article-top-social">
-            <SocialActionBar
-              contentType="blog"
-              contentId={blog.id}
-              userId={userId}
-              heartOnly
-              commentCount={comments.length}
-              onToggleComments={handleOpenComments}
-              isSaved={isSaved}
-              onToggleSave={handleSave}
-              originalPost={{ ...blog, author: blog.info_users || blog.author || { id: blog.created_by, full_name: blog.author_name, profile_image_url: blog.author_avatar_url } }}
-            />
-          </div>
+          {!isPubliclyPublished && (
+            <section className="my-5 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:p-5" role="status" aria-label="Blog approval status">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-amber-900">{submissionStatus}</p>
+                  <p className="mt-1 text-sm leading-6 text-amber-800">
+                    {submissionDescription}
+                  </p>
+                  {['rejected', 'changes_requested'].includes(blog.approval_status) && blog.rejection_reason && (
+                    <p className="mt-3 rounded-xl border border-amber-200 bg-white/70 p-3 text-sm leading-6 text-amber-900">
+                      <strong>Administrator feedback:</strong> {blog.rejection_reason}
+                    </p>
+                  )}
+                </div>
+                {isBlogAuthor && (
+                  <Link href={`/info/user/blogs/${blog.id}/edit`} className="usr-section-secondary shrink-0">
+                    {['rejected', 'changes_requested'].includes(blog.approval_status) ? 'Edit & resubmit' : 'Edit story'}
+                  </Link>
+                )}
+              </div>
+            </section>
+          )}
+
+          {isPubliclyPublished && (
+            <div className="medium-article-top-actions medium-article-top-social">
+              <SocialActionBar
+                contentType="blog"
+                contentId={blog.id}
+                userId={userId}
+                heartOnly
+                commentCount={comments.length}
+                onToggleComments={handleOpenComments}
+                isSaved={isSaved}
+                onToggleSave={handleSave}
+                originalPost={{ ...blog, author: blog.info_users || blog.author || { id: blog.created_by, full_name: blog.author_name, profile_image_url: blog.author_avatar_url } }}
+              />
+            </div>
+          )}
 
           {detailGallery.length > 0 && (
             <div className="medium-article-gallery">
@@ -1205,7 +1319,7 @@ export default function BlogDetailPage() {
             {blog.content && (
               <div
                 className="medium-article-content prose prose-sm max-w-none"
-                dangerouslySetInnerHTML={{ __html: blog.content.replace(/\n/g, '<br />') }}
+                dangerouslySetInnerHTML={{ __html: sanitizeRichText(blog.content).replace(/\n/g, '<br />') }}
               />
             )}
           </div>
@@ -1230,7 +1344,7 @@ export default function BlogDetailPage() {
             {authorBio && <p>{authorBio}</p>}
             {followError && <p role="alert" className="medium-article-follow-error">{followError}</p>}
           </div>
-          {userId !== articleAuthorId && (
+          {isPubliclyPublished && userId !== articleAuthorId && (
             <button
               type="button"
               onClick={handleToggleAuthorFollow}
@@ -1244,6 +1358,7 @@ export default function BlogDetailPage() {
           )}
         </section>
 
+        {isPubliclyPublished ? (
         <section ref={commentsSectionRef} className="medium-article-comments mb-5">
           {commentLoadError && (
             <div className="medium-article-editorial-error mb-4" role="status">
@@ -1322,8 +1437,13 @@ export default function BlogDetailPage() {
           )}
 
         </section>
+        ) : (
+          <section className="medium-article-comments mb-5 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
+            Responses become available after this story is approved and published.
+          </section>
+        )}
 
-        <section className="medium-article-recommendations" aria-label="More stories">
+        {isPubliclyPublished && <section className="medium-article-recommendations" aria-label="More stories">
           {editorialError ? (
             <div className="medium-article-editorial-error" role="status">
               <p>{editorialError}</p>
@@ -1359,7 +1479,7 @@ export default function BlogDetailPage() {
               )}
             </>
           )}
-        </section>
+        </section>}
         </div>
 
       </div>

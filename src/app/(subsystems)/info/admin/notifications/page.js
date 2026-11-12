@@ -31,12 +31,6 @@ const NOTIFICATION_DESTINATIONS = [
     icon: 'calendar',
     href: '/info/admin/notifications/scheduled',
   },
-  {
-    title: 'Delivery history',
-    description: 'Audit previously published and archived announcements.',
-    icon: 'data',
-    href: '/info/admin/notifications/history',
-  },
 ]
 
 // Announcement metrics need per-row status and reach, so one small projection

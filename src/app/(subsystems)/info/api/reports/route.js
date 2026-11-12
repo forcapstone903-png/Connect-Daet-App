@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { clientIp, consumeRateLimit } from '@/lib/rateLimit'
 import { notifyAdministrators } from '@/lib/adminNotifications'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +13,13 @@ const REPORTED_TABLES = {
   forum_replies: 'user_id',
   forum_threads: 'created_by',
   info_blogs: 'created_by',
+  info_events: 'created_by',
+  info_user_posts: 'user_id',
+  info_announcements: 'created_by',
+  info_tourist_spots: 'created_by',
+  attraction_ratings: 'user_id',
+  reposts: 'user_id',
+  info_users: 'id',
 }
 
 function getAdminClient() {
@@ -34,6 +42,11 @@ export async function POST(request) {
   if (!reporterId) return respond({ success: false, message: 'Please sign in to submit a report.' }, 401)
   const client = getAdminClient()
   if (!client) return respond({ success: false, message: 'Report submission is not configured.' }, 500)
+
+  const limit = await consumeRateLimit(client, { scope: 'report', key: reporterId, max: 20, windowSeconds: 3600 })
+  if (!limit.allowed) {
+    return respond({ success: false, message: limit.unavailable ? 'Reporting is temporarily unavailable.' : 'You have sent many reports recently. Please try again later.' }, limit.unavailable ? 503 : 429)
+  }
 
   let body
   try {
@@ -62,9 +75,12 @@ export async function POST(request) {
   if (!item) return respond({ success: false, message: 'The reported content could not be found.' }, 404)
   const reportedUserId = item[ownerColumn] || null
   if (reportedUserId === reporterId) return respond({ success: false, message: 'You cannot report your own content.' }, 400)
+  const reportType = tableName === 'info_users'
+    ? 'account'
+    : String(body?.reportType || 'content').trim().slice(0, 60)
 
   const { data, error } = await client.from('info_moderation').insert({
-    report_type: String(body?.reportType || 'content').trim().slice(0, 60),
+    report_type: reportType,
     reason,
     description: description || null,
     severity: 'medium',
@@ -79,8 +95,8 @@ export async function POST(request) {
     return respond({ success: false, message: 'Unable to submit your report.' }, 500)
   }
   await notifyAdministrators(client, {
-    title: 'Content reported',
-    message: `New ${String(body?.reportType || 'content').trim().slice(0, 60)} report requires review.`,
+    title: tableName === 'info_users' ? 'User account reported' : 'Content reported',
+    message: `New ${reportType} report requires review.`,
     type: 'warning',
     link: '/info/admin/moderation',
   })

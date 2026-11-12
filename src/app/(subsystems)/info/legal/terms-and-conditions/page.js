@@ -1,4 +1,5 @@
 import LegalBackButton from '../_components/LegalBackButton'
+import Link from 'next/link'
 
 const clauses = [
   {
@@ -46,6 +47,9 @@ export default function TermsAndConditionsPage() {
           <p className="mt-4 text-sm leading-6 text-slate-600">
             These terms govern your use of DAET Connect. By using the service, you agree to comply with these terms and applicable local laws.
           </p>
+          <Link href="/info/community-guidelines" className="mt-4 inline-flex text-sm font-semibold text-sky-700 hover:underline">
+            Read the Community Guidelines
+          </Link>
 
           <div className="mt-8 space-y-6">
             {clauses.map((clause) => (

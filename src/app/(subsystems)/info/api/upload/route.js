@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
+import { fileMatchesDeclaredType, safeObjectName } from '@/lib/uploadValidation'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const bucketAliases = {
@@ -44,11 +45,22 @@ export async function POST(request) {
     const folder = normalizedFolder
 
     if (!bucket || !folder) return NextResponse.json({ error: 'Invalid upload destination.' }, { status: 400 })
+    if (bucket === 'profile-media') {
+      const ownsProfileFolder = folder === `users/${userId}`
+        || folder.startsWith(`users/${userId}/`)
+        || folder === `covers/${userId}`
+        || folder.startsWith(`covers/${userId}/`)
+        || folder === `reviews/${userId}`
+        || folder.startsWith(`reviews/${userId}/`)
+      if (!ownsProfileFolder) {
+        return NextResponse.json({ error: 'You can only upload profile images to your own account.' }, { status: 403 })
+      }
+    }
     if (
       (folder === 'admin-library' || folder.startsWith('admin-library/'))
-      && !['admin', 'administrator'].includes(String(session.role || '').trim().toLowerCase())
+      && !['admin', 'administrator', 'tourism_officer', 'moderator'].includes(String(session.role || '').trim().toLowerCase())
     ) {
-      return NextResponse.json({ error: 'Administrator access is required for the shared media library.' }, { status: 403 })
+      return NextResponse.json({ error: 'Staff access is required for the shared media library.' }, { status: 403 })
     }
 
     if (!file || typeof file === 'string') {
@@ -60,24 +72,20 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Unsupported file type or file is too large.' }, { status: 400 })
     }
 
-    if (!supabaseUrl || !supabaseAnonKey) {
-      return NextResponse.json({
-        error: 'Supabase storage is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to your environment.',
-      }, { status: 500 })
+    if (!supabaseUrl || !supabaseServiceRoleKey) {
+      console.error('Upload storage is not configured (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY).')
+      return NextResponse.json({ error: 'Uploads are temporarily unavailable.' }, { status: 503 })
     }
 
-    if (!supabaseServiceRoleKey) {
-      return NextResponse.json({
-        error: 'Missing SUPABASE_SERVICE_ROLE_KEY. Uploads require a service-role key in the server environment.',
-      }, { status: 500 })
-    }
-
-    const fileName = `${Date.now()}-${file.name.replace(/\s+/g, '-')}`
-    const objectPath = folder ? `${folder}/${fileName}` : fileName
     const buffer = await file.arrayBuffer()
+    if (!fileMatchesDeclaredType(buffer, file.type)) {
+      return NextResponse.json({ error: 'The file content does not match its type. Upload a real JPEG, PNG, WebP, GIF, MP4, MOV or WebM file.' }, { status: 400 })
+    }
+    const fileName = safeObjectName(file.name, file.type)
+    const objectPath = folder ? `${folder}/${fileName}` : fileName
     const blob = new Blob([buffer], { type: file.type })
 
-    const client = createClient(supabaseUrl, supabaseServiceRoleKey || supabaseAnonKey, {
+    const client = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
 
@@ -89,7 +97,7 @@ export async function POST(request) {
     })
 
     if (error) {
-      return NextResponse.json({ error: error.message || 'Upload failed.' }, { status: 500 })
+      return NextResponse.json({ error: publicErrorMessage(error, 'Upload failed.') }, { status: 500 })
     }
 
     const trackedObject = await client
@@ -114,7 +122,7 @@ export async function POST(request) {
     return NextResponse.json({ success: true, url: publicUrlData.publicUrl, path: data?.path || objectPath })
   } catch (error) {
     console.error('Upload route error:', error)
-    return NextResponse.json({ error: error.message || 'Upload failed.' }, { status: 500 })
+    return NextResponse.json({ error: publicErrorMessage(error, 'Upload failed.') }, { status: 500 })
   }
 }
 
@@ -145,6 +153,7 @@ export async function DELETE(request) {
     const ownedPath = objectPath === `users/${userId}`
       || objectPath.startsWith(`users/${userId}/`)
       || objectPath.startsWith(`covers/${userId}/`)
+      || objectPath.startsWith(`reviews/${userId}/`)
       || objectPath.startsWith(`blog-media/${userId}/`)
       || objectPath.startsWith(`images/${userId}/`)
       || objectPath.startsWith(`videos/${userId}/`)
@@ -155,6 +164,7 @@ export async function DELETE(request) {
       || objectPath.startsWith(`forum-replies/${userId}/`)
 
     const adminLibraryPath = objectPath.startsWith('admin-library/')
+    // Only a full administrator may delete shared media-library objects.
     const isAdmin = ['admin', 'administrator'].includes(String(session.role || '').trim().toLowerCase())
 
     if (!allowedBuckets.has(normalizedBucket) || !(ownedPath || (adminLibraryPath && isAdmin)) || !objectPath) {
@@ -165,7 +175,7 @@ export async function DELETE(request) {
       auth: { persistSession: false, autoRefreshToken: false },
     })
     const { error } = await client.storage.from(normalizedBucket).remove([objectPath])
-    if (error) return NextResponse.json({ error: error.message || 'Unable to remove file.' }, { status: 500 })
+    if (error) return NextResponse.json({ error: publicErrorMessage(error, 'Unable to remove file.') }, { status: 500 })
 
     const { error: trackingError } = await client
       .from('user_storage_objects')
@@ -180,6 +190,6 @@ export async function DELETE(request) {
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Upload removal route error:', error)
-    return NextResponse.json({ error: error.message || 'Unable to remove file.' }, { status: 400 })
+    return NextResponse.json({ error: publicErrorMessage(error, 'Unable to remove file.') }, { status: 400 })
   }
 }

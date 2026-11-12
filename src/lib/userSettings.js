@@ -61,10 +61,7 @@ export const NOTIFICATION_OPTIONS = [
 
 export const DEFAULT_PRIVACY_PREFERENCES = {
   privacyLevel: 'public',
-  showOnlineStatus: true,
-  showActivity: true,
   allowMessagesFrom: 'everyone',
-  allowMentions: true,
   searchable: true,
   autoApproveFollowRequests: false,
 }
@@ -109,10 +106,7 @@ export function normalizeSettings(raw) {
     notifications: normalizedNotifications,
     privacy: {
       privacyLevel: PRIVACY_LEVELS.includes(privacy.privacyLevel) ? privacy.privacyLevel : DEFAULT_PRIVACY_PREFERENCES.privacyLevel,
-      showOnlineStatus: typeof privacy.showOnlineStatus === 'boolean' ? privacy.showOnlineStatus : DEFAULT_PRIVACY_PREFERENCES.showOnlineStatus,
-      showActivity: typeof privacy.showActivity === 'boolean' ? privacy.showActivity : DEFAULT_PRIVACY_PREFERENCES.showActivity,
       allowMessagesFrom: MESSAGE_PRIVACY_LEVELS.includes(privacy.allowMessagesFrom) ? privacy.allowMessagesFrom : DEFAULT_PRIVACY_PREFERENCES.allowMessagesFrom,
-      allowMentions: typeof privacy.allowMentions === 'boolean' ? privacy.allowMentions : DEFAULT_PRIVACY_PREFERENCES.allowMentions,
       searchable: typeof privacy.searchable === 'boolean' ? privacy.searchable : DEFAULT_PRIVACY_PREFERENCES.searchable,
       autoApproveFollowRequests: typeof privacy.autoApproveFollowRequests === 'boolean'
         ? privacy.autoApproveFollowRequests

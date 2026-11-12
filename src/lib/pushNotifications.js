@@ -289,3 +289,88 @@ export async function unsubscribeFromPushNotifications() {
 
   return { success: true, browserUnsubscribed: unsubscribed }
 }
+
+// ---------------------------------------------------------------------------
+// Guest alert opt-in (no account). The subscription is stored with no user and
+// the chosen alert categories; see /info/api/alerts/guest-subscription.
+// ---------------------------------------------------------------------------
+
+export async function getCurrentPushSubscription() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return null
+  try {
+    const registration = await navigator.serviceWorker.getRegistration()
+    return (await registration?.pushManager.getSubscription()) || null
+  } catch {
+    return null
+  }
+}
+
+async function postGuestSubscription(method, body) {
+  try {
+    const response = await fetch('/info/api/alerts/guest-subscription', {
+      method,
+      credentials: 'omit',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok || !result.success) {
+      return { success: false, message: result.message || `The alert service returned HTTP ${response.status}.` }
+    }
+    return result
+  } catch {
+    return { success: false, message: 'The alert service is unavailable. Please try again when you are online.' }
+  }
+}
+
+export async function subscribeGuestToAlerts(categories = []) {
+  const availability = getPushAvailability()
+  if (!availability.supported) {
+    return {
+      success: false,
+      ...availability,
+      message: availability.reason === 'ios-install-required'
+        ? 'On iPhone and iPad, add this site to your Home Screen first, then turn on alerts from there.'
+        : 'This browser does not support push notifications.',
+    }
+  }
+
+  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim()
+  if (!publicKey) return { success: false, message: 'Push notifications are not configured.' }
+
+  const permission = await Notification.requestPermission()
+  if (permission !== 'granted') {
+    return {
+      success: false,
+      reason: permission,
+      message: permission === 'denied'
+        ? 'Notifications are blocked. Allow notifications for this site in your browser settings, then try again.'
+        : 'Choose Allow when the browser asks, so alerts can reach this device.',
+    }
+  }
+
+  let subscription
+  try {
+    await registerPushServiceWorker()
+    const registration = await navigator.serviceWorker.ready
+    subscription = await registration.pushManager.getSubscription()
+      || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(publicKey),
+      })
+  } catch (error) {
+    console.error('Guest push subscription failed:', error)
+    return { success: false, message: 'The browser could not turn on notifications. Reload the page and try again.' }
+  }
+
+  return postGuestSubscription('POST', { subscription: subscription.toJSON(), categories })
+}
+
+export async function unsubscribeGuestFromAlerts() {
+  const subscription = await getCurrentPushSubscription()
+  if (!subscription) return { success: true, message: 'Alerts are already off for this device.' }
+  const result = await postGuestSubscription('DELETE', { subscription: subscription.toJSON() })
+  if (result.success) await subscription.unsubscribe().catch(() => false)
+  return result
+}

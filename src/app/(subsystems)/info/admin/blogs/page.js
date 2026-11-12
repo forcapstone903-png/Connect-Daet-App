@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -9,8 +10,6 @@ import {
   BookOpenText,
   CalendarDays,
   Check,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   Eye,
   History,
@@ -28,6 +27,7 @@ import {
 import {
   AdminBadge,
   AdminEmptyState,
+  AdminPagination,
   AdminPanel,
   AdminSearch,
   AdminShell,
@@ -37,6 +37,7 @@ import {
   AdminTableFooter,
   AdminToolbar,
 } from '@/app/(subsystems)/info/components/admin'
+import AdminDiscussionModeration from '@/app/(subsystems)/info/components/admin/AdminDiscussionModeration'
 
 const TABS = [
   { id: 'pending', label: 'Pending approvals' },
@@ -45,6 +46,7 @@ const TABS = [
   { id: 'changes_requested', label: 'Changes requested' },
   { id: 'rejected', label: 'Rejected' },
   { id: 'reported', label: 'Reported' },
+  { id: 'draft', label: 'My drafts' },
 ]
 
 const EMPTY_STATS = {
@@ -54,6 +56,7 @@ const EMPTY_STATS = {
   rejectedPosts: 0,
   changesRequested: 0,
   reportedPosts: 0,
+  draftPosts: 0,
 }
 
 function formatDate(value) {
@@ -125,6 +128,7 @@ function AdminBlogsContent() {
   const [actionId, setActionId] = useState('')
   const [error, setError] = useState('')
   const [selectedPost, setSelectedPost] = useState(null)
+  const [previewPost, setPreviewPost] = useState(null)
   const [selectedIds, setSelectedIds] = useState([])
   const [decisionDialog, setDecisionDialog] = useState(null)
   const [moderationFeedback, setModerationFeedback] = useState('')
@@ -167,6 +171,7 @@ function AdminBlogsContent() {
         const nextPosts = result.posts || []
         setPosts(nextPosts)
         setSelectedPost((current) => nextPosts.find((post) => post.id === current?.id) || nextPosts[0] || null)
+        setPreviewPost((current) => current ? nextPosts.find((post) => post.id === current.id) || null : null)
       }
       return true
     } catch (loadError) {
@@ -175,6 +180,7 @@ function AdminBlogsContent() {
       setPosts([])
       setHistory([])
       setSelectedPost(null)
+      setPreviewPost(null)
       return false
     } finally {
       setLoading(false)
@@ -326,6 +332,7 @@ function AdminBlogsContent() {
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to save the blog post.')
       setEditPost(null)
       setSelectedPost((current) => current?.id === editPost.id ? { ...current, ...result.blog } : current)
+      setPreviewPost((current) => current?.id === editPost.id ? { ...current, ...result.blog } : current)
       const refreshed = await loadData()
       if (!refreshed) setError('The blog post was saved, but the list could not be refreshed.')
     } catch (saveError) {
@@ -351,8 +358,10 @@ function AdminBlogsContent() {
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete the blog post.')
       setDeletePost(null)
       setSelectedPost((current) => current?.id === target.id ? null : current)
+      setPreviewPost((current) => current?.id === target.id ? null : current)
       const refreshed = await loadData()
-      if (!refreshed) setError('The blog post was deleted, but the list could not be refreshed.')
+      if (result.notificationWarning) setError(result.notificationWarning)
+      else if (!refreshed) setError('The blog post was deleted, but the list could not be refreshed.')
     } catch (deleteError) {
       console.error('Admin blog deletion failed:', deleteError)
       setError(deleteError.message || 'Unable to delete the blog post.')
@@ -379,6 +388,7 @@ function AdminBlogsContent() {
         {state === 'approved' ? (
           <>
             <button type="button" disabled={busy} onClick={() => openDecision(post, 'return_to_pending')} className={`${buttonClass} border border-amber-200 text-amber-800 hover:bg-amber-50`}><RotateCcw className="h-3.5 w-3.5" />Unpublish</button>
+            <button type="button" disabled={busy} onClick={() => openDecision(post, 'request_changes')} className={`${buttonClass} border border-blue-200 text-blue-700 hover:bg-blue-50`}><MessageSquareText className="h-3.5 w-3.5" />Request changes</button>
             <button type="button" disabled={busy} onClick={() => openDecision(post, 'reject')} className={`${buttonClass} border border-red-200 text-red-700 hover:bg-red-50`}><X className="h-3.5 w-3.5" />Reject</button>
           </>
         ) : null}
@@ -398,7 +408,7 @@ function AdminBlogsContent() {
       : 'inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50'
     return (
       <>
-        <button type="button" onClick={() => selectPost(post)} className={buttonClass}><Eye className="h-3.5 w-3.5" />Preview</button>
+        <button type="button" onClick={() => setPreviewPost(post)} className={buttonClass}><Eye className="h-3.5 w-3.5" />Preview</button>
         {post.created_by === adminId ? <button type="button" disabled={Boolean(actionId)} onClick={() => openEdit(post)} className={`${buttonClass} disabled:opacity-50`}><Pencil className="h-3.5 w-3.5" />Edit</button> : null}
         {renderModerationActions(post, compact)}
         <button type="button" disabled={Boolean(actionId)} onClick={() => setDeletePost(post)} className={`${buttonClass} border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-50`}><Trash2 className="h-3.5 w-3.5" />Delete</button>
@@ -413,6 +423,7 @@ function AdminBlogsContent() {
     changes_requested: stats.changesRequested,
     rejected: stats.rejectedPosts,
     reported: stats.reportedPosts,
+    draft: stats.draftPosts,
   })[tabId]
 
   const changeTab = (nextStatus) => {
@@ -420,6 +431,7 @@ function AdminBlogsContent() {
     setView('posts')
     setSelectedIds([])
     setSelectedPost(null)
+    setPreviewPost(null)
     router.replace(`/info/admin/blogs?status=${nextStatus}`, { scroll: false })
   }
 
@@ -427,11 +439,11 @@ function AdminBlogsContent() {
     setPage(1)
     setView(nextView)
     setSelectedIds([])
+    setPreviewPost(null)
   }
 
   const selectPost = (post) => {
     setSelectedPost(post)
-    if (layout !== 'board') setLayout('board')
   }
 
   const handleQueueKeyDown = (event) => {
@@ -732,6 +744,7 @@ function AdminBlogsContent() {
                               </div>
                             ) : null}
                           </div>
+                          <AdminDiscussionModeration key={`blog:${selectedPost.id}`} contentType="blog" contentId={selectedPost.id} />
                           <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
                             <button type="button" onClick={() => void openPostHistory(selectedPost)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                               <History className="h-3.5 w-3.5" />View moderation history
@@ -750,9 +763,12 @@ function AdminBlogsContent() {
                             <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'approve')} className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"><Check className="mr-1 inline h-3.5 w-3.5" />Approve</button>
                           </div>
                         ) : selectedPost.approval_status === 'approved' ? (
-                          <div className="border-t border-slate-200 bg-emerald-50/70 px-4 py-3 text-sm text-emerald-800 sm:px-5">
-                            <p className="font-bold"><Check className="mr-1 inline h-4 w-4" />Approved</p>
-                            <p className="mt-1 text-xs">Approved by {selectedPost.reviewer?.full_name || selectedPost.reviewer?.email || 'Daet Tourism Admin'} · {formatDate(selectedPost.reviewed_at)}</p>
+                          <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-emerald-50/70 px-4 py-3 sm:px-5">
+                            <div className="mr-auto text-sm text-emerald-800">
+                              <p className="font-bold"><Check className="mr-1 inline h-4 w-4" />Approved</p>
+                              <p className="mt-1 text-xs">Approved by {selectedPost.reviewer?.full_name || selectedPost.reviewer?.email || 'Daet Tourism Admin'} · {formatDate(selectedPost.reviewed_at)}</p>
+                            </div>
+                            <button type="button" disabled={Boolean(actionId)} onClick={() => openDecision(selectedPost, 'request_changes')} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50 disabled:opacity-50">Request changes</button>
                           </div>
                         ) : selectedPost.approval_status === 'rejected' ? (
                           <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 bg-red-50/70 px-4 py-3 sm:px-5">
@@ -895,18 +911,47 @@ function AdminBlogsContent() {
 
           {!loading && pagination.pages > 1 ? (
             <AdminTableFooter>
-              <span className="text-sm text-slate-500">
-                Showing {(pagination.page - 1) * (view === 'history' ? 25 : layout === 'board' ? 50 : 10) + 1}–{Math.min(pagination.page * (view === 'history' ? 25 : layout === 'board' ? 50 : 10), pagination.total)} of {pagination.total}
-              </span>
-              <div className="ml-auto flex items-center gap-2">
-                <button type="button" disabled={page <= 1} onClick={() => { setPage((value) => Math.max(1, value - 1)); setSelectedIds([]) }} className="rounded-lg border border-slate-200 p-2 text-slate-600 disabled:opacity-40" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
-                <span className="text-sm font-semibold text-slate-700">Page {pagination.page} of {pagination.pages}</span>
-                <button type="button" disabled={page >= pagination.pages} onClick={() => { setPage((value) => Math.min(pagination.pages, value + 1)); setSelectedIds([]) }} className="rounded-lg border border-slate-200 p-2 text-slate-600 disabled:opacity-40" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
-              </div>
+              <AdminPagination
+                page={pagination.page}
+                totalPages={pagination.pages}
+                totalItems={pagination.total}
+                pageSize={view === 'history' ? 25 : layout === 'board' ? 50 : 10}
+                itemLabel="posts"
+                onPageChange={(nextPage) => { setPage(nextPage); setSelectedIds([]) }}
+              />
             </AdminTableFooter>
           ) : null}
         </AdminPanel>
       </div>
+
+      {previewPost ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-3 sm:p-5" role="presentation">
+          <section className="max-h-[94vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="blog-list-preview-title">
+            <header className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white/95 p-4 backdrop-blur sm:p-5">
+              <div className="min-w-0">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-blue-700">Post preview</p>
+                <h2 id="blog-list-preview-title" className="mt-1 break-words text-xl font-bold text-slate-950">{previewPost.title || 'Untitled post'}</h2>
+                <p className="mt-1 text-sm text-slate-500">{authorName(previewPost.author)}{previewPost.author?.email ? ` · ${previewPost.author.email}` : ''}</p>
+              </div>
+              <button type="button" onClick={() => setPreviewPost(null)} className="shrink-0 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Close</button>
+            </header>
+            <div className="p-4 sm:p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {renderStatus(previewPost.approval_status)}
+                <div className="flex flex-wrap gap-2">
+                  {renderModerationActions(previewPost)}
+                  {previewPost.created_by === adminId ? <button type="button" onClick={() => { setPreviewPost(null); openEdit(previewPost) }} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"><Pencil className="mr-1 inline h-3.5 w-3.5" />Edit</button> : null}
+                  <button type="button" onClick={() => setDeletePost(previewPost)} className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"><Trash2 className="mr-1 inline h-3.5 w-3.5" />Delete</button>
+                </div>
+              </div>
+              {previewPost.featured_image ? <Image src={previewPost.featured_image} alt="" width={1200} height={600} unoptimized className="mt-5 max-h-[28rem] w-full rounded-xl border border-slate-200 object-cover" /> : null}
+              {previewPost.excerpt ? <p className="mt-5 border-l-2 border-blue-200 pl-3 text-sm font-medium leading-6 text-slate-700">{previewPost.excerpt}</p> : null}
+              <article className="mt-5 whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">{plainText(previewPost.content) || 'No article content provided.'}</article>
+              <AdminDiscussionModeration key={`blog:${previewPost.id}`} contentType="blog" contentId={previewPost.id} />
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {historyPost ? (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/50 p-4" role="presentation">
@@ -967,6 +1012,10 @@ function AdminBlogsContent() {
             {decisionDialog.decision === 'approve' ? (
               <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-800">
                 This will approve the post and make it visible to the public.
+              </p>
+            ) : decisionDialog.decision === 'request_changes' ? (
+              <p className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-800">
+                This will remove the post from public view until the author updates and resubmits it.
               </p>
             ) : decisionDialog.decision === 'return_to_pending' ? (
               <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">

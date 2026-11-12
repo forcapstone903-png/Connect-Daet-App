@@ -1,30 +1,33 @@
-const ADMIN_ROLE = 'admin'
+// Client-side helpers for the admin console. The authoritative rules live in
+// staffRoles.mjs and are enforced server-side by the proxy and admin APIs.
+import {
+  STAFF_ROLES,
+  canAccessAdminPage,
+  getStaffHomePath,
+  getStaffRoleLabel,
+  hasPermission,
+  isStaffRole,
+  normalizeStaffRole,
+} from './staffRoles.mjs'
 
-const normalizeRole = (role) => {
-  if (typeof role !== 'string') return ''
-  return role.trim().toLowerCase()
-}
+export const ADMIN_ROLE = STAFF_ROLES.ADMIN
 
-const hasAdminAccess = (role) => normalizeRole(role) === ADMIN_ROLE
+export const normalizeRole = normalizeStaffRole
 
-const canAccessAdminDashboard = (sessionUser) => {
+// True for any back-office role (admin, tourism officer, moderator). Pages use
+// this to decide whether to render the console at all; per-page permissions
+// are checked by the proxy before the page loads.
+export const hasAdminAccess = (role) => isStaffRole(role)
+
+export const isSuperAdmin = (role) => normalizeStaffRole(role) === STAFF_ROLES.ADMIN
+
+export const canAccessAdminDashboard = (sessionUser) => {
   if (!sessionUser || typeof sessionUser !== 'object') return false
-  return hasAdminAccess(sessionUser.role)
+  return isStaffRole(sessionUser.role || sessionUser.user_type)
 }
 
-const getAdminRoleLabel = (role) => {
-  const normalized = normalizeRole(role)
-  if (normalized === ADMIN_ROLE) return 'Administrator'
-  return 'Admin Access'
-}
+export const getAdminRoleLabel = getStaffRoleLabel
 
-const getAdminHomePath = () => '/info/admin/dashboard'
+export const getAdminHomePath = (role) => (role ? getStaffHomePath(role) : '/info/admin/dashboard')
 
-module.exports = {
-  ADMIN_ROLE,
-  normalizeRole,
-  hasAdminAccess,
-  canAccessAdminDashboard,
-  getAdminRoleLabel,
-  getAdminHomePath,
-}
+export { canAccessAdminPage, hasPermission }

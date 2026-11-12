@@ -10,6 +10,7 @@ import {
   Check,
   Copy,
   FileText,
+  Flag,
   MessageCircle,
   MessageSquareText,
   MapPin,
@@ -225,6 +226,7 @@ export default function PublicProfilePage() {
   const [followRequestPending, setFollowRequestPending] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [reportingProfile, setReportingProfile] = useState(false);
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [error, setError] = useState("");
@@ -542,6 +544,41 @@ export default function PublicProfilePage() {
     }
   };
 
+  const reportProfile = async () => {
+    setMenuOpen(false);
+    if (!viewerId || viewerId === "anonymous") {
+      showNotice("Please log in to report this account.", "error");
+      return;
+    }
+    const reason = window.prompt("Why are you reporting this account?")?.trim();
+    if (!reason) return;
+
+    setReportingProfile(true);
+    try {
+      const response = await fetch("/info/api/reports", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reportType: "account",
+          reason,
+          itemId: profileId,
+          itemTable: "info_users",
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Unable to submit this account report.");
+      }
+      showNotice("Thank you. The account was reported for review.");
+    } catch (reportError) {
+      console.error("Account report submission failed:", reportError);
+      showNotice(reportError?.message || "Unable to report this account right now.", "error");
+    } finally {
+      setReportingProfile(false);
+    }
+  };
+
   if (loading) {
     return (
       <main className="tourism-shell usr-section-page usr-profile min-h-screen text-slate-900">
@@ -725,6 +762,18 @@ export default function PublicProfilePage() {
                             <Share2 className="h-4 w-4" />
                             Share profile
                           </button>
+                          {viewerId && viewerId !== "anonymous" ? (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => void reportProfile()}
+                              disabled={reportingProfile}
+                              className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                            >
+                              <Flag className="h-4 w-4" />
+                              {reportingProfile ? "Submitting report…" : "Report account"}
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             role="menuitem"
@@ -758,7 +807,7 @@ export default function PublicProfilePage() {
             ) : null}
           </div>
 
-          <div className="profile-stat-strip grid grid-cols-4 border-b border-slate-200 text-center">
+          <div className="profile-stat-strip grid grid-cols-2 border-b border-slate-200 text-center sm:grid-cols-4">
             <div className="border-r border-slate-200 px-2 py-3">
               <p className="text-xl font-black text-slate-900">{posts.length}</p>
               <p className="usr-stat-label mt-0.5">Posts</p>

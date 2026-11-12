@@ -9,7 +9,7 @@ export async function getPrivateProfileMessagingAccess(adminSupabase, viewerId, 
   const privacyLevel = profile?.is_public === false
     ? (['followers', 'private'].includes(profile.privacy_level) ? profile.privacy_level : 'followers')
     : profile?.privacy_level || 'public'
-  if (privacyLevel !== 'private') return { allowed: true, error: null }
+  if (privacyLevel === 'public') return { allowed: true, error: null }
 
   const { data: follow, error: followError } = await adminSupabase
     .from('user_follows')

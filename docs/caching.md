@@ -59,6 +59,32 @@ function and administrator endpoint. If no eligible page views exist, the UI
 reports that instead of displaying sample counts. Apply migration
 `085_popular_tourist_spot_analytics.sql` before expecting this chart to load.
 
+## Admin analytics and exports
+
+The analytics report is computed by the database for the selected 7-, 30-, or
+90-day period. It includes consented public traffic, coarse device categories,
+user registrations, ratings, destination views, alert reach, inquiries, and
+audit-log activity. Staff identity and activity details are returned only to
+administrators; tourism officers receive aggregate tourism analytics. PDF and
+Excel downloads use the same report and permissions as the dashboard.
+
+```text
+Feature: Administrator and tourism-officer analytics
+Data fetched: Period aggregates and report rows; no raw visitor IDs, notification bodies, or user content
+Change frequency: Updated when new visits, registrations, reviews, alerts, inquiries, or audit actions are recorded
+Visibility: Private; analytics.view roles receive aggregates, and only administrators receive staff activity details
+Freshness: Computed at request time for each dashboard load, period change, or export
+Stale behavior: Do not present stale report data; show an explicit error and retry action
+Missing-cache behavior: Query the database report function; show a clear error if the migration or data source is unavailable
+Invalidation trigger: None; no cached report exists
+Cache layer: None
+Cache key: None
+TTL: None; API and export responses use private, no-store
+Offline behavior: No offline analytics or report downloads
+Security notes: Signed staff session and analytics.view authorization; database aggregates run through a service-role-only function; staff details are administrator-only; device category is coarse and collected only after analytics consent
+Manual clear method: Reload the dashboard or select a reporting period to request a fresh report
+```
+
 ## Rewards and point settings
 
 The reward catalog and the signed-in user's redeemed reward IDs are read from
@@ -131,13 +157,62 @@ Security notes: The API authorizes the administrator; responses are private and 
 Manual clear method: None; reload the page to fetch current records
 ```
 
+## Tourist spot address geocoding
+
+The tourism listing form looks up coordinates when staff leave the address or
+barangay field. Successful results are saved in the listing when staff save it.
+The lookup is an explicit single-address request, not autocomplete. Apply
+`112_tourist_spot_geocoding.sql` before enabling the lookup.
+
+```text
+Feature: Tourism listing address-to-coordinate lookup
+Data fetched: Coordinates for one public tourist-spot address
+Change frequency: Staff-triggered address lookup; saved listing coordinates change only when the listing is saved
+Visibility: Public tourism address; lookup endpoint is restricted to tourism.manage staff
+Freshness: Fetch on address/barangay blur; saved results can be refreshed manually
+Stale behavior: Expired cached results are not used; lookup errors leave fields editable for manual coordinates
+Missing-cache behavior: Query the configured Nominatim-compatible endpoint over HTTPS
+Invalidation trigger: Address or barangay changes create a different cache key; Refresh coordinates bypasses and replaces the cached entry
+Cache layer: Persistent browser localStorage and a service-role-only Supabase cache table
+Cache key: tourist-spot-geocode:public:v1:{normalized Daet address}
+TTL: 365 days
+Offline behavior: No automatic coordinates for a changed address; staff can enter them manually
+Security notes: No credentials or private user data are cached or sent to the provider; the server endpoint requires tourism.manage access, applies a shared one-request-per-second limit, and uses `NOMINATIM_SEARCH_URL` so the provider can be switched by configuration. OpenStreetMap attribution is shown in the form.
+Manual clear method: Use Refresh coordinates to bypass the cached result; clearing the browser's site data also clears its localStorage copy
+```
+
+## Staff notification inbox and dashboard alerts
+
+The staff inbox and dashboard bell read the signed-in staff member's notifications
+from the existing user-scoped endpoint. Administrator workflow alerts (such as
+reports, appeals, pending submissions, and feedback) use the same private inbox.
+The inbox and badge poll while open and display errors instead of stale
+notification data.
+
+```text
+Feature: Staff notification inbox and dashboard alerts
+Data fetched: Private notification titles, messages, links, read status, and timestamps
+Change frequency: New user submissions may arrive at any time
+Visibility: Private; the API restricts records and read updates to the signed-in staff user
+Freshness: Fetch on page load and every 30 seconds while the staff inbox, sidebar, or dashboard notification icon is open
+Stale behavior: Keep the current rendered list during refresh; show an error and retry action if refresh fails
+Missing-cache behavior: No cache; fetch directly from the authenticated notification API
+Invalidation trigger: No cache; marking a notification read updates the displayed state after the API confirms success
+Cache layer: None
+Cache key: None
+TTL: None; API responses use no-store
+Offline behavior: Preserve the rendered list and show refresh errors; do not report read actions as successful offline
+Security notes: Notification content is user-specific and is never placed in shared or persistent storage
+Manual clear method: Mark individual notifications or the full inbox as read
+```
+
 ## Visitor Review Preview
 
 The public visitor page may show the latest published attraction reviews when review text is available.
 
 ```text
 Feature: Public visitor review preview
-Data fetched: Public tourist-spot review text, rating, date, and public reviewer name/avatar
+Data fetched: Public tourist-spot review text, optional public review-photo URL, rating, date, and public reviewer ID/name/avatar
 Change frequency: Occasional; updated when a visitor submits a review
 Visibility: Public
 Freshness: Five minutes
@@ -148,7 +223,7 @@ Cache layer: In-memory
 Cache key: visitor:public:reviews
 TTL: 5 minutes
 Offline behavior: Use stale in-memory reviews when available; otherwise surface the fetch error without placeholder reviews
-Security notes: Only public review fields are selected; authenticated actions and user-specific votes are not cached
+Security notes: Only public review fields, public photo URLs, and the public reviewer ID are cached; authentication data and user-specific votes are not cached
 Manual clear method: invalidateCache('visitor:public:reviews')
 ```
 
@@ -182,7 +257,7 @@ The tourist spot detail page reads its rating summary, current review page, publ
 
 ```text
 Feature: Tourist spot ratings and reviews
-Data fetched: Database-derived rating average/count/breakdown, one sorted review page, public reviewer fields, and the authenticated viewer's own review/helpful votes
+Data fetched: Database-derived rating average/count/breakdown, one sorted review page with optional public photo URLs, public reviewer fields, and the authenticated viewer's own review/photo/helpful-vote state
 Change frequency: Visitor-submitted; may change at any time
 Visibility: Public ratings/reviews and public profiles; own review and helpful-vote state is user-specific
 Freshness: Fetch current data on page load and after every successful write
@@ -195,6 +270,29 @@ TTL: None
 Offline behavior: Show a retryable load error rather than placeholder ratings or reviews
 Security notes: RLS protects rating writes, helpful votes, and profile visibility; no authenticated state is persisted in shared storage
 Manual clear method: None; use the review section's retry action or reload the page
+```
+
+## User Activity History
+
+The rewards page shows the signed-in user's latest activity-log entries. The
+activity log is private and is fetched directly under the existing row-level
+security policy.
+
+```text
+Feature: Private recent activity history
+Data fetched: Up to eight of the current user's activity type, description, entity reference, and timestamp
+Change frequency: Updated when the user performs a tracked community action
+Visibility: Private; the current user only
+Freshness: Fetch current entries on page load
+Stale behavior: Do not show stale activity; display an explicit read error
+Missing-cache behavior: Query the database directly
+Invalidation trigger: No cache; reload the page to fetch recent activity
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Show an explicit error instead of implying activity history is current
+Security notes: Activity rows remain behind user-scoped RLS and are never persisted or shared
+Manual clear method: None; reload the rewards page
 ```
 
 ## Public Event Details
@@ -214,6 +312,32 @@ TTL: None
 Offline behavior: No stale event details are shown; surface the retryable fetch error
 Security notes: Event approval can change when an organizer edits an approved event, so stale public content must not bypass the approval check
 Manual clear method: Not applicable
+```
+
+## Tourism Officer Event Calendar
+
+The Tourism Officer dashboard calendar queries only the visible date range and
+approved, non-cancelled events, including drafts that staff need to manage. It
+uses the authenticated Supabase client and tourism-staff RLS policy, with no
+browser-side data cache. Creating, editing, deleting, selecting a date, and
+dragging/resizing events use the same event table and staff permissions as the
+existing event-management calendar.
+
+```text
+Feature: Tourism Officer dashboard event calendar
+Data fetched: Approved, non-cancelled event titles, dates, times, categories, locations, descriptions, and statuses for the visible calendar range
+Change frequency: Tourism staff may create, edit, publish, or cancel events at any time
+Visibility: Authorized tourism staff; event approval and tourism-staff RLS policies are enforced
+Freshness: Fetch when the calendar opens, changes month, or the user selects Refresh
+Stale behavior: Do not present cached calendar data as current; show a retryable load error
+Missing-cache behavior: Query Supabase for the visible calendar range
+Invalidation trigger: No cache; month navigation or manual Refresh fetches the latest range
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Show the calendar error and allow a manual retry; do not create placeholder events
+Security notes: Queries and writes use the authenticated Supabase client and RLS restricts tourism staff access; reads exclude unapproved events and cancelled events are not shown; no author identity or private fields are selected or cached
+Manual clear method: None; use Refresh to re-query the visible date range
 ```
 
 ## Persistent Engagement Workflows
@@ -239,6 +363,21 @@ TTL: None
 Offline behavior: No send or schedule success is shown without a successful database operation
 Security notes: Recipient IDs and administrator identity are validated server-side; messages are stored per recipient and delivered through the authenticated in-app notification inbox
 Manual clear method: None; reload message history
+
+Feature: Shared staff chat
+Data fetched: The latest 100 messages in the shared staff conversation and their sender profiles
+Change frequency: Changes on each staff message
+Visibility: Private internal communications; active administrators, Tourism Officers, and Moderators only
+Freshness: Fetch on page open and poll every 15 seconds while the chat is open
+Stale behavior: Keep already-rendered messages and show a retryable error if refresh fails
+Missing-cache behavior: Fetch directly from the staff-authorized API
+Invalidation trigger: No cache; a successful send is appended and subsequent polls fetch the latest messages
+Cache layer: None
+Cache key: None
+TTL: None; responses are private and no-store
+Offline behavior: Keep rendered messages; do not claim a send succeeded without server confirmation
+Security notes: The API checks the signed staff session and confirms the account is active with the same stored staff role; database access is service-role-only and message content is not persisted in browser storage
+Manual clear method: None; the database retains the latest and historical messages
 
 Feature: Event registrations and email reminders
 Data fetched: The signed-in user's registration and administrator-visible registration records
@@ -271,7 +410,7 @@ Security notes: Category and pin mutations use administrator-authorized APIs; pu
 Manual clear method: None; reload the forum
 
 Feature: Moderation reports, restrictions, and audit history
-Data fetched: Open reports, active publishing restrictions, and moderation audit entries
+Data fetched: Open reports for content, comments, reposts, reviews, and accounts; active publishing restrictions; moderation audit entries
 Change frequency: Changes on report submission, resolution, restriction, or restoration
 Visibility: Private; moderation data is administrator/moderator-only
 Freshness: Fetch directly from authenticated APIs
@@ -282,8 +421,23 @@ Cache layer: None
 Cache key: None
 TTL: None
 Offline behavior: Do not show successful report or moderation actions without server confirmation
-Security notes: Reporter identity is derived from the signed-in server session; publishing restrictions are enforced by database triggers and authenticated APIs
+Security notes: Reporter identity is derived from the signed-in server session; report queues are private; account-report approval records the suspension and resolves the report atomically; publishing restrictions are enforced by database triggers and authenticated APIs
 Manual clear method: None; reload moderation data
+
+Feature: Moderator dashboard action queues
+Data fetched: Counts for pending blog/community submissions, open reports, appeals, flagged posts, and unanswered inquiries
+Change frequency: Changes when a user submits content or a moderator completes an action
+Visibility: Private; moderator/admin-only aggregate counts
+Freshness: Fetch on dashboard load and manual refresh
+Stale behavior: Keep the last successful summary visible alongside a refresh error; show no fabricated counts before the first successful load
+Missing-cache behavior: Read current counts from the authorized moderation and blog APIs
+Invalidation trigger: No cache; a dashboard reload or manual refresh reads current database state
+Cache layer: None; responses are private and no-store
+Cache key: None
+TTL: None
+Offline behavior: Surface the API error and retain only the last successful on-screen summary
+Security notes: Service-role queries are behind staff authorization; responses contain aggregate counts only, not report text or user details
+Manual clear method: None; use Refresh to request current counts
 
 Feature: Featured and scheduled blogs
 Data fetched: Public blog records, featured state, approval state, and publication timestamp
@@ -305,14 +459,14 @@ Manual clear method: None; reload the blog list
 
 Blog moderation data and each author's submission statuses are fetched directly
 from their authenticated API routes. Approval status can change immediately, so
-the admin table, moderation history, and author submission list do not retain
+the staff table, moderation history, and author submission list do not retain
 client or persistent snapshots.
 
 ```text
 Feature: Blog moderation and author submission status
-Data fetched: Blog content and author details for admins; approval status and rejection feedback for the owning author
-Change frequency: Changes whenever an author submits or edits a post, or an administrator reviews it
-Visibility: Admin-only moderation data; owner-only submissions and feedback; public blog data is approved-only
+Data fetched: Blog content and author details for staff; approval status and review feedback for the owning author
+Change frequency: Changes whenever an author submits or edits a post, or staff review it
+Visibility: Staff-only moderation data; owner-only submissions and feedback; public blog data is approved-only
 Freshness: Fetch on page load and after every successful moderation action
 Stale behavior: Do not show stale status or moderation history
 Missing-cache behavior: No cache; display the API error and allow a fresh retry
@@ -321,8 +475,31 @@ Cache layer: None
 Cache key: None
 TTL: None
 Offline behavior: Keep no fabricated status; surface the load error and retry when online
-Security notes: Admin endpoints authorize the signed server session; owner endpoints scope records to the session user; public queries and RLS require approved status
+Security notes: Staff endpoints authorize the signed server session; owner endpoints scope records to the session user; public queries and RLS require approved status
 Manual clear method: None; reload the moderation or submissions page
+```
+
+## Community guidelines
+
+The public guidelines and moderator editor read the same settings row. The
+content is uncached so edits become visible on the next page load; admin reads
+are private, and public reads expose only the approved guidelines text.
+
+```text
+Feature: Community guidelines
+Data fetched: Public guideline text; moderator editor reads the same content
+Change frequency: Updated when a moderator saves a revision
+Visibility: Public text; edit access restricted to moderators and administrators
+Freshness: Fetch on page load; the API uses private/no-store or no-store responses
+Stale behavior: Do not present stale rules after a failed request; show an error and retry
+Missing-cache behavior: No cache; show the API error instead of invented rules
+Invalidation trigger: No cache; a successful write is visible on the next read
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Retain the current editor value but do not claim a save succeeded
+Security notes: The public endpoint returns only the guidelines text; it never exposes other admin settings
+Manual clear method: None; reload the page
 ```
 
 ## Public Tourist Spot Details
@@ -484,6 +661,29 @@ Security notes: API derives ownership from the signed session; no favorite rows 
 Manual clear method: None; reload to fetch the latest saved items
 ```
 
+## Moderator discussion review
+
+The blog and forum moderation previews load comment and reply pages only when a
+specific post or thread is open. Pending and hidden discussion text is staff-only,
+so these reads must not enter a shared, browser-persistent, or stale cache.
+
+```text
+Feature: Moderator blog and forum discussion review
+Data fetched: Comments or replies and current comment-mute state for one selected post/thread
+Change frequency: New comments/replies and moderator delete, mute, or restore actions
+Visibility: Sensitive, staff-only moderation content
+Freshness: Fetch page-by-page when preview opens; refresh after successful moderation actions
+Stale behavior: Do not render stale discussion data; show a retryable load error
+Missing-cache behavior: Read from the moderator-authorized API
+Invalidation trigger: Successful delete/mute/restore reloads the open discussion; closing the preview discards its in-memory data
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: No stale data; keep loaded rows visible and surface request failures
+Security notes: API checks moderator authorization and returns private, no-store responses; never persist pending/hidden text or mute state
+Manual clear method: Close the preview; reopening fetches current comments and replies
+```
+
 ## Home For You recommendations
 
 The Home feed fetches eligible published posts and reposts, ranks them using the
@@ -508,6 +708,25 @@ TTL: None
 Offline behavior: No stale feed cache; retain the current in-memory view and report refresh failures
 Security notes: The session-checked feed API filters account privacy, follower-only posts, and reposts before returning content; database row-level security remains authoritative for other feed sources. Activity data is scoped to the signed-in user and impression events do not create notifications
 Manual clear method: None; feed reloads on refresh, while persisted activity signals remain user-specific
+```
+
+## Public Frequently Asked Questions
+
+```text
+Feature: Staff-managed FAQs shown on the visitor and registered-user dashboards
+Data fetched: Published FAQ question, answer, and display order
+Change frequency: Occasional; updated by administrators and Tourism Officers
+Visibility: Public; draft FAQs are only returned by the staff management API
+Freshness: Cached database reads for up to five minutes, explicitly invalidated after successful staff writes
+Stale behavior: Next.js may serve stale cached data while revalidating after its TTL; successful writes expire the cache immediately
+Missing-cache behavior: The first request queries the database; an unavailable database produces a retryable error instead of invented content
+Invalidation trigger: Successful FAQ create, edit, publish, unpublish, or delete
+Cache layer: Next.js server data cache; the API response itself is private and no-store
+Cache key: `published-faqs-v1` with the `published-faqs` invalidation tag
+TTL: 300 seconds
+Offline behavior: No client-side offline snapshot; cached server data can remain available while a stale refresh is attempted, and a cache miss reports an error
+Security notes: Only published, non-sensitive answers are cached. Table access is revoked from `anon` and `authenticated`; staff APIs use the service role after `feedback.manage` authorization.
+Manual clear method: `revalidateTag('published-faqs', { expire: 0 })`; normal staff edits invoke it only after the database write succeeds
 ```
 
 ## Feature Decision Template
@@ -781,3 +1000,66 @@ TTL: None
 Offline behavior: No stale private data is shown; show a retryable load error
 Security notes: API responses use `Cache-Control: private, no-store`; the profile page bypasses the shared memory cache, and RLS independently protects direct content reads
 Manual clear method: None
+
+## Administrator activity logs
+
+Activity log pages and exports use the administrator-only activity endpoint with
+server-side filtering and pagination. Results are not cached so new log entries
+appear after refresh and filtered exports reflect current records.
+
+```text
+Feature: Administrator activity logs
+Data fetched: Paginated activity records and exact filtered result count
+Change frequency: New activity may be recorded at any time
+Visibility: Administrator-only; records may contain personal activity details
+Freshness: Fetch current page when filters or pagination change
+Stale behavior: Do not present stale results as current; show loading and explicit errors
+Missing-cache behavior: Read the requested page from the authorized endpoint
+Invalidation trigger: Manual refresh or change of filters/page
+Cache layer: None; API responses use private, no-store
+Cache key: None
+TTL: 0
+Offline behavior: Preserve visible results and report request/export errors
+Security notes: The endpoint verifies administrator role; exports use the same filters and a fixed timestamp boundary
+Manual clear method: None
+```
+
+## Site settings (public and server)
+
+Admin-editable settings (`admin_app_settings`: general, security, notifications, email, messaging) are validated by `src/lib/siteSettings.mjs` and read on the server through `src/lib/appSettingsServer.js`.
+
+```text
+Feature: Site settings (branding, contact, municipality info, password/session/lockout policy, notification and email switches)
+Data fetched: admin_app_settings rows, resolved over defaults
+Change frequency: Rare; only when an administrator saves Settings
+Visibility: Public subset via GET /info/api/site-settings (name, logo, contact, municipality, password rules); everything else admin-only
+Freshness: Applies on the next request on the saving server instance; other instances within 30 s; browsers within 60 s
+Stale behavior: Server serves cached values for up to 30 s; public response may be up to 60 s old (+5 min stale-while-revalidate)
+Missing-cache behavior: Read the row; a failed read falls back to the defaults (the pre-settings behaviour) and is not cached
+Invalidation trigger: PUT /info/api/admin/settings calls invalidateAppSettings(id) after a successful write
+Cache layer: Server memory per instance (Map, 30 s TTL); public HTTP cache (Cache-Control: public, max-age=60, stale-while-revalidate=300); client memory promise per page load (usePublicSettings)
+Cache key: Settings id (server); request URL (HTTP)
+TTL: 30 s server, 60 s public HTTP
+Offline behavior: Public pages render with built-in defaults if the request fails
+Security notes: No secrets are stored in settings (SendGrid key and verified sender stay in env vars). The public endpoint exposes only buildPublicSettings fields. Audit log records every save (security/notification/email values in full).
+Manual clear method: Save the setting again (clears server cache); redeploy/restart clears all instances
+```
+
+## Admin reviews, inquiries and categories
+
+```text
+Feature: Tourism-office review replies, inquiry queue, listing and alert categories
+Data fetched: attraction_ratings (+ office reply), info_inquiries, listing_categories, alert_categories
+Change frequency: Several times a day
+Visibility: Staff only (feedback.manage / tourism.manage / alerts.broadcast; category writes for alerts are admin-only)
+Freshness: Fetched on every page visit and after each write
+Stale behavior: None; no cache
+Missing-cache behavior: Fetch from the admin API
+Invalidation trigger: Not applicable (no cache); public review lists already refetch on each visit
+Cache layer: None (Cache-Control: private, no-store)
+Cache key: None
+TTL: None
+Offline behavior: Pages show a load error with Retry
+Security notes: Service-role reads behind authorizeAdminApi; reviewer edits from the browser cannot change office_reply (trigger in migration 102)
+Manual clear method: None needed
+```

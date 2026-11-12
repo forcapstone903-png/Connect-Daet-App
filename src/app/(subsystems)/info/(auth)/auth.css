@@ -39,8 +39,7 @@ html.dark .auth-page .login-error-action:hover {
   background-color: #ffe4e6 !important;
 }
 
-.auth-page .bg-white,
-.auth-page [class*='bg-white/'] {
+.auth-page .bg-white {
   background-color: #fff !important;
 }
 

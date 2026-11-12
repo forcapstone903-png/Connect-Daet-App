@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowRight, Eye, EyeOff, MapPin, ShieldCheck, Sparkles } from 'lucide-react'
 import { setAuthCookie } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
+import { getStaffHomePath, isStaffRole } from '@/lib/staffRoles.mjs'
 import '../auth.css'
 
 function LoginContent() {
@@ -51,6 +52,70 @@ function LoginContent() {
     setFormData({ ...formData, [e.target.name]: e.target.value })
   }
 
+  const completeLogin = async (data) => {
+    const user = data.user
+    const shouldStartOnboarding = user.onboarding_completed !== true && (
+      searchParams.get('onboarding') === '1' || user.onboarding_completed === false
+    )
+    const sessionData = {
+      user_id: user.id,
+      user_name: user.full_name,
+      user_email: user.email,
+      role: user.user_type,
+      avatar_url: user.profile_image_url || '',
+      profile_image_url: user.profile_image_url || '',
+      onboarding_completed: !!user.onboarding_completed,
+      logged_in: true,
+      login_time: new Date().toISOString(),
+    }
+
+    if (data.session?.access_token && data.session?.refresh_token) {
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      })
+
+      if (sessionError) {
+        console.warn('Supabase session sync warning:', sessionError)
+      }
+    }
+
+    sessionStorage.setItem('user_session', JSON.stringify(sessionData))
+    setAuthCookie(sessionData, rememberMe ? 30 : 1)
+
+    const rememberMeKey = 'daet_remember_me_session'
+    if (rememberMe) {
+      const rememberSession = {
+        userId: user.id,
+        email: user.email,
+        userName: user.full_name,
+        token: `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      }
+      localStorage.setItem(rememberMeKey, JSON.stringify(rememberSession))
+      localStorage.setItem('remembered_email', formData.email)
+    } else {
+      localStorage.removeItem(rememberMeKey)
+      localStorage.removeItem('remembered_email')
+    }
+
+    // Optional return path (e.g. a guest who tapped "save" on a place).
+    // Only same-site public/user pages are accepted, never an absolute URL.
+    const requestedRedirect = searchParams.get('redirect') || ''
+    const safeRedirect = /^\/info\/(visitor|user)(\/|\?|$)/.test(requestedRedirect)
+      && !requestedRedirect.includes('//') && !requestedRedirect.includes('\\')
+      ? requestedRedirect
+      : null
+
+    if (isStaffRole(user.user_type)) {
+      router.push(getStaffHomePath(user.user_type))
+    } else if (shouldStartOnboarding) {
+      router.push('/info/user/onboarding')
+    } else {
+      router.push(safeRedirect || '/info/user/dashboard')
+    }
+  }
+
   const handleResendVerification = async () => {
     if (!formData.email.trim()) {
       setError('Enter your email address before requesting a new verification email.')
@@ -91,6 +156,11 @@ function LoginContent() {
     setVerificationSent(false)
 
     try {
+      try {
+        await supabase.auth.signOut({ scope: 'local' })
+      } catch (sessionCleanupError) {
+        console.warn('Unable to clear the previous browser authentication session:', sessionCleanupError)
+      }
       const response = await fetch('/info/api/login', {
         method: 'POST',
         credentials: 'same-origin',
@@ -108,64 +178,7 @@ function LoginContent() {
         throw new Error(data.message || 'Unable to sign in right now')
       }
 
-      const user = data.user
-      const shouldStartOnboarding = user.onboarding_completed !== true && (
-        searchParams.get('onboarding') === '1' || user.onboarding_completed === false
-      )
-      const sessionData = {
-        user_id: user.id,
-        user_name: user.full_name,
-        user_email: user.email,
-        role: user.user_type,
-        avatar_url: user.profile_image_url || '',
-        profile_image_url: user.profile_image_url || '',
-        onboarding_completed: !!user.onboarding_completed,
-        logged_in: true,
-        login_time: new Date().toISOString(),
-      }
-
-      if (data.session?.access_token && data.session?.refresh_token) {
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-        })
-
-        if (sessionError) {
-          console.warn('Supabase session sync warning:', sessionError)
-        }
-      }
-
-      sessionStorage.setItem('user_session', JSON.stringify(sessionData))
-      setAuthCookie(sessionData, rememberMe ? 30 : 1)
-
-      // Remembered sessions are persisted server-side via the HTTP-only
-      // `daet_secure_session` cookie (see /info/api/login). The localStorage entry
-      // below is only a convenience reminder for the "welcome back" banner; it
-      // is no longer used to restore authentication.
-      const rememberMeKey = 'daet_remember_me_session'
-
-      if (rememberMe) {
-        const rememberSession = {
-          userId: user.id,
-          email: user.email,
-          userName: user.full_name,
-          token: `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-        }
-        localStorage.setItem(rememberMeKey, JSON.stringify(rememberSession))
-        localStorage.setItem('remembered_email', formData.email)
-      } else {
-        localStorage.removeItem(rememberMeKey)
-        localStorage.removeItem('remembered_email')
-      }
-
-      if (user.user_type === 'admin') {
-        router.push('/info/admin/dashboard')
-      } else if (shouldStartOnboarding) {
-        router.push('/info/user/onboarding')
-      } else {
-        router.push('/info/user/dashboard')
-      }
+      await completeLogin(data)
     } catch (err) {
       setError(err.message)
     } finally {

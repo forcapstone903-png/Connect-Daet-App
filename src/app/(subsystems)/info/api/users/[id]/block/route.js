@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { publicErrorMessage } from '@/lib/publicError'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -33,7 +34,7 @@ export async function POST(request, { params }) {
     { blocker_id: blockerId, blocked_id: blockedId },
     { onConflict: 'blocker_id,blocked_id' }
   )
-  if (error) return NextResponse.json({ success: false, message: error.message || 'Unable to block this user.' }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to block this user.') }, { status: 500 })
 
   return NextResponse.json({ success: true, blocked: true })
 }
@@ -52,6 +53,6 @@ export async function DELETE(request, { params }) {
     .eq('blocker_id', blockerId)
     .eq('blocked_id', blockedId)
 
-  if (error) return NextResponse.json({ success: false, message: error.message || 'Unable to unblock this user.' }, { status: 500 })
+  if (error) return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to unblock this user.') }, { status: 500 })
   return NextResponse.json({ success: true, blocked: false })
 }

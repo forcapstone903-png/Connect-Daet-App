@@ -62,12 +62,12 @@ AS $$
   )
   SELECT
     spots.id AS tourist_spot_id,
-    COUNT(views.account_hash)::INTEGER AS view_count
+    COUNT(views.account_hash) FILTER (
+      WHERE views.last_viewed_at >= (SELECT since_at FROM bounds)
+    )::INTEGER AS view_count
   FROM public.info_tourist_spots AS spots
-  CROSS JOIN bounds
   LEFT JOIN public.tourist_spot_account_views AS views
     ON views.tourist_spot_id = spots.id
-    AND views.last_viewed_at >= bounds.since_at
   GROUP BY spots.id;
 $$;
 
@@ -142,7 +142,7 @@ REVOKE ALL ON FUNCTION public.record_tourist_spot_account_view(UUID, TEXT) FROM 
 GRANT EXECUTE ON FUNCTION public.record_tourist_spot_account_view(UUID, TEXT) TO service_role;
 REVOKE ALL ON FUNCTION public.get_tourist_spot_account_view_counts(INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_tourist_spot_account_view_counts(INTEGER) TO service_role;
-REVOKE ALL ON FUNCTION public.get_popular_tourist_spots(INTEGER) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.get_popular_tourist_spots(INTEGER) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.get_popular_tourist_spots(INTEGER) TO anon, authenticated, service_role;
 REVOKE ALL ON FUNCTION public.cleanup_site_page_views() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.cleanup_site_page_views() TO service_role;

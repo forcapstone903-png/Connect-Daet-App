@@ -1,386 +1,101 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
-import { hasAdminAccess } from '@/lib/adminRoles'
-import { getStoredSession } from '@/lib/authCookies';
+import Link from 'next/link';
+import SettingsShell from '../settings/_components/SettingsShell';
+import { DEFAULT_NOTIFICATION_SETTINGS } from '@/lib/siteSettings.mjs';
 
 const SETTINGS_API = '/info/api/admin/settings';
 
-const defaultCategories = [
-  { id: 1, name: 'General', color: 'blue', enabled: true },
-  { id: 2, name: 'Travel Alerts', color: 'amber', enabled: true },
-  { id: 3, name: 'Safety', color: 'red', enabled: true },
-  { id: 4, name: 'Events', color: 'purple', enabled: true },
+const SWITCHES = [
+  {
+    key: 'alert_push_enabled',
+    label: 'Browser push for real-time alerts',
+    detail: 'When off, alerts still reach every subscriber’s in-app inbox, but no push notification is sent to phones or browsers.',
+  },
+  {
+    key: 'general_push_enabled',
+    label: 'Browser push for other notifications',
+    detail: 'Replies, follows, approvals and similar notifications. In-app notifications are unaffected.',
+  },
+  {
+    key: 'follower_notifications_enabled',
+    label: 'Notify followers when staff publish content',
+    detail: 'When off, publishing a place, event or blog no longer notifies the publisher’s followers. Announcement audiences are still notified.',
+  },
 ];
 
-const defaultTemplates = [
-  { id: 1, name: 'Festival Reminder', type: 'event', subject: 'Upcoming Festival Reminder', body: 'Hello {{firstName}}, this is a reminder that the {{eventName}} will begin on {{date}}. Please plan your travel early.' },
-  { id: 2, name: 'Weather Alert', type: 'safety', subject: 'Weather Advisory', body: 'Hello {{firstName}}, a weather advisory is in effect for the next few hours. Please follow local safety guidance.' },
-  { id: 3, name: 'Service Notice', type: 'announcement', subject: 'Service Update', body: 'We have updated our service schedule and transportation support. Please check the latest updates before visiting.' },
-];
-
-const defaultState = {
-  categories: defaultCategories,
-  priorityLevels: ['Urgent', 'High', 'Normal', 'Low'],
-  expirationDays: 7,
-  notificationTemplates: defaultTemplates,
-  pushSettings: {
-    enabled: true,
-    digestFrequency: 'daily',
-    quietHours: '22:00-06:00',
-    emergencyEscalation: true,
-  },
-  emailDigest: {
-    daily: true,
-    weekly: true,
-    includeTopEvents: true,
-    sendTime: '08:00',
-  },
-  emergencyProtocol: {
-    enabled: true,
-    contacts: 'DMO Emergency Desk, Local Police, Municipal Disaster Office',
-    escalationMinutes: 15,
-    requireApproval: true,
-  },
-};
-
-const readStoredSession = () => {
-  if (typeof window === 'undefined') return null;
-
-  try {
-    const session = getStoredSession();
-    return session ? JSON.parse(session) : null;
-  } catch {
-    return null;
-  }
-};
-
-export default function AnnouncementSettingsPage() {
-  const router = useRouter();
-  const [user] = useState(() => readStoredSession());
-  const [settings, setSettings] = useState(defaultState);
-  const [newCategory, setNewCategory] = useState('');
-  const [templateForm, setTemplateForm] = useState({ name: '', type: 'announcement', subject: '', body: '' });
-  const [toast, setToast] = useState(null);
+export default function NotificationSettingsPage() {
+  const [form, setForm] = useState(DEFAULT_NOTIFICATION_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    if (!user) {
-      router.push('/info/login');
-      return;
-    }
-
-    if (!hasAdminAccess(user.role)) {
-      router.push('/info/admin/dashboard');
-    }
-  }, [router, user]);
-
-  useEffect(() => {
-    if (!user || !hasAdminAccess(user.role)) return undefined;
     let active = true;
-    const loadSettings = async () => {
-      try {
-        const response = await fetch(SETTINGS_API, { cache: 'no-store' });
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-          throw new Error(data.message || `Unable to load saved notification settings (${response.status}).`);
-        }
-        const saved = data.settings?.announcement;
-        if (active && saved) {
-          setSettings({
-            ...defaultState,
-            ...saved,
-            pushSettings: { ...defaultState.pushSettings, ...saved.pushSettings },
-            emailDigest: { ...defaultState.emailDigest, ...saved.emailDigest },
-            emergencyProtocol: { ...defaultState.emergencyProtocol, ...saved.emergencyProtocol },
-          });
-        }
-      } catch (error) {
-        if (active) setLoadError(error.message || 'Unable to load notification settings.');
-      } finally {
-        if (active) setLoading(false);
-      }
-    };
-    loadSettings();
-    return () => {
-      active = false;
-    };
-  }, [user]);
-
-  const showToast = (msg, isError = false) => {
-    setToast({ msg, isError });
-    setTimeout(() => setToast(null), 2600);
-  };
-
-  const saveSettings = async () => {
-    setSaving(true);
-    try {
-      const response = await fetch(SETTINGS_API, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: 'announcement', value: settings }),
-      });
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || `Unable to save notification settings (${response.status}).`);
-      }
-      setLoadError('');
-      showToast('Notification settings and templates saved to the database.');
-    } catch (error) {
-      showToast(error.message || 'Unable to save notification settings.', true);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const addCategory = () => {
-    if (!newCategory.trim()) {
-      showToast('Please enter a category name.', true);
-      return;
-    }
-
-    setSettings((prev) => ({
-      ...prev,
-      categories: [...prev.categories, { id: Date.now(), name: newCategory.trim(), color: 'blue', enabled: true }],
-    }));
-    setNewCategory('');
-    showToast('Category added. Save changes to persist it.');
-  };
-
-  const toggleCategory = (id) => {
-    setSettings((prev) => ({
-      ...prev,
-      categories: prev.categories.map((category) => category.id === id ? { ...category, enabled: !category.enabled } : category),
-    }));
-    showToast('Category updated. Save changes to persist it.');
-  };
-
-  const addTemplate = () => {
-    if (!templateForm.name.trim() || !templateForm.subject.trim() || !templateForm.body.trim()) {
-      showToast('Please fill in the template details.', true);
-      return;
-    }
-
-    setSettings((prev) => ({
-      ...prev,
-      notificationTemplates: [{ id: Date.now(), ...templateForm, name: templateForm.name.trim() }, ...prev.notificationTemplates],
-    }));
-    setTemplateForm({ name: '', type: 'announcement', subject: '', body: '' });
-    showToast('Template added. Save changes to persist it.');
-  };
-
-  if (!user) return null;
+    fetch(SETTINGS_API, { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.success) throw new Error(data.message || 'Unable to load notification settings.');
+        if (active) setForm({ ...DEFAULT_NOTIFICATION_SETTINGS, ...data.settings?.notifications });
+      })
+      .catch((error) => { if (active) setLoadError(error.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <AdminSidebar user={user} roleLabel="Announcement Settings" />
+    <SettingsShell title="Notification Settings" subtitle="Site-wide delivery switches for push and in-app notifications.">
+      {(showToast) => {
+        const save = async () => {
+          setSaving(true);
+          try {
+            const response = await fetch(SETTINGS_API, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: 'notifications', value: form }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok || !data.success) throw new Error(data.message || 'Unable to save.');
+            showToast('Notification settings saved. They apply to the next notification sent.');
+          } catch (error) {
+            showToast(error.message || 'Unable to save notification settings.', true);
+          } finally {
+            setSaving(false);
+          }
+        };
 
-      <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
-        <AdminPageHeader
-          eyebrow="Notifications"
-          title="Announcement & alert settings"
-          description="Persist shared notification templates and preferences for administrators."
-          icon="settings"
-        />
-
-        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          Templates and preferences are stored in the administrator database. Scheduled digests, push quiet hours, announcement expiration, and emergency escalation are not currently executed by the application.
-        </div>
-        {loadError && <p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">{loadError}</p>}
-        <div className="mb-6 flex items-center justify-between gap-3">
-          <p className="text-sm text-slate-600">{loading ? 'Loading saved settings…' : 'Changes remain local until saved.'}</p>
-          <button type="button" onClick={saveSettings} disabled={loading || saving || Boolean(loadError)} className="rounded-full bg-blue-700 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50">
-            {saving ? 'Saving…' : 'Save all settings'}
-          </button>
-        </div>
-
-        <div className="mb-6 grid gap-4 md:grid-cols-4">
-          <div className="rounded-2xl bg-gradient-to-r from-sky-600 to-cyan-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-sky-100">Categories</div>
-            <div className="mt-2 text-3xl font-bold">{settings.categories.length}</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-violet-500 to-purple-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-violet-100">Priority Levels</div>
-            <div className="mt-2 text-3xl font-bold">{settings.priorityLevels.length}</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 p-4 text-white shadow-sm">
-            <div className="text-sm text-amber-100">Expiration</div>
-            <div className="mt-2 text-3xl font-bold">{settings.expirationDays}d</div>
-          </div>
-          <div className="rounded-2xl bg-gradient-to-r from-emerald-500 to-green-600 p-4 text-white shadow-sm">
-            <div className="text-sm text-emerald-100">Emergency</div>
-            <div className="mt-2 text-3xl font-bold">{settings.emergencyProtocol.enabled ? 'On' : 'Off'}</div>
-          </div>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+        return (
           <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Category Management</h2>
-              <div className="flex gap-3">
-                <input value={newCategory} onChange={(e) => setNewCategory(e.target.value)} placeholder="New announcement category" className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                <button onClick={addCategory} className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Add</button>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {settings.categories.map((category) => (
-                  <div key={category.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <div>
-                      <p className="font-medium text-slate-800">{category.name}</p>
-                      <p className="text-xs text-slate-500">{category.color} category</p>
-                    </div>
-                    <button onClick={() => toggleCategory(category.id)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ${category.enabled ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                      {category.enabled ? 'Enabled' : 'Disabled'}
-                    </button>
-                  </div>
+            {loadError ? <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{loadError}</p> : null}
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-slate-800">Delivery</h2>
+              <div className="mt-4 space-y-4">
+                {SWITCHES.map((item) => (
+                  <label key={item.key} className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={form[item.key]}
+                      onChange={(event) => setForm((current) => ({ ...current, [item.key]: event.target.checked }))}
+                      className="mt-1 h-4 w-4"
+                    />
+                    <span>
+                      <span className="block text-sm font-semibold text-slate-800">{item.label}</span>
+                      <span className="block text-sm text-slate-600">{item.detail}</span>
+                    </span>
+                  </label>
                 ))}
               </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Priority & Expiration</h2>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Priority levels</label>
-                  <input value={settings.priorityLevels.join(', ')} onChange={(e) => setSettings((prev) => ({ ...prev, priorityLevels: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Default expiration (days)</label>
-                  <input type="number" value={settings.expirationDays} onChange={(e) => setSettings((prev) => ({ ...prev, expirationDays: Number(e.target.value) || 0 }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Push Notifications & Email Digest</h2>
-
-              <div className="space-y-4">
-                <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  <span>Push notifications enabled</span>
-                  <input type="checkbox" checked={settings.pushSettings.enabled} onChange={(e) => setSettings((prev) => ({ ...prev, pushSettings: { ...prev.pushSettings, enabled: e.target.checked } }))} className="h-4 w-4 accent-blue-600" />
-                </label>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Digest frequency</label>
-                    <select value={settings.pushSettings.digestFrequency} onChange={(e) => setSettings((prev) => ({ ...prev, pushSettings: { ...prev.pushSettings, digestFrequency: e.target.value } }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Quiet hours</label>
-                    <input value={settings.pushSettings.quietHours} onChange={(e) => setSettings((prev) => ({ ...prev, pushSettings: { ...prev.pushSettings, quietHours: e.target.value } }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                  </div>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <span>Daily digest</span>
-                    <input type="checkbox" checked={settings.emailDigest.daily} onChange={(e) => setSettings((prev) => ({ ...prev, emailDigest: { ...prev.emailDigest, daily: e.target.checked } }))} className="h-4 w-4 accent-blue-600" />
-                  </label>
-                  <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <span>Weekly digest</span>
-                    <input type="checkbox" checked={settings.emailDigest.weekly} onChange={(e) => setSettings((prev) => ({ ...prev, emailDigest: { ...prev.emailDigest, weekly: e.target.checked } }))} className="h-4 w-4 accent-blue-600" />
-                  </label>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                    <span>Top events included</span>
-                    <input type="checkbox" checked={settings.emailDigest.includeTopEvents} onChange={(e) => setSettings((prev) => ({ ...prev, emailDigest: { ...prev.emailDigest, includeTopEvents: e.target.checked } }))} className="h-4 w-4 accent-blue-600" />
-                  </label>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Send time</label>
-                    <input type="time" value={settings.emailDigest.sendTime} onChange={(e) => setSettings((prev) => ({ ...prev, emailDigest: { ...prev.emailDigest, sendTime: e.target.value } }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                  </div>
-                </div>
-              </div>
-            </div>
+              <button type="button" onClick={() => void save()} disabled={loading || saving || Boolean(loadError)} className="mt-5 rounded-full bg-blue-600 px-6 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {saving ? 'Saving…' : 'Save notification settings'}
+              </button>
+            </section>
+            <section className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+              <p>Alert categories are managed under <Link href="/info/admin/settings/categories" className="font-semibold text-blue-600 hover:underline">Categories</Link>. Email senders and optional emails are under <Link href="/info/admin/settings/email" className="font-semibold text-blue-600 hover:underline">Email</Link>. Each user can still choose their own alert categories and notification types in their account settings.</p>
+            </section>
           </div>
-
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Notification Templates</h2>
-
-              <div className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Template name</label>
-                    <input value={templateForm.name} onChange={(e) => setTemplateForm((prev) => ({ ...prev, name: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-slate-700">Type</label>
-                    <select value={templateForm.type} onChange={(e) => setTemplateForm((prev) => ({ ...prev, type: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                      <option value="announcement">Announcement</option>
-                      <option value="event">Event</option>
-                      <option value="safety">Safety</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Subject</label>
-                  <input value={templateForm.subject} onChange={(e) => setTemplateForm((prev) => ({ ...prev, subject: e.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Message body</label>
-                  <textarea value={templateForm.body} onChange={(e) => setTemplateForm((prev) => ({ ...prev, body: e.target.value }))} rows="4" className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-
-                <button onClick={addTemplate} disabled={loading || saving} className="rounded-full bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50">Add Template</button>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {settings.notificationTemplates.map((template) => (
-                  <div key={template.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="font-medium text-slate-800">{template.name}</p>
-                    <p className="mt-1 text-xs text-slate-500">{template.subject}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h2 className="mb-4 text-lg font-bold text-slate-800">Emergency Alert Protocol</h2>
-
-              <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                <span>Emergency alerts enabled</span>
-                <input type="checkbox" checked={settings.emergencyProtocol.enabled} onChange={(e) => setSettings((prev) => ({ ...prev, emergencyProtocol: { ...prev.emergencyProtocol, enabled: e.target.checked } }))} className="h-4 w-4 accent-red-600" />
-              </label>
-
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-700">Escalation window (minutes)</label>
-                  <input type="number" value={settings.emergencyProtocol.escalationMinutes} onChange={(e) => setSettings((prev) => ({ ...prev, emergencyProtocol: { ...prev.emergencyProtocol, escalationMinutes: Number(e.target.value) || 0 } }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-                <label className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-                  <span>Require approval</span>
-                  <input type="checkbox" checked={settings.emergencyProtocol.requireApproval} onChange={(e) => setSettings((prev) => ({ ...prev, emergencyProtocol: { ...prev.emergencyProtocol, requireApproval: e.target.checked } }))} className="h-4 w-4 accent-red-600" />
-                </label>
-              </div>
-
-              <div className="mt-4">
-                <label className="mb-1 block text-sm font-medium text-slate-700">Alert contacts</label>
-                <textarea value={settings.emergencyProtocol.contacts} onChange={(e) => setSettings((prev) => ({ ...prev, emergencyProtocol: { ...prev.emergencyProtocol, contacts: e.target.value } }))} rows="3" className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {toast && (
-        <div className={`fixed bottom-5 right-5 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg ${toast.isError ? 'bg-red-600' : 'bg-emerald-600'}`}>
-          {toast.msg}
-        </div>
-      )}
-    </div>
+        );
+      }}
+    </SettingsShell>
   );
 }

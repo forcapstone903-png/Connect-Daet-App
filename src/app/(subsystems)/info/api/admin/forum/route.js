@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
 import { notifyFollowers } from '@/lib/notificationAudience'
+import { publicErrorMessage } from '@/lib/publicError'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -39,7 +40,7 @@ export async function GET(request) {
 
     const { data, error } = await query
     if (error) {
-      return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -48,7 +49,7 @@ export async function GET(request) {
     }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Forum list error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to fetch forum threads' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to fetch forum threads') }, { status: 500 })
   }
 }
 
@@ -67,8 +68,11 @@ export async function POST(request) {
     const status = body.status || 'published'
     const categoryName = String(body.category || 'General').trim()
 
-    if (!title || !content) {
-      return NextResponse.json({ success: false, message: 'Title and content are required.' }, { status: 400 })
+    if (!title || title.length > 200 || !content || content.length > 50000) {
+      return NextResponse.json({ success: false, message: 'A title up to 200 characters and content up to 50,000 characters are required.' }, { status: 400 })
+    }
+    if (!['draft', 'pending', 'published', 'closed', 'archived'].includes(status)) {
+      return NextResponse.json({ success: false, message: 'Choose a valid forum thread status.' }, { status: 400 })
     }
 
     const { data: category, error: categoryError } = await adminSupabase
@@ -76,7 +80,7 @@ export async function POST(request) {
       .select('id')
       .eq('name', categoryName)
       .maybeSingle()
-    if (categoryError) return NextResponse.json({ success: false, message: categoryError.message }, { status: 500 })
+    if (categoryError) return NextResponse.json({ success: false, message: publicErrorMessage(categoryError) }, { status: 500 })
     if (!category) return NextResponse.json({ success: false, message: 'Choose an existing forum category.' }, { status: 400 })
 
     const now = new Date().toISOString()
@@ -99,7 +103,7 @@ export async function POST(request) {
       .single()
 
     if (error) {
-      return NextResponse.json({ success: false, message: error.message }, { status: 500 })
+      return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     }
 
     await notifyFollowers(adminSupabase, {
@@ -116,6 +120,6 @@ export async function POST(request) {
     return NextResponse.json({ success: true, thread: data })
   } catch (error) {
     console.error('Forum create error:', error)
-    return NextResponse.json({ success: false, message: error.message || 'Unable to create thread' }, { status: 500 })
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to create thread') }, { status: 500 })
   }
 }

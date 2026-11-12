@@ -41,6 +41,12 @@ function getOrCreateVisitorId() {
   }
 }
 
+function getCoarseDeviceType() {
+  if (window.matchMedia('(max-width: 767px)').matches) return 'mobile'
+  if (window.matchMedia('(max-width: 1023px)').matches) return 'tablet'
+  return 'desktop'
+}
+
 export default function SiteVisitTracker() {
   const pathname = usePathname()
   const lastTrackedRef = useRef('')
@@ -73,7 +79,7 @@ export default function SiteVisitTracker() {
         cache: 'no-store',
         keepalive: true,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visitorId, pathname: pagePath }),
+        body: JSON.stringify({ visitorId, pathname: pagePath, deviceType: getCoarseDeviceType() }),
       }).catch((error) => {
         console.error('Site visit analytics request failed:', error)
       })

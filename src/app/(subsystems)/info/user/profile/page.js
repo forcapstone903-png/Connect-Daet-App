@@ -3,12 +3,14 @@
 import { startTransition, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import {
+  Archive,
   Briefcase,
   FilePenLine,
   LogOut,
   Mail,
   MapPin,
   MoreHorizontal,
+  Settings,
   ShieldCheck,
   Star,
   Trophy,
@@ -218,7 +220,7 @@ export default function UserProfilePage() {
         const [{ data: userData }, { data: profileData }, { data: badgeRows }, { data: favoriteRows, error: favoriteError }, { data: registrationRows, error: registrationError }, { data: blogsData }, { data: threadsData }, { data: eventsData }, profileResult] = await Promise.all([
           supabase
             .from('info_users')
-            .select('id, email, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
+            .select('id, full_name, profile_image_url, bio, city, country, points, level, created_at, user_type')
             .eq('id', fallbackUserId)
             .maybeSingle(),
           supabase
@@ -247,6 +249,7 @@ export default function UserProfilePage() {
             .eq('created_by', fallbackUserId)
             .eq('status', 'published')
             .eq('approval_status', 'approved')
+            .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
             .order('created_at', { ascending: false }),
           supabase
             .from('forum_threads')
@@ -805,10 +808,10 @@ export default function UserProfilePage() {
       {profileActionsOpen && (
         <div role="menu" className="usr-pop-in absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-left text-slate-700 shadow-xl">
           <Link role="menuitem" href="/info/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
-          <Link role="menuitem" href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700">Archive</Link>
+          <Link role="menuitem" href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700"><Archive className="h-4 w-4" />Archive</Link>
           <Link role="menuitem" href="/info/user/drafts" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><FilePenLine className="h-4 w-4" />Drafts</Link>
           <Link role="menuitem" href="/info/user/blog-submissions" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><FilePenLine className="h-4 w-4" />My blog posts</Link>
-          <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">Settings</Link>
+          <Link role="menuitem" href="/info/user/settings" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" />Settings</Link>
           <div className="my-1 border-t border-slate-100" role="separator" />
           <button role="menuitem" type="button" onClick={() => { setProfileActionsOpen(false); setShowLogoutConfirm(true) }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" />Log out</button>
         </div>
@@ -853,7 +856,7 @@ export default function UserProfilePage() {
             </div>
           </div>
 
-          <div className="profile-stat-strip grid grid-cols-4 border-b border-slate-200 text-center">
+          <div className="profile-stat-strip grid grid-cols-2 border-b border-slate-200 text-center sm:grid-cols-4">
             <div className="border-r border-slate-200 px-2 py-3"><p className="text-xl font-black text-slate-900">{stats.posts}</p><p className="usr-stat-label mt-0.5">Posts</p></div>
             <Link href="/info/user/profile/connections?tab=followers" className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.followers}</p><p className="usr-stat-label mt-0.5">Followers</p></Link>
             <Link href="/info/user/profile/connections?tab=friends" className="border-r border-slate-200 px-2 py-3 transition hover:bg-sky-50"><p className="text-xl font-black text-slate-900">{stats.friends}</p><p className="usr-stat-label mt-0.5">Friends</p></Link>

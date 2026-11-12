@@ -109,7 +109,7 @@ export default function Comments({
     try {
       const { data, error } = await supabase
         .from('content_comments')
-        .select('*, info_users!content_comments_user_id_fkey(full_name, email, profile_image_url)')
+        .select('*, info_users!content_comments_user_id_fkey(full_name, profile_image_url)')
         .eq('content_type', contentType)
         .eq('content_id', contentId)
         .order('is_pinned', { ascending: false })

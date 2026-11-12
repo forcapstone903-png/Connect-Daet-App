@@ -4,50 +4,116 @@ import { useEffect, useState } from 'react'
 import { BarChart3, CheckCircle2, Clock, Vote } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+async function fetchPollData(contentType, contentId, userId) {
+  const { data, error } = await supabase
+    .from('content_polls')
+    .select('*')
+    .eq('content_type', contentType)
+    .eq('content_id', contentId)
+    .order('created_at', { ascending: false })
+  if (error) throw error
+
+  const polls = data || []
+  const pollIds = polls.map((poll) => poll.id)
+  const userVotesResult = pollIds.length && userId
+    ? await supabase
+      .from('poll_votes')
+      .select('poll_id, selected_option_index, answer_text, is_correct')
+      .in('poll_id', pollIds)
+      .eq('user_id', userId)
+    : { data: [], error: null }
+  if (userVotesResult.error) throw userVotesResult.error
+
+  const userVotes = {}
+  ;(userVotesResult.data || []).forEach((vote) => {
+    userVotes[vote.poll_id] = vote
+  })
+
+  const visiblePollIds = userId
+    ? polls
+      .filter((poll) => {
+        if (poll.results_visibility === 'immediate') return true
+        if (poll.results_visibility === 'hidden') return false
+        return Boolean(userVotes[poll.id])
+          || Boolean(poll.ends_at && new Date(poll.ends_at).getTime() < Date.now())
+      })
+      .map((poll) => poll.id)
+    : []
+  const allVotesResult = visiblePollIds.length
+    ? await supabase
+      .from('poll_votes')
+      .select('poll_id, selected_option_index')
+      .in('poll_id', visiblePollIds)
+    : { data: [], error: null }
+  if (allVotesResult.error) throw allVotesResult.error
+
+  const visibleOpenEndedPollIds = polls
+    .filter((poll) => {
+      return poll.poll_type === 'open_ended' && visiblePollIds.includes(poll.id)
+    })
+    .map((poll) => poll.id)
+
+  const openAnswersResult = visibleOpenEndedPollIds.length
+    ? await supabase
+      .from('poll_votes')
+      .select('poll_id, answer_text')
+      .in('poll_id', visibleOpenEndedPollIds)
+      .not('answer_text', 'is', null)
+    : { data: [], error: null }
+  if (openAnswersResult.error) throw openAnswersResult.error
+
+  const pollResults = {}
+  polls.forEach((poll) => {
+    pollResults[poll.id] = { totalVotes: 0, optionCounts: {}, answers: [] }
+  })
+  ;(allVotesResult.data || []).forEach((vote) => {
+    const result = pollResults[vote.poll_id]
+    if (!result) return
+    result.totalVotes += 1
+    const optionIndex = Number(vote.selected_option_index)
+    if (vote.selected_option_index !== null && Number.isInteger(optionIndex)) {
+      result.optionCounts[optionIndex] = (result.optionCounts[optionIndex] || 0) + 1
+    }
+  })
+  ;(openAnswersResult.data || []).forEach((answer) => {
+    pollResults[answer.poll_id]?.answers.push(answer.answer_text)
+  })
+
+  return { polls, pollResults, userVotes }
+}
+
 export default function Polls({ contentType, contentId, userId }) {
   const [polls, setPolls] = useState([])
+  const [pollResults, setPollResults] = useState({})
   const [selectedOptions, setSelectedOptions] = useState({})
   const [openAnswers, setOpenAnswers] = useState({})
   const [showResults, setShowResults] = useState({})
   const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
   const [userVotes, setUserVotes] = useState({})
 
   useEffect(() => {
-    loadPolls()
-  }, [contentType, contentId])
+    if (!contentId) return undefined
 
-  const loadPolls = async () => {
-    if (!contentId) return
-    try {
-      const { data, error } = await supabase
-        .from('content_polls')
-        .select('*')
-        .eq('content_type', contentType)
-        .eq('content_id', contentId)
-        .order('created_at', { ascending: false })
-      if (error) throw error
+    let ignore = false
+    fetchPollData(contentType, contentId, userId)
+      .then((result) => {
+        if (ignore) return
+        setPolls(result.polls)
+        setPollResults(result.pollResults)
+        setUserVotes(result.userVotes)
+        setLoadError('')
+      })
+      .catch((err) => {
+        if (ignore) return
+        console.error('Failed to load polls:', err)
+        setLoadError('Polls could not be loaded. Please try again later.')
+      })
 
-      setPolls(data || [])
-
-      // Load user's votes
-      if (userId && data?.length) {
-        const pollIds = data.map((p) => p.id)
-        const { data: voteRows } = await supabase
-          .from('poll_votes')
-          .select('poll_id, selected_option_index, answer_text, is_correct')
-          .in('poll_id', pollIds)
-          .eq('user_id', userId)
-
-        const votesByPoll = {}
-        ;(voteRows || []).forEach((vote) => {
-          votesByPoll[vote.poll_id] = vote
-        })
-        setUserVotes(votesByPoll)
-      }
-    } catch (err) {
-      console.error('Failed to load polls:', err)
+    return () => {
+      ignore = true
     }
-  }
+  }, [contentId, contentType, userId])
 
   const handleVote = async (poll, optionIndex) => {
     if (!userId) {
@@ -68,11 +134,6 @@ export default function Polls({ contentType, contentId, userId }) {
       })
       if (error) throw error
 
-      await supabase
-        .from('content_polls')
-        .update({ total_votes: (poll.total_votes || 0) + 1 })
-        .eq('id', poll.id)
-
       setUserVotes((prev) => ({
         ...prev,
         [poll.id]: { selected_option_index: optionIndex, is_correct: isCorrect },
@@ -82,7 +143,11 @@ export default function Polls({ contentType, contentId, userId }) {
         setShowResults((prev) => ({ ...prev, [poll.id]: true }))
       }
 
-      await loadPolls()
+      const result = await fetchPollData(contentType, contentId, userId)
+      setPolls(result.polls)
+      setPollResults(result.pollResults)
+      setUserVotes(result.userVotes)
+      setLoadError('')
     } catch (err) {
       console.error('Vote failed:', err)
       alert('Failed to submit vote. Please try again.')
@@ -108,13 +173,12 @@ export default function Polls({ contentType, contentId, userId }) {
       })
       if (error) throw error
 
-      await supabase
-        .from('content_polls')
-        .update({ total_votes: (poll.total_votes || 0) + 1 })
-        .eq('id', poll.id)
-
       setUserVotes((prev) => ({ ...prev, [poll.id]: { answer_text: answer } }))
-      await loadPolls()
+      const result = await fetchPollData(contentType, contentId, userId)
+      setPolls(result.polls)
+      setPollResults(result.pollResults)
+      setUserVotes(result.userVotes)
+      setLoadError('')
     } catch (err) {
       console.error('Answer failed:', err)
       alert('Failed to submit answer.')
@@ -135,22 +199,25 @@ export default function Polls({ contentType, contentId, userId }) {
 
   const getOptionsWithVotes = (poll) => {
     if (!poll.options || poll.options.length === 0) return []
-    return poll.options.map((opt, idx) => {
-      // Estimate votes per option (in real implementation this would come from poll_votes aggregation)
-      // Here we use poll_votes for accuracy when loaded
-      return { label: typeof opt === 'string' ? opt : opt.label || `Option ${idx + 1}`, index: idx }
-    })
+    return poll.options.map((opt, idx) => ({
+      label: typeof opt === 'string' ? opt : opt.label || `Option ${idx + 1}`,
+      index: idx,
+    }))
   }
 
-  if (polls.length === 0) return null
+  if (polls.length === 0) {
+    return loadError ? <p className="text-sm text-red-600" role="alert">{loadError}</p> : null
+  }
 
   return (
     <div className="space-y-4">
+      {loadError ? <p className="text-sm text-red-600" role="alert">{loadError}</p> : null}
       {polls.map((poll) => {
         const expired = isExpired(poll)
         const hasVoted = !!userVotes[poll.id]
         const resultsVisible = canSeeResults(poll)
         const options = getOptionsWithVotes(poll)
+        const result = pollResults[poll.id] || { totalVotes: 0, optionCounts: {}, answers: [] }
 
         return (
           <div key={poll.id} className="rounded-[16px] border border-slate-200 bg-slate-50 p-4">
@@ -169,7 +236,7 @@ export default function Polls({ contentType, contentId, userId }) {
                         {expired ? 'Ended' : `Ends ${new Date(poll.ends_at).toLocaleDateString()}`}
                       </span>
                     )}
-                    <span>{poll.total_votes || 0} votes</span>
+                    {resultsVisible ? <span>{result.totalVotes} votes</span> : null}
                   </div>
                 </div>
               </div>
@@ -240,24 +307,43 @@ export default function Polls({ contentType, contentId, userId }) {
             {showResults[poll.id] && resultsVisible && (
               <div className="mt-2">
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Results</p>
-                <div className="space-y-1">
-                  {options.map((opt, idx) => (
-                    <div key={idx} className="flex items-center gap-2 text-xs">
-                      <span className="w-1/2 truncate text-slate-600">{opt.label}</span>
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
-                        <div
-                          className="h-full rounded-full bg-sky-500"
-                          style={{ width: '0%' }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {poll.poll_type === 'open_ended' ? (
+                  result.answers.length ? (
+                    <ul className="space-y-1">
+                      {result.answers.map((answer, index) => (
+                        <li key={`${poll.id}-answer-${index}`} className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
+                          {answer}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-slate-500">No responses yet.</p>
+                  )
+                ) : (
+                  <div className="space-y-1">
+                    {options.map((option) => {
+                      const count = result.optionCounts[option.index] || 0
+                      const percentage = result.totalVotes ? Math.round((count / result.totalVotes) * 100) : 0
+                      return (
+                        <div key={option.index} className="flex items-center gap-2 text-xs">
+                          <span className="w-1/2 truncate text-slate-600">{option.label}</span>
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className="h-full rounded-full bg-sky-500"
+                              style={{ width: `${percentage}%` }}
+                            />
+                          </div>
+                          <span className="w-12 text-right tabular-nums text-slate-500">{percentage}%</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
             {hasVoted && (
-              <p className="mt-2 text-[10px] font-semibold text-emerald-600">✓ You've voted on this poll</p>
+              <p className="mt-2 text-[10px] font-semibold text-emerald-600">✓ You&apos;ve voted on this poll</p>
             )}
             {expired && !hasVoted && (
               <p className="mt-2 text-[10px] font-semibold text-slate-400">This poll has ended</p>
