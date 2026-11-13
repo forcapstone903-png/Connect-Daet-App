@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, BellRing, CheckCheck, MessageCircle, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
+import { Bell, CalendarDays, CheckCheck, Info, MessageCircle, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
+import { notifyToast } from '@/lib/toast.mjs'
 import { getCache, getCacheKey, invalidateCache, setCache } from '@/lib/cache'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserSectionHeader, { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
@@ -128,7 +129,6 @@ export default function UserNotificationsPage() {
   const [retryKey, setRetryKey] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [deletingHistory, setDeletingHistory] = useState(false)
-  const [actionNotice, setActionNotice] = useState('')
   const [approvingFollowRequestId, setApprovingFollowRequestId] = useState(null)
   const [activeCommentsSheet, setActiveCommentsSheet] = useState(null)
   const [commentsSheetVisible, setCommentsSheetVisible] = useState(false)
@@ -241,12 +241,6 @@ export default function UserNotificationsPage() {
     searchInputRef.current?.focus()
     return undefined
   }, [searchOpen])
-
-  useEffect(() => {
-    if (!actionNotice) return undefined
-    const timer = window.setTimeout(() => setActionNotice(''), 6000)
-    return () => window.clearTimeout(timer)
-  }, [actionNotice])
 
   const syncUnreadBadge = useCallback((nextNotifications = [], explicitUnreadCount = null) => {
     if (typeof window === 'undefined') return
@@ -481,12 +475,13 @@ export default function UserNotificationsPage() {
   }, [visibleNotifications])
 
   const getNotificationIcon = (notification) => {
-    if (notification.type === 'event') return BellRing
-    if (notification.type === 'announcement') return Sparkles
-    if (notification.type === 'activity') return MessageCircle
-    if (notification.type === 'warning' || notification.type === 'error' || notification.type === 'alert') return ShieldAlert
-    if (notification.type === 'alert_all_clear') return BellRing
-    return Bell
+    const type = String(notification?.type || '').toLowerCase()
+    if (type.includes('event')) return CalendarDays
+    if (type.includes('announcement')) return Sparkles
+    if (type.includes('activity')) return MessageCircle
+    if (type === 'warning' || type === 'error' || type === 'alert') return ShieldAlert
+    if (type === 'alert_all_clear') return CheckCheck
+    return Info
   }
 
   const getNotificationActionIcon = (notification) => {
@@ -523,7 +518,7 @@ export default function UserNotificationsPage() {
       return { emoji: '🔄', className: 'text-emerald-500' }
     }
 
-    return { emoji: '🔔', className: 'text-slate-500' }
+    return null
   }
 
   const getNotificationHref = (notification) => {
@@ -610,7 +605,7 @@ export default function UserNotificationsPage() {
   }
 
   const NotificationAvatar = ({ notification, actor, actorName, actorProfileHref }) => {
-    const { emoji, className } = getNotificationActionIcon(notification)
+    const actionIcon = getNotificationActionIcon(notification)
     const NotificationTypeIcon = getNotificationIcon(notification)
     const normalizedType = String(notification?.type || '').toLowerCase()
     const isCommentType = normalizedType === 'comment' || normalizedType === 'reply'
@@ -639,11 +634,11 @@ export default function UserNotificationsPage() {
           <span className="absolute -bottom-2 -right-1 flex h-7 w-7 items-center justify-center rounded-[14px] bg-sky-500 shadow-sm" aria-label="Notification action">
             <MessageCircle className="h-4 w-4 text-white" fill="white" />
           </span>
-        ) : (
-          <span className={`absolute -bottom-2 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[1.25rem] leading-none shadow-none ${className}`} aria-label="Notification action">
-            {emoji}
+        ) : actionIcon ? (
+          <span className={`absolute -bottom-2 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[1.25rem] leading-none shadow-none ${actionIcon.className}`} aria-label="Notification action">
+            {actionIcon.emoji}
           </span>
-        )}
+        ) : null}
       </div>
     )
   }
@@ -665,7 +660,7 @@ export default function UserNotificationsPage() {
   const sendFollowSideAction = async (notification, actionType) => {
     const actorId = parseProfileActorId(notification)
     if (!actorId) {
-      setActionNotice('That follow-back notification is missing the related profile link.')
+      notifyToast('That follow-back notification is missing the related profile link.', 'warning')
       return
     }
 
@@ -707,12 +702,12 @@ export default function UserNotificationsPage() {
         link: nextLink,
       } : item))
 
-      setActionNotice(actionType === 'wave' ? 'Wave sent.' : 'Hi sent.')
+      notifyToast(actionType === 'wave' ? 'Wave sent.' : 'Hi sent.', 'success')
       invalidateCache(notificationsCacheKey)
       syncUnreadBadge(notifications)
     } catch (error) {
       console.error('Send follow action failed:', error)
-      setActionNotice(error.message || 'Unable to send the follow-back action.')
+      notifyToast(error.message || 'Unable to send the follow-back action.', 'error')
     }
   }
 
@@ -740,6 +735,7 @@ export default function UserNotificationsPage() {
       invalidateCache(notificationsCacheKey)
     } catch (error) {
       console.error('Update read state failed:', error)
+      notifyToast(error.message || 'Unable to mark notification as read.', 'error')
     }
   }
 
@@ -765,8 +761,10 @@ export default function UserNotificationsPage() {
         return next
       })
       invalidateCache(notificationsCacheKey)
+      notifyToast('All notifications marked as read.', 'success')
     } catch (error) {
       console.error('Mark all notifications read failed:', error)
+      notifyToast(error.message || 'Unable to mark notifications as read.', 'error')
     }
   }
 
@@ -790,21 +788,21 @@ export default function UserNotificationsPage() {
         return next
       })
       invalidateCache(notificationsCacheKey)
+      notifyToast('Notification deleted.', 'success')
     } catch (error) {
       console.error('Delete notification failed:', error)
-      setActionNotice(error.message || 'Unable to delete notification.')
+      notifyToast(error.message || 'Unable to delete notification.', 'error')
     }
   }
 
   const approveFollowRequest = async (notification) => {
     const requesterId = getNotificationActorId(notification)
     if (!requesterId || !userId) {
-      setActionNotice('Unable to identify this follow request. Please refresh and try again.')
+      notifyToast('Unable to identify this follow request. Please refresh and try again.', 'warning')
       return
     }
 
     setApprovingFollowRequestId(notification.id)
-    setActionNotice('')
     try {
       const response = await fetch('/info/api/user/follow-requests', {
         method: 'PATCH',
@@ -826,11 +824,13 @@ export default function UserNotificationsPage() {
       })
       invalidateCache(notificationsCacheKey)
       if (result.notificationUpdated === false) {
-        setActionNotice('Follow request approved, but its notification could not be updated.')
+        notifyToast('Follow request approved, but its notification could not be updated.', 'warning')
+      } else {
+        notifyToast('Follow request approved.', 'success')
       }
     } catch (error) {
       console.error('Follow request approval failed:', error)
-      setActionNotice(error.message || 'Unable to approve this follow request.')
+      notifyToast(error.message || 'Unable to approve this follow request.', 'error')
     } finally {
       setApprovingFollowRequestId(null)
     }
@@ -860,7 +860,6 @@ export default function UserNotificationsPage() {
     if (!userId) return
 
     setDeletingHistory(true)
-    setActionNotice('')
     try {
       const response = await fetch('/info/api/notifications', {
         method: 'DELETE',
@@ -875,11 +874,11 @@ export default function UserNotificationsPage() {
       setNotifications([])
       invalidateCache(notificationsCacheKey)
       setShowDeleteConfirm(false)
-      setActionNotice('Notification history deleted.')
+      notifyToast('Notification history deleted.', 'success')
       syncUnreadBadge([])
     } catch (error) {
       console.error('Delete notification history failed:', error)
-      setActionNotice(error.message || 'Unable to delete notification history.')
+      notifyToast(error.message || 'Unable to delete notification history.', 'error')
     } finally {
       setDeletingHistory(false)
     }
@@ -939,13 +938,13 @@ export default function UserNotificationsPage() {
               </div>
             )}
 
-            <div className="notifications-alert-actions mt-3 flex min-w-0 flex-nowrap items-center justify-end gap-2">
+            <div className="notifications-alert-actions mt-3 flex min-w-0 flex-wrap items-center justify-end gap-2">
               <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-                <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-sky-700 disabled:opacity-40">
+                <button type="button" onClick={markAllAsRead} disabled={!unreadCount} className="inline-flex min-h-9 items-center gap-1.5 whitespace-nowrap rounded-full border border-sky-200 bg-sky-50 px-3 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 disabled:opacity-40">
                   <CheckCheck className="h-3.5 w-3.5" />
                   Mark all read
                 </button>
-                <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="whitespace-nowrap text-[11px] font-semibold text-red-600 disabled:opacity-40">
+                <button type="button" onClick={() => setShowDeleteConfirm(true)} aria-label="Clear notification history" title="Clear notification history" disabled={!notifications.length || deletingHistory} className="inline-flex min-h-9 items-center whitespace-nowrap rounded-full border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-40">
                   Clear all
                 </button>
               </div>
@@ -953,7 +952,6 @@ export default function UserNotificationsPage() {
           </header>
         </div>
 
-        {actionNotice && <div className="mb-3 border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800">{actionNotice}</div>}
 
         {showDeleteConfirm && (
           <div className="mb-3 border border-red-200 bg-red-50 p-3 sm:flex sm:items-center sm:justify-between sm:gap-4">
@@ -1007,7 +1005,7 @@ export default function UserNotificationsPage() {
                     const relativeTime = formatRelativeTime(notification.created_at)
 
                     return (
-                      <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`block w-full border border-[#dfe7e1] bg-white p-2.5 text-left transition ${notification.is_read ? '' : 'border-[#b9dcd5]'}`}>
+                      <div key={notification.id} onClick={() => openNotification(notification)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); openNotification(notification) } }} role="button" tabIndex={0} className={`notification-card block w-full border border-[#dfe7e1] bg-white p-3 text-left transition ${notification.is_read ? 'is-read' : 'is-unread border-[#b9dcd5]'}`}>
                         <div className="flex items-start gap-3">
                           <NotificationAvatar notification={notification} actor={actor} actorName={actorName} actorProfileHref={actorProfileHref} />
 

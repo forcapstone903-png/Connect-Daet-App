@@ -25,6 +25,7 @@ import { Bell, Check, ChevronDown, ChevronLeft, CircleHelp, Eye, Languages, Lock
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
+import { notifyToast } from '@/lib/toast.mjs'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import { useUserSettings } from '@/components/UserSettingsProvider'
@@ -87,7 +88,6 @@ export default function UserSettingsPage() {
   })
   const [profileError, setProfileError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState(null)
   const [storageUsage, setStorageUsage] = useState({ bytes: 0, entries: 0 })
   const [cacheCleared, setCacheCleared] = useState(false)
   const [clearingCache, setClearingCache] = useState(false)
@@ -98,16 +98,11 @@ export default function UserSettingsPage() {
   const [accountActionPending, setAccountActionPending] = useState(false)
   const [confirmAction, setConfirmAction] = useState(null)
   const [deletionPassword, setDeletionPassword] = useState('')
-  const noticeTimerRef = useRef(null)
   const tRef = useRef(t)
 
   useEffect(() => {
     tRef.current = t
   }, [t])
-
-  useEffect(() => () => {
-    if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
-  }, [])
 
   const isDirty = useMemo(() => !settingsEqual(draft, savedSnapshot), [draft, savedSnapshot])
 
@@ -174,7 +169,7 @@ export default function UserSettingsPage() {
       if (lifecycleResponse.ok && lifecycleResult.lifecycle) setAccountLifecycle(lifecycleResult.lifecycle)
     } catch (error) {
       console.error('Settings load failed:', error)
-      setNotice({ tone: 'error', text: tRef.current('settings.status.loadFailed') })
+      notifyToast(tRef.current('settings.status.loadFailed'), 'error')
     } finally {
       setStorageUsage(getLocalStorageUsage())
       setLoading(false)
@@ -203,22 +198,20 @@ export default function UserSettingsPage() {
 
   const saveSettings = useCallback(async () => {
     setSaving(true)
-    setNotice(null)
-
     try {
       if (!userId) {
-        setNotice({ tone: 'warning', text: t('settings.status.notSignedIn') })
+        notifyToast(t('settings.status.notSignedIn'), 'warning')
         return
       }
 
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        setNotice({ tone: 'warning', text: t('settings.status.offline') })
+        notifyToast(t('settings.status.offline'), 'warning')
         return
       }
 
       const result = await saveSettingsToProfile({ settings: draft })
       if (!result.ok) {
-        setNotice({ tone: 'error', text: result.error?.message || t('settings.status.saveFailed') })
+        notifyToast(result.error?.message || t('settings.status.saveFailed'), 'error')
         return
       }
 
@@ -228,14 +221,10 @@ export default function UserSettingsPage() {
       window.dispatchEvent(new Event('daet-settings-updated'))
 
       const savedMessage = t('common.saved')
-      setNotice({ tone: 'success', text: savedMessage })
-      if (noticeTimerRef.current) window.clearTimeout(noticeTimerRef.current)
-      noticeTimerRef.current = window.setTimeout(() => {
-        setNotice((current) => current?.text === savedMessage ? null : current)
-      }, 3000)
+      notifyToast(savedMessage, 'success')
     } catch (error) {
       console.error('Settings save failed:', error)
-      setNotice({ tone: 'error', text: t('settings.status.saveFailed') })
+      notifyToast(t('settings.status.saveFailed'), 'error')
     } finally {
       setSaving(false)
     }
@@ -246,13 +235,12 @@ export default function UserSettingsPage() {
     setStorageUsage(getLocalStorageUsage())
     setCacheCleared(true)
     setClearingCache(false)
-    if (removedKeys.length === 0) setNotice({ tone: 'info', text: t('settings.data.cleared') })
+    if (removedKeys.length === 0) notifyToast(t('settings.data.cleared'), 'info')
     return undefined
   }, [t])
 
   const handleDownloadPersonalData = useCallback(() => {
     setExportPending(true)
-    setNotice(null)
     void (async () => {
       try {
         const response = await fetch('/info/api/user/data-export', {
@@ -272,9 +260,9 @@ export default function UserSettingsPage() {
         anchor.click()
         anchor.remove()
         window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-        setNotice({ tone: 'success', text: 'Your personal data export has been downloaded.' })
+        notifyToast('Your personal data export has been downloaded.', 'success')
       } catch (error) {
-        setNotice({ tone: 'error', text: error.message || 'Unable to download your data.' })
+        notifyToast(error.message || 'Unable to download your data.', 'error')
       } finally {
         setExportPending(false)
       }
@@ -288,13 +276,12 @@ export default function UserSettingsPage() {
       language: savedSnapshot.language,
       reduceMotion: savedSnapshot.reduceMotion,
     })
-    setNotice({ tone: 'info', text: 'Unsaved preference changes were discarded.' })
+    notifyToast('Unsaved preference changes were discarded.', 'info')
   }, [savedSnapshot, updateSettings])
 
   const handleResetSettings = useCallback(async () => {
     const defaults = createDefaultSettings()
     setResetPending(true)
-    setNotice(null)
     try {
       if (!userId) throw new Error(t('settings.status.notSignedIn'))
       const result = await saveSettingsToProfile({ settings: defaults })
@@ -307,10 +294,10 @@ export default function UserSettingsPage() {
       invalidateSettingsCaches(userId)
       window.dispatchEvent(new Event('daet-settings-updated'))
       setConfirmAction(null)
-      setNotice({ tone: 'success', text: t('common.reset') })
+      notifyToast(t('common.reset'), 'success')
     } catch (error) {
       console.error('Settings reset failed:', error)
-      setNotice({ tone: 'error', text: error.message || t('settings.status.saveFailed') })
+      notifyToast(error.message || t('settings.status.saveFailed'), 'error')
     } finally {
       setResetPending(false)
     }
@@ -323,7 +310,7 @@ export default function UserSettingsPage() {
       if (error) throw error
     } catch (error) {
       console.error('Global sign-out failed:', error)
-      setNotice({ tone: 'error', text: t('settings.status.signOutFailed') })
+      notifyToast(t('settings.status.signOutFailed'), 'error')
       setSignOutPending(false)
       setConfirmAction(null)
       return
@@ -337,13 +324,11 @@ export default function UserSettingsPage() {
 
   const handleAccountAction = useCallback(async (action, password) => {
     if (action === 'schedule_deletion' && !password) {
-      setNotice({ tone: 'error', text: 'Enter your current password to confirm account deletion.' })
+      notifyToast('Enter your current password to confirm account deletion.', 'warning')
       return
     }
 
     setAccountActionPending(true)
-    setNotice(null)
-
     try {
       const response = await fetch('/info/api/account/lifecycle', {
         method: 'POST',
@@ -375,10 +360,10 @@ export default function UserSettingsPage() {
         return
       }
 
-      setNotice({ tone: 'success', text: action === 'reactivate' ? t('settings.security.reactivated') : t('settings.security.deletionCancelled') })
+      notifyToast(action === 'reactivate' ? t('settings.security.reactivated') : t('settings.security.deletionCancelled'), 'success')
     } catch (error) {
       console.error('Account lifecycle action failed:', error)
-      setNotice({ tone: 'error', text: error.message || t('settings.status.saveFailed') })
+      notifyToast(error.message || t('settings.status.saveFailed'), 'error')
     } finally {
       setAccountActionPending(false)
     }
@@ -434,11 +419,6 @@ export default function UserSettingsPage() {
         <p>Manage your account and preferences</p>
       </header>
       <div className="usr-section-container settings-container mx-auto w-full max-w-none px-0 pb-24 pt-0">
-        {notice ? (
-          <div className="settings-notice">
-            <StatusBanner tone={notice.tone}>{notice.text}</StatusBanner>
-          </div>
-        ) : null}
         <div className="settings-layout">
           <aside className="settings-sidebar">
             <div className="settings-sidebar-profile">

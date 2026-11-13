@@ -31,6 +31,7 @@ import { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSect
 import { normalizeErrorMessage, trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { getCacheKey, invalidateCache } from '@/lib/cache'
+import { notifyToast } from '@/lib/toast.mjs'
 
 const categories = [
   { value: 'travel_guides', label: 'Travel Guides' },
@@ -185,14 +186,11 @@ export default function CreateBlogPage() {
   const [forumMediaItems, setForumMediaItems] = useState([])
   const [mediaLayout, setMediaLayout] = useState('swipe')
   const [previewMode, setPreviewMode] = useState(false)
-  const [visibility, setVisibility] = useState('public')
   const [autosaveStatus, setAutosaveStatus] = useState('idle')
   const [autosaveWarning, setAutosaveWarning] = useState('')
   const [mobileSettingsOpen, setMobileSettingsOpen] = useState(false)
   const [mediaSettingsExpanded, setMediaSettingsExpanded] = useState(false)
   const [mobileOverflowOpen, setMobileOverflowOpen] = useState(false)
-  const [toastMessage, setToastMessage] = useState('')
-  const [toastIsError, setToastIsError] = useState(false)
   const [successStatus, setSuccessStatus] = useState('published')
   const [lastSavedAt, setLastSavedAt] = useState(null)
   const [wordCount, setWordCount] = useState(0)
@@ -208,7 +206,6 @@ export default function CreateBlogPage() {
   const slugTitleRef = useRef('')
   const savedSnapshotRef = useRef('')
   const savePromiseRef = useRef(null)
-  const toastTimeoutRef = useRef(null)
   const editorRef = useRef(null)
   const mobileOverflowRef = useRef(null)
   const galleryUploadRef = useRef(null)
@@ -218,13 +215,8 @@ export default function CreateBlogPage() {
   const drawerTouchStartYRef = useRef(null)
 
   const showToast = useCallback((message, isError = false) => {
-    setToastMessage(message)
-    setToastIsError(isError)
-    window.clearTimeout(toastTimeoutRef.current)
-    toastTimeoutRef.current = window.setTimeout(() => setToastMessage(''), isError ? 6000 : 3500)
+    notifyToast(message, isError ? 'error' : undefined)
   }, [])
-
-  useEffect(() => () => window.clearTimeout(toastTimeoutRef.current), [])
 
   useEffect(() => {
     if (!mobileOverflowOpen) return undefined
@@ -351,7 +343,6 @@ export default function CreateBlogPage() {
       draftId: draftIdRef.current,
       mediaItems,
       mediaLayout,
-      visibility,
       updatedAt: Date.now(),
     }
     try {
@@ -360,7 +351,7 @@ export default function CreateBlogPage() {
     } catch (error) {
       console.warn('Unable to store a local story backup:', error)
     }
-  }, [mediaItems, mediaLayout, session?.user?.id, visibility])
+  }, [mediaItems, mediaLayout, session?.user?.id])
 
   useEffect(() => {
     const userId = session?.user?.id
@@ -404,7 +395,6 @@ export default function CreateBlogPage() {
       setForm((current) => ({ ...current, ...restoredPayload }))
       setMediaItems(backup.mediaItems || [])
       setMediaLayout(backup.mediaLayout || 'swipe')
-      setVisibility(backup.visibility || 'public')
       if (backup.draftId) draftIdRef.current = backup.draftId
       if (restoredPayload.title) {
         slugTitleRef.current = restoredPayload.title
@@ -445,7 +435,6 @@ export default function CreateBlogPage() {
             ...(Array.isArray(blog.videos) ? blog.videos.map((url) => ({ url, type: 'video' })) : []),
           ])
           setMediaLayout(blog.media_layout || 'swipe')
-          setVisibility(blog.status === 'draft' ? 'draft' : 'public')
           setLastSavedAt(blog.updated_at ? new Date(blog.updated_at) : null)
           slugTitleRef.current = blog.title || ''
           currentSlugRef.current = blog.slug || ''
@@ -468,7 +457,7 @@ export default function CreateBlogPage() {
     if (!payload.title && !payload.excerpt && !plainTextFromHtml(payload.content)) return
     const timer = window.setTimeout(() => writeLocalBackup(payload), 350)
     return () => window.clearTimeout(timer)
-  }, [form, mediaItems, mediaLayout, session?.user?.id, visibility, writeLocalBackup])
+  }, [form, mediaItems, mediaLayout, session?.user?.id, writeLocalBackup])
 
   const persistBlogPayload = useCallback(async (payload, { keepalive = false } = {}) => {
     writeLocalBackup(payload)
@@ -556,14 +545,12 @@ export default function CreateBlogPage() {
     if (snapshot === savedSnapshotRef.current) return undefined
 
     const timeout = window.setTimeout(async () => {
-      const isFirstSave = !draftIdRef.current
       setAutosaveStatus('saving')
       try {
         const result = await persistBlogPayload(payload)
         savedSnapshotRef.current = snapshot
         setLastSavedAt(new Date())
         setAutosaveWarning(result.warning || '')
-        if (isFirstSave) showToast(result.warning ? 'Your story was saved as a draft with some media limits.' : 'Your story was saved as a draft.')
         if (JSON.stringify(currentPayloadRef.current) === snapshot) {
           setAutosaveStatus(result.warning ? 'warning' : 'saved')
         }
@@ -610,7 +597,11 @@ export default function CreateBlogPage() {
         setLastSavedAt(new Date())
         setAutosaveWarning(result.warning || '')
         setSuccessStatus(blogStatus)
-        if (blogStatus === 'draft') showToast('Your blog was saved as a draft.')
+        if (blogStatus === 'draft') {
+          showToast('Your story was saved as a draft.')
+        } else {
+          showToast('Your story is pending administrator approval.')
+        }
         if (blogStatus === 'published' && session?.user?.id) {
           try {
             window.localStorage.removeItem(`content-studio-draft:${session.user.id}:${savedId || 'new'}`)
@@ -701,6 +692,18 @@ export default function CreateBlogPage() {
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to create content.')
 
       if (result.warning) window.alert(result.warning)
+      const submissionStatus = shareType === 'event'
+        ? result.approval_status
+        : shareType === 'forum'
+          ? result.status
+          : 'pending'
+      setSuccessStatus(submissionStatus || 'pending')
+      if (shareType === 'event') showToast('Your event is pending administrator approval.')
+      if (shareType === 'forum') {
+        showToast(submissionStatus === 'published'
+          ? 'Your forum post was published.'
+          : 'Your forum post is pending moderator approval.')
+      }
       setSuccess(true)
       const destinations = {
         forum: '/info/visitor/forum',
@@ -874,16 +877,9 @@ export default function CreateBlogPage() {
             <details className="content-studio-section">
               <summary>Publish settings</summary>
               {shareType === 'blog' ? (
-                <label className="block text-xs font-semibold text-slate-600">
-                  Visibility
-                  <select value={visibility} onChange={(event) => setVisibility(event.target.value)} className="content-studio-setting-input">
-                    <option value="public">Public — community</option>
-                    <option value="draft">Only me — draft</option>
-                  </select>
-                  <span className="mt-2 block font-normal leading-5 text-slate-500">
-                    {visibility === 'public' ? 'Your story will be reviewed by an administrator before it becomes public.' : 'Your story will be saved as a private draft.'}
-                  </span>
-                </label>
+                <p className="text-xs leading-5 text-slate-500">
+                  Your story will be reviewed by an administrator before it becomes public. Use Save draft to keep it private.
+                </p>
               ) : (
                 <p className="text-xs leading-5 text-slate-500">Review your {shareType === 'forum' ? 'discussion' : shareType === 'event' ? 'event proposal' : 'feedback'} before sending.</p>
               )}
@@ -968,12 +964,6 @@ export default function CreateBlogPage() {
           </div>
         )}
       />
-      {toastMessage && (
-        <div className={`content-studio-toast${toastIsError ? ' is-error' : ''}`} role={toastIsError ? 'alert' : 'status'}>
-          {toastIsError ? <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" /> : <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />}
-          <span>{toastMessage}</span>
-        </div>
-      )}
       <div className="content-studio-layout">
         {!previewMode && !success && (
             <div className="content-studio-action-bar">
@@ -1047,7 +1037,7 @@ export default function CreateBlogPage() {
         {success ? (
           <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800">
             <CheckCircle2 className="h-5 w-5 shrink-0" />
-            <div><p className="font-bold">{shareType === 'blog' && successStatus === 'draft' ? 'Your story was saved as a draft.' : shareType === 'blog' ? 'Your story was submitted for administrator approval.' : shareType === 'event' ? 'Your event was submitted to the administrator for approval. It will only be published after approval.' : shareType === 'forum' ? 'Your discussion was submitted for moderator approval.' : 'Your feedback was submitted.'}</p></div>
+            <div><p className="font-bold">{shareType === 'blog' && successStatus === 'draft' ? 'Your story was saved as a draft.' : shareType === 'blog' ? 'Your story is pending administrator approval.' : shareType === 'event' ? 'Your event is pending administrator approval.' : shareType === 'forum' && successStatus === 'published' ? 'Your forum post was published.' : shareType === 'forum' ? 'Your forum post is pending moderator approval.' : 'Your feedback was submitted.'}</p></div>
           </div>
         ) : previewMode ? (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1096,7 +1086,7 @@ export default function CreateBlogPage() {
           <div className="content-studio-writing-column">
             <form
               id="content-studio-form"
-              onSubmit={(event) => handleSubmit(event, visibility === 'public' ? 'published' : 'draft')}
+              onSubmit={(event) => handleSubmit(event, 'published')}
               className="content-studio-story-form"
             >
               <div id="cover-media-field" className={`content-studio-cover ${form.featured_image ? 'has-cover' : ''}`}>

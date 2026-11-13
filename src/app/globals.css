@@ -5506,6 +5506,39 @@ html:not(.dark) .admin-sidebar-branded .admin-nav-logout:hover:not(:disabled) {
   color: #ffffff;
 }
 
+.daet-toast-enter {
+  animation: daet-toast-enter 180ms ease-out both;
+}
+
+@keyframes daet-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.daet-toast-exit {
+  animation: daet-toast-exit 160ms ease-in forwards;
+}
+
+@keyframes daet-toast-exit {
+  to {
+    opacity: 0;
+    transform: translateY(-0.5rem) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daet-toast-enter,
+  .daet-toast-exit {
+    animation: none;
+  }
+}
+
 /* ── Misc utilities ──────────────────────────────────────────────────────── */
 
 .admin-section-title {

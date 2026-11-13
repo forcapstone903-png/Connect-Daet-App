@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -148,6 +149,16 @@ export async function PATCH(request) {
         console.error('Approved follow request notification update failed:', notificationError)
       }
     }
+
+    await notifyUserRecipients(adminSupabase, [{
+      user_id: requesterId,
+      title: action === 'approve' ? 'Follow request accepted' : 'Follow request declined',
+      message: action === 'approve'
+        ? 'Your follow request was accepted.'
+        : 'Your follow request was not accepted.',
+      type: 'follow',
+      actor_id: viewerId,
+    }], 'Follow request response')
 
     return NextResponse.json({ success: true, action, requesterId, notificationUpdated }, {
       headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },

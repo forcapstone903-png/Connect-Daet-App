@@ -2,9 +2,11 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getServerSession } from '@/lib/serverAuth'
 import { publicErrorMessage } from '@/lib/publicError'
+import { applyStaffNotificationScope } from '@/lib/staffNotificationScope.mjs'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+const NO_STORE_HEADERS = { 'Cache-Control': 'no-store, no-cache, must-revalidate' }
 
 async function attachActorProfiles(adminSupabase, notifications) {
   const actorIds = [...new Set((notifications || []).map((notification) => notification.actor_id || notification.post_owner_id).filter(Boolean))]
@@ -44,6 +46,7 @@ export async function GET(request) {
 
   try {
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const scope = new URL(request.url).searchParams.get('scope')
     const { data: profile, error: profileError } = await adminSupabase
       .from('profiles')
       .select('notification_preferences')
@@ -51,18 +54,29 @@ export async function GET(request) {
       .maybeSingle()
     if (profileError) throw profileError
     const preferences = profile?.notification_preferences || {}
+    const unreadQuery = applyStaffNotificationScope(adminSupabase
+      .from('info_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .or('is_read.eq.false,is_read.is.null'), scope)
+    const scopedUnreadQuery = applyNotificationPreferences(unreadQuery, preferences)
+
+    if (new URL(request.url).searchParams.get('count_only') === 'true') {
+      const { count, error } = await scopedUnreadQuery
+      if (error) throw error
+      return NextResponse.json({ success: true, unread_count: count || 0 }, {
+        headers: NO_STORE_HEADERS,
+      })
+    }
+
     const [{ data, error }, { count: unreadCount, error: unreadError }] = await Promise.all([
-      applyNotificationPreferences(adminSupabase
+      applyNotificationPreferences(applyStaffNotificationScope(adminSupabase
         .from('info_notifications')
         .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(50), preferences),
-      applyNotificationPreferences(adminSupabase
-        .from('info_notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .or('is_read.eq.false,is_read.is.null'), preferences),
+        .limit(50), scope), preferences),
+      scopedUnreadQuery,
     ])
 
     if (error) throw error
@@ -73,9 +87,7 @@ export async function GET(request) {
       notifications: await attachActorProfiles(adminSupabase, data || []),
       unread_count: unreadCount || 0,
     }, {
-      headers: {
-        'Cache-Control': 'no-store, no-cache, must-revalidate',
-      },
+      headers: NO_STORE_HEADERS,
     })
   } catch (error) {
     console.error('Notifications fetch failed:', error)
@@ -100,12 +112,13 @@ export async function PATCH(request) {
   try {
     const body = await request.json()
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const scope = new URL(request.url).searchParams.get('scope')
 
     if (body.markAllRead) {
-      const { error } = await adminSupabase
+      const { error } = await applyStaffNotificationScope(adminSupabase
         .from('info_notifications')
         .update({ is_read: true, updated_at: new Date().toISOString() })
-        .eq('user_id', userId)
+        .eq('user_id', userId), scope)
 
       if (error) throw error
       return NextResponse.json({ success: true })
@@ -125,11 +138,11 @@ export async function PATCH(request) {
       updatePayload.link = body.link
     }
 
-    const { error } = await adminSupabase
+    const { error } = await applyStaffNotificationScope(adminSupabase
       .from('info_notifications')
       .update(updatePayload)
       .eq('id', notificationId)
-      .eq('user_id', userId)
+      .eq('user_id', userId), scope)
 
     if (error) throw error
 
@@ -156,11 +169,12 @@ export async function DELETE(request) {
 
   try {
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
-    const notificationId = new URL(request.url).searchParams.get('id')
-    let deleteQuery = adminSupabase
+    const requestUrl = new URL(request.url)
+    const notificationId = requestUrl.searchParams.get('id')
+    let deleteQuery = applyStaffNotificationScope(adminSupabase
       .from('info_notifications')
       .delete()
-      .eq('user_id', userId)
+      .eq('user_id', userId), requestUrl.searchParams.get('scope'))
 
     if (notificationId) deleteQuery = deleteQuery.eq('id', notificationId)
 

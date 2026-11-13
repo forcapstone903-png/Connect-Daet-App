@@ -7,8 +7,9 @@ export const REALTIME_RECONCILIATION_INTERVAL = 30_000
 
 const RECONNECT_DELAYS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000]
 
-export function useRealtimeRefresh({ channelName, tables, enabled = true }) {
+export function useRealtimeRefresh({ channelName, tables, enabled = true, shouldRefreshEvent }) {
   const refreshCallbackRef = useRef(null)
+  const shouldRefreshEventRef = useRef(shouldRefreshEvent)
   const inFlightRefreshRef = useRef(null)
   const refreshGenerationRef = useRef(0)
   const isConnectedRef = useRef(false)
@@ -20,6 +21,10 @@ export function useRealtimeRefresh({ channelName, tables, enabled = true }) {
   const setRefreshCallback = useCallback((callback) => {
     refreshCallbackRef.current = callback
   }, [])
+
+  useEffect(() => {
+    shouldRefreshEventRef.current = shouldRefreshEvent
+  }, [shouldRefreshEvent])
 
   const refresh = useCallback(async () => {
     if (!navigator.onLine || document.visibilityState !== 'visible') return false
@@ -129,7 +134,10 @@ export function useRealtimeRefresh({ channelName, tables, enabled = true }) {
           ...(typeof tableConfigEntry === 'object' && tableConfigEntry.filter
             ? { filter: tableConfigEntry.filter }
             : {}),
-        }, queueRefresh)
+        }, (payload) => {
+          if (shouldRefreshEventRef.current && !shouldRefreshEventRef.current(payload)) return
+          queueRefresh()
+        })
       }
 
       channel.subscribe((status) => {

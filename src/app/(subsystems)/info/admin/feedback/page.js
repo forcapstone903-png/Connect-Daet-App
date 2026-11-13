@@ -20,6 +20,7 @@ import { AdminButton, AdminPageHeader, AdminPagination, AdminStatCard, AdminStat
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
+import { notifyToast } from '@/lib/toast.mjs';
 
 const DEFAULT_STATUSES = ['open', 'in_progress', 'answered', 'closed'];
 const DEFAULT_CATEGORIES = ['general', 'booking', 'safety', 'feedback', 'report', 'other'];
@@ -42,14 +43,18 @@ export default function FeedbackAndComplaintPage() {
   const FEEDBACK_PER_PAGE = 10;
 
   const showToast = useCallback((message, isError = false) => {
-    setToast({ message, isError });
-    window.setTimeout(() => setToast(null), 3000);
+    setToast(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const fetchRecords = useCallback(async () => {
     try {
       const { items: data } = await callFeedbackApi();
-      setItems((data || []).map((item) => ({ ...item, user_name: item.user?.full_name || 'Unknown visitor' })));
+      setItems((data || []).map((item) => ({
+        ...item,
+        user_name: item.requester_name || item.user?.full_name || 'Unknown visitor',
+        contact_email: item.requester_email || item.user?.email || '',
+      })));
       const sts = Array.from(new Set([...DEFAULT_STATUSES, ...(data || []).map((r) => r.status).filter(Boolean)]));
       setStatuses(sts);
       const cats = Array.from(new Set([...DEFAULT_CATEGORIES, ...(data || []).map((r) => r.category).filter(Boolean)]));
@@ -89,7 +94,7 @@ export default function FeedbackAndComplaintPage() {
       const matchesSearch = !query ||
         (item.title || '').toLowerCase().includes(query) ||
         (item.message || '').toLowerCase().includes(query) ||
-        (item.user?.email || '').toLowerCase().includes(query) ||
+        (item.contact_email || '').toLowerCase().includes(query) ||
         (item.user_name || '').toLowerCase().includes(query);
 
       const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
@@ -132,9 +137,14 @@ export default function FeedbackAndComplaintPage() {
 
     setSaving(true);
     try {
-      await callFeedbackApi('PATCH', { id: selectedItem.id, response: responseText.trim() });
+      const result = await callFeedbackApi('PATCH', { id: selectedItem.id, response: responseText.trim() });
 
-      showToast('Response saved successfully.');
+      showToast(
+        result.emailSent === false
+          ? 'Response saved, but the visitor could not be notified by email.'
+          : 'Response saved successfully.',
+        result.emailSent === false
+      );
       setResponseText('');
       setSelectedItem(null);
       await fetchRecords();
@@ -153,7 +163,7 @@ export default function FeedbackAndComplaintPage() {
         item.category || '',
         item.status || '',
         item.user_name || '',
-        item.user?.email || '',
+        item.contact_email || '',
         item.created_at || '',
         item.admin_response || '',
       ]),
@@ -290,7 +300,7 @@ export default function FeedbackAndComplaintPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-slate-700">{item.user_name}</div>
-                        <div className="text-xs text-slate-400">{item.user?.email || 'No email'}</div>
+                        <div className="text-xs text-slate-400">{item.contact_email || 'No email'}</div>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500">
                         {item.created_at ? new Date(item.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
@@ -342,6 +352,11 @@ export default function FeedbackAndComplaintPage() {
             <div className="mb-4 rounded-2xl bg-slate-50 p-3 text-sm text-slate-600">
               <div className="mb-1 font-medium text-slate-700">Visitor message</div>
               <p>{selectedItem.message}</p>
+              {selectedItem.contact_email ? (
+                <a href={`mailto:${selectedItem.contact_email}`} className="mt-2 inline-block font-medium text-violet-700 hover:underline">
+                  Reply by email: {selectedItem.contact_email}
+                </a>
+              ) : null}
             </div>
 
             <label className="mb-1 block text-sm font-medium text-slate-700">Admin response</label>

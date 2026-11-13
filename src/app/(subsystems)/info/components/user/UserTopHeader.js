@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import Form from 'next/form'
 import { usePathname, useRouter } from 'next/navigation'
-import { Archive, Bell, ChevronLeft, FilePenLine, LogOut, Menu, MessageCircle, Search, Settings, Sparkles, Trophy, UserRound } from 'lucide-react'
+import { Archive, Bell, BellRing, CalendarDays, ChevronLeft, FilePenLine, Heart, LogOut, Mail, Menu, MessageCircle, MessageSquare, Megaphone, Search, Settings, ShieldAlert, Sparkles, Trophy, UserRound } from 'lucide-react'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
@@ -38,6 +38,25 @@ function formatNotificationTime(value) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+function getNotificationTypeLabel(type) {
+  return String(type || 'notification')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getNotificationTypeIcon(type) {
+  const normalizedType = String(type || '').toLowerCase()
+  if (normalizedType.includes('alert') || normalizedType === 'warning' || normalizedType === 'error') return ShieldAlert
+  if (normalizedType.includes('event')) return CalendarDays
+  if (normalizedType.includes('announcement')) return Megaphone
+  if (normalizedType.includes('comment') || normalizedType.includes('reply') || normalizedType.includes('forum')) return MessageSquare
+  if (normalizedType.includes('like') || normalizedType.includes('reaction')) return Heart
+  if (normalizedType.includes('message') || normalizedType.includes('inquiry')) return Mail
+  if (normalizedType.includes('follow')) return UserRound
+  if (normalizedType.includes('activity')) return BellRing
+  return Bell
+}
+
 function getMobileNavigationTitle(pathname) {
   const path = pathname.replace(/\/+$/, '') || '/'
   const titles = {
@@ -48,6 +67,7 @@ function getMobileNavigationTitle(pathname) {
     '/info/user/messaging': 'Messages',
     '/info/user/messaging/archived': 'Archived messages',
     '/info/user/notifications': 'Notifications',
+    '/info/user/events/calendar': 'Event Calendar',
     '/info/user/profile': 'Profile',
     '/info/user/profile/archive': 'Archive',
     '/info/user/profile/connections': 'Connections',
@@ -121,6 +141,7 @@ export default function UserTopHeader({
   const [desktopNotificationsLoading, setDesktopNotificationsLoading] = useState(false)
   const [desktopNotificationsError, setDesktopNotificationsError] = useState('')
   const [desktopNotificationsRefreshKey, setDesktopNotificationsRefreshKey] = useState(0)
+  const [markingAllNotificationsRead, setMarkingAllNotificationsRead] = useState(false)
   const [desktopSearchQuery, setDesktopSearchQuery] = useState('')
   const [desktopSearchFocused, setDesktopSearchFocused] = useState(false)
   const { users: suggestedUsers, loading: suggestedUsersLoading } = useUserSearchSuggestions(desktopSearchQuery, desktopSearchFocused)
@@ -315,10 +336,16 @@ export default function UserTopHeader({
 
     loadUnreadAlerts()
     const handleUpdate = (event) => {
+      if (event?.detail?.refreshPreview) {
+        if (desktopNotificationsOpen) setDesktopNotificationsRefreshKey((key) => key + 1)
+        return
+      }
       const count = Number(event?.detail?.unreadCount)
       if (Number.isFinite(count)) setUnreadAlerts(count)
       else void loadUnreadAlerts()
-      if (desktopNotificationsOpen) setDesktopNotificationsRefreshKey((key) => key + 1)
+      if (desktopNotificationsOpen && !Number.isFinite(count)) {
+        setDesktopNotificationsRefreshKey((key) => key + 1)
+      }
     }
     window.addEventListener('daet-notifications-updated', handleUpdate)
     // MobileNav owns the polling loop for both counts on the user shell, so reuse
@@ -344,6 +371,34 @@ export default function UserTopHeader({
       window.removeEventListener('daet-user-identity', handleIdentityUpdate)
     }
   }, [desktopNotificationsOpen])
+
+  const markAllDesktopNotificationsRead = async () => {
+    if (!unreadAlerts || markingAllNotificationsRead) return
+    setMarkingAllNotificationsRead(true)
+    setDesktopNotificationsError('')
+    try {
+      const response = await fetch('/info/api/notifications', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markAllRead: true }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to mark notifications as read.')
+      }
+      setDesktopNotifications((previous) => previous.map((item) => ({ ...item, is_read: true })))
+      setUnreadAlerts(0)
+      window.dispatchEvent(new CustomEvent('daet-notifications-updated', {
+        detail: { unreadCount: 0 },
+      }))
+    } catch (error) {
+      console.error('Mark all notifications read failed:', error)
+      setDesktopNotificationsError('Could not update notifications. Please try again.')
+    } finally {
+      setMarkingAllNotificationsRead(false)
+    }
+  }
 
   useEffect(() => {
     if (!desktopNotificationsOpen) return undefined
@@ -587,11 +642,21 @@ export default function UserTopHeader({
               >
                 <h2 className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-4 text-sm font-semibold text-slate-200">
                   <span>{t('common.notifications')}</span>
-                  {unreadAlerts > 0 && (
-                    <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-bold leading-none text-white">
-                      {unreadAlerts > 99 ? '99+' : unreadAlerts} unread
-                    </span>
-                  )}
+                  <span className="flex items-center gap-3">
+                    {unreadAlerts > 0 && (
+                      <span className="rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-bold leading-none text-white">
+                        {unreadAlerts > 99 ? '99+' : unreadAlerts} unread
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={markAllDesktopNotificationsRead}
+                      disabled={!unreadAlerts || markingAllNotificationsRead}
+                      className="text-[11px] font-semibold text-sky-300 underline underline-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {markingAllNotificationsRead ? 'Marking…' : 'Mark all as read'}
+                    </button>
+                  </span>
                 </h2>
                 <div aria-live="polite" className="max-h-[min(60vh,420px)] overflow-y-auto">
                   {desktopNotificationsLoading ? (
@@ -627,6 +692,8 @@ export default function UserTopHeader({
                       {desktopNotifications.map((notification) => {
                         const actorName = notification.actor?.full_name || ''
                         const message = notification.message || notification.title || 'You have a new notification.'
+                        const title = notification.title || 'New notification'
+                        const TypeIcon = getNotificationTypeIcon(notification.type)
                         const messageWithoutActor = actorName && message.toLowerCase().startsWith(actorName.toLowerCase())
                           ? message.slice(actorName.length).trim()
                           : message
@@ -678,18 +745,25 @@ export default function UserTopHeader({
                               <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-sm font-semibold text-slate-100">
                                 {notification.actor?.profile_image_url
                                   ? <img src={notification.actor.profile_image_url} alt="" className="h-full w-full object-cover" />
-                                  : (actorName ? getInitials(actorName) : <Bell className="h-4 w-4" aria-hidden="true" />)}
+                                  : (actorName ? getInitials(actorName) : <TypeIcon className="h-4 w-4" aria-hidden="true" />)}
                               </span>
                               <span className="min-w-0 flex-1">
-                                <span className="block text-sm leading-5">
+                                <span className="block text-sm font-semibold leading-5 text-white">
+                                  {title}
+                                </span>
+                                <span className="mt-1 block text-sm leading-5">
                                   {actorName && <span className="desktop-notification-actor font-semibold text-white">{actorName} </span>}
                                   {messageWithoutActor}
                                 </span>
-                                {notification.created_at && (
-                                  <time dateTime={notification.created_at} className="mt-1 block text-xs text-slate-400">
-                                    {formatNotificationTime(notification.created_at)}
-                                  </time>
-                                )}
+                                <span className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                                  <TypeIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                                  <span>{getNotificationTypeLabel(notification.type)}</span>
+                                  {notification.created_at && (
+                                    <time dateTime={notification.created_at}>
+                                      {formatNotificationTime(notification.created_at)}
+                                    </time>
+                                  )}
+                                </span>
                               </span>
                               {!notification.is_read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-sky-400" aria-label="Unread" />}
                             </button>
@@ -734,6 +808,10 @@ export default function UserTopHeader({
                   </span>
                 </Link>
                 <div className="border-b border-slate-200 py-2">
+                  <Link role="menuitem" href="/info/user/events/calendar" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
+                    <CalendarDays className="h-4 w-4 text-teal-600" />
+                    <span>Event Calendar</span>
+                  </Link>
                   <Link role="menuitem" href="/info/user/messaging" onClick={() => setProfileMenuOpen(false)} className="flex min-h-11 items-center gap-3 px-4 text-sm transition hover:bg-slate-100">
                     <MessageCircle className={`h-4 w-4 ${unreadMessages > 0 ? 'text-sky-600' : 'text-slate-500'}`} />
                     <span className="flex-1">{t('common.messages')}</span>

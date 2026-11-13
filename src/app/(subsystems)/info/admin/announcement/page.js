@@ -22,6 +22,7 @@ import {
 } from '@/app/(subsystems)/info/components/admin';
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
+import { notifyToast } from '@/lib/toast.mjs'
 
 const ANNOUNCEMENT_TYPES = [
   { value: 'info', label: 'Info', icon: 'notifications', color: 'blue' },
@@ -122,8 +123,8 @@ export default function AdminAnnouncementPage() {
   const { setRefreshCallback } = realtime
 
   const showToast = useCallback((message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const fetchAnnouncements = useCallback(async () => {

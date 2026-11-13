@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Ban, Check, UserRoundMinus } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { notifyToast } from '@/lib/toast.mjs'
 import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
@@ -21,7 +22,6 @@ export default function ProfileConnectionsPage() {
   const [blockedIds, setBlockedIds] = useState(new Set())
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState('')
-  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     const session = getStoredSession()
@@ -49,7 +49,7 @@ export default function ProfileConnectionsPage() {
         setFriends(result.friends || [])
         setBlockedIds(new Set(result.blocked_ids || []))
       })
-      .catch((error) => setNotice(error.message))
+      .catch((error) => notifyToast(error.message, 'error'))
       .finally(() => setLoading(false))
   }, [])
 
@@ -60,7 +60,6 @@ export default function ProfileConnectionsPage() {
 
   const unfollow = async (personId) => {
     setBusyId(personId)
-    setNotice('')
     try {
       const response = await fetch(`/info/api/users/${personId}/follow`, { method: 'DELETE', credentials: 'same-origin' })
       const result = await response.json()
@@ -68,8 +67,9 @@ export default function ProfileConnectionsPage() {
       setFollowing((current) => current.filter((person) => person.id !== personId))
       setFriends((current) => current.filter((person) => person.id !== personId))
       invalidateCachePrefix('profile:user:')
+      notifyToast('You unfollowed this member.', 'success')
     } catch (error) {
-      setNotice(error.message)
+      notifyToast(error.message, 'error')
     } finally {
       setBusyId('')
     }
@@ -78,7 +78,6 @@ export default function ProfileConnectionsPage() {
   const toggleBlock = async (personId) => {
     const isBlocked = blockedIds.has(personId)
     setBusyId(personId)
-    setNotice('')
     try {
       const response = await fetch(`/info/api/users/${personId}/block`, { method: isBlocked ? 'DELETE' : 'POST', credentials: 'same-origin' })
       const result = await response.json()
@@ -94,8 +93,9 @@ export default function ProfileConnectionsPage() {
         setFollowers((current) => current.filter((person) => person.id !== personId))
         setFriends((current) => current.filter((person) => person.id !== personId))
       }
+      notifyToast(isBlocked ? 'Member unblocked.' : 'Member blocked.', 'success')
     } catch (error) {
-      setNotice(error.message)
+      notifyToast(error.message, 'error')
     } finally {
       setBusyId('')
     }
@@ -127,8 +127,6 @@ export default function ProfileConnectionsPage() {
             { value: 'following', label: 'Following', count: following.length },
           ]}
         />
-
-        {notice && <p role="status" className="usr-inline-note usr-inline-note-error mb-4">{notice}</p>}
 
         <section className="usr-card overflow-hidden">
           <div className="p-1.5">

@@ -1,7 +1,10 @@
+import sgMail from '@sendgrid/mail'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
 import { getSettingsClient } from '@/lib/appSettingsServer'
 import { isValidUuid } from '@/lib/uuid'
+import { getEmailSender } from '@/lib/emailSettings'
+import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -60,11 +63,23 @@ export async function PATCH(request) {
     return respond({ success: false, message: 'Responses must be 1 to 5,000 characters.' }, 400)
   }
 
-  const { data: inquiry, error: lookupError } = await client
+  let inquiryLookup = await client
     .from('info_inquiries')
-    .select('id, user_id, title, status')
+    .select('id, user_id, title, status, requester_name, requester_email')
     .eq('id', id)
     .maybeSingle()
+  if (
+    inquiryLookup.error
+    && ['42703', 'PGRST204'].includes(inquiryLookup.error.code)
+    && /requester_name|requester_email/i.test(inquiryLookup.error.message || '')
+  ) {
+    inquiryLookup = await client
+      .from('info_inquiries')
+      .select('id, user_id, title, status')
+      .eq('id', id)
+      .maybeSingle()
+  }
+  const { data: inquiry, error: lookupError } = inquiryLookup
   if (lookupError) {
     console.error('Inquiry lookup failed:', lookupError)
     return respond({ success: false, message: 'Unable to load this inquiry.' }, 500)
@@ -94,17 +109,43 @@ export async function PATCH(request) {
   })
   if (auditError) console.error('Inquiry audit failed:', auditError)
 
-  if (replyText) {
-    const { error: noticeError } = await client.from('info_notifications').insert({
+  let guestEmailSent
+  if (replyText && inquiry.user_id) {
+    await notifyUserRecipients(client, [{
       user_id: inquiry.user_id,
       title: 'The tourism office answered your inquiry',
       message: inquiry.title ? `Re: ${inquiry.title}` : 'Open Feedback to read the response.',
       type: 'info',
-      is_read: false,
       link: '/info/user/feedback',
-    })
-    if (noticeError) console.error('Inquiry reply notification failed:', noticeError)
+    }], 'Inquiry reply')
+  } else if (replyText) {
+    guestEmailSent = false
+    if (inquiry.requester_email) {
+      const sender = await getEmailSender()
+      if (sender.configured) {
+        sgMail.setApiKey(sender.apiKey)
+        try {
+          await sgMail.send({
+            to: inquiry.requester_email,
+            from: sender.from,
+            replyTo: sender.replyTo,
+            subject: 'The tourism office replied to your inquiry',
+            text: `Hello ${inquiry.requester_name || 'there'},\n\n${replyText}\n\nRegarding: ${inquiry.title || 'your inquiry'}${sender.footerText}`,
+          })
+          guestEmailSent = true
+        } catch (error) {
+          console.error('Guest inquiry reply email failed:', {
+            code: error.code || null,
+            status: error.response?.statusCode || null,
+          })
+        }
+      } else {
+        console.error('Guest inquiry reply email is not configured.')
+      }
+    } else {
+      console.error('Guest inquiry has no reply email address.')
+    }
   }
 
-  return respond({ success: true })
+  return respond({ success: true, ...(guestEmailSent === undefined ? {} : { emailSent: guestEmailSent }) })
 }

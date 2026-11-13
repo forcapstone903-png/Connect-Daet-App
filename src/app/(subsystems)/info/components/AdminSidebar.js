@@ -373,7 +373,7 @@ function AdminSidebarContent({ user, roleLabel: pageRoleLabel = 'System Administ
     let active = true
     const loadUnreadNotifications = async () => {
       try {
-        const response = await fetch('/info/api/notifications', {
+        const response = await fetch('/info/api/notifications?count_only=true&scope=staff', {
           credentials: 'same-origin',
           cache: 'no-store',
         })

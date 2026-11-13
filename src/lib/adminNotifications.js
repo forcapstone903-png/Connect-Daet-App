@@ -40,3 +40,9 @@ export function notifyAdministrators(db, notification) {
 export function notifyModerators(db, notification) {
   return notifyStaffWithRoles(db, ['moderator'], { ...notification, type: 'moderation' })
 }
+
+// Tourism officers only receive notifications whose links they can open under
+// their RBAC permissions (tourism.manage, feedback.manage, alerts.broadcast).
+export function notifyTourismOfficers(db, notification) {
+  return notifyStaffWithRoles(db, ['tourism_officer'], notification)
+}

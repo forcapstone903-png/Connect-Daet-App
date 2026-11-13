@@ -26,6 +26,7 @@ import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import { notifyToast } from '@/lib/toast.mjs'
 import Comments from './Comments'
 import UserTopHeader from './UserTopHeader'
 import RealtimeStatus from './RealtimeStatus'
@@ -442,10 +443,13 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
         ...current,
         current_attendees: Math.max(0, Number(current.current_attendees || 0) + (joining ? 1 : -1)),
       }))
-      setNotice(joining ? 'You are registered for this event.' : 'Your registration was cancelled.')
+      notifyToast(joining ? 'You are registered for this event.' : 'Your registration was cancelled.', 'success')
+      if (joining) {
+        router.push(`/info/user/events/calendar?event=${encodeURIComponent(event.id)}`)
+      }
     } catch (registrationError) {
       console.error('Event registration update failed:', registrationError)
-      setNotice(registrationError.message || 'Could not update your registration.')
+      notifyToast(registrationError.message || 'Could not update your registration.', 'error')
     } finally {
       setRegistrationLoading(false)
     }
@@ -682,14 +686,14 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
         await navigator.share(shareData)
       } else if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(shareData.url)
-        setNotice('Event link copied.')
+        notifyToast('Event link copied.', 'success')
       } else {
-        setNotice('Sharing is unavailable in this browser.')
+        notifyToast('Sharing is unavailable in this browser.', 'warning')
       }
     } catch (shareError) {
       if (shareError?.name !== 'AbortError') {
         console.error('Event share failed:', shareError)
-        setNotice('Could not share this event.')
+        notifyToast('Could not share this event.', 'error')
       }
     }
   }
@@ -699,10 +703,10 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     try {
       if (!navigator.clipboard?.writeText) throw new Error('Clipboard access is unavailable.')
       await navigator.clipboard.writeText(window.location.href)
-      setNotice('Event link copied.')
+      notifyToast('Event link copied.', 'success')
     } catch (copyError) {
       console.error('Copy event link failed:', copyError)
-      setNotice('Could not copy the event link.')
+      notifyToast('Could not copy the event link.', 'error')
     }
   }
 
@@ -725,10 +729,10 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       const { error: saveError } = await query
       if (saveError) throw saveError
       setIsSaved((saved) => !saved)
-      setNotice(isSaved ? 'Removed from saved events.' : 'Event saved.')
+      notifyToast(isSaved ? 'Removed from saved events.' : 'Event saved.', 'success')
     } catch (saveError) {
       console.error('Event bookmark update failed:', saveError)
-      setNotice('Could not update your saved events. Please try again.')
+      notifyToast('Could not update your saved events. Please try again.', 'error')
     } finally {
       setSaving(false)
     }
@@ -752,9 +756,15 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update organizer follow status.')
       setIsFollowingOrganizer(Boolean(result.is_following))
       setOrganizerFollowPending(Boolean(result.follow_request_pending))
+      notifyToast(
+        result.follow_request_pending
+          ? 'Follow request sent to the organizer.'
+          : result.is_following ? 'You are following this organizer.' : 'You unfollowed this organizer.',
+        result.follow_request_pending ? 'info' : 'success',
+      )
     } catch (followError) {
       console.error('Event organizer follow update failed:', followError)
-      setNotice(followError instanceof Error ? followError.message : 'Unable to update organizer follow status.')
+      notifyToast(followError instanceof Error ? followError.message : 'Unable to update organizer follow status.', 'error')
     } finally {
       setOrganizerFollowLoading(false)
     }
@@ -791,15 +801,16 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) throw new Error(result.message || 'Could not update your reaction.')
       setReaction(removing ? '' : targetReaction)
+      notifyToast(removing ? 'Reaction removed.' : 'Reaction saved.', 'success')
       try {
         await refreshEngagementCounts()
       } catch (countError) {
         console.error('Event engagement count refresh failed:', countError)
-        setNotice('Your reaction was saved, but counts could not be refreshed.')
+        notifyToast('Your reaction was saved, but counts could not be refreshed.', 'warning')
       }
     } catch (reactionError) {
       console.error('Event reaction update failed:', reactionError)
-      setNotice(reactionError.message || 'Could not update your reaction. Please try again.')
+      notifyToast(reactionError.message || 'Could not update your reaction. Please try again.', 'error')
     } finally {
       setReactionLoading(false)
     }

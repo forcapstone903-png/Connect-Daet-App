@@ -9,6 +9,7 @@ import { getStaffRoleLabel, normalizeStaffRole } from '@/lib/staffRoles.mjs'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
 import EngagementSection from './EngagementSection'
+import { notifyToast } from '@/lib/toast.mjs';
 
 export default function AnalyticsAndReportsPage() {
   const router = useRouter();
@@ -43,8 +44,8 @@ export default function AnalyticsAndReportsPage() {
   const isAdministrator = normalizeStaffRole(adminUser?.role) === 'admin';
 
   const showToast = useCallback((message, isError = false) => {
-    setToast({ message, isError });
-    window.setTimeout(() => setToast(null), 3000);
+    setToast(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const fetchAnalytics = useCallback(async () => {

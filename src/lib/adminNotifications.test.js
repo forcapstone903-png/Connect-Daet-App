@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { notifyAdministrators } from './adminNotifications.js'
+import { notifyAdministrators, notifyTourismOfficers } from './adminNotifications.js'
 
 function createDatabase(admins) {
   const calls = []
@@ -43,6 +43,22 @@ test('notifyAdministrators sends an in-app notification to each active admin', a
   assert.equal(db.calls.length, 1)
   assert.deepEqual(db.calls[0].rows.map((row) => row.user_id), ['admin-1', 'admin-2'])
   assert.ok(db.calls[0].rows.every((row) => row.is_read === false))
+})
+
+test('notifyTourismOfficers sends an in-app notification to each active tourism officer', async () => {
+  const db = createDatabase([{ id: 'officer-1' }, { id: 'officer-2' }])
+
+  const notified = await notifyTourismOfficers(db, {
+    title: 'New user feedback',
+    message: 'A user submitted feedback.',
+    type: 'info',
+    link: '/info/admin/feedback',
+  })
+
+  assert.equal(notified, 2)
+  assert.equal(db.calls.length, 1)
+  assert.deepEqual(db.calls[0].rows.map((row) => row.user_id), ['officer-1', 'officer-2'])
+  assert.ok(db.calls[0].rows.every((row) => row.is_read === false && row.link === '/info/admin/feedback'))
 })
 
 test('notifyAdministrators skips insertion when no active admins are found', async () => {

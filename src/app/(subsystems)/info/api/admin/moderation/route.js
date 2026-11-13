@@ -10,6 +10,7 @@ import {
   notifyContentAuthorOfDeletion,
 } from '@/lib/contentDeletionNotifications.mjs'
 import { decodeReviewText } from '@/lib/reviewText'
+import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
 
 const MISSING_RELATION_CODES = new Set(['42P01', 'PGRST205'])
 const BAN_TYPES = ['posting', 'suspension']
@@ -982,17 +983,15 @@ export async function PATCH(request) {
       if (!isValidUuid(reportId) || !reason || reason.length > 1000) {
         return respond({ success: false, message: 'A report and resolution reason are required.' }, 400)
       }
-      if (action === 'resolve-report') {
-        const { data: report, error: reportError } = await client.from('info_moderation')
-          .select('reported_item_table')
-          .eq('id', reportId)
-          .in('status', ['pending', 'reviewing'])
-          .maybeSingle()
-        if (reportError) throw reportError
-        if (!report) return respond({ success: false, message: 'This report is no longer open.' }, 409)
-        if (report.reported_item_table === 'info_users') {
-          return respond({ success: false, message: 'Approve the account report to apply the suspension, or dismiss it.' }, 400)
-        }
+      const { data: report, error: reportError } = await client.from('info_moderation')
+        .select('reported_by, reported_item_table')
+        .eq('id', reportId)
+        .in('status', ['pending', 'reviewing'])
+        .maybeSingle()
+      if (reportError) throw reportError
+      if (!report) return respond({ success: false, message: 'This report is no longer open.' }, 409)
+      if (action === 'resolve-report' && report.reported_item_table === 'info_users') {
+        return respond({ success: false, message: 'Approve the account report to apply the suspension, or dismiss it.' }, 400)
       }
       const status = action === 'reject-report' ? 'rejected' : 'resolved'
       const { data, error } = await client.from('info_moderation')
@@ -1010,6 +1009,17 @@ export async function PATCH(request) {
         .maybeSingle()
       if (error) throw error
       if (!data) return respond({ success: false, message: 'This report is no longer open.' }, 409)
+      if (report.reported_by && report.reported_by !== actorId) {
+        await notifyUserRecipients(client, [{
+          user_id: report.reported_by,
+          title: 'Report reviewed',
+          message: status === 'resolved'
+            ? 'The team reviewed your report and marked it as resolved.'
+            : 'The team reviewed your report and dismissed it.',
+          type: 'report_update',
+          link: '/info/user/notifications',
+        }], 'Report decision')
+      }
       await writeAudit(client, actorId, action, 'info_moderation', reportId, { status, reason })
       return respond({ success: true })
     }

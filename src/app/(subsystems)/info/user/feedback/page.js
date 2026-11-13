@@ -17,6 +17,7 @@ import {
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
+import { notifyToast } from '@/lib/toast.mjs'
 import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
@@ -79,7 +80,6 @@ export default function UserFeedbackPage() {
   const [editingId, setEditingId] = useState(null)
   const [editingTable, setEditingTable] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState('')
 
   const loadSubmissions = async (currentUserId) => {
     try {
@@ -87,7 +87,7 @@ export default function UserFeedbackPage() {
       setSubmissions(merged)
     } catch (error) {
       console.error('Failed to load user feedback:', error)
-      setNotice('Unable to load your previous submissions. Please try again later.')
+      notifyToast('Unable to load your previous submissions. Please try again later.', 'error')
     } finally {
       setSubmissionsLoaded(true)
     }
@@ -106,7 +106,7 @@ export default function UserFeedbackPage() {
       .catch((error) => {
         if (ignore) return
         console.error('Failed to load user feedback:', error)
-        setNotice('Unable to load your previous submissions. Please try again later.')
+        notifyToast('Unable to load your previous submissions. Please try again later.', 'error')
         setSubmissionsLoaded(true)
       })
 
@@ -132,18 +132,16 @@ export default function UserFeedbackPage() {
   const submitFeedback = async (event) => {
     event.preventDefault()
     if (!userId) {
-      setNotice('Please sign in to submit feedback or a complaint.')
+      notifyToast('Please sign in to submit feedback or a complaint.', 'warning')
       return
     }
 
     if (!form.message.trim()) {
-      setNotice('Please tell us a bit more about your feedback.')
+      notifyToast('Please tell us a bit more about your feedback.', 'warning')
       return
     }
 
     setSaving(true)
-    setNotice('')
-
     try {
       const payload = {
         shareType: kind === 'feedback' ? 'feedback' : 'complaint',
@@ -176,14 +174,14 @@ export default function UserFeedbackPage() {
         throw new Error(result?.message || 'Unable to save the form right now.')
       }
 
-      setNotice(kind === 'feedback' ? 'Feedback saved successfully.' : 'Complaint submitted successfully.')
+      notifyToast(kind === 'feedback' ? 'Feedback saved successfully.' : 'Complaint submitted successfully.', 'success')
       setForm({ category: kind === 'feedback' ? FEEDBACK_CATEGORIES[0] : COMPLAINT_CATEGORIES[0], title: '', message: '', rating: 5, images: [] })
       setEditingId(null)
       setEditingTable(null)
       await loadSubmissions(userId)
     } catch (error) {
       console.error('Submission failed:', error)
-      setNotice(error?.message || 'Unable to save the form right now.')
+      notifyToast(error?.message || 'Unable to save the form right now.', 'error')
     } finally {
       setSaving(false)
     }
@@ -200,7 +198,7 @@ export default function UserFeedbackPage() {
       rating: item.rating || 5,
       images: item.image_urls || item.images || [],
     })
-    setNotice('Editing existing submission.')
+    notifyToast('Editing existing submission.', 'info')
   }
 
   const handleDelete = async (item) => {
@@ -210,10 +208,10 @@ export default function UserFeedbackPage() {
       const { error } = await supabase.from(item.table).delete().eq('id', item.id)
       if (error) throw error
       setSubmissions((previous) => previous.filter((submission) => submission.id !== item.id))
-      setNotice('Submission deleted successfully.')
+      notifyToast('Submission deleted successfully.', 'success')
     } catch (error) {
       console.error('Delete failed:', error)
-      setNotice('Unable to delete this submission right now.')
+      notifyToast('Unable to delete this submission right now.', 'error')
     }
   }
 
@@ -244,7 +242,7 @@ export default function UserFeedbackPage() {
           </Link>
         </UserSectionHeader>
 
-        <div className="mb-6 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+        <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
           {[
             { label: 'Total', value: stats.total, icon: MessageSquareMore, tone: 'usr-tone-sky' },
             { label: 'Pending', value: stats.pending, icon: AlertCircle, tone: 'usr-tone-amber' },
@@ -333,26 +331,30 @@ export default function UserFeedbackPage() {
 
               <div>
                 <p className="mb-2 text-sm font-medium text-slate-700">Attach photo</p>
-                <div className="flex flex-wrap gap-3">
-                  {form.images.map((url, index) => (
-                    <div key={`${url}-${index}`} className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                      <img src={url} alt={`Attachment ${index + 1}`} className="h-full w-full object-cover" />
+                <div className="space-y-3">
+                  {form.images.length > 0 && (
+                    <div className="flex flex-wrap gap-3">
+                      {form.images.map((url, index) => (
+                        <div key={`${url}-${index}`} className="relative h-20 w-20 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                          <img src={url} alt={`Attachment ${index + 1}`} className="h-full w-full object-cover" />
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                  <div className="flex h-20 w-20 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50">
+                  )}
+                  <div className="w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
                     <MediaUpload
                       bucket="profile-media"
                       folder={userId ? `feedback/${userId}` : 'feedback'}
                       mediaType="image"
                       buttonText="Upload"
+                      className="w-full"
+                      maxSizeMB={5}
                       onUploadComplete={(url) => setForm((previous) => ({ ...previous, images: [...(previous.images || []), url].slice(0, 4) }))}
-                      onUploadError={(message) => setNotice(message)}
+                      onUploadError={(message) => notifyToast(message, 'error')}
                     />
                   </div>
                 </div>
               </div>
-
-              {notice ? <p role="status" className="usr-inline-note usr-inline-note-info">{notice}</p> : null}
 
               <button
                 type="submit"

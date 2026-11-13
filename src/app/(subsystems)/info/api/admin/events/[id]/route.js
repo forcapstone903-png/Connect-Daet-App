@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
-import { notifyFollowers } from '@/lib/notificationAudience'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -56,18 +55,6 @@ export async function POST(request, { params }) {
         ? 'This event is no longer pending review. Refresh the list and try again.'
         : 'Unable to save the moderation decision.',
     }, { status })
-  }
-
-  if (decision === 'approved' && data?.created_by) {
-    await notifyFollowers(client, {
-      authorId: data.created_by,
-      type: 'event',
-      link: `/info/user/events/${data.id}`,
-      postId: data.id,
-      title: 'New event from someone you follow',
-      actionText: 'published a new event',
-      subject: data.title,
-    })
   }
 
   return NextResponse.json({ success: true, event: data }, {

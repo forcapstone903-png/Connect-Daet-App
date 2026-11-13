@@ -8,6 +8,7 @@ import { Icon } from '@/app/(subsystems)/info/components/Icon'
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession, clearAuthCookie, updateStoredSession } from '@/lib/authCookies'
 import AdminProfilePhoto from './AdminProfilePhoto'
+import { notifyToast } from '@/lib/toast.mjs'
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: 'profile' },
@@ -49,8 +50,8 @@ export default function AdminAccountPage() {
   const [loadingSessions, setLoadingSessions] = useState(false)
 
   const showToast = useCallback((message, isError = false) => {
-    setToast({ message, isError })
-    window.setTimeout(() => setToast(null), 3200)
+    setToast(null)
+    notifyToast(message, isError ? 'error' : undefined)
   }, [])
 
   useEffect(() => {

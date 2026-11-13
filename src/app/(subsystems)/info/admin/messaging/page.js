@@ -6,6 +6,7 @@ import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
+import { notifyToast } from '@/lib/toast.mjs';
 
 // Templates are shared by all administrators and stored server-side in
 // admin_app_settings ('messaging'); defaults are used until one is saved.
@@ -61,8 +62,8 @@ export default function AdminMessagingPage() {
   const [toast, setToast] = useState(null);
 
   const showToast = (msg, isError = false) => {
-    setToast({ msg, isError });
-    setTimeout(() => setToast(null), 2600);
+    setToast(null);
+    notifyToast(msg, isError ? 'error' : undefined);
   };
 
   const loadMessagingData = async () => {

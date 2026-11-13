@@ -29,6 +29,7 @@ import {
   PRICE_RANGES,
   getListingTypeLabel,
 } from '@/lib/listings.mjs';
+import { notifyToast } from '@/lib/toast.mjs';
 import {
   AdminBadge,
   AdminButton,
@@ -249,8 +250,8 @@ export default function TouristSpotsManagement() {
   const resolvedGeocodeKeyRef = useRef('');
 
   const showToast = useCallback((message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const lookupCoordinates = async ({ refresh = false } = {}) => {

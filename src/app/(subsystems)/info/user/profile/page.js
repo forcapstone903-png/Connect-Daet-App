@@ -5,6 +5,7 @@ import Link from 'next/link'
 import {
   Archive,
   Briefcase,
+  CalendarDays,
   FilePenLine,
   LogOut,
   Mail,
@@ -26,10 +27,12 @@ import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationMo
 import { supabase } from '@/lib/supabase'
 import { getStoredSession, updateStoredSession } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
+import { notifyToast } from '@/lib/toast.mjs'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { isOwnOriginalPost } from '@/lib/postOwnership'
 import { filterValidUuidValues } from '@/lib/uuid'
 import { getLevelFromPoints } from '@/lib/gamification'
+import { normalizeCalendarDate } from '@/lib/eventCalendar'
 import PostMediaGallery from '@/app/(subsystems)/info/components/user/PostMediaGallery'
 import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
 import { getPostImages, getPostVideos } from '@/lib/postMedia'
@@ -77,12 +80,22 @@ function getBadgeTone(name) {
   return palette[name] || palette.default
 }
 
+function formatRegisteredEventDate(value) {
+  const date = normalizeCalendarDate(value)
+  if (!date) return 'Date to be announced'
+
+  return new Date(`${date}T00:00:00`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
 export default function UserProfilePage() {
   const { updateSettings } = useUserSettings()
   const [session] = useState(readStoredSession)
   const [loading, setLoading] = useState(true)
   const [profileLoadError, setProfileLoadError] = useState('')
-  const [saveNotice, setSaveNotice] = useState('')
   const [userId, setUserId] = useState('')
   const [profileForm, setProfileForm] = useState({
     full_name: 'Traveler',
@@ -123,6 +136,10 @@ export default function UserProfilePage() {
   const [badges, setBadges] = useState([])
   const [favoriteDestinations, setFavoriteDestinations] = useState([])
   const [eventsJoined, setEventsJoined] = useState(0)
+  const [recentRegisteredEvents, setRecentRegisteredEvents] = useState([])
+  const [recentRegisteredEventsLoading, setRecentRegisteredEventsLoading] = useState(false)
+  const [recentRegisteredEventsError, setRecentRegisteredEventsError] = useState('')
+  const [recentRegisteredEventsRetry, setRecentRegisteredEventsRetry] = useState(0)
   const [userPosts, setUserPosts] = useState([])
   const [profileTab, setProfileTab] = useState('Overview')
   const [profileCompletion, setProfileCompletion] = useState({ percent: 0, items: [] })
@@ -134,6 +151,51 @@ export default function UserProfilePage() {
     points: 0,
   })
   const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let active = true
+
+    if (!userId || eventsJoined === 0) {
+      return () => { active = false }
+    }
+
+    const loadRecentRegisteredEvents = async () => {
+      setRecentRegisteredEventsLoading(true)
+      setRecentRegisteredEventsError('')
+
+      try {
+        const response = await fetch('/info/api/user/events/calendar', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to load your recent event registrations.')
+        }
+
+        const registeredEvents = (Array.isArray(result.events) ? result.events : [])
+          .slice()
+          .sort((left, right) => {
+            const leftDate = Date.parse(left.registered_at || '') || 0
+            const rightDate = Date.parse(right.registered_at || '') || 0
+            return rightDate - leftDate
+          })
+          .slice(0, 3)
+
+        if (active) setRecentRegisteredEvents(registeredEvents)
+      } catch (error) {
+        if (!active) return
+        console.error('Recent registered events load failed:', error)
+        setRecentRegisteredEventsError(error.message || 'Unable to load your recent event registrations.')
+      } finally {
+        if (active) setRecentRegisteredEventsLoading(false)
+      }
+    }
+
+    void loadRecentRegisteredEvents()
+    return () => { active = false }
+  }, [eventsJoined, recentRegisteredEventsRetry, userId])
+
   const handleLogout = async () => {
     setLoggingOut(true)
     try {
@@ -606,7 +668,10 @@ export default function UserProfilePage() {
   }, [userId])
 
   const visiblePosts = useMemo(() => filterProfilePosts(userPosts, profileTab), [userPosts, profileTab])
-  const profileTabs = useMemo(() => getProfileContentTabs(userPosts), [userPosts])
+  const profileTabs = useMemo(() => {
+    const tabs = getProfileContentTabs(userPosts)
+    return eventsJoined > 0 ? [...tabs, 'Registered Events'] : tabs
+  }, [eventsJoined, userPosts])
   const pinnedPosts = useMemo(() => userPosts.filter((post) => post.pinned), [userPosts])
 
   const updateProfileRepostNote = async (post, quoteText) => {
@@ -641,7 +706,7 @@ export default function UserProfilePage() {
       }
     } catch (error) {
       console.error('Profile repost note update failed:', error)
-      setSaveNotice(error?.message || 'Unable to update your repost note.')
+      notifyToast(error?.message || 'Unable to update your repost note.', 'error')
     }
   }
 
@@ -661,13 +726,14 @@ export default function UserProfilePage() {
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) {
-      setSaveNotice(result.message || 'Unable to update post.')
+      notifyToast(result.message || 'Unable to update post.', 'error')
       return
     }
     setUserPosts((previous) => previous.filter((item) => item.id !== post.id && !(isDelete && !isRepost && item.original_content_id === post.id)))
     setOpenPostMenu(null)
     setStats((previous) => ({ ...previous, posts: Math.max(0, previous.posts - 1) }))
     invalidateCachePrefix('profile:user:')
+    notifyToast(isDelete ? 'Post deleted.' : 'Post archived.', 'success')
   }
 
   const updateProfilePostPrivacy = async (post, visibility) => {
@@ -682,13 +748,14 @@ export default function UserProfilePage() {
 
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) {
-      setSaveNotice(result.message || 'Unable to update post privacy.')
+      notifyToast(result.message || 'Unable to update post privacy.', 'error')
       return
     }
 
     setUserPosts((previous) => previous.map((item) => item.id === post.id ? { ...item, visibility } : item))
     setOpenPostMenu(null)
     invalidateCachePrefix('profile:user:')
+    notifyToast('Post privacy updated.', 'success')
   }
 
   const editProfilePost = async (post) => {
@@ -705,22 +772,22 @@ export default function UserProfilePage() {
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) {
-      setSaveNotice(result.message || 'Unable to edit post.')
+      notifyToast(result.message || 'Unable to edit post.', 'error')
       return
     }
     setUserPosts((previous) => previous.map((item) => item.id === post.id ? { ...item, title, content } : item))
     setOpenPostMenu(null)
     invalidateCachePrefix('profile:user:')
+    notifyToast('Post updated.', 'success')
   }
 
   const handleSaveProfile = async () => {
     if (!userId) {
-      setSaveNotice('Please sign in to update your profile.')
+      notifyToast('Please sign in to update your profile.', 'warning')
       return
     }
 
     setSaving(true)
-    setSaveNotice('')
     let profileDetailsSaved = false
 
     try {
@@ -789,12 +856,12 @@ export default function UserProfilePage() {
       })
       invalidateCachePrefix('profile:user:')
       invalidateSettingsCaches(userId)
-      setSaveNotice('Profile updated successfully.')
+      notifyToast('Profile updated successfully.', 'success')
     } catch (error) {
       console.error('Profile update failed:', error)
-      setSaveNotice(profileDetailsSaved
+      notifyToast(profileDetailsSaved
         ? `Profile details were saved, but preferences were not: ${error?.message || 'Unable to save settings.'}`
-        : error?.message || 'Unable to save changes right now.')
+        : error?.message || 'Unable to save changes right now.', profileDetailsSaved ? 'warning' : 'error')
     } finally {
       setSaving(false)
     }
@@ -808,6 +875,7 @@ export default function UserProfilePage() {
       {profileActionsOpen && (
         <div role="menu" className="usr-pop-in absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 text-left text-slate-700 shadow-xl">
           <Link role="menuitem" href="/info/user/rewards" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><Trophy className="h-4 w-4" />Rewards</Link>
+          <Link role="menuitem" href="/info/user/events/calendar" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-teal-50 hover:text-teal-700"><CalendarDays className="h-4 w-4" />Event Calendar</Link>
           <Link role="menuitem" href="/info/user/profile/archive" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-amber-50 hover:text-amber-700"><Archive className="h-4 w-4" />Archive</Link>
           <Link role="menuitem" href="/info/user/drafts" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><FilePenLine className="h-4 w-4" />Drafts</Link>
           <Link role="menuitem" href="/info/user/blog-submissions" onClick={() => setProfileActionsOpen(false)} className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-sky-50 hover:text-sky-700"><FilePenLine className="h-4 w-4" />My blog posts</Link>
@@ -1057,6 +1125,61 @@ export default function UserProfilePage() {
                   </section>
                 )}
 
+                {profileTab === 'Registered Events' && eventsJoined > 0 && (
+                  <section className="profile-overview-card">
+                    <div className="profile-overview-heading">
+                      <div>
+                        <p className="profile-overview-eyebrow">Your plans</p>
+                        <h3>Registered events</h3>
+                      </div>
+                      <CalendarDays aria-hidden="true" />
+                    </div>
+                    <p className="profile-overview-empty">
+                      You have {eventsJoined} confirmed event registration{eventsJoined === 1 ? '' : 's'}.
+                    </p>
+                    {recentRegisteredEventsLoading ? (
+                      <p className="mt-4 text-sm text-slate-500" role="status">Loading recent registrations…</p>
+                    ) : recentRegisteredEventsError ? (
+                      <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <p role="alert">{recentRegisteredEventsError}</p>
+                        <button
+                          type="button"
+                          onClick={() => setRecentRegisteredEventsRetry((retry) => retry + 1)}
+                          className="mt-2 font-semibold underline underline-offset-2"
+                        >
+                          Try again
+                        </button>
+                      </div>
+                    ) : recentRegisteredEvents.length > 0 ? (
+                      <ul className="mt-4 space-y-2">
+                        {recentRegisteredEvents.map((event) => (
+                          <li key={event.id}>
+                            <Link
+                              href={`/info/visitor/events/${encodeURIComponent(event.id)}`}
+                              className="block rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-teal-300 hover:bg-teal-50"
+                            >
+                              <span className="block text-sm font-bold text-slate-900">{event.title || 'Registered event'}</span>
+                              <span className="mt-1 block text-xs text-slate-600">
+                                {formatRegisteredEventDate(event.start_date)}
+                                {event.location ? ` · ${event.location}` : ''}
+                              </span>
+                              <span className="mt-1 block text-xs text-slate-500">
+                                Registered {formatRegisteredEventDate(event.registered_at)}
+                              </span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-4 text-sm text-slate-500">Event details for your registrations are unavailable.</p>
+                    )}
+                    <div className="profile-overview-footer">
+                      <Link href="/info/user/events/calendar">See calendar <span aria-hidden="true">→</span></Link>
+                    </div>
+                  </section>
+                )}
+
+                {profileTab !== 'Registered Events' && (
                 <div className="space-y-1.5">
                     {visiblePosts.length ? visiblePosts.map((post) => post.isRepost ? (
                       <article key={`${post.type}-${post.id}`} className="usr-card feed-card profile-repost-card">
@@ -1124,6 +1247,7 @@ export default function UserProfilePage() {
                       </div>
                     )}
                 </div>
+                )}
 
               <div id="profile-editor" className="usr-card hidden p-4 sm:p-5">
                 <div className="mb-4 flex items-center gap-2">
@@ -1203,7 +1327,7 @@ export default function UserProfilePage() {
                         userId={userId}
                         imageUrl={profileForm.avatar_url}
                         onUploadComplete={(url) => setProfileForm((previous) => ({ ...previous, avatar_url: url }))}
-                        onUploadError={setSaveNotice}
+                        onUploadError={(message) => notifyToast(message, 'error')}
                       />
                     </div>
                     <div>
@@ -1217,7 +1341,7 @@ export default function UserProfilePage() {
                         previewClassName="h-32 w-full max-w-lg aspect-[3/1]"
                         buttonText="Upload cover"
                         onUploadComplete={(url) => setProfileForm((previous) => ({ ...previous, cover_photo_url: url }))}
-                        onUploadError={(message) => setSaveNotice(message)}
+                        onUploadError={(message) => notifyToast(message, 'error')}
                       />
                     </div>
                   </div>
@@ -1270,7 +1394,6 @@ export default function UserProfilePage() {
                   >
                     {saving ? 'Saving...' : 'Save changes'}
                   </button>
-                  {saveNotice ? <p className="text-sm text-slate-600">{saveNotice}</p> : null}
                 </div>
               </div>
             </section>

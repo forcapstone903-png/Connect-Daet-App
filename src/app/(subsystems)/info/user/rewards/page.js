@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
+import { notifyToast } from '@/lib/toast.mjs'
 import { getDailyStreak, getLevelFromPoints, getLevelProgress, getRewardBadges } from '@/lib/gamification'
 import { DEFAULT_REWARD_SETTINGS } from '@/lib/rewardSettings.mjs'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -62,7 +63,6 @@ export default function UserRewardsPage() {
   const [weeklyActivityDates, setWeeklyActivityDates] = useState([])
   const [redeeming, setRedeeming] = useState('')
   const [redeemedRewards, setRedeemedRewards] = useState([])
-  const [redemptionNotice, setRedemptionNotice] = useState('')
 
   useEffect(() => {
     const currentSession = readStoredSession()
@@ -189,12 +189,11 @@ export default function UserRewardsPage() {
 
   const redeemReward = async (reward) => {
     if (profile.points < reward.points) {
-      setRedemptionNotice(`You need ${reward.points - profile.points} more points to redeem this reward.`)
+      notifyToast(`You need ${reward.points - profile.points} more points to redeem this reward.`, 'warning')
       return
     }
 
     setRedeeming(reward.id)
-    setRedemptionNotice('')
     try {
       const response = await fetch('/info/api/rewards/redeem', {
         method: 'POST',
@@ -207,9 +206,9 @@ export default function UserRewardsPage() {
       setProfile((current) => ({ ...current, points: result.points }))
       window.dispatchEvent(new CustomEvent('daet-user-points-updated', { detail: { points: result.points } }))
       setRedeemedRewards((current) => [...current, reward.id])
-      setRedemptionNotice(result.warning ? `${result.message} ${result.warning}` : result.message)
+      notifyToast(result.warning ? `${result.message} ${result.warning}` : result.message, result.warning ? 'warning' : 'success')
     } catch (error) {
-      setRedemptionNotice(error.message)
+      notifyToast(error.message, 'error')
     } finally {
       setRedeeming('')
     }
@@ -484,7 +483,6 @@ export default function UserRewardsPage() {
                   </button>
                 ))}
                 {!rewardCatalogError && rewards.length === 0 && <p className="text-sm text-slate-500">There are no rewards available right now.</p>}
-                {redemptionNotice && <p className="usr-rewards-redemption-notice" role="status">{redemptionNotice}</p>}
               </div>
             </div>
           </aside>

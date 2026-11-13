@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { CheckCircle2, FileText, MapPin, Save, UserRound } from 'lucide-react'
+import { FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
+import { notifyToast } from '@/lib/toast.mjs'
 import ProfilePhotoCropper from '@/app/(subsystems)/info/components/user/ProfilePhotoCropper'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
@@ -18,7 +19,6 @@ export default function EditProfilePage() {
   const [form, setForm] = useState({ full_name: '', username: '', phone_number: '', bio: '', location: '', avatar_url: '', cover_photo_url: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [notice, setNotice] = useState('')
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -57,12 +57,11 @@ export default function EditProfilePage() {
 
   const saveProfile = async () => {
     if (!userId) {
-      setNotice('Please log in to update your profile.')
+      notifyToast('Please log in to update your profile.', 'warning')
       return
     }
 
     setSaving(true)
-    setNotice('')
     const trimmedLocation = form.location.trim()
     const locationParts = trimmedLocation ? trimmedLocation.split(',').map((part) => part.trim()).filter(Boolean) : []
     const city = locationParts[0] || ''
@@ -93,12 +92,12 @@ export default function EditProfilePage() {
         city,
         country,
       })
-      setNotice('Profile updated successfully.')
+      notifyToast('Profile updated successfully.', 'success')
       window.setTimeout(() => {
         window.location.assign('/info/user/profile')
       }, 300)
     } catch (error) {
-      setNotice(error?.message || 'Unable to update your profile.')
+      notifyToast(error?.message || 'Unable to update your profile.', 'error')
     } finally {
       setSaving(false)
     }
@@ -144,15 +143,15 @@ export default function EditProfilePage() {
             <div className="mb-6"><p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">Public profile</p><h2 className="mt-1 text-2xl font-black text-slate-900">Tell people about you</h2><p className="mt-2 text-sm leading-6 text-slate-500">Keep your profile clear and personal so the Daet community knows what you enjoy.</p></div>
             <div className="space-y-5">
               <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
-                <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Profile photo</span>{form.avatar_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><ProfilePhotoCropper userId={userId} imageUrl={form.avatar_url} onUploadComplete={(url) => setForm((previous) => ({ ...previous, avatar_url: url || '' }))} onUploadError={setNotice} /></div>
-                <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Cover photo</span>{form.cover_photo_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" trimLetterbox existingMediaUrl={form.cover_photo_url} previewClassName="h-32 w-full aspect-[3/1]" buttonText="Add / change cover" maxSizeMB={8} onUploadComplete={(url) => setForm((previous) => ({ ...previous, cover_photo_url: url || '' }))} onUploadError={setNotice} /></div>
+                <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Profile photo</span>{form.avatar_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><ProfilePhotoCropper userId={userId} imageUrl={form.avatar_url} onUploadComplete={(url) => setForm((previous) => ({ ...previous, avatar_url: url || '' }))} onUploadError={(message) => notifyToast(message, 'error')} /></div>
+                  <div><div className="mb-3 flex items-center justify-between"><span className="text-sm font-semibold text-slate-700">Cover photo</span>{form.cover_photo_url && <span className="text-[11px] font-medium text-emerald-600">Added</span>}</div><MediaUpload bucket="profile-media" folder={`covers/${userId}`} mediaType="image" trimLetterbox existingMediaUrl={form.cover_photo_url} previewClassName="h-32 w-full aspect-[3/1]" buttonText="Add / change cover" maxSizeMB={8} onUploadComplete={(url) => setForm((previous) => ({ ...previous, cover_photo_url: url || '' }))} onUploadError={(message) => notifyToast(message, 'error')} /></div>
               </div>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Display name</span><input value={form.full_name} onChange={(event) => setForm((previous) => ({ ...previous, full_name: event.target.value }))} placeholder="Your name" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Location</span><input value={form.location} onChange={(event) => setForm((previous) => ({ ...previous, location: event.target.value }))} placeholder="Daet, Camarines Norte, Philippines" className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /></label>
               <label className="block"><span className="mb-2 block text-sm font-semibold text-slate-700">Bio</span><textarea rows={6} value={form.bio} onChange={(event) => setForm((previous) => ({ ...previous, bio: event.target.value }))} placeholder="Share what kind of places, stories, or experiences you love." className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm leading-6 outline-none transition focus:border-sky-300 focus:bg-white focus:ring-2 focus:ring-sky-100" /><span className="mt-1 block text-right text-[11px] text-slate-400">{form.bio.length} characters</span></label>
             </div>
 
-            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><Link href="/info/user/profile" className="text-center text-sm font-semibold text-slate-500 hover:text-teal-700">Cancel</Link><div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">{notice && <p className={`usr-inline-note inline-flex items-center justify-center gap-1.5 ${notice.includes('successfully') ? 'usr-inline-note-success' : 'usr-inline-note-error'}`}><CheckCircle2 className="h-4 w-4" />{notice}</p>}<button type="button" onClick={saveProfile} disabled={saving} className="usr-section-primary"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save changes'}</button></div></div>
+            <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><Link href="/info/user/profile" className="text-center text-sm font-semibold text-slate-500 hover:text-teal-700">Cancel</Link><div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center"><button type="button" onClick={saveProfile} disabled={saving} className="usr-section-primary"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save changes'}</button></div></div>
           </section>
         </div>
       </div>

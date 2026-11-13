@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
-import { notifyAdministrators } from '@/lib/adminNotifications'
+import { notifyAdministrators, notifyTourismOfficers } from '@/lib/adminNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -136,12 +136,17 @@ export async function PATCH(request, { params }) {
     })
     if (notificationError) console.error('Event resubmission notification failed:', notificationError)
 
-    await notifyAdministrators(adminSupabase, {
+    const approvalNotification = {
+      actorId: userId,
       title: 'Event awaiting approval',
       message: `An updated event proposal needs review: ${title}`,
       type: 'event',
       link: '/info/admin/event-approvals?status=pending',
-    })
+    }
+    await Promise.all([
+      notifyAdministrators(adminSupabase, approvalNotification),
+      notifyTourismOfficers(adminSupabase, approvalNotification),
+    ])
 
     return NextResponse.json({ success: true, event: updatedEvent }, {
       headers: { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' },

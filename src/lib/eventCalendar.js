@@ -51,6 +51,13 @@ function calendarDaysBetween(startLike, endLike) {
   return Math.max(0, Math.round(diffMs / 86400000))
 }
 
+function eventCoversCalendarDate(startLike, endLike, dateLike) {
+  const start = normalizeCalendarDate(startLike)
+  const end = normalizeCalendarDate(endLike) || start
+  const date = normalizeCalendarDate(dateLike)
+  return Boolean(start && end && date && start <= end && start <= date && date <= end)
+}
+
 function convertExclusiveCalendarEndToInclusive(dateString) {
   const normalized = normalizeCalendarDate(dateString)
   if (!normalized) return null
@@ -105,5 +112,6 @@ module.exports = {
   normalizeCalendarDate,
   addCalendarDays,
   calendarDaysBetween,
+  eventCoversCalendarDate,
   convertExclusiveCalendarEndToInclusive,
 }

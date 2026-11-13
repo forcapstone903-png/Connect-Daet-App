@@ -5,6 +5,7 @@ import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
 import { isValidUuid } from '@/lib/uuid'
 import { notifyModerators } from '@/lib/adminNotifications'
 import { publicErrorMessage } from '@/lib/publicError'
+import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -159,10 +160,11 @@ export async function POST(request) {
     }
 
     const resolvedParentId = isValidUuid(parentReplyId) ? parentReplyId : null
+    let parentReplyUserId = null
     if (resolvedParentId) {
       const { data: parentReply, error: parentError } = await adminSupabase
         .from('forum_replies')
-        .select('id, thread_id')
+        .select('id, thread_id, user_id')
         .eq('id', resolvedParentId)
         .maybeSingle()
 
@@ -170,6 +172,7 @@ export async function POST(request) {
       if (!parentReply || parentReply.thread_id !== threadId) {
         return NextResponse.json({ success: false, message: 'The comment you are replying to is no longer available.' }, { status: 400 })
       }
+      parentReplyUserId = parentReply.user_id
     }
 
     const isModerator = ['admin', 'administrator', 'moderator'].includes(
@@ -215,6 +218,23 @@ export async function POST(request) {
         message: 'A new forum reply needs review.',
         link: '/info/admin/moderation',
       })
+    } else {
+      const recipients = new Map()
+      if (thread.created_by && thread.created_by !== session.user_id) {
+        recipients.set(thread.created_by, 'Someone replied to your discussion.')
+      }
+      if (parentReplyUserId && parentReplyUserId !== session.user_id) {
+        recipients.set(parentReplyUserId, 'Someone replied to your forum reply.')
+      }
+
+      await notifyUserRecipients(adminSupabase, [...recipients.entries()].map(([userId, message]) => ({
+        user_id: userId,
+        title: 'New forum reply',
+        message,
+        type: 'forum_reply',
+        link: `/info/user/forums/${threadId}?reply=${reply.id}`,
+        actor_id: session.user_id,
+      })), 'Forum reply')
     }
 
     return NextResponse.json({ success: true, reply, pending: reply.status === 'pending' })

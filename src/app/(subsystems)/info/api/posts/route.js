@@ -7,7 +7,7 @@ export const runtime = 'nodejs'
 
 import { notifyFollowers } from '@/lib/notificationAudience'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
-import { notifyAdministrators, notifyModerators } from '@/lib/adminNotifications'
+import { notifyAdministrators, notifyModerators, notifyTourismOfficers } from '@/lib/adminNotifications'
 import { publicErrorMessage } from '@/lib/publicError'
 
 export async function POST(request) {
@@ -226,12 +226,17 @@ export async function POST(request) {
         })
       if (notificationError) console.error('Event submission notification failed:', notificationError)
 
-      await notifyAdministrators(adminSupabase, {
+      const eventApprovalNotification = {
+        actorId: userId,
         title: 'Event awaiting approval',
         message: `A new event proposal needs review: ${title}`,
         type: 'event',
         link: '/info/admin/event-approvals?status=pending',
-      })
+      }
+      await Promise.all([
+        notifyAdministrators(adminSupabase, eventApprovalNotification),
+        notifyTourismOfficers(adminSupabase, eventApprovalNotification),
+      ])
 
       return NextResponse.json({
         success: true,
@@ -285,12 +290,17 @@ export async function POST(request) {
         console.error('Complaint notification insert failed:', notificationError)
       }
 
-      await notifyAdministrators(adminSupabase, {
+      const complaintNotification = {
+        actorId: userId,
         title: 'New complaint received',
         message: `A user submitted a complaint: ${title}`,
         type: 'warning',
         link: '/info/admin/feedback',
-      })
+      }
+      await Promise.all([
+        notifyAdministrators(adminSupabase, complaintNotification),
+        notifyTourismOfficers(adminSupabase, complaintNotification),
+      ])
 
       return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback' })
     }
@@ -373,12 +383,17 @@ export async function POST(request) {
         console.error('Feedback notification insert failed:', notificationError)
       }
 
-      await notifyAdministrators(adminSupabase, {
+      const feedbackNotification = {
+        actorId: userId,
         title: 'New user feedback',
         message: `A user submitted feedback: ${title}`,
         type: 'info',
         link: '/info/admin/feedback',
-      })
+      }
+      await Promise.all([
+        notifyAdministrators(adminSupabase, feedbackNotification),
+        notifyTourismOfficers(adminSupabase, feedbackNotification),
+      ])
 
       return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback', warning })
     }

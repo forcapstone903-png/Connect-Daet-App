@@ -1,6 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
+import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -15,6 +18,7 @@ import { supabase } from '@/lib/supabase'
 import { fromCalendarSchedule, toCalendarSchedule } from '@/lib/eventCalendar'
 import { getStoredSession } from '@/lib/authCookies'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import { isStaffNotificationChange } from '@/lib/staffNotificationScope.mjs'
 
 const EVENT_COLORS = {
   festival: '#8b5cf6',
@@ -59,7 +63,34 @@ function formatNumber(value) {
   return Number.isFinite(Number(value)) ? Number(value).toLocaleString() : '—'
 }
 
+function getInitials(name = '') {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() || '').join('') || 'U'
+}
+
+function formatNotificationTime(value) {
+  const timestamp = new Date(value).getTime()
+  if (!Number.isFinite(timestamp)) return ''
+
+  const seconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000))
+  if (seconds < 60) return 'Just now'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`
+  return `${Math.floor(seconds / 86400)}d ago`
+}
+
+function getNotificationTarget(notification) {
+  const linkValue = notification.link || notification.action_url || notification.href || ''
+  const target = typeof linkValue === 'string'
+    ? linkValue.replace(/^\/admin(?=\/|[?#]|$)/, '/info/admin')
+    : ''
+  const isAlertRoute = /^\/info\/(?:admin|visitor)\/alerts(?:\/|[?#]|$)/.test(target)
+  return !isAlertRoute && (target.startsWith('/info/') || target === '/info')
+    ? target
+    : '/info/admin/notifications/inbox'
+}
+
 export default function TourismOfficerDashboard() {
+  const router = useRouter()
   const [report, setReport] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -73,13 +104,124 @@ export default function TourismOfficerDashboard() {
   const [eventActionError, setEventActionError] = useState('')
   const [eventActionWarning, setEventActionWarning] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [notificationUserId, setNotificationUserId] = useState('')
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0)
+  const [notificationPopoverOpen, setNotificationPopoverOpen] = useState(false)
+  const [notificationPreview, setNotificationPreview] = useState([])
+  const [notificationPreviewLoading, setNotificationPreviewLoading] = useState(false)
+  const [notificationPreviewError, setNotificationPreviewError] = useState('')
   const calendarRef = useRef(null)
   const calendarRequestRef = useRef(0)
+  const notificationPopoverRef = useRef(null)
+  const notificationPreviewRequestRef = useRef(0)
   const realtime = useRealtimeRefresh({
     channelName: 'tourism-officer-event-calendar',
     tables: ['info_events'],
   })
   const { setRefreshCallback } = realtime
+  const notificationRealtime = useRealtimeRefresh({
+    channelName: `tourism-officer-notifications-${notificationUserId || 'uninitialized'}`,
+    tables: notificationUserId
+      ? [{ table: 'info_notifications', filter: `user_id=eq.${notificationUserId}` }]
+      : [],
+    enabled: Boolean(notificationUserId),
+    shouldRefreshEvent: isStaffNotificationChange,
+  })
+  const { setRefreshCallback: setNotificationRefreshCallback } = notificationRealtime
+
+  const loadUnreadNotifications = useCallback(async () => {
+    if (!notificationUserId) return false
+
+    try {
+      const response = await fetch('/info/api/notifications?count_only=true&scope=staff', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to load tourism officer notifications.')
+      }
+
+      const unreadCount = Number(result.unread_count)
+      if (!Number.isFinite(unreadCount)) {
+        throw new Error('The notification service returned an invalid unread count.')
+      }
+      setUnreadNotificationCount(unreadCount)
+      return true
+    } catch (notificationError) {
+      console.error('Tourism officer notification refresh failed:', notificationError)
+      return false
+    }
+  }, [notificationUserId])
+
+  const loadNotificationPreview = useCallback(async (showLoading = false) => {
+    const requestId = ++notificationPreviewRequestRef.current
+    if (showLoading) {
+      setNotificationPreviewLoading(true)
+      setNotificationPreviewError('')
+    }
+
+    try {
+      const response = await fetch('/info/api/notifications?scope=staff', {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || 'Unable to load tourism officer notifications.')
+      }
+      if (requestId !== notificationPreviewRequestRef.current) return false
+
+      const notifications = Array.isArray(result.notifications) ? result.notifications : []
+      setNotificationPreview(notifications.slice(0, 5))
+      const unreadCount = Number(result.unread_count)
+      if (Number.isFinite(unreadCount)) setUnreadNotificationCount(unreadCount)
+      setNotificationPreviewError('')
+      return true
+    } catch (notificationError) {
+      if (requestId !== notificationPreviewRequestRef.current) return false
+      console.error('Tourism officer notification preview failed:', notificationError)
+      setNotificationPreviewError(notificationError.message || 'Unable to load notifications.')
+      return false
+    } finally {
+      if (requestId === notificationPreviewRequestRef.current) {
+        setNotificationPreviewLoading(false)
+      }
+    }
+  }, [])
+
+  const refreshNotificationData = useCallback(() => (
+    notificationPopoverOpen ? loadNotificationPreview() : loadUnreadNotifications()
+  ), [loadNotificationPreview, loadUnreadNotifications, notificationPopoverOpen])
+
+  const openStaffNotification = useCallback(async (notification) => {
+    if (!notification.is_read) {
+      try {
+        const response = await fetch('/info/api/notifications?scope=staff', {
+          method: 'PATCH',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: notification.id }),
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || 'Unable to mark this notification as read.')
+        }
+
+        setNotificationPreview((current) => current.map((item) => (
+          item.id === notification.id ? { ...item, is_read: true } : item
+        )))
+        setUnreadNotificationCount((count) => Math.max(0, count - 1))
+      } catch (notificationError) {
+        console.error('Tourism officer notification action failed:', notificationError)
+        setNotificationPreviewError(notificationError.message || 'Unable to open this notification.')
+        return
+      }
+    }
+
+    setNotificationPopoverOpen(false)
+    router.push(getNotificationTarget(notification))
+  }, [router])
 
   const refreshCalendar = useCallback(() => {
     const calendar = calendarRef.current?.getApi()
@@ -91,6 +233,59 @@ export default function TourismOfficerDashboard() {
   useEffect(() => {
     setRefreshCallback(refreshCalendar)
   }, [refreshCalendar, setRefreshCallback])
+
+  useEffect(() => {
+    let active = true
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const storedSession = getStoredSession()
+        const session = storedSession ? JSON.parse(storedSession) : null
+        if (active) setNotificationUserId(session?.user_id || session?.id || '')
+      } catch (sessionError) {
+        console.error('Unable to read the staff session for notifications:', sessionError)
+        if (active) setNotificationUserId('')
+      }
+    }, 0)
+
+    return () => {
+      active = false
+      window.clearTimeout(timeoutId)
+    }
+  }, [])
+
+  useEffect(() => {
+    setNotificationRefreshCallback(refreshNotificationData)
+  }, [refreshNotificationData, setNotificationRefreshCallback])
+
+  // Seed the badge as soon as the session id is known, so the unread count
+  // shows even before (or without) the realtime subscription confirming.
+  useEffect(() => {
+    if (!notificationUserId) return undefined
+    const timeoutId = window.setTimeout(() => {
+      void loadUnreadNotifications()
+    }, 0)
+    return () => window.clearTimeout(timeoutId)
+  }, [notificationUserId, loadUnreadNotifications])
+
+  useEffect(() => {
+    if (!notificationPopoverOpen) return undefined
+
+    const closeOnOutsideClick = (event) => {
+      if (!notificationPopoverRef.current?.contains(event.target)) {
+        setNotificationPopoverOpen(false)
+      }
+    }
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setNotificationPopoverOpen(false)
+    }
+
+    document.addEventListener('mousedown', closeOnOutsideClick)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [notificationPopoverOpen])
 
   const loadCalendarEvents = useCallback(async (fetchInfo, successCallback, failureCallback) => {
     const requestId = ++calendarRequestRef.current
@@ -397,16 +592,138 @@ export default function TourismOfficerDashboard() {
       headerIcon="attractions"
       actions={(
         <div className="flex items-center gap-2">
-          <AdminButton
-            href="/info/admin/alerts"
-            icon="notifications"
-            size="icon"
-            aria-label="Notifications"
-            title="Notifications"
-          />
-          <AdminButton href="/info/admin/settings/general" icon="settings">
-            Settings
-          </AdminButton>
+          <div className="relative" ref={notificationPopoverRef}>
+            <AdminButton
+              icon="notifications"
+              size="icon"
+              onClick={() => {
+                const nextOpen = !notificationPopoverOpen
+                setNotificationPopoverOpen(nextOpen)
+                if (nextOpen) void loadNotificationPreview(true)
+              }}
+              aria-haspopup="dialog"
+              aria-expanded={notificationPopoverOpen}
+              aria-controls="tourism-notifications-popover"
+              aria-label={`Notifications${unreadNotificationCount ? `, ${unreadNotificationCount} unread` : ''}`}
+              title="Notifications"
+            />
+            {unreadNotificationCount > 0 ? (
+              <span
+                aria-live="polite"
+                aria-atomic="true"
+                className="pointer-events-none absolute right-0 top-0 z-10 inline-flex min-h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white"
+              >
+                {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+              </span>
+            ) : null}
+            {notificationPopoverOpen ? (
+              <section
+                id="tourism-notifications-popover"
+                role="dialog"
+                aria-label="Notifications"
+                className="absolute right-0 top-[calc(100%+0.75rem)] z-[70] w-[min(560px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-800 shadow-2xl"
+              >
+                <h2 className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 text-sm font-semibold text-slate-600">
+                  <span>Notifications</span>
+                  {unreadNotificationCount > 0 ? (
+                    <span className="rounded-full bg-red-600 px-3 py-1 text-[11px] font-bold leading-none text-white">
+                      {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount} unread
+                    </span>
+                  ) : null}
+                </h2>
+                <div aria-live="polite" className="max-h-[min(65vh,526px)] overflow-y-auto">
+                  {notificationPreviewLoading && notificationPreview.length === 0 ? (
+                    <div className="space-y-5 px-6 py-5" role="status">
+                      <span className="sr-only">Loading notifications</span>
+                      {[0, 1, 2].map((item) => (
+                        <div key={item} className="flex items-center gap-4" aria-hidden="true">
+                          <div className="h-12 w-12 shrink-0 animate-pulse rounded-full bg-slate-200" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-4 w-3/4 animate-pulse rounded-full bg-slate-200" />
+                            <div className="h-3 w-1/2 animate-pulse rounded-full bg-slate-100" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : notificationPreviewError && notificationPreview.length === 0 ? (
+                    <div className="px-6 py-6 text-center text-sm text-red-700">
+                      <p role="alert">{notificationPreviewError}</p>
+                      <button
+                        type="button"
+                        onClick={() => void loadNotificationPreview(true)}
+                        className="mt-2 font-semibold underline underline-offset-2"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : notificationPreview.length === 0 ? (
+                    <p className="px-6 py-8 text-center text-sm text-slate-500">
+                      You&apos;re all caught up.
+                    </p>
+                  ) : (
+                    <ul>
+                      {notificationPreview.map((notification) => {
+                        const actorName = notification.actor?.full_name || ''
+                        const message = notification.message || notification.title || 'You have a new notification.'
+                        const messageWithoutActor = actorName && message.toLowerCase().startsWith(actorName.toLowerCase())
+                          ? message.slice(actorName.length).trim()
+                          : message
+
+                        return (
+                          <li key={notification.id}>
+                            <button
+                              type="button"
+                              onClick={() => void openStaffNotification(notification)}
+                              className={`flex w-full items-start gap-4 border-b border-slate-200 px-6 py-5 text-left transition hover:bg-slate-50 ${
+                                notification.is_read ? 'bg-white text-slate-600' : 'bg-blue-50 text-slate-700 hover:bg-blue-100'
+                              }`}
+                            >
+                              <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-sm font-semibold text-slate-600">
+                                {notification.actor?.profile_image_url ? (
+                                  <Image
+                                    src={notification.actor.profile_image_url}
+                                    alt=""
+                                    width={48}
+                                    height={48}
+                                    unoptimized
+                                    className="h-full w-full object-cover"
+                                  />
+                                ) : actorName ? getInitials(actorName) : <span aria-hidden="true">•</span>}
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block text-[15px] leading-6">
+                                  {actorName ? <span className="font-semibold text-slate-800">{actorName} </span> : null}
+                                  {messageWithoutActor}
+                                </span>
+                                {notification.created_at ? (
+                                  <time dateTime={notification.created_at} className="mt-1 block text-sm text-slate-500">
+                                    {formatNotificationTime(notification.created_at)}
+                                  </time>
+                                ) : null}
+                              </span>
+                              {!notification.is_read ? (
+                                <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-blue-600" aria-label="Unread" />
+                              ) : null}
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                  {notificationPreviewError && notificationPreview.length > 0 ? (
+                    <p role="status" className="px-5 py-2 text-xs text-red-700">{notificationPreviewError}</p>
+                  ) : null}
+                </div>
+                <Link
+                  href="/info/admin/notifications/inbox"
+                  onClick={() => setNotificationPopoverOpen(false)}
+                  className="block border-t border-slate-200 px-6 py-4 text-sm font-semibold text-slate-700 underline underline-offset-2 transition hover:bg-slate-50"
+                >
+                  See all notifications
+                </Link>
+              </section>
+            ) : null}
+          </div>
           <AdminButton icon="refresh" onClick={() => void loadReport()} disabled={loading}>
             {loading ? 'Refreshing…' : 'Refresh'}
           </AdminButton>

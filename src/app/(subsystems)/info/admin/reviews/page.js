@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import AdminShell from '@/app/(subsystems)/info/components/admin/AdminShell'
 import AdminButton from '@/app/(subsystems)/info/components/admin/AdminButton'
 import AdminStatCard, { AdminStatGrid } from '@/app/(subsystems)/info/components/admin/AdminStatCard'
+import { notifyToast } from '@/lib/toast.mjs'
 
 const API = '/info/api/admin/reviews'
 
@@ -32,8 +33,8 @@ export default function AdminReviewsPage() {
   const [toast, setToast] = useState(null)
 
   const showToast = useCallback((message, isError = false) => {
-    setToast({ message, isError })
-    window.setTimeout(() => setToast(null), 3500)
+    setToast(null)
+    notifyToast(message, isError ? 'error' : undefined)
   }, [])
 
   const query = useCallback((extra = {}) => {

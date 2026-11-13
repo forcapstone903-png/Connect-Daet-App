@@ -44,7 +44,7 @@ function AdminNotificationShortcut() {
   useEffect(() => {
     let active = true
     const loadUnreadCount = () => {
-      readJson('/info/api/notifications')
+      readJson('/info/api/notifications?count_only=true&scope=staff')
         .then((result) => {
           if (active) setUnreadCount(Number(result.unread_count) || 0)
         })

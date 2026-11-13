@@ -7,6 +7,7 @@ import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/ap
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
 import useAdminMetrics, { countRows, resolveMetricEntries } from '@/lib/adminMetrics';
+import { notifyToast } from '@/lib/toast.mjs';
 
 const BACKUP_API = '/info/api/admin/data-management/backup';
 const SCHEDULED_BACKUPS_API = '/info/api/admin/data-management/backups';
@@ -95,8 +96,8 @@ export default function DataManagementPage() {
   }, [user]);
 
   const showToast = (message, isError = false) => {
-    setToast({ message, isError });
-    setTimeout(() => setToast(null), 5000);
+    setToast(null);
+    notifyToast(message, isError ? 'error' : undefined);
   };
 
   const downloadBackup = async () => {

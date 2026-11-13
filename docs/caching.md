@@ -85,6 +85,32 @@ Security notes: Signed staff session and analytics.view authorization; database 
 Manual clear method: Reload the dashboard or select a reporting period to request a fresh report
 ```
 
+## Tourism-officer notification dropdown
+
+The dashboard always reads the signed-in staff member's unread count. It fetches
+the five newest notification previews only while the dropdown is open. The
+count-only API response avoids fetching notification bodies and actor profiles
+in the background; neither response is cached so new notifications and read
+actions appear promptly.
+
+```text
+Feature: Tourism-officer dashboard notification dropdown
+Data fetched: Unread staff-notification count; latest five staff notification previews and actor profiles while the dropdown is open
+Change frequency: Changes when a notification is inserted, updated, or deleted
+Visibility: Private; filtered to the signed-in user and fetched through the staff session
+Freshness: Fetch count on dashboard load and on staff notification Realtime events, reconnect/visibility, and 30-second reconciliation; fetch the preview on open and refresh it on staff Realtime events while open
+Stale behavior: Keep the last displayed count if refresh fails; log the error and retry on the next Realtime/reconciliation refresh
+Missing-cache behavior: No cache; request the count-only endpoint or fetch the preview when opened
+Invalidation trigger: No cache; notification changes refresh the count and, while open, the preview
+Cache layer: None
+Cache key: None
+TTL: None; API responses use no-store
+
+Offline behavior: Keep the last displayed count and preview; refresh after reconnect
+Security notes: Count and previews are scoped to the authenticated user; alert-broadcast deliveries are excluded from the staff-notification scope and remain on the separate Alert Broadcasts page; the background count request returns no notification bodies or actor profiles
+Manual clear method: None; marking a notification read updates the dropdown and the next Realtime refresh
+```
+
 ## Rewards and point settings
 
 The reward catalog and the signed-in user's redeemed reward IDs are read from
@@ -1062,4 +1088,26 @@ TTL: None
 Offline behavior: Pages show a load error with Retry
 Security notes: Service-role reads behind authorizeAdminApi; reviewer edits from the browser cannot change office_reply (trigger in migration 102)
 Manual clear method: None needed
+```
+
+## Registered event calendar
+
+The profile's conditional **Registered Events** tab displays the three most
+recent confirmed registrations and links to the full calendar.
+
+```text
+Feature: Signed-in user's registered event calendar and profile recent registrations
+Data fetched: Confirmed registrations, registration timestamps, and corresponding event dates, titles, locations, and status
+Change frequency: Registration or cancellation, plus event schedule or status updates
+Visibility: User-specific; only the signed-in user's registrations
+Freshness: Fetch without cache when the calendar is opened or the profile tab is loaded
+Stale behavior: Do not display stale registration or schedule data
+Missing-cache behavior: Read from the session-authorized API and show a retryable error on failure
+Invalidation trigger: None; no cache is populated, so the next visit reads current records
+Cache layer: None; browser fetch and API response use no-store
+Cache key: None
+TTL: 0
+Offline behavior: No stale calendar; retain the current screen and provide retry
+Security notes: The server derives user_id from the signed session, queries only that user's confirmed registrations, and returns private, no-store responses
+Manual clear method: None; there is no cache
 ```

@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { clientIp, consumeRateLimit } from '@/lib/rateLimit'
-import { notifyAdministrators } from '@/lib/adminNotifications'
+import { notifyAdministrators, notifyModerators } from '@/lib/adminNotifications'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -94,11 +94,16 @@ export async function POST(request) {
     console.error('Report submission failed:', error.message)
     return respond({ success: false, message: 'Unable to submit your report.' }, 500)
   }
-  await notifyAdministrators(client, {
+  const reportNotification = {
+    actorId: reporterId,
     title: tableName === 'info_users' ? 'User account reported' : 'Content reported',
     message: `New ${reportType} report requires review.`,
     type: 'warning',
     link: '/info/admin/moderation',
-  })
+  }
+  await Promise.all([
+    notifyAdministrators(client, reportNotification),
+    notifyModerators(client, reportNotification),
+  ])
   return respond({ success: true, reportId: data.id }, 201)
 }

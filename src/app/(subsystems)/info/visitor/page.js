@@ -13,6 +13,7 @@ import { decodeReviewText } from '@/lib/reviewText'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import { usePublicSettings } from '@/lib/usePublicSettings'
 import { loginUrlFor } from '@/lib/loginPrompt'
+import { notifyToast } from '@/lib/toast.mjs'
 import FrequentlyAskedQuestions from '@/app/(subsystems)/info/components/FrequentlyAskedQuestions'
 import connectDaetLogo from '@/app/(subsystems)/info/assets/images/logo.png'
 import styles from './VisitorHome.module.css'
@@ -178,7 +179,6 @@ export default function VisitorHomePage() {
   }, [reload])
 
   const [reportingId, setReportingId] = useState('')
-  const [notice, setNotice] = useState('')
   const reportReview = async (review) => {
     const reason = window.prompt('Why are you reporting this review?')?.trim()
     if (!reason) return
@@ -196,9 +196,9 @@ export default function VisitorHomePage() {
       }
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to report this review.')
-      setNotice('Thank you. The review was sent to our moderators.')
+      notifyToast('Thank you. The review was sent to our moderators.', 'success')
     } catch (error) {
-      setNotice(error.message || 'Unable to report this review right now.')
+      notifyToast(error.message || 'Unable to report this review right now.', 'error')
     } finally {
       setReportingId('')
     }
@@ -454,7 +454,6 @@ export default function VisitorHomePage() {
           <section aria-labelledby="reviews-heading" className="bg-white py-12">
             <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
               <div id="reviews-heading"><SectionHeader eyebrow="Reviews" title="What visitors say" /></div>
-              {notice ? <p role="status" className="mb-4 rounded-xl bg-sky-50 px-4 py-2 text-sm text-sky-800">{notice}</p> : null}
               <div className="grid gap-4 md:grid-cols-3">
                 {data.reviews.map((review) => {
                   const text = decodeReviewText(review.review_text)

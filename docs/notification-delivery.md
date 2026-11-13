@@ -14,6 +14,26 @@ Database migrations, RLS policies, notification preferences, and push webhook de
 
 The diagnostic API routes and automated test files have been removed. Optional Supabase seeding is disabled. The historical category migration retains its identity but no longer inserts sample accounts, tourism content, or fabricated activity on fresh installations. Already-applied database records are unchanged: review them with the tourism office and back up the database before any approved cleanup. Do not reset a live database to remove sample content.
 
+## Central notification center
+
+The in-app inbox and bell use the existing `info_notifications` table; the
+separate legacy `notifications` table is not used by the application. The
+notification API scopes every read, update, and delete to the signed-in user,
+and the table's RLS policy allows authenticated users to read only their own
+rows. Realtime subscriptions filter by recipient ID and reconcile after
+reconnects and while the page is visible.
+
+Existing API and database producers cover content announcements, event
+submissions and moderation decisions, comments and reactions, follows,
+feedback/inquiries, reports, staff messages, alerts, and event registrations.
+Migration `114_event_activity_notifications.sql` additionally notifies active
+members when a submitted event is approved. Migration
+`115_registered_event_reschedule_notifications.sql` sends confirmed registrants
+and saved-event users a dedicated notification containing the new date/time
+when a published event is rescheduled. It replaces the legacy saved-event
+change trigger to prevent duplicate cancellation or reschedule notifications.
+No new notification table or shared notification cache is introduced.
+
 ## Cache decision
 
 This cleanup introduces no read-heavy feature or new cache. Existing user-scoped cache keys, TTLs, successful-write invalidation, stale/offline behavior, and manual clear controls remain unchanged. Diagnostic responses are no longer served; deploy a fresh build to remove the old routes.

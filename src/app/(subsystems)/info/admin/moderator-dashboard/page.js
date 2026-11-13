@@ -139,7 +139,7 @@ export default function ModeratorDashboard() {
   useEffect(() => {
     let active = true
     const loadUnreadNotifications = () => {
-      readJson('/info/api/notifications')
+      readJson('/info/api/notifications?count_only=true&scope=staff')
         .then((result) => {
           if (active) setUnreadNotifications(Number(result.unread_count) || 0)
         })

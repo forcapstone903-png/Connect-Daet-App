@@ -3,14 +3,13 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, Bookmark, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, ShieldAlert, Siren, Trophy, UserRound, X } from 'lucide-react'
+import { Bell, Bookmark, CalendarDays, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, ShieldAlert, Siren, Trophy, UserRound, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
+import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { useUserSettings } from '@/components/UserSettingsProvider'
-
-const UNREAD_REFRESH_INTERVAL_MS = 10_000
 
 function readStoredUserId() {
   if (typeof window === 'undefined') return ''
@@ -58,18 +57,42 @@ export default function MobileNav({ mobileOnly = false }) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
   const [followingUsers, setFollowingUsers] = useState([])
   const [followingLoading, setFollowingLoading] = useState(false)
-  const [followingError, setFollowingError] = useState(false)
+  const [followingError, setFollowingError] = useState('')
   const [followingReloadToken, setFollowingReloadToken] = useState(0)
   const visibleFollowingUsers = followingUsers.slice(0, 5)
   const hasMoreFollowingUsers = followingUsers.length > visibleFollowingUsers.length
   const [userName, setUserName] = useState('')
   const [userAvatarUrl, setUserAvatarUrl] = useState('')
   const [userPoints, setUserPoints] = useState(() => Number(getStoredSessionObject()?.points) || 0)
+  const [notificationUserId] = useState(() => readStoredUserId())
   const [showProfileMenu, setShowProfileMenu] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const profileMenuRef = useRef(null)
   const mobileDrawerRef = useRef(null)
+  const notificationRealtime = useRealtimeRefresh({
+    channelName: `navigation-realtime-${notificationUserId || 'uninitialized'}`,
+    tables: notificationUserId
+      ? [
+          { table: 'info_notifications', filter: `user_id=eq.${notificationUserId}` },
+          'direct_messages',
+        ]
+      : [],
+    enabled: Boolean(notificationUserId),
+    shouldRefreshEvent: (payload) => {
+      if (payload?.table === 'direct_messages') {
+        const message = payload?.new || payload?.old
+        if (message?.sender_id !== notificationUserId && message?.recipient_id !== notificationUserId) return false
+      }
+      if (payload?.table === 'info_notifications') {
+        window.dispatchEvent(new CustomEvent('daet-notifications-updated', {
+          detail: { refreshPreview: true },
+        }))
+      }
+      return true
+    },
+  })
+  const { setRefreshCallback } = notificationRealtime
 
   useEffect(() => {
     const handleCommentsSheetState = (event) => setCommentsSheetOpen(Boolean(event.detail?.open))
@@ -192,17 +215,19 @@ export default function MobileNav({ mobileOnly = false }) {
     let active = true
     const loadFollowing = async () => {
       setFollowingLoading(true)
-      setFollowingError(false)
+      setFollowingError('')
       try {
         const response = await fetch('/info/api/users/following', {
           credentials: 'same-origin',
           cache: 'no-store',
         })
-        const result = await response.json()
-        if (!response.ok || !result?.success) throw new Error('Unable to load followed users.')
+        const result = await response.json().catch(() => null)
+        if (!response.ok || !result?.success) {
+          throw new Error(result?.message || `Unable to load followed users (HTTP ${response.status}).`)
+        }
         if (active) setFollowingUsers(result.following_users || [])
-      } catch {
-        if (active) setFollowingError(true)
+      } catch (error) {
+        if (active) setFollowingError(error instanceof Error ? error.message : t('navigation.following.error'))
       } finally {
         if (active) setFollowingLoading(false)
       }
@@ -212,7 +237,7 @@ export default function MobileNav({ mobileOnly = false }) {
     return () => {
       active = false
     }
-  }, [mobileDrawerOpen, followingReloadToken])
+  }, [mobileDrawerOpen, followingReloadToken, t])
 
   useEffect(() => {
     // Deferred so the effect body does not trigger synchronous state updates
@@ -264,8 +289,6 @@ export default function MobileNav({ mobileOnly = false }) {
 
   useEffect(() => {
     let active = true
-    const session = getStoredSessionObject()
-    const userId = session?.user_id || session?.id || session?.userId || session?.sub || ''
 
     const loadUnreadAlerts = async () => {
       try {
@@ -273,9 +296,15 @@ export default function MobileNav({ mobileOnly = false }) {
           fetch('/info/api/notifications', { credentials: 'same-origin', cache: 'no-store' }),
           fetch('/info/api/messages', { credentials: 'same-origin', cache: 'no-store' }),
         ])
-        const notificationsResult = notificationsResponse.ok ? await notificationsResponse.json() : null
+        if (!notificationsResponse.ok) {
+          throw new Error(`Notification refresh failed with status ${notificationsResponse.status}.`)
+        }
+        const notificationsResult = await notificationsResponse.json()
+        if (!notificationsResult?.success) {
+          throw new Error(notificationsResult?.message || 'Notification refresh failed.')
+        }
         const messagesResult = messagesResponse.ok ? await messagesResponse.json() : null
-        if (active && notificationsResult?.success) {
+        if (active) {
           const notifications = Array.isArray(notificationsResult.notifications) ? notificationsResult.notifications : []
           const visibleUnreadCount = notifications.filter((notification) => !notification.is_read).length
           const reportedUnreadCount = Number(notificationsResult.unread_count)
@@ -283,15 +312,25 @@ export default function MobileNav({ mobileOnly = false }) {
             ? Math.max(reportedUnreadCount, visibleUnreadCount)
             : visibleUnreadCount
           setUnreadAlerts(unreadCount)
+          window.dispatchEvent(new CustomEvent('daet-notifications-updated', {
+            detail: { unreadCount },
+          }))
         }
         if (active && messagesResult?.success) setUnreadMessages(messagesResult.unread_messages || 0)
-      } catch {
-        // Notifications are optional for the navigation shell.
+        if (active && !messagesResponse.ok) {
+          console.error('Unread message refresh failed:', messagesResponse.status)
+        }
+      } catch (error) {
+        if (active) console.error('Unread notification refresh failed:', error)
+        return false
       }
+      return true
     }
 
+    setRefreshCallback(loadUnreadAlerts)
     loadUnreadAlerts()
     const updateUnreadAlerts = (event) => {
+      if (event?.detail?.refreshPreview) return
       const detailUnreadCount = Number(event?.detail?.unreadCount)
 
       if (Number.isFinite(detailUnreadCount)) {
@@ -308,28 +347,13 @@ export default function MobileNav({ mobileOnly = false }) {
 
     window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
     window.addEventListener('daet-messages-updated', updateUnreadMessages)
-    const refreshTimer = window.setInterval(loadUnreadAlerts, UNREAD_REFRESH_INTERVAL_MS)
-    let realtimeChannel = null
-    if (userId && supabase?.channel) {
-      realtimeChannel = supabase.channel(`navigation-realtime-${userId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'info_notifications', filter: `user_id=eq.${userId}` }, () => {
-          if (active) void loadUnreadAlerts()
-        })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'direct_messages' }, (payload) => {
-          const message = payload?.new || payload?.old
-          if (active && message && (message.sender_id === userId || message.recipient_id === userId)) void loadUnreadAlerts()
-        })
-        .subscribe()
-      }
 
     return () => {
       active = false
       window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
       window.removeEventListener('daet-messages-updated', updateUnreadMessages)
-      window.clearInterval(refreshTimer)
-      if (realtimeChannel) supabase.removeChannel(realtimeChannel)
     }
-  }, [])
+  }, [setRefreshCallback])
 
   // The mobile top header renders its own bell and message badges, so share the
   // exact unread counts instead of letting it duplicate these two fetches.
@@ -465,6 +489,7 @@ export default function MobileNav({ mobileOnly = false }) {
             {showProfileMenu && (
               <div role="menu" className="usr-pop-in absolute bottom-[calc(100%+0.5rem)] left-0 z-50 w-full overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl">
                 <Link role="menuitem" href="/info/user/profile" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><UserRound className="h-4 w-4" aria-hidden="true" />{t('common.profile')}</Link>
+                <Link role="menuitem" href="/info/user/events/calendar" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><CalendarDays className="h-4 w-4" aria-hidden="true" />Event Calendar</Link>
                 <Link role="menuitem" href="/info/user/settings" onClick={() => setShowProfileMenu(false)} className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Settings className="h-4 w-4" aria-hidden="true" />{t('common.settings')}</Link>
                 <div className="my-1 border-t border-slate-100" role="separator" />
                 <button role="menuitem" type="button" onClick={openLogoutConfirm} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50"><LogOut className="h-4 w-4" aria-hidden="true" />{t('common.logOut')}</button>
@@ -529,7 +554,7 @@ export default function MobileNav({ mobileOnly = false }) {
                 {followingLoading && <p className="px-3 py-2 text-sm text-slate-400">{t('navigation.following.loading')}</p>}
                 {followingError && (
                   <div className="px-3 py-2">
-                    <p role="alert" className="text-sm text-red-300">{t('navigation.following.error')}</p>
+                    <p role="alert" className="text-sm text-red-300">{followingError}</p>
                     <button
                       type="button"
                       onClick={() => setFollowingReloadToken((token) => token + 1)}

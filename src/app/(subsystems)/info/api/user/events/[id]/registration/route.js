@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -28,6 +29,45 @@ async function getContext(request, params) {
   const client = getAdminClient()
   if (!client) return { response: noCache({ success: false, message: 'Event registrations are not configured.' }, 500) }
   return { userId, eventId, client }
+}
+
+async function notifyRegistrationChange(client, { eventId, userId, action }) {
+  const { data: event, error } = await client
+    .from('info_events')
+    .select('id, title, created_by')
+    .eq('id', eventId)
+    .maybeSingle()
+  if (error) {
+    console.error('Event registration notification lookup failed:', { code: error.code || null })
+  }
+
+  const eventTitle = event?.title || 'this event'
+  const cancelled = action === 'cancelled'
+  const eventLink = `/info/user/events/${eventId}`
+  const notifications = [{
+    user_id: userId,
+    title: cancelled ? 'Event registration cancelled' : 'Event registration confirmed',
+    message: cancelled
+      ? `Your registration for "${eventTitle}" has been cancelled.`
+      : `Your registration for "${eventTitle}" is confirmed.`,
+    type: cancelled ? 'event_registration_cancelled' : 'event_registration_confirmed',
+    link: eventLink,
+  }]
+
+  if (event?.created_by && event.created_by !== userId) {
+    notifications.push({
+      user_id: event.created_by,
+      title: cancelled ? 'Event registration cancelled' : 'New event registration',
+      message: cancelled
+        ? `A visitor cancelled their registration for "${eventTitle}".`
+        : `A visitor registered for "${eventTitle}".`,
+      type: cancelled ? 'event_registration_cancelled' : 'event_registration',
+      link: `/info/admin/events?open=${encodeURIComponent(eventId)}`,
+      actor_id: userId,
+    })
+  }
+
+  await notifyUserRecipients(client, notifications, 'Event registration')
 }
 
 export async function GET(request, { params }) {
@@ -64,6 +104,11 @@ export async function POST(request, { params }) {
           : 'Unable to save your event registration.',
     }, capacityReached || unavailable ? 409 : 500)
   }
+  await notifyRegistrationChange(context.client, {
+    eventId: context.eventId,
+    userId: context.userId,
+    action: 'registered',
+  })
   return noCache({ success: true, registration: data })
 }
 
@@ -77,5 +122,10 @@ export async function DELETE(request, { params }) {
   })
   if (error) return noCache({ success: false, message: 'Unable to cancel your event registration.' }, 500)
   if (!data) return noCache({ success: false, message: 'No event registration was found.' }, 404)
+  await notifyRegistrationChange(context.client, {
+    eventId: context.eventId,
+    userId: context.userId,
+    action: 'cancelled',
+  })
   return noCache({ success: true, registration: data })
 }

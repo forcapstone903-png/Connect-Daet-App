@@ -35,6 +35,7 @@ import {
   getAuthCookieFromDocument,
   getStoredSessionObject,
 } from "@/lib/authCookies";
+import { notifyToast } from "@/lib/toast.mjs";
 import {
   invalidateCachePrefix,
 } from "@/lib/cache";
@@ -230,18 +231,11 @@ export default function PublicProfilePage() {
   const [loading, setLoading] = useState(true);
   const [followLoading, setFollowLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const menuRef = useRef(null);
 
-  const showNotice = (text, tone = "success") => setNotice({ text, tone });
-
-  useEffect(() => {
-    if (!notice) return undefined;
-    const timer = window.setTimeout(() => setNotice(null), 4000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
+  const showNotice = (text, tone = "success") => notifyToast(text, tone);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -796,15 +790,6 @@ export default function PublicProfilePage() {
               </div>
             </div>
 
-            {notice ? (
-              <p
-                role="status"
-                aria-live="polite"
-                className={`usr-inline-note mt-4 ${notice.tone === "error" ? "usr-inline-note-error" : "usr-inline-note-success"}`}
-              >
-                {notice.text}
-              </p>
-            ) : null}
           </div>
 
           <div className="profile-stat-strip grid grid-cols-2 border-b border-slate-200 text-center sm:grid-cols-4">

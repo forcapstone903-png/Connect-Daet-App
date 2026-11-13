@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Bookmark, CalendarDays, FileText, Loader, MapPin, MessageSquare, MapPinned, Route, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { notifyToast } from '@/lib/toast.mjs'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 
@@ -43,7 +44,6 @@ export default function UserSavedPage() {
   const [activeType, setActiveType] = useState('all')
   const [planning, setPlanning] = useState(null)
   const [planSaving, setPlanSaving] = useState(false)
-  const [notice, setNotice] = useState('')
 
   async function loadSavedItems() {
     try {
@@ -112,8 +112,9 @@ export default function UserSavedPage() {
     try {
       await callFavorites('POST', { action: 'remove', itemType: item.favoriteType, itemId: item.id })
       setSavedItems((previous) => previous.filter((entry) => !(entry.type === item.type && entry.id === item.id)))
+      notifyToast('Removed from your saved items.', 'success')
     } catch (error) {
-      setNotice(error.message || 'Unable to remove this item.')
+      notifyToast(error.message || 'Unable to remove this item.', 'error')
     }
   }
 
@@ -131,10 +132,10 @@ export default function UserSavedPage() {
       setSavedItems((previous) => previous.map((entry) => (entry.type === planning.item.type && entry.id === planning.item.id
         ? { ...entry, plannedVisitDate: favorite.planned_visit_date || '', tripNotes: favorite.trip_notes || '' }
         : entry)))
-      setNotice(clear ? 'Removed from your trip.' : 'Trip plan saved.')
+      notifyToast(clear ? 'Removed from your trip.' : 'Trip plan saved.', 'success')
       setPlanning(null)
     } catch (error) {
-      setNotice(error.message || 'Unable to save your trip plan.')
+      notifyToast(error.message || 'Unable to save your trip plan.', 'error')
     } finally {
       setPlanSaving(false)
     }
@@ -188,7 +189,6 @@ export default function UserSavedPage() {
 
         <SectionTabs label="Saved content filters" value={activeType} onChange={setActiveType} options={typeFilters} />
 
-        {notice ? <p role="status" className="mb-3 rounded-xl bg-teal-50 px-3 py-2 text-sm text-teal-800">{notice}</p> : null}
         {loadError ? (
           <div role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
             {loadError} <button type="button" onClick={() => { setLoading(true); void loadSavedItems() }} className="ml-1 font-semibold underline">Retry</button>

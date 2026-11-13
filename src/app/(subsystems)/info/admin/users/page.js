@@ -13,6 +13,7 @@ import { getAdminRoleLabel, hasAdminAccess, isSuperAdmin } from '@/lib/adminRole
 import { GRANTABLE_PERMISSIONS, REVOCABLE_PERMISSIONS, hasPermission, isStaffRole } from '@/lib/staffRoles.mjs'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
+import { notifyToast } from '@/lib/toast.mjs';
 
 // Lookup lists (populated from DB where available)
 // Defaults provided as fallbacks
@@ -84,8 +85,8 @@ export default function ManageUsersPage() {
   const [toastMessage, setToastMessage] = useState(null);
 
   const showToast = useCallback((message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const computeStats = (data) => {

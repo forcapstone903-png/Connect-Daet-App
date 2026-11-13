@@ -8,6 +8,7 @@ import { AdminLoadingScreen, AdminShell } from '@/app/(subsystems)/info/componen
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
+import { notifyToast } from '@/lib/toast.mjs';
 
 export default function SettingsShell({ title, subtitle, children }) {
   const router = useRouter();
@@ -16,8 +17,8 @@ export default function SettingsShell({ title, subtitle, children }) {
   const [toastMessage, setToastMessage] = useState(null);
 
   const showToast = (message, isError = false) => {
-    setToastMessage({ message, isError });
-    window.setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   };
 
   useEffect(() => {

@@ -7,7 +7,7 @@ import { AdminButton, AdminPanel, AdminShell } from '@/app/(subsystems)/info/com
 import styles from './page.module.css'
 
 async function fetchNotifications() {
-  const response = await fetch('/info/api/notifications', {
+  const response = await fetch('/info/api/notifications?scope=staff', {
     credentials: 'same-origin',
     cache: 'no-store',
   })
@@ -120,7 +120,7 @@ export default function ModeratorNotificationsPage() {
   const markAllRead = async () => {
     setSaving(true)
     try {
-      const response = await fetch('/info/api/notifications', {
+      const response = await fetch('/info/api/notifications?scope=staff', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -142,7 +142,7 @@ export default function ModeratorNotificationsPage() {
   const openNotification = async (notification) => {
     try {
       if (!notification.is_read) {
-        const response = await fetch('/info/api/notifications', {
+        const response = await fetch('/info/api/notifications?scope=staff', {
           method: 'PATCH',
           credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },

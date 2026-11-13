@@ -11,6 +11,7 @@ import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 import { trackUserActivity } from '@/lib/trackActivity';
+import { notifyToast } from '@/lib/toast.mjs';
 
 const BLOG_CATEGORIES = [
   { value: 'news', label: 'News', color: 'bg-blue-100 text-blue-700' },
@@ -62,8 +63,8 @@ export default function BlogManagement() {
   const [blogForm, setBlogForm] = useState(EMPTY_FORM);
 
   const showToast = (message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   };
 
   const canEditBlog = (blog) => Boolean(

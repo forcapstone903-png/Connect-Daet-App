@@ -6,6 +6,7 @@ import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
+import { notifyToast } from '@/lib/toast.mjs';
 
 const MEDIA_API = '/info/api/admin/media';
 
@@ -47,8 +48,8 @@ export default function FileManagementPage() {
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((message, isError = false) => {
-    setToast({ message, isError });
-    window.setTimeout(() => setToast(null), 5000);
+    setToast(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const loadFiles = useCallback(async () => {

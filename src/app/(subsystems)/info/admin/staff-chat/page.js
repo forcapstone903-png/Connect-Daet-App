@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Clock3, MessageCircle, RefreshCw, Users } from 'lucide-react'
 import { AdminButton, AdminPanel, AdminShell } from '@/app/(subsystems)/info/components/admin'
 import { getStaffRoleLabel } from '@/lib/staffRoles.mjs'
+import { notifyToast } from '@/lib/toast.mjs'
 import styles from './page.module.css'
 
 const MAX_MESSAGE_LENGTH = 2000
@@ -35,7 +36,6 @@ export default function StaffChatPage() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const scrollContainerRef = useRef(null)
   const stickToBottomRef = useRef(true)
   const requestInProgressRef = useRef(false)
@@ -82,7 +82,6 @@ export default function StaffChatPage() {
 
     setSending(true)
     setError('')
-    setNotice('')
     try {
       const response = await fetch('/info/api/admin/staff-chat', {
         method: 'POST',
@@ -97,11 +96,11 @@ export default function StaffChatPage() {
 
       setMessages((current) => [...current, result.message].slice(-100))
       setDraft('')
-      setNotice(result.notificationWarning || 'Message sent to the staff team.')
+      notifyToast(result.notificationWarning || 'Message sent to the staff team.', result.notificationWarning ? 'warning' : 'success')
       stickToBottomRef.current = true
     } catch (sendError) {
       console.error('Staff chat send failed:', sendError)
-      setError(sendError.message || 'Unable to send your message.')
+      notifyToast(sendError.message || 'Unable to send your message.', 'error')
     } finally {
       setSending(false)
     }
@@ -186,7 +185,6 @@ export default function StaffChatPage() {
 
           <form className={styles.composer} onSubmit={sendMessage}>
             {error ? <p className={styles.errorMessage} role="alert">{error}</p> : null}
-            {notice ? <p className={styles.noticeMessage} role="status">{notice}</p> : null}
             <label className={styles.composerLabel} htmlFor="staff-chat-message">
               <Users aria-hidden="true" />
               Message the staff team

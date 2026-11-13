@@ -7,6 +7,7 @@ import { Eye, FilePenLine, MessageSquareText, Save, Send, Trash2 } from 'lucide-
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { notifyToast } from '@/lib/toast.mjs'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import MultiMediaUpload from '@/app/(subsystems)/info/components/MultiMediaUpload'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -52,7 +53,6 @@ export default function EditBlogPage() {
   const [saving, setSaving] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
   const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
@@ -113,14 +113,11 @@ export default function EditBlogPage() {
 
   const saveStory = async (nextStatus) => {
     if (!form.title.trim() || !form.content.trim()) {
-      setError('Add a title and the article content before saving your story.')
-      setNotice('')
+      notifyToast('Add a title and the article content before saving your story.', 'warning')
       return
     }
 
     setSaving(nextStatus || 'save')
-    setError('')
-    setNotice('')
     const wasApproved = form.approval_status === 'approved'
 
     const payload = {
@@ -145,7 +142,7 @@ export default function EditBlogPage() {
       const result = await response.json().catch(() => ({}))
 
       if (!response.ok || !result.success) {
-        setError(result.message || 'Unable to save this story right now.')
+        notifyToast(result.message || 'Unable to save this story right now.', 'error')
         return
       }
 
@@ -161,17 +158,17 @@ export default function EditBlogPage() {
       const submittedForApproval = nextStatus === 'published'
         || (wasApproved && result.blog?.approval_status === 'pending')
       if (submittedForApproval) {
-        setNotice('Submitted for administrator approval. Opening your blog posts...')
+        notifyToast('Submitted for administrator approval.', 'warning')
         router.push('/info/user/blog-submissions')
         return
       }
 
-      setNotice(result.blog?.approval_status === 'pending'
+      notifyToast(result.blog?.approval_status === 'pending'
         ? 'Changes saved. This post is still pending administrator approval.'
         : nextStatus === 'draft' ? 'Draft saved.' : 'Changes saved.')
     } catch (saveError) {
       console.error('Blog update failed:', saveError)
-      setError('Unable to save this story right now.')
+      notifyToast('Unable to save this story right now.', 'error')
     } finally {
       setSaving('')
     }
@@ -189,15 +186,16 @@ export default function EditBlogPage() {
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) {
-        setError(result.message || 'Unable to delete this story right now.')
+        notifyToast(result.message || 'Unable to delete this story right now.', 'error')
         return
       }
       invalidateCachePrefix('feed:user:')
       invalidateCachePrefix('profile:user:')
+      notifyToast('Story deleted.', 'success')
       router.push('/info/user/drafts')
     } catch (deleteError) {
       console.error('Blog delete failed:', deleteError)
-      setError('Unable to delete this story right now.')
+      notifyToast('Unable to delete this story right now.', 'error')
     } finally {
       setDeleting(false)
     }
@@ -280,15 +278,6 @@ export default function EditBlogPage() {
           }}
           className="usr-card usr-enter space-y-5 p-4 sm:p-6"
         >
-          {error || notice ? (
-            <p
-              role="status"
-              aria-live="polite"
-              className={`usr-inline-note ${error ? 'usr-inline-note-error' : 'usr-inline-note-success'}`}
-            >
-              {error || notice}
-            </p>
-          ) : null}
           {['rejected', 'changes_requested'].includes(form.approval_status) && form.rejection_reason ? (
             <p className={`usr-inline-note ${form.approval_status === 'changes_requested' ? 'border-blue-200 bg-blue-50 text-blue-800' : 'usr-inline-note-error'}`}>
               {form.approval_status === 'changes_requested' ? <MessageSquareText className="mr-1 inline h-4 w-4" /> : null}

@@ -24,6 +24,7 @@ import {
   summarizeReach,
 } from '@/lib/alerts.mjs'
 import { DAET_BARANGAYS } from '@/lib/listings.mjs'
+import { notifyToast } from '@/lib/toast.mjs'
 
 const TABS = [
   { value: 'active', label: 'Active' },
@@ -98,8 +99,8 @@ export default function AlertsConsole() {
   const [now, setNow] = useState(() => Date.now())
 
   const showToast = useCallback((message, isError = false) => {
-    setToast({ message, isError })
-    window.setTimeout(() => setToast(null), 4000)
+    setToast(null)
+    notifyToast(message, isError ? 'error' : undefined)
   }, [])
 
   const load = useCallback(async () => {

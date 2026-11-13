@@ -10,6 +10,7 @@ import { AdminBadge, AdminPageHeader } from '@/app/(subsystems)/info/components/
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
+import { notifyToast } from '@/lib/toast.mjs';
 
 const isUrgentInquiry = (inquiry) => {
   if (!inquiry?.created_at) return false;
@@ -85,8 +86,8 @@ export default function AdminModerationPage() {
   }, [])
 
   const showToast = useCallback((message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   }, []);
 
   const loadModerationState = useCallback(async () => {

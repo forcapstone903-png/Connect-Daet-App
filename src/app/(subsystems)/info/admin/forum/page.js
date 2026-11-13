@@ -7,6 +7,7 @@ import AdminDiscussionModeration from '@/app/(subsystems)/info/components/admin/
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
+import { notifyToast } from '@/lib/toast.mjs';
 
 export default function AdminForumPage() {
   const [user, setUser] = useState(null);
@@ -26,8 +27,8 @@ export default function AdminForumPage() {
   const [newCategory, setNewCategory] = useState('');
 
   const showToast = (message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   };
 
   const fetchThreads = async () => {

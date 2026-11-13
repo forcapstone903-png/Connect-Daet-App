@@ -18,6 +18,7 @@ import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
 import { AdminPagination, AdminStatCard } from '@/app/(subsystems)/info/components/admin';
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh';
+import { notifyToast } from '@/lib/toast.mjs';
 
 const EVENT_CATEGORIES = [
   { value: 'festival', label: 'Festival' },
@@ -129,8 +130,8 @@ export default function AdminEventsPage() {
   const eventElListenersRef = useRef(new Map());
 
   const showToast = (message, isError = false) => {
-    setToastMessage({ message, isError });
-    setTimeout(() => setToastMessage(null), 3000);
+    setToastMessage(null);
+    notifyToast(message, isError ? 'error' : undefined);
   };
 
   const fetchRegistrations = useCallback(async () => {

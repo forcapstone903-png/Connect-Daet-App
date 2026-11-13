@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Archive } from 'lucide-react'
 import { getStoredSession } from '@/lib/authCookies'
+import { notifyToast } from '@/lib/toast.mjs'
 import QuoteRepostCard from '@/app/(subsystems)/info/components/user/QuoteRepostCard'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -20,7 +21,6 @@ export default function ProfileArchivePage() {
   const [reposts, setReposts] = useState([])
   const [posts, setPosts] = useState([])
   const [loading, setLoading] = useState(true)
-  const [notice, setNotice] = useState('')
 
   const loadArchive = useCallback(async () => {
     if (!session?.user_id) return
@@ -32,7 +32,7 @@ export default function ProfileArchivePage() {
       setReposts(result.content?.archived_reposts || [])
       setPosts(result.content?.archived_user_posts || [])
     } catch (error) {
-      setNotice(error.message || 'Unable to load archive.')
+      notifyToast(error.message || 'Unable to load archive.', 'error')
     } finally {
       setLoading(false)
     }
@@ -52,11 +52,12 @@ export default function ProfileArchivePage() {
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) {
-      setNotice(result.message || 'Unable to restore repost.')
+      notifyToast(result.message || 'Unable to restore repost.', 'error')
       return
     }
     setReposts((previous) => previous.filter((item) => item.repost_id !== repost.repost_id))
     window.dispatchEvent(new CustomEvent('daet-repost-visibility-changed', { detail: { action: 'restored', repost } }))
+    notifyToast('Repost restored.', 'success')
   }
 
   const remove = async (repost) => {
@@ -64,25 +65,28 @@ export default function ProfileArchivePage() {
     const response = await fetch(`/info/api/reposts/${repost.repost_id}`, { method: 'DELETE', credentials: 'same-origin' })
     const result = await response.json().catch(() => ({}))
     if (!response.ok || !result.success) {
-      setNotice(result.message || 'Unable to delete repost.')
+      notifyToast(result.message || 'Unable to delete repost.', 'error')
       return
     }
     setReposts((previous) => previous.filter((item) => item.repost_id !== repost.repost_id))
+    notifyToast('Repost deleted.', 'success')
   }
 
   const restorePost = async (post) => {
     const response = await fetch(`/info/api/posts/${post.id}`, { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'published' }) })
     const result = await response.json().catch(() => ({}))
-    if (!response.ok || !result.success) return setNotice(result.message || 'Unable to restore post.')
+    if (!response.ok || !result.success) return notifyToast(result.message || 'Unable to restore post.', 'error')
     setPosts((previous) => previous.filter((item) => item.id !== post.id))
+    notifyToast('Post restored.', 'success')
   }
 
   const removePost = async (post) => {
     if (!window.confirm('Delete post?\n\nThis will permanently remove your post.')) return
     const response = await fetch(`/info/api/posts/${post.id}`, { method: 'DELETE', credentials: 'same-origin' })
     const result = await response.json().catch(() => ({}))
-    if (!response.ok || !result.success) return setNotice(result.message || 'Unable to delete post.')
+    if (!response.ok || !result.success) return notifyToast(result.message || 'Unable to delete post.', 'error')
     setPosts((previous) => previous.filter((item) => item.id !== post.id))
+    notifyToast('Post deleted.', 'success')
   }
 
   if (!session?.user_id) return <main className="tourism-shell usr-section-page usr-profile flex min-h-screen items-center justify-center p-6 text-sm font-semibold text-slate-600">Please sign in to view your archive.</main>
@@ -102,8 +106,6 @@ export default function ProfileArchivePage() {
         >
           <span className="usr-section-counter">{reposts.length + posts.length} archived</span>
         </UserSectionHeader>
-
-        {notice && <p role="status" className="usr-inline-note usr-inline-note-error mb-4">{notice}</p>}
 
         {loading ? (
           <div className="usr-section-loading">
