@@ -106,6 +106,10 @@ export default function VisitorHomePage() {
   const { settings } = usePublicSettings()
   const [menuOpen, setMenuOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [searchFocused, setSearchFocused] = useState(false)
+  const [searchSuggestions, setSearchSuggestions] = useState([])
+  const [searchSuggestionsLoading, setSearchSuggestionsLoading] = useState(false)
+  const [searchSuggestionsError, setSearchSuggestionsError] = useState(false)
   const [reload, setReload] = useState(0)
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState([])
@@ -178,6 +182,52 @@ export default function VisitorHomePage() {
     return () => { active = false }
   }, [reload])
 
+  useEffect(() => {
+    const term = query.trim()
+    if (!searchFocused || !term) return
+
+    let active = true
+    const timeout = window.setTimeout(async () => {
+      const pattern = `%${term.replace(/[\\%_]/g, '\\$&')}%`
+      const now = new Date().toISOString()
+
+      try {
+        const [placesResult, eventsResult, storiesResult] = await Promise.all([
+          supabase.from('info_tourist_spots').select('id, name')
+            .eq('status', 'active').ilike('name', pattern).limit(4),
+          supabase.from('info_events').select('id, title')
+            .eq('status', 'published').eq('approval_status', 'approved')
+            .ilike('title', pattern).limit(4),
+          supabase.from('info_blogs').select('id, title')
+            .eq('status', 'published').eq('approval_status', 'approved')
+            .or(`published_at.is.null,published_at.lte.${now}`)
+            .ilike('title', pattern).limit(4),
+        ])
+
+        const failedResult = [placesResult, eventsResult, storiesResult].find((result) => result.error)
+        if (failedResult?.error) throw failedResult.error
+        if (!active) return
+
+        setSearchSuggestions([
+          ...(placesResult.data || []).map((item) => ({ id: item.id, title: item.name, type: 'Place' })),
+          ...(eventsResult.data || []).map((item) => ({ id: item.id, title: item.title, type: 'Event' })),
+          ...(storiesResult.data || []).map((item) => ({ id: item.id, title: item.title, type: 'Story' })),
+        ].slice(0, 6))
+        setSearchSuggestionsLoading(false)
+      } catch (error) {
+        if (!active) return
+        console.error('Visitor search suggestions failed:', error)
+        setSearchSuggestionsError(true)
+        setSearchSuggestionsLoading(false)
+      }
+    }, 200)
+
+    return () => {
+      active = false
+      window.clearTimeout(timeout)
+    }
+  }, [query, searchFocused])
+
   const [reportingId, setReportingId] = useState('')
   const reportReview = async (review) => {
     const reason = window.prompt('Why are you reporting this review?')?.trim()
@@ -207,7 +257,14 @@ export default function VisitorHomePage() {
   const submitSearch = (event) => {
     event.preventDefault()
     const term = query.trim()
+    setSearchFocused(false)
     router.push(`/info/visitor/search${term ? `?q=${encodeURIComponent(term)}` : ''}`)
+  }
+
+  const submitSearchSuggestion = (suggestion) => {
+    setQuery(suggestion.title)
+    setSearchFocused(false)
+    router.push(`/info/visitor/search?q=${encodeURIComponent(suggestion.title)}`)
   }
 
   const { contact, municipality } = settings
@@ -296,14 +353,74 @@ export default function VisitorHomePage() {
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-200 sm:text-sm">{municipality.name}, {municipality.province}</p>
             <h1 className={`${styles.heroTitle} mt-3 max-w-3xl text-4xl font-black leading-[1.08] tracking-tight text-white sm:text-5xl lg:text-6xl`}>Plan your visit to {municipality.name}</h1>
             <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-200 sm:text-lg sm:leading-7">Find welcoming places, local events, and real-time advisories from the {settings.tourismOfficeName}.</p>
-            <form onSubmit={submitSearch} role="search" className={`${styles.heroSearch} mt-7 flex max-w-2xl gap-2 rounded-2xl bg-white p-2 sm:mt-8`}>
-              <label htmlFor="visitor-search" className="sr-only">Search places, events, and stories</label>
-              <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2">
-                <Search className="h-5 w-5 shrink-0 text-slate-400" aria-hidden="true" />
-                <input id="visitor-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search places, food, events…" className="w-full min-w-0 bg-transparent py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 sm:text-base" />
-              </div>
-              <button type="submit" className={`${styles.heroSearchButton} rounded-xl bg-sky-600 px-6 text-sm font-bold text-white transition hover:bg-sky-700 active:scale-[0.98]`}>Search</button>
-            </form>
+            <div
+              className="relative mt-7 max-w-2xl sm:mt-8"
+              onBlur={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setSearchFocused(false)
+              }}
+            >
+              <form onSubmit={submitSearch} role="search" className={`${styles.heroSearch} flex gap-2 rounded-2xl bg-white p-2`}>
+                <label htmlFor="visitor-search" className="sr-only">Search places, events, and stories</label>
+                <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2 px-2">
+                  <Search className="h-5 w-5 shrink-0 text-slate-400" aria-hidden="true" />
+                  <input
+                    id="visitor-search"
+                    value={query}
+                    onFocus={() => setSearchFocused(true)}
+                    onChange={(event) => {
+                      const nextQuery = event.target.value
+                      setQuery(nextQuery)
+                      setSearchSuggestions([])
+                      setSearchSuggestionsLoading(Boolean(nextQuery.trim()))
+                      setSearchSuggestionsError(false)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setSearchFocused(false)
+                    }}
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-haspopup="listbox"
+                    aria-controls="visitor-search-suggestions"
+                    aria-expanded={searchFocused && Boolean(query.trim())}
+                    placeholder="Search places, food, events…"
+                    className="w-full min-w-0 bg-transparent py-2.5 text-sm text-slate-900 outline-none placeholder:text-slate-400 sm:text-base"
+                  />
+                </div>
+                <button type="submit" className={`${styles.heroSearchButton} rounded-xl bg-sky-600 px-6 text-sm font-bold text-white transition hover:bg-sky-700 active:scale-[0.98]`}>Search</button>
+              </form>
+              {searchFocused && query.trim() ? (
+                <div
+                  id="visitor-search-suggestions"
+                  role="listbox"
+                  aria-label="Search suggestions"
+                  className="mt-2 max-h-64 overflow-y-auto rounded-2xl border border-white/15 bg-slate-950/95 p-2 text-white shadow-2xl backdrop-blur"
+                >
+                  <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Suggestions</p>
+                  {searchSuggestions.map((suggestion) => (
+                    <button
+                      key={`${suggestion.type}-${suggestion.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected="false"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => submitSearchSuggestion(suggestion)}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-medium text-slate-100 transition hover:bg-white/10 focus-visible:bg-white/10 focus-visible:outline-none"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                        <span className="truncate">{suggestion.title}</span>
+                      </span>
+                      <span className="shrink-0 text-[10px] text-slate-400">{suggestion.type}</span>
+                    </button>
+                  ))}
+                  {searchSuggestionsLoading ? <p role="status" className="px-3 py-2 text-xs text-slate-400">Finding suggestions…</p> : null}
+                  {searchSuggestionsError ? <p role="status" className="px-3 py-2 text-xs text-amber-200">Suggestions are temporarily unavailable. You can still search.</p> : null}
+                  {!searchSuggestionsLoading && !searchSuggestionsError && !searchSuggestions.length ? (
+                    <p className="px-3 py-2 text-xs text-slate-400">No matching places, events, or stories yet.</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
           </div>
         </section>
 

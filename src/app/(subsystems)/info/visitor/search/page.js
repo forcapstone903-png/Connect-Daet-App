@@ -18,11 +18,12 @@ const popularSearches = ['Bagasbas Beach', 'Calaguas', 'Daet events', 'local foo
 function SearchContent() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams?.get('q') || ''
+  const initialType = searchParams?.get('type') || ''
 
-  return <SearchContentView initialQuery={initialQuery} />
+  return <SearchContentView initialQuery={initialQuery} initialType={initialType} />
 }
 
-function SearchContentView({ initialQuery }) {
+function SearchContentView({ initialQuery, initialType }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchPath = pathname.startsWith('/info/user/') || pathname.startsWith('/info/admin/')
@@ -42,7 +43,7 @@ function SearchContentView({ initialQuery }) {
       return []
     }
   })
-  const [activeTab, setActiveTab] = useState(() => (['spots', 'events', 'blogs', 'threads'].includes(searchParams.get('type')) ? searchParams.get('type') : 'all'))
+  const [activeTab, setActiveTab] = useState(() => (['spots', 'events', 'blogs', 'threads'].includes(initialType) ? initialType : 'all'))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)

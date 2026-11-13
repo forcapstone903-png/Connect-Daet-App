@@ -159,6 +159,29 @@ Security notes: Cache only public spot data; no authentication tokens or user-sp
 Manual clear method: invalidatePersistentCache('places:public:all:daet-content-v1')
 ```
 
+## Visitor Home Search Suggestions
+
+The visitor home search performs short, debounced Supabase reads as the query
+changes. Suggestions are intentionally not cached so newly published or
+unpublished public content is reflected immediately.
+
+```text
+Feature: Visitor home search suggestions
+Data fetched: Names of active public places and titles of approved, published events and stories matching the query
+Change frequency: Tourism staff may publish, edit, or unpublish content at any time
+Visibility: Public content only
+Freshness: Fetch after a 200 ms typing debounce, including for one-character queries
+Stale behavior: Do not show old suggestions for a changed query
+Missing-cache behavior: No cache; query Supabase for matching suggestions
+Invalidation trigger: No cache; each changed query fetches current public content
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: Show that suggestions are unavailable; keep the search form usable
+Security notes: Queries select only public names and titles and enforce active/published/approved status; no user-specific data is queried or stored
+Manual clear method: None; changing the query or refocusing the search fetches current suggestions
+```
+
 ## Admin Tourist Spot Management
 
 The management page fetches the complete spot list from the private admin API
