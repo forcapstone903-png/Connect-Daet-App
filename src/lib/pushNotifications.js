@@ -6,6 +6,8 @@ const debugLog = (...args) => {
   }
 }
 
+export const PUSH_SUBSCRIPTION_READY_EVENT = 'daet:push-subscription-ready'
+
 export function isIOSDevice() {
   if (typeof navigator === 'undefined') return false
 
@@ -228,6 +230,7 @@ export async function subscribeUserToPush({ userId } = {}) {
   }
 
   debugLog('[push] Subscription saved successfully')
+  window.dispatchEvent(new Event(PUSH_SUBSCRIPTION_READY_EVENT))
 
   return {
     success: true,

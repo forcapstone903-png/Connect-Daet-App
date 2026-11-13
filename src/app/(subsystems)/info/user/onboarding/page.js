@@ -21,6 +21,7 @@ import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 import { FALLBACK_PLACES, FALLBACK_TOPICS, getOnboardingStepMeta, getRequiredSelectionCount } from '@/lib/onboardingUtils'
+import { subscribeUserToPush } from '@/lib/pushNotifications'
 
 export default function OnboardingPage() {
   const router = useRouter()
@@ -35,6 +36,7 @@ export default function OnboardingPage() {
   const [avatarUrl, setAvatarUrl] = useState('')
   const [coverUrl, setCoverUrl] = useState('')
   const [permissions, setPermissions] = useState({ location: 'not-requested', camera: 'not-requested', microphone: 'not-requested', notifications: 'not-requested' })
+  const [notificationsReady, setNotificationsReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -205,16 +207,42 @@ export default function OnboardingPage() {
   }
 
   const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-      setPermissions((current) => ({ ...current, notifications: 'unsupported' }))
-      return
-    }
+    setError('')
 
-    const permission = await Notification.requestPermission()
-    setPermissions((current) => ({
-      ...current,
-      notifications: permission === 'granted' ? 'allowed' : permission === 'denied' ? 'blocked' : 'dismissed',
-    }))
+    try {
+      const result = await subscribeUserToPush({ userId })
+      if (result.success) {
+        setNotificationsReady(true)
+        setPermissions((current) => ({ ...current, notifications: 'allowed' }))
+        return
+      }
+
+      const browserPermission = typeof Notification === 'undefined' ? 'default' : Notification.permission
+      let notificationStatus = 'unavailable'
+      if (result.reason === 'unsupported') {
+        notificationStatus = 'unsupported'
+      } else if (result.reason === 'permission-denied' || browserPermission === 'denied') {
+        notificationStatus = 'blocked'
+      } else if (result.reason === 'permission-dismissed') {
+        notificationStatus = 'dismissed'
+      } else if (browserPermission === 'granted') {
+        notificationStatus = 'allowed'
+      }
+
+      setPermissions((current) => ({
+        ...current,
+        notifications: notificationStatus,
+      }))
+      setError(result.message || 'Unable to enable notifications right now.')
+    } catch (permissionError) {
+      console.error('Push subscription setup failed:', permissionError)
+      const browserPermission = typeof Notification === 'undefined' ? 'default' : Notification.permission
+      setPermissions((current) => ({
+        ...current,
+        notifications: { granted: 'allowed', denied: 'blocked' }[browserPermission] || 'unavailable',
+      }))
+      setError(permissionError?.message || 'Unable to enable notifications right now.')
+    }
   }
 
   const requestMicrophonePermission = async () => {
@@ -471,7 +499,7 @@ export default function OnboardingPage() {
                         key={key}
                         type="button"
                         onClick={onClick}
-                        disabled={permissions[key] === 'allowed'}
+                        disabled={permissions[key] === 'allowed' && (key !== 'notifications' || notificationsReady)}
                         className="flex items-center gap-3 rounded-xl border border-white bg-white px-3 py-3 text-left shadow-sm transition hover:border-sky-300 disabled:cursor-default disabled:opacity-80"
                       >
                         <Icon className="h-4 w-4 shrink-0 text-sky-600" />

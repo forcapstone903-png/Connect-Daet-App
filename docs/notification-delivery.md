@@ -4,6 +4,10 @@
 
 The shared follower-delivery helper is used by user forum/event creation and admin forum publication. It reads current followers from Supabase, excludes the author, deduplicates recipients, and writes unread notifications after content is saved. Drafts do not notify followers.
 
+The signed-in onboarding permission action requests browser permission and
+creates/saves the device's push subscription in the same user gesture. A
+browser permission grant by itself does not enable push delivery.
+
 Follow, reaction, and comment handlers retain their real database-backed implementations. Removing the automated harness does not remove these features or replace their data sources.
 
 Delivery is best-effort, not a durable retry queue. The shared follower helper logs delivery failures; a saved publication must not be reported as failed merely because its notification delivery failed. Other notification producers retain their own error-handling implementations.

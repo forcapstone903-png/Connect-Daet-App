@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
-import { getPushAvailability, subscribeUserToPush } from '@/lib/pushNotifications'
+import { getPushAvailability, PUSH_SUBSCRIPTION_READY_EVENT, subscribeUserToPush } from '@/lib/pushNotifications'
 import { getStoredSessionObject } from '@/lib/authCookies'
 
 // Browser-wide, non-sensitive UI preference only (no account or subscription data).
@@ -84,6 +84,17 @@ export default function PushNotificationPrompt() {
     navigator.serviceWorker?.addEventListener('message', handleServiceWorkerMessage)
     return () => navigator.serviceWorker?.removeEventListener('message', handleServiceWorkerMessage)
   }, [userId])
+
+  useEffect(() => {
+    const handlePushSubscriptionReady = () => {
+      setPermission('granted')
+      setStatus('success')
+      setMessage('Notifications enabled.')
+    }
+
+    window.addEventListener(PUSH_SUBSCRIPTION_READY_EVENT, handlePushSubscriptionReady)
+    return () => window.removeEventListener(PUSH_SUBSCRIPTION_READY_EVENT, handlePushSubscriptionReady)
+  }, [])
 
   const dismissPrompt = () => {
     setDismissed(true)
