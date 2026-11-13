@@ -476,8 +476,8 @@ export default function VisitorHomePage() {
 
         {/* ---------- Events + announcements ---------- */}
         <section aria-labelledby="events-heading" className="bg-white py-12">
-          <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:px-8">
-            <div>
+          <div className="mx-auto grid max-w-7xl grid-cols-1 gap-10 px-4 sm:px-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] lg:px-8">
+            <div className="min-w-0">
               <div id="events-heading"><SectionHeader eyebrow="Events & festivals" title="Coming up" href="/info/visitor/events" linkLabel="All events" /></div>
               <div className="space-y-3">
                 {loading ? <SkeletonCards count={3} /> : data.events.length ? data.events.map((event) => {
@@ -501,7 +501,7 @@ export default function VisitorHomePage() {
                 }) : <EmptyNote>No upcoming events right now. Check back soon.</EmptyNote>}
               </div>
             </div>
-            <aside aria-labelledby="notices-heading">
+            <aside aria-labelledby="notices-heading" className="min-w-0">
               <div className="mb-5">
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-sky-700">From the tourism office</p>
                 <h2 id="notices-heading" className="mt-1 text-2xl font-black tracking-tight text-slate-900">Announcements</h2>
