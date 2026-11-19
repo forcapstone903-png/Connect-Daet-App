@@ -6691,3 +6691,149 @@ html.dark .conversation-page .usr-message-bubble:not(.usr-message-own) {
     border-top: 1px solid var(--line);
   }
 }
+
+@media (min-width: 1024px) {
+  html:not(.dark):has(.user-page-shell) .user-page-shell {
+    --page-background: #f8fafc;
+    --background: #f8fafc;
+    --surface-main: #f8fafc;
+    background: #f8fafc;
+  }
+
+  .user-page-shell .usr-desktop-header,
+  .user-page-shell .user-top-header-spacer {
+    display: none !important;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header,
+  html.dark:has(.user-page-shell) .usr-desktop-header {
+    border-bottom-color: rgb(255 255 255 / 12%);
+    background: linear-gradient(110deg, #081c49 0%, #0b2d62 100%) !important;
+    color: #f8fafc;
+    box-shadow: 0 12px 30px rgb(2 6 23 / 18%);
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header-brand-title,
+  html.dark:has(.user-page-shell) .usr-desktop-header-brand-title {
+    color: #fff !important;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header-brand-title > span,
+  html.dark:has(.user-page-shell) .usr-desktop-header-brand-title > span {
+    color: #38bdf8 !important;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header form,
+  html.dark:has(.user-page-shell) .usr-desktop-header form {
+    width: min(520px, calc(100vw - 600px));
+    border: 1px solid rgb(255 255 255 / 14%);
+    background: rgb(255 255 255 / 8%);
+    color: #e2e8f0;
+    box-shadow: inset 0 1px rgb(255 255 255 / 5%);
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header form:focus-within,
+  html.dark:has(.user-page-shell) .usr-desktop-header form:focus-within {
+    border-color: rgb(56 189 248 / 65%);
+    background: rgb(255 255 255 / 12%);
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header input[type='search'],
+  html.dark:has(.user-page-shell) .usr-desktop-header input[type='search'] {
+    color: #fff;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header input[type='search']::placeholder,
+  html.dark:has(.user-page-shell) .usr-desktop-header input[type='search']::placeholder {
+    color: #cbd5e1;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header > button,
+  html.dark:has(.user-page-shell) .usr-desktop-header > button,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header .usr-notification-trigger,
+  html.dark:has(.user-page-shell) .usr-desktop-header .usr-notification-trigger,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header .usr-header-profile-trigger,
+  html.dark:has(.user-page-shell) .usr-desktop-header .usr-header-profile-trigger {
+    color: #e2e8f0;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header .usr-notification-trigger > svg,
+  html.dark:has(.user-page-shell) .usr-desktop-header .usr-notification-trigger > svg {
+    color: inherit !important;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header > button:hover,
+  html.dark:has(.user-page-shell) .usr-desktop-header > button:hover,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header .usr-notification-trigger:hover,
+  html.dark:has(.user-page-shell) .usr-desktop-header .usr-notification-trigger:hover,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header .usr-header-profile-trigger:hover,
+  html.dark:has(.user-page-shell) .usr-desktop-header .usr-header-profile-trigger:hover {
+    border-color: rgb(255 255 255 / 20%);
+    background: rgb(255 255 255 / 12%);
+    color: #fff;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-header > a,
+  html.dark:has(.user-page-shell) .usr-desktop-header > a {
+    color: #fff;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar {
+    top: 64px;
+    bottom: 0;
+    max-height: calc(100dvh - 64px);
+    border-right-color: rgb(255 255 255 / 12%);
+    background: linear-gradient(180deg, #0b2d62 0%, #081c49 100%) !important;
+    color: #f8fafc;
+    box-shadow: 6px 0 24px rgb(2 6 23 / 12%);
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > a:first-child,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > a:first-child {
+    border-bottom-color: rgb(255 255 255 / 12%);
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > a:first-child span > span:first-child,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > a:first-child span > span:first-child {
+    color: #fff !important;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > a:first-child span > span:last-child,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > a:first-child span > span:last-child {
+    color: #cbd5e1 !important;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar nav > a,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar nav > a,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > div > a,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > div > a,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > div > div > button,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > div > div > button {
+    color: #cbd5e1;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar nav > a[aria-current='page'],
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar nav > a[aria-current='page'],
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > div > a[aria-current='page'],
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > div > a[aria-current='page'] {
+    background: #1d68ed;
+    color: #fff;
+    box-shadow: 0 6px 16px rgb(29 104 237 / 24%);
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar nav > a:not([aria-current='page']):hover,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar nav > a:not([aria-current='page']):hover,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > div > a:hover,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > div > a:hover,
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > div > div > button:hover,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > div > div > button:hover {
+    background: rgb(255 255 255 / 10%);
+    color: #fff;
+  }
+
+  html:not(.dark):has(.user-page-shell) .usr-desktop-sidebar > div:last-child,
+  html.dark:has(.user-page-shell) .usr-desktop-sidebar > div:last-child {
+    border-top-color: rgb(255 255 255 / 12%);
+  }
+}

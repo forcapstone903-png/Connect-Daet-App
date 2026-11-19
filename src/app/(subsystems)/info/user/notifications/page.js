@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bell, CalendarDays, CheckCheck, Info, MessageCircle, Search, ShieldAlert, Sparkles, Trash2, X } from 'lucide-react'
+import { Bell, CalendarDays, CheckCheck, Info, MessageCircle, Repeat2, Search, ShieldAlert, Sparkles, Trash2, UserRound, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSession } from '@/lib/authCookies'
 import { notifyToast } from '@/lib/toast.mjs'
@@ -507,15 +507,15 @@ export default function UserNotificationsPage() {
     }
 
     if (normalizedType === 'comment' || normalizedType === 'reply') {
-      return { emoji: '💬', className: 'text-sky-600' }
+      return { Icon: MessageCircle, className: 'text-sky-600' }
     }
 
     if (normalizedType === 'follow') {
-      return { emoji: '👤', className: 'text-indigo-500' }
+      return { Icon: UserRound, className: 'text-indigo-500' }
     }
 
     if (normalizedType === 'repost' || normalizedType === 'share') {
-      return { emoji: '🔄', className: 'text-emerald-500' }
+      return { Icon: Repeat2, className: 'text-emerald-500' }
     }
 
     return null
@@ -606,6 +606,7 @@ export default function UserNotificationsPage() {
 
   const NotificationAvatar = ({ notification, actor, actorName, actorProfileHref }) => {
     const actionIcon = getNotificationActionIcon(notification)
+    const NotificationActionIcon = actionIcon?.Icon
     const NotificationTypeIcon = getNotificationIcon(notification)
     const normalizedType = String(notification?.type || '').toLowerCase()
     const isCommentType = normalizedType === 'comment' || normalizedType === 'reply'
@@ -636,7 +637,9 @@ export default function UserNotificationsPage() {
           </span>
         ) : actionIcon ? (
           <span className={`absolute -bottom-2 -right-1 flex h-7 w-7 items-center justify-center rounded-full bg-transparent text-[1.25rem] leading-none shadow-none ${actionIcon.className}`} aria-label="Notification action">
-            {actionIcon.emoji}
+            {NotificationActionIcon
+              ? <NotificationActionIcon className="h-4 w-4" aria-hidden="true" />
+              : actionIcon.emoji}
           </span>
         ) : null}
       </div>

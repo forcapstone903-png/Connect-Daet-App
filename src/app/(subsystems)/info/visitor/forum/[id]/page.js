@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import {
+  Archive,
   ChevronLeft,
   Bell,
+  CheckCircle2,
   Clock,
   Eye,
   Flag,
@@ -401,7 +403,12 @@ export default function PublicThreadDetailPage() {
             </div>
 
             <div className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold flex-shrink-0 ${getStatusColor(thread.status)}`}>
-              {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' || thread.status === 'closed' ? '🔒' : '📦'} {thread.status === 'closed' ? 'locked' : thread.status === 'active' ? 'published' : thread.status}
+              {thread.status === 'published' || thread.status === 'active'
+                ? <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+                : thread.status === 'locked' || thread.status === 'closed'
+                  ? <Lock className="h-3 w-3" aria-hidden="true" />
+                  : <Archive className="h-3 w-3" aria-hidden="true" />}
+              {thread.status === 'closed' ? 'locked' : thread.status === 'active' ? 'published' : thread.status}
             </div>
           </div>
 

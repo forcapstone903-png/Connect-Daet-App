@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { CalendarDays, FileText, MapPin } from 'lucide-react'
 
 const CONTENT_WORKSPACES = {
   attractions: '/info/admin/tourist-spots',
@@ -12,19 +13,19 @@ const workspaceCards = [
     href: CONTENT_WORKSPACES.attractions,
     title: 'Tourist attractions',
     description: 'Manage Daet destinations, visitor details, images, and publication status.',
-    icon: '📍',
+    icon: MapPin,
   },
   {
     href: CONTENT_WORKSPACES.blogs,
     title: 'Blogs and articles',
     description: 'Create and publish travel guides, local stories, and announcements.',
-    icon: '📝',
+    icon: FileText,
   },
   {
     href: CONTENT_WORKSPACES.events,
     title: 'Events',
     description: 'Manage community events, schedules, venues, and event status.',
-    icon: '📅',
+    icon: CalendarDays,
   },
 ]
 
@@ -48,18 +49,21 @@ export default async function AdminContentPage({ searchParams }) {
         </header>
 
         <div className="mt-8 grid gap-4 sm:grid-cols-2">
-          {workspaceCards.map((card) => (
+          {workspaceCards.map((card) => {
+            const CardIcon = card.icon
+            return (
             <Link
               key={card.href}
               href={card.href}
               className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-600"
             >
-              <span className="text-2xl" aria-hidden="true">{card.icon}</span>
+              <CardIcon className="h-6 w-6 text-sky-700" aria-hidden="true" />
               <h2 className="mt-4 text-lg font-bold text-slate-900 group-hover:text-sky-800">{card.title}</h2>
               <p className="mt-2 text-sm leading-6 text-slate-600">{card.description}</p>
               <span className="mt-5 inline-block text-sm font-bold text-sky-700">Open workspace →</span>
             </Link>
-          ))}
+            )
+          })}
         </div>
       </div>
     </main>

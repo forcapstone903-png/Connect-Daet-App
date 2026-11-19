@@ -4,6 +4,8 @@ import { getServerSession } from '@/lib/serverAuth'
 import { sanitizeRichText } from '@/lib/sanitizeRichText'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 import { notifyAdministrators, notifyModerators } from '@/lib/adminNotifications'
+import { notifyFollowers } from '@/lib/notificationAudience'
+import { processBlogModeration } from '@/lib/blogModerationService.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -29,7 +31,7 @@ export async function GET(request) {
 
   const { data, error } = await adminSupabase
     .from('info_blogs')
-    .select('id, title, excerpt, category, featured_image, status, approval_status, submitted_at, reviewed_at, rejection_reason, published_at, created_at, updated_at')
+    .select('id, title, excerpt, category, featured_image, status, approval_status, submitted_at, reviewed_at, rejection_reason, published_at, created_at, updated_at, moderation_status, risk_score, risk_level, moderation_reason, moderation_flags, auto_approved, moderation_checked_at')
     .eq('created_by', userId)
     .order('updated_at', { ascending: false })
 
@@ -137,24 +139,56 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: typedMessage }, { status: 500 })
     }
 
+    let moderation
+    let moderationWarning
     if (body.status === 'published') {
-      const notification = {
-        actorId: userId,
-        title: 'Blog awaiting approval',
-        message: `A new blog submission needs review: ${title}`,
-        type: 'warning',
-        link: '/info/admin/blogs?status=pending',
+      try {
+        const mediaWasNotStored = omittedColumns.some((column) => (
+          (column === 'images' && images.length > 0)
+          || (column === 'videos' && videos.length > 0)
+        ))
+        moderation = await processBlogModeration(adminSupabase, data.id, {
+          forcedReviewReason: mediaWasNotStored
+            ? 'Uploaded media could not be verified as stored; administrator review is required.'
+            : '',
+        })
+        if (moderation.auto_published && moderation.created_by) {
+          await notifyFollowers(adminSupabase, {
+            authorId: moderation.created_by,
+            type: 'post',
+            link: `/info/user/blogs/${data.id}`,
+            postId: data.id,
+            title: 'New post from someone you follow',
+            actionText: 'published a new post',
+            subject: moderation.title || title,
+          })
+        }
+      } catch (error) {
+        console.error('Blog moderation processing failed:', error)
+        moderationWarning = 'Your story is saved and remains unpublished because automated moderation could not finish. An administrator will review it.'
+        const notification = {
+          actorId: userId,
+          title: 'Blog moderation needs attention',
+          message: `Automated checks could not complete for a blog submission: ${title}`,
+          type: 'moderation',
+          link: '/info/admin/blogs?status=priority',
+        }
+        await Promise.all([
+          notifyAdministrators(adminSupabase, notification),
+          notifyModerators(adminSupabase, notification),
+        ])
       }
-      await Promise.all([
-        notifyAdministrators(adminSupabase, notification),
-        notifyModerators(adminSupabase, notification),
-      ])
     }
 
     const warning = omittedColumns.length
       ? `The story was saved, but these optional fields need a database migration: ${[...new Set(omittedColumns)].join(', ')}.`
       : undefined
-    return NextResponse.json({ success: true, blog: data, warning })
+    return NextResponse.json({
+      success: true,
+      blog: data,
+      moderation,
+      warning: [warning, moderationWarning].filter(Boolean).join(' ') || undefined,
+    }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     const errorMessage = error?.message || 'Unable to create your blog article.'
     console.error('Blog creation failed:', errorMessage)

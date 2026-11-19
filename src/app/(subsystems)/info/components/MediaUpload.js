@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { Image, Paperclip, Video } from 'lucide-react';
 import { trimLetterboxBars } from '@/lib/imageTrim';
 import { compressImage } from '@/lib/compressImage';
 
@@ -209,7 +210,11 @@ export default function MediaUpload({
             </>
           ) : (
             <>
-              <span>{mediaType === 'video' ? '🎥' : mediaType === 'image' ? '📷' : '📎'}</span>
+              {mediaType === 'video'
+                ? <Video className="h-4 w-4" aria-hidden="true" />
+                : mediaType === 'image'
+                  ? <Image className="h-4 w-4" aria-hidden="true" />
+                  : <Paperclip className="h-4 w-4" aria-hidden="true" />}
               <span>{buttonText}</span>
             </>
           )}

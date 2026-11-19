@@ -11,6 +11,8 @@ import {
   MessageSquare,
   Flag,
   Lock,
+  CheckCircle2,
+  MapPin,
   Archive,
   Pin,
   Tag,
@@ -794,7 +796,11 @@ export default function ThreadDetailPage() {
                 {thread.pinned && <Pin className="h-4 w-4 text-amber-600 flex-shrink-0" />}
                 {editingThread ? <input value={threadDraft.title} onChange={(event) => setThreadDraft((current) => ({ ...current, title: event.target.value }))} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 text-xl font-black outline-none" /> : <h1>{thread.title}</h1>}
                 <div className={`forum-view-status ${getStatusColor(thread.status)}`} aria-label={`Thread status: ${thread.status}`}>
-                  {thread.status === 'published' || thread.status === 'active' ? '✓' : thread.status === 'locked' || thread.status === 'closed' ? '🔒' : '📦'}
+                  {thread.status === 'published' || thread.status === 'active'
+                    ? <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                    : thread.status === 'locked' || thread.status === 'closed'
+                      ? <Lock className="h-4 w-4" aria-hidden="true" />
+                      : <Archive className="h-4 w-4" aria-hidden="true" />}
                 </div>
               </div>
 
@@ -821,7 +827,7 @@ export default function ThreadDetailPage() {
           )}
 
           {editingThread ? <textarea value={threadDraft.content} onChange={(event) => setThreadDraft((current) => ({ ...current, content: event.target.value }))} rows={5} className="forum-view-content-edit" /> : <div className="forum-view-content">{parsedThreadContent.text}</div>}
-          {thread.location && <p className="forum-view-location">📍 {thread.location}</p>}
+          {thread.location && <p className="forum-view-location"><MapPin className="h-4 w-4" aria-hidden="true" /> {thread.location}</p>}
           {threadAttachments.length > 0 && (
             <div className="forum-view-attachments">
               {threadAttachments.map((url, index) => (

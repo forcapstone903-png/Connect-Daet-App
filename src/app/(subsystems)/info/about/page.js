@@ -126,7 +126,7 @@ export default function AboutPage() {
                       Beyond its shores, Daet is celebrated as the home of the world-famous Queen Formosa pineapple, renowned for its intense natural sweetness and aromatic flavor. Every year, the vibrant Pinyasan Festival transforms the streets into a colorful carnival of dance, music, and gratitude.
                     </p>
                     <p>
-                      {settings.siteName || 'Daet Connect'} serves as the official digital bridge created by the {settings.tourismOfficeName || 'Municipality of Daet Tourism Office'}, empowering residents and visitors alike to navigate attractions, explore events, stay protected with verified safety advisories, and share in our local community.
+                      {settings.siteName || 'Connect Daet'} serves as the official digital bridge created by the {settings.tourismOfficeName || 'Municipality of Daet Tourism Office'}, empowering residents and visitors alike to navigate attractions, explore events, stay protected with verified safety advisories, and share in our local community.
                     </p>
                   </>
                 )}

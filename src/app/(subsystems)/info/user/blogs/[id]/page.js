@@ -10,6 +10,7 @@ import {
   ChevronDown,
   FileText,
   MessageSquare,
+  MapPin,
   MoreHorizontal,
   Flag,
   Clock,
@@ -26,6 +27,7 @@ import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { getStoryRecommendationCategories } from '@/lib/userInterests'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
@@ -117,19 +119,6 @@ const categories = {
   announcement: 'Announcements',
 }
 
-function getInterestCategoryValues(interests = []) {
-  const values = new Set()
-  interests.forEach((interest) => {
-    const value = String(interest || '').trim().toLowerCase()
-    if (/beach|nature|travel|outdoor/.test(value)) values.add('travel_guides')
-    if (/culture|heritage|art/.test(value)) values.add('cultural_insights')
-    if (/food|cuisine/.test(value)) values.add('food')
-    if (/history/.test(value)) values.add('history')
-    if (/event/.test(value)) values.add('events')
-  })
-  return [...values]
-}
-
 function canOptimizeImage(src) {
   if (!src) return false
   if (src.startsWith('/')) return true
@@ -177,7 +166,6 @@ export default function BlogDetailPage() {
   const [editorialLoading, setEditorialLoading] = useState(false)
   const [editorialError, setEditorialError] = useState('')
   const [editorialReloadKey, setEditorialReloadKey] = useState(0)
-  const [moderationPending, setModerationPending] = useState(0)
   const [editingCommentId, setEditingCommentId] = useState(null)
   const [editingContent, setEditingContent] = useState('')
   const [deletingCommentId, setDeletingCommentId] = useState(null)
@@ -331,8 +319,6 @@ export default function BlogDetailPage() {
             }).concat(preservedLocalComments)
           })
           setVisibleComments(INITIAL_COMMENTS)
-          setModerationPending((commentsData || []).filter((item) => item.status !== 'approved').length)
-
           const history = readLocalStorage(STORAGE_KEYS.readHistory, []) || []
           const updatedHistory = [
             { id: blogId, title: blogData.title, time: formatDate(new Date()) },
@@ -398,7 +384,6 @@ export default function BlogDetailPage() {
 
         if (active && requestSequence === commentRefreshSequenceRef.current) {
           setComments(roots)
-          setModerationPending(commentRows.filter((comment) => comment.status !== 'approved').length)
           setCommentLoadError('')
         }
       } catch (error) {
@@ -501,7 +486,7 @@ export default function BlogDetailPage() {
         if (failedResult) throw failedResult.error
         if (ignore) return
 
-        const interestCategories = getInterestCategoryValues(preferenceResult.data?.preferred_categories || [])
+        const interestCategories = getStoryRecommendationCategories(preferenceResult.data?.preferred_categories || [])
         const interestResult = interestCategories.length
           ? await supabase
               .from('info_blogs')
@@ -677,7 +662,6 @@ export default function BlogDetailPage() {
         })
         setReplyMentionRefs((prev) => ({ ...prev, [parentId]: [] }))
         setExpandedReplies((prev) => ({ ...prev, [parentId]: true }))
-        setModerationPending((prev) => prev + 1)
       } else {
         const response = await fetch('/info/api/blog-comments', {
           method: 'POST',
@@ -725,8 +709,6 @@ export default function BlogDetailPage() {
         setComments((prev) => [createdComment, ...prev])
         setCommentContent('')
         setReplyMentionRefs((prev) => ({ ...prev, root: [] }))
-        setModerationPending((prev) => prev + 1)
-
         const nextCommentCount = (blog.comments_count || 0) + 1
         await supabase.from('info_blogs').update({ comments_count: nextCommentCount }).eq('id', blogId)
         setBlog((prev) => ({ ...prev, comments_count: nextCommentCount }))
@@ -886,9 +868,9 @@ export default function BlogDetailPage() {
           </div>
           <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
             <span>{comment.created_at ? new Date(comment.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recently'}</span>
-            {comment.status && comment.status !== 'approved' && (
+            {comment.status === 'rejected' && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 border border-amber-200">
-                {comment.status}
+                Removed by moderation
               </span>
             )}
             {comment.local && (
@@ -1227,7 +1209,7 @@ export default function BlogDetailPage() {
           </div>
           <h1 className="medium-article-title mt-4 break-words text-2xl font-black leading-tight tracking-tight text-slate-950 sm:text-4xl">{blog.title}</h1>
           {blog.excerpt && <p className="medium-article-deck">{blog.excerpt}</p>}
-          {blog.location && <p className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500"><span aria-hidden="true">📍</span>{blog.location}</p>}
+          {blog.location && <p className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-slate-500"><MapPin className="h-4 w-4" aria-hidden="true" />{blog.location}</p>}
 
           <div className="medium-article-byline mt-5 flex items-start gap-3 border-t border-b border-slate-200 py-3.5">
             <div className="flex min-w-0 flex-1 items-center gap-3">
@@ -1405,14 +1387,6 @@ export default function BlogDetailPage() {
               <Link href="/info/login" className="medium-response-input">Sign in to share your thoughts</Link>
             </div>
           )}
-          {moderationPending > 0 && (
-            <div className="mb-3 flex justify-end">
-              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700 border border-amber-200">
-                {moderationPending} pending moderation
-              </span>
-            </div>
-          )}
-
           {comments.length > 0 ? (
             <div className="medium-response-list">
               {comments.slice(0, visibleComments).map((comment) => renderComment(comment))}
@@ -1473,7 +1447,7 @@ export default function BlogDetailPage() {
               )}
               {popularBlogs.length > 0 && (
                 <section className="medium-article-recommendation-section">
-                  <h2>Popular on Daet Connect</h2>
+                  <h2>Popular on Connect Daet</h2>
                   {renderArticleCards(popularBlogs)}
                 </section>
               )}

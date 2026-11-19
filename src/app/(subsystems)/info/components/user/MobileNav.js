@@ -10,6 +10,7 @@ import { performLogout } from '@/lib/clientLogout'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import { useUserSettings } from '@/components/UserSettingsProvider'
+import { getActiveNavigationHref } from '@/lib/routeMatching.mjs'
 
 function readStoredUserId() {
   if (typeof window === 'undefined') return ''
@@ -39,8 +40,8 @@ function getNavInitials(name = '') {
 }
 
 const navItems = [
-  { href: '/info/user/blogs/new', labelKey: 'common.createPost', icon: PlusCircle, highlight: true },
-  { href: '/info/user/dashboard', labelKey: 'common.home', icon: Home },
+  { href: '/info/user/blogs/new', labelKey: 'common.createPost', icon: PlusCircle, exact: true },
+  { href: '/info/user/dashboard', labelKey: 'common.home', icon: Home, exact: true },
   { href: '/info/user/profile', labelKey: 'common.profile', icon: UserRound },
   { href: '/info/user/moderation-appeals', label: 'Posting appeals', icon: ShieldAlert },
   { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
@@ -51,6 +52,10 @@ const navItems = [
 export default function MobileNav({ mobileOnly = false }) {
   const { t } = useUserSettings()
   const pathname = usePathname()
+  const activeSidebarHref = getActiveNavigationHref(pathname, [
+    ...navItems,
+    { href: '/info/user/notifications', exact: true },
+  ])
   const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
@@ -384,12 +389,13 @@ export default function MobileNav({ mobileOnly = false }) {
 
   const isVisitor = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
   const mobileNavigationItems = [
-    { href: isVisitor ? '/info/visitor' : '/info/user/dashboard', label: t('common.home'), icon: Home, isActive: isVisitor ? pathname === '/info/visitor' : pathname === '/info/user/dashboard' },
-    { href: isVisitor ? '/info/visitor/search' : '/info/user/search', label: t('common.search'), icon: Search, isActive: pathname.includes('/search') },
-    { href: '/info/user/blogs/new', label: t('common.create'), icon: Plus, isActive: pathname === '/info/user/blogs/new', isCreate: true },
-    { href: '/info/user/messaging', label: t('common.messages'), icon: MessageCircle, isActive: pathname.startsWith('/info/user/messaging'), unreadCount: unreadMessages },
-    { href: '/info/user/profile', label: t('common.profile'), icon: UserRound, isActive: pathname.startsWith('/info/user/profile') },
+    { href: isVisitor ? '/info/visitor' : '/info/user/dashboard', label: t('common.home'), icon: Home, exact: true },
+    { href: isVisitor ? '/info/visitor/search' : '/info/user/search', label: t('common.search'), icon: Search },
+    { href: '/info/user/blogs/new', label: t('common.create'), icon: Plus, exact: true, isCreate: true },
+    { href: '/info/user/messaging', label: t('common.messages'), icon: MessageCircle, unreadCount: unreadMessages },
+    { href: '/info/user/profile', label: t('common.profile'), icon: UserRound },
   ]
+  const activeMobileHref = getActiveNavigationHref(pathname, mobileNavigationItems)
 
   const openLogoutConfirm = () => {
     setMobileDrawerOpen(false)
@@ -412,49 +418,50 @@ export default function MobileNav({ mobileOnly = false }) {
     <>
       {!mobileOnly && (
         <nav className="usr-mobile-bottom-nav lg:hidden" aria-label="Primary navigation">
-          {mobileNavigationItems.map(({ href, label, icon: Icon, isActive, isCreate, unreadCount }) => (
-            <Link
-              key={href}
-              href={href}
-              aria-label={label}
-              aria-current={isActive ? 'page' : undefined}
-              className={`usr-mobile-bottom-nav-link${isActive ? ' is-active' : ''}${isCreate ? ' is-create' : ''}`}
-            >
-              <span className="usr-mobile-bottom-nav-icon">
-                <Icon aria-hidden="true" />
-                {unreadCount > 0 && (
-                  <span className="usr-mobile-bottom-nav-badge" aria-label={`${unreadCount} unread messages`}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </span>
-              <span className="usr-mobile-bottom-nav-label">{label}</span>
-            </Link>
-          ))}
+          {mobileNavigationItems.map(({ href, label, icon: Icon, isCreate, unreadCount }) => {
+            const isActive = activeMobileHref === href
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-label={label}
+                aria-current={isActive ? 'page' : undefined}
+                className={`usr-mobile-bottom-nav-link${isActive ? ' is-active' : ''}${isCreate ? ' is-create' : ''}`}
+              >
+                <span className="usr-mobile-bottom-nav-icon">
+                  <Icon aria-hidden="true" />
+                  {unreadCount > 0 && (
+                    <span className="usr-mobile-bottom-nav-badge" aria-label={`${unreadCount} unread messages`}>
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </span>
+                <span className="usr-mobile-bottom-nav-label">{label}</span>
+              </Link>
+            )
+          })}
         </nav>
       )}
       {!mobileOnly && <aside aria-label="Primary navigation" className="usr-desktop-sidebar fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-[6px_0_24px_rgba(15,23,42,0.12)]">
         <Link href="/info/user/dashboard" className="flex min-h-20 items-center gap-3 border-b border-slate-700 px-5">
           <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain" />
           <span className="min-w-0">
-            <span className="block truncate text-base font-black tracking-tight text-slate-100">Connect Daet</span>
+            <span className="block truncate text-base font-black tracking-tight text-slate-100">
+              Connect <span className="text-sky-400">Daet</span>
+            </span>
             <span className="mt-1 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
           </span>
         </Link>
         <nav aria-label="Main" className="flex-1 space-y-1 px-3 py-5">
-          {navItems.map(({ href, labelKey, label, icon: Icon, highlight }) => {
-            const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
+          {navItems.map(({ href, labelKey, label, icon: Icon }) => {
+            const isActive = activeSidebarHref === href
             return (
               <Link
                 key={href}
                 href={href}
                 aria-current={isActive ? 'page' : undefined}
-                className={`usr-press flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition ${highlight ? 'usr-create-post-nav' : ''} ${
-                  highlight
-                    ? 'my-2 bg-sky-600 text-white shadow-md shadow-sky-950/20 hover:bg-sky-500'
-                    : isActive
-                      ? 'bg-white/10 text-sky-300'
-                      : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                className={`usr-press flex min-h-12 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition ${
+                  isActive ? 'bg-white/10 text-sky-300' : 'text-slate-300 hover:bg-white/10 hover:text-white'
                 }`}
               >
                 <Icon className="h-5 w-5 shrink-0" />
@@ -469,7 +476,15 @@ export default function MobileNav({ mobileOnly = false }) {
           })}
         </nav>
         <div className="border-t border-slate-700 p-3">
-          <Link href="/info/user/notifications" className="usr-press mb-2 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white">
+          <Link
+            href="/info/user/notifications"
+            aria-current={activeSidebarHref === '/info/user/notifications' ? 'page' : undefined}
+            className={`usr-press mb-2 flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-semibold transition ${
+              activeSidebarHref === '/info/user/notifications'
+                ? 'bg-white/10 text-sky-300'
+                : 'text-slate-300 hover:bg-white/10 hover:text-white'
+            }`}
+          >
             <Bell className="h-5 w-5 shrink-0" />
             <span className="flex-1">{t('common.notifications')}</span>
             {unreadAlerts > 0 && (
@@ -505,6 +520,7 @@ export default function MobileNav({ mobileOnly = false }) {
         confirmText={loggingOut ? t('common.loggingOut') : t('common.ok')}
         cancelText={t('common.cancel')}
         isDangerous
+        hideNavigation
         onConfirm={confirmLogout}
         onCancel={() => setShowLogoutConfirm(false)}
       />
@@ -525,8 +541,8 @@ export default function MobileNav({ mobileOnly = false }) {
               </button>
             </div>
             <nav aria-label="Main" className="usr-navigation-drawer-nav flex-1 space-y-1 overflow-y-auto px-3 py-4">
-              {navItems.map(({ href, labelKey, label, icon: Icon, highlight }) => {
-                const isActive = pathname === href || (href !== '/info/user/dashboard' && pathname.startsWith(href))
+              {navItems.map(({ href, labelKey, label, icon: Icon }) => {
+                const isActive = activeSidebarHref === href
                 return (
                   <Link
                     key={href}
@@ -534,7 +550,7 @@ export default function MobileNav({ mobileOnly = false }) {
                     onClick={closeNavigationAfterSelection}
                     aria-current={isActive ? 'page' : undefined}
                     className={`usr-press usr-navigation-drawer-link flex min-h-12 items-center gap-3 rounded-xl px-3 text-left transition ${
-                      highlight ? 'usr-create-post-nav my-2 font-semibold text-white' : isActive ? 'bg-white/10 font-semibold text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                      isActive ? 'bg-white/10 font-semibold text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'
                     }`}
                   >
                     <Icon className="h-5 w-5 shrink-0" />

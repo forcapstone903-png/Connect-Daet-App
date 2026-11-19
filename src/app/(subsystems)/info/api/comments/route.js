@@ -3,8 +3,13 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { normalizeMentionName, parseMentionCandidates } from '@/lib/mentions'
 import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
-import { notifyModerators } from '@/lib/adminNotifications'
 import { publicErrorMessage } from '@/lib/publicError'
+import {
+  checkCommentRateLimit,
+  hasConfiguredCriticalCommentSafetySignal,
+  MAX_COMMENT_LENGTH,
+  sanitizeCommentContent,
+} from '@/lib/commentSafety.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -279,17 +284,20 @@ export async function POST(request) {
     if (!session?.user_id) {
       return NextResponse.json({ success: false, message: 'Please sign in to post a comment.' }, { status: 401 })
     }
-    const isModerator = ['admin', 'administrator', 'moderator'].includes(
-      String(session.role || '').trim().toLowerCase()
-    )
-
     const body = await request.json()
     const contentType = String(body.contentType || '').trim()
     const contentId = String(body.contentId || '').trim()
-    const commentBody = String(body.body || '').trim()
+    const rawCommentBody = String(body.body || '').trim()
 
-    if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !commentBody) {
+    if (!ALLOWED_CONTENT_TYPES.has(contentType) || !contentId || !rawCommentBody) {
       return NextResponse.json({ success: false, message: 'Invalid comment payload.' }, { status: 400 })
+    }
+    if (rawCommentBody.length > MAX_COMMENT_LENGTH) {
+      return NextResponse.json({ success: false, message: 'Your comment is too long.' }, { status: 400 })
+    }
+    const commentBody = sanitizeCommentContent(rawCommentBody)
+    if (!commentBody) {
+      return NextResponse.json({ success: false, message: 'Comment content is required.' }, { status: 400 })
     }
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
@@ -299,9 +307,16 @@ export async function POST(request) {
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const rateLimit = await checkCommentRateLimit(adminSupabase, request, session.user_id)
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ success: false, message: rateLimit.message }, { status: rateLimit.status })
+    }
     const restriction = await getActiveCommentRestriction(adminSupabase, session.user_id)
     if (restriction) {
       return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting comments.' }, { status: 403 })
+    }
+    if (await hasConfiguredCriticalCommentSafetySignal(adminSupabase, commentBody)) {
+      return NextResponse.json({ success: false, message: 'This comment cannot be published because it violates a critical safety rule.' }, { status: 422 })
     }
     const replyTo = body.replyTo ? String(body.replyTo) : null
     const gifUrl = typeof body.gifUrl === 'string' && body.gifUrl.trim().length > 0 ? body.gifUrl.trim() : null
@@ -319,7 +334,7 @@ export async function POST(request) {
         gif_url: gifUrl,
         sticker_url: stickerUrl,
         relevance_score: 0,
-        status: isModerator ? 'active' : 'pending',
+        status: 'active',
       })
       .select('id, content_type, content_id, user_id, parent_id, body, gif_url, sticker_url, relevance_score, status, created_at')
       .single()
@@ -375,19 +390,11 @@ export async function POST(request) {
     const mentionedUserIds = new Set(mentionRows.map((mention) => mention.user_id))
     const notificationRows = rows.filter((row) => !(row.type === 'comment' && mentionedUserIds.has(row.user_id)))
 
-    if (data.status === 'active' && notificationRows.length > 0) {
+    if (notificationRows.length > 0) {
       await dedupeAndInsertNotifications(adminSupabase, notificationRows)
     }
-    if (data.status === 'pending') {
-      await notifyModerators(adminSupabase, {
-        actorId: session.user_id,
-        title: 'Community comment awaiting approval',
-        message: `A new comment on a ${contentType.replace(/_/g, ' ')} needs review.`,
-        link: '/info/admin/moderation',
-      })
-    }
 
-    return NextResponse.json({ success: true, comment: data, pending: data.status === 'pending' })
+    return NextResponse.json({ success: true, comment: data })
   } catch (error) {
     console.error('Comment submit route error:', error)
     return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post comment.') }, { status: 500 })

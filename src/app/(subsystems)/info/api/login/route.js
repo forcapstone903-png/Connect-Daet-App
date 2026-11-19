@@ -7,7 +7,7 @@ import { checkLoginLockout, clearLoginFailures, recordLoginFailure } from '@/lib
 import { resolveAuthenticatedUserRole } from '@/lib/staffRoles.mjs'
 import { getAppSetting } from '@/lib/appSettingsServer'
 import { loadSessionOptions } from '@/lib/sessionIssue'
-import { describeSuspension, getActiveSuspension } from '@/lib/contentRestrictions'
+import { describeSuspension, getActivePermanentBan, getActiveSuspension } from '@/lib/contentRestrictions'
 import { publicErrorMessage } from '@/lib/publicError'
 
 function lockoutResponse(lockedUntil) {
@@ -244,10 +244,23 @@ export async function POST(request) {
         )
       }
 
-      if (!userProfile || userProfile.status !== 'active') {
+      let permanentBan
+      try {
+        permanentBan = await getActivePermanentBan(sessionAdmin, authData.user.id)
+      } catch (banLookupError) {
+        console.error('Permanent ban lookup failed during login:', { code: banLookupError.code || null })
         return NextResponse.json(
-          { success: false, message: 'This account is not active. Please contact support.' },
-          { status: 403 }
+          { success: false, message: 'Unable to verify your account status. Please try again.' },
+          { status: 503 }
+        )
+      }
+      if (userProfile?.status === 'banned' || permanentBan) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Your account has been permanently banned. If you believe this decision was made incorrectly, contact Connect Daet support to submit an appeal.',
+          },
+          { status: 403, headers: { 'Cache-Control': 'no-store' } }
         )
       }
 
@@ -261,8 +274,67 @@ export async function POST(request) {
           { status: 503 }
         )
       }
-      if (suspension) {
-        return NextResponse.json({ success: false, message: describeSuspension(suspension) }, { status: 403 })
+      if (suspension || userProfile?.status === 'suspended') {
+        let sessionVersion
+        let sessionOptions
+        try {
+          sessionVersion = await getUserSessionVersion(sessionAdmin, authData.user.id)
+          sessionOptions = await loadSessionOptions(sessionAdmin, userProfile)
+        } catch (sessionVersionError) {
+          console.error('Suspended login session setup failed:', { code: sessionVersionError.code || null })
+          return NextResponse.json(
+            { success: false, message: 'Unable to open the suspension appeal page. Please try again.' },
+            { status: 503 }
+          )
+        }
+
+        userProfile = {
+          ...userProfile,
+          user_type: resolveAuthenticatedUserRole(userProfile?.user_type, metadataRole),
+          status: 'suspended',
+        }
+        const response = NextResponse.json({
+          success: true,
+          suspended: true,
+          message: describeSuspension(suspension || { reason: 'Account suspension under review', expires_at: null }),
+          user: {
+            id: authData.user.id,
+            email: authData.user.email,
+            full_name: userProfile?.full_name || authData.user.email,
+            user_type: userProfile?.user_type || normalizedRole || 'tourist',
+            points: userProfile?.points || 0,
+            profile_image_url: userProfile?.profile_image_url || null,
+            onboarding_completed: !!userProfile?.onboarding_completed,
+            account_status: 'suspended',
+          },
+          session: {
+            access_token: authData.session?.access_token,
+            refresh_token: authData.session?.refresh_token,
+            expires_at: authData.session?.expires_at,
+          },
+        }, { headers: { 'Cache-Control': 'no-store' } })
+        setSecureSessionCookie(
+          response,
+          userProfile,
+          false,
+          sessionVersion,
+          15 * 60,
+          { ...sessionOptions, suspendedLimitedAccess: true },
+        )
+        return response
+      }
+
+      if (!userProfile) {
+        return NextResponse.json(
+          { success: false, message: 'Unable to load your account profile. Please try again.' },
+          { status: 403 }
+        )
+      }
+      if (!['active', 'pending'].includes(userProfile.status)) {
+        return NextResponse.json(
+          { success: false, message: 'This account status does not allow sign-in. Please contact support.' },
+          { status: 403 }
+        )
       }
 
       userProfile = {
@@ -341,6 +413,7 @@ export async function POST(request) {
         points: userProfile?.points || 0,
         profile_image_url: userProfile?.profile_image_url || null,
         onboarding_completed: !!userProfile?.onboarding_completed,
+        account_status: userProfile?.status || 'active',
       },
       session: {
         access_token: authData.session?.access_token,

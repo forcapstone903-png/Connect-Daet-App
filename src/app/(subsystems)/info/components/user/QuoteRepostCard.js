@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Play } from 'lucide-react'
+import { Play, Repeat2 } from 'lucide-react'
 import SocialActionBar from '@/app/(subsystems)/info/components/user/SocialActionBar'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
 import PostActionMenu from '@/app/(subsystems)/info/components/user/PostActionMenu'
@@ -255,7 +255,7 @@ export default function QuoteRepostCard({ item, reposter, reposterName, reposter
           {reposter?.profile_image_url ? <img src={reposter.profile_image_url} alt="" className="h-full w-full object-cover" /> : getInitials(reposterDisplayName)}
         </Link>
         <Link href={reposterId ? `/info/user/profile/${reposterId}` : '#'} className="font-bold text-slate-900 hover:text-sky-700">{reposterDisplayName}</Link>
-        <span aria-hidden="true" className="text-emerald-600">🔄</span>
+        <Repeat2 aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" />
         <span>reposted</span>
         <span className="text-slate-400">·</span>
         <PostTimestamp value={item.reposted_at || item.created_at} />

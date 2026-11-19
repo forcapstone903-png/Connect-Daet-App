@@ -47,10 +47,34 @@ export async function GET(request) {
 
   const params = new URL(request.url).searchParams
   try {
-    const [totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedResult] = await Promise.all([
+    const [
+      totalPosts,
+      pendingApprovals,
+      approvedPosts,
+      autoPublishedPosts,
+      highRiskPending,
+      mediumRiskPending,
+      rejectedPosts,
+      changesRequested,
+      draftPosts,
+      reportedResult,
+      activeClaimsResult,
+    ] = await Promise.all([
       getCount(client, null, authorization.session.user_id),
       getCount(client, 'pending', authorization.session.user_id),
       getCount(client, 'approved', authorization.session.user_id),
+      client.from('info_blogs')
+        .select('id', { count: 'exact', head: true })
+        .eq('approval_status', 'approved')
+        .eq('auto_approved', true),
+      client.from('info_blogs')
+        .select('id', { count: 'exact', head: true })
+        .eq('approval_status', 'pending')
+        .eq('risk_level', 'high'),
+      client.from('info_blogs')
+        .select('id', { count: 'exact', head: true })
+        .eq('approval_status', 'pending')
+        .eq('risk_level', 'medium'),
       getCount(client, 'rejected', authorization.session.user_id),
       getCount(client, 'changes_requested', authorization.session.user_id),
       getCount(client, 'draft', authorization.session.user_id),
@@ -58,8 +82,26 @@ export async function GET(request) {
         .select('id', { count: 'exact', head: true })
         .eq('reported_item_table', 'info_blogs')
         .in('status', ['pending', 'reviewing']),
+      client.from('admin_moderation_claims')
+        .select('claimed_by')
+        .eq('entity_type', 'blog')
+        .gt('expires_at', new Date().toISOString()),
     ])
+    if (autoPublishedPosts.error || highRiskPending.error || mediumRiskPending.error) {
+      throw autoPublishedPosts.error || highRiskPending.error || mediumRiskPending.error
+    }
     if (reportedResult.error) throw reportedResult.error
+    if (activeClaimsResult.error) throw activeClaimsResult.error
+    const workloadCounts = new Map()
+    for (const claim of activeClaimsResult.data || []) {
+      workloadCounts.set(claim.claimed_by, (workloadCounts.get(claim.claimed_by) || 0) + 1)
+    }
+    const workloadPeople = await getPeople(client, [...workloadCounts.keys()])
+    const workload = [...workloadCounts.entries()].map(([staffId, count]) => ({
+      user_id: staffId,
+      name: workloadPeople.get(staffId)?.full_name || workloadPeople.get(staffId)?.email || 'Moderator',
+      active_claims: count,
+    })).sort((a, b) => b.active_claims - a.active_claims)
 
     if (params.get('view') === 'history') {
       const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1)
@@ -70,11 +112,28 @@ export async function GET(request) {
         .order('created_at', { ascending: false })
       const blogId = params.get('blogId')
       if (blogId) historyQuery = historyQuery.eq('blog_id', blogId)
-      const { data, count, error } = await historyQuery.range((page - 1) * pageSize, page * pageSize - 1)
+      const { data, count, error } = await historyQuery.range(0, page * pageSize - 1)
       if (error) throw error
+      let moderationLogQuery = client
+        .from('blog_moderation_logs')
+        .select('id, blog_id, blog_title, blog_author_id, actor_id, action, risk_score, risk_level, flags, reason, details, created_at', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(0, page * pageSize - 1)
+      if (blogId) moderationLogQuery = moderationLogQuery.eq('blog_id', blogId)
+      const { data: moderationLogs, count: moderationLogCount, error: moderationLogsError } = await moderationLogQuery
+      if (moderationLogsError) throw moderationLogsError
 
-      const people = await getPeople(client, (data || []).flatMap((entry) => [entry.blog_author_id, entry.reviewed_by]))
-      const history = (data || []).map((entry) => ({
+      const combined = [
+        ...(data || []),
+        ...(moderationLogs || []).map((entry) => ({
+          ...entry,
+          reviewed_by: entry.actor_id,
+          source: 'automated',
+        })),
+      ].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+      const pageItems = combined.slice((page - 1) * pageSize, page * pageSize)
+      const people = await getPeople(client, pageItems.flatMap((entry) => [entry.blog_author_id, entry.reviewed_by]))
+      const history = pageItems.map((entry) => ({
         ...entry,
         author: people.get(entry.blog_author_id) || null,
         reviewer: people.get(entry.reviewed_by) || null,
@@ -82,13 +141,25 @@ export async function GET(request) {
       return NextResponse.json({
         success: true,
         history,
-        pagination: { page, pageSize, total: count || 0, pages: Math.ceil((count || 0) / pageSize) },
-        stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedPosts: reportedResult.count || 0 },
+        pagination: { page, pageSize, total: (count || 0) + (moderationLogCount || 0), pages: Math.ceil(((count || 0) + (moderationLogCount || 0)) / pageSize) },
+        stats: {
+          totalPosts,
+          pendingApprovals,
+          approvedPosts: Math.max(0, (approvedPosts || 0) - (autoPublishedPosts.count || 0)),
+          autoPublishedPosts: autoPublishedPosts.count || 0,
+          highRiskPending: highRiskPending.count || 0,
+          mediumRiskPending: mediumRiskPending.count || 0,
+          workload,
+          rejectedPosts,
+          changesRequested,
+          draftPosts,
+          reportedPosts: reportedResult.count || 0,
+        },
       }, { headers: { 'Cache-Control': 'private, no-store' } })
     }
 
     const status = params.get('status') || 'pending'
-    if (!['all', 'pending', 'approved', 'rejected', 'changes_requested', 'reported', 'draft'].includes(status)) {
+    if (!['all', 'pending', 'priority', 'auto_published', 'approved', 'rejected', 'changes_requested', 'reported', 'draft'].includes(status)) {
       return NextResponse.json({ success: false, message: 'Invalid approval status filter.' }, { status: 400 })
     }
     const page = Math.max(1, Number.parseInt(params.get('page') || '1', 10) || 1)
@@ -135,7 +206,19 @@ export async function GET(request) {
           success: true,
           posts: [],
           pagination: { page, pageSize, total: 0, pages: 0 },
-          stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedPosts: reportedResult.count || 0 },
+            stats: {
+              totalPosts,
+              pendingApprovals,
+              approvedPosts: Math.max(0, (approvedPosts || 0) - (autoPublishedPosts.count || 0)),
+              autoPublishedPosts: autoPublishedPosts.count || 0,
+              highRiskPending: highRiskPending.count || 0,
+              mediumRiskPending: mediumRiskPending.count || 0,
+              workload,
+              rejectedPosts,
+              changesRequested,
+              draftPosts,
+              reportedPosts: reportedResult.count || 0,
+            },
         }, { headers: { 'Cache-Control': 'private, no-store' } })
       }
     }
@@ -154,13 +237,29 @@ export async function GET(request) {
 
     let query = client
       .from('info_blogs')
-      .select('id, title, excerpt, content, category, featured_image, status, approval_status, submitted_at, reviewed_at, reviewed_by, rejection_reason, created_by, created_at, updated_at, published_at', { count: 'exact' })
-      .order('submitted_at', { ascending: direction, nullsFirst: false })
-      .order('created_at', { ascending: false })
-      .range((page - 1) * pageSize, page * pageSize - 1)
+      .select('id, title, excerpt, content, category, featured_image, images, videos, status, approval_status, submitted_at, reviewed_at, reviewed_by, rejection_reason, created_by, created_at, updated_at, published_at, moderation_status, risk_score, risk_level, moderation_reason, moderation_flags, auto_approved, moderation_checked_at', { count: 'exact' })
+    if (['pending', 'priority'].includes(status)) {
+      query = query
+        .order('risk_score', { ascending: false, nullsFirst: false })
+        .order('submitted_at', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true })
+    } else {
+      query = query
+        .order('submitted_at', { ascending: direction, nullsFirst: false })
+        .order('created_at', { ascending: false })
+    }
+    query = query.range((page - 1) * pageSize, page * pageSize - 1)
 
-    if (status !== 'all' && status !== 'reported') query = query.eq('approval_status', status)
-    if (status === 'approved') query = query.eq('status', 'published')
+    if (!['all', 'reported', 'priority', 'auto_published'].includes(status)) query = query.eq('approval_status', status)
+    if (status === 'approved') {
+      query = query.eq('status', 'published').eq('auto_approved', false)
+    }
+    if (status === 'priority') {
+      query = query.eq('approval_status', 'pending').eq('risk_level', 'high')
+    }
+    if (status === 'auto_published') {
+      query = query.eq('approval_status', 'approved').eq('auto_approved', true)
+    }
     if (reportedIds) query = query.in('id', reportedIds)
     if (search) {
       const titleTerm = search.replace(/[\\,*()]/g, '\\$&')
@@ -191,12 +290,28 @@ export async function GET(request) {
     const { data, count, error } = await query
     if (error) throw error
 
+    if (data?.length) {
+      const { data: activeReports, error: activeReportsError } = await client
+        .from('info_moderation')
+        .select('id, reported_item_id, reason, description, created_at')
+        .eq('reported_item_table', 'info_blogs')
+        .in('reported_item_id', data.map((post) => post.id))
+        .in('status', ['pending', 'reviewing'])
+      if (activeReportsError) throw activeReportsError
+      reportsByBlog = new Map()
+      for (const report of activeReports || []) {
+        const existing = reportsByBlog.get(report.reported_item_id) || []
+        existing.push(report)
+        reportsByBlog.set(report.reported_item_id, existing)
+      }
+    }
     const people = await getPeople(client, (data || []).flatMap((post) => [post.created_by, post.reviewed_by]))
     const posts = (data || []).map((post) => ({
       ...post,
       author: people.get(post.created_by) || null,
       reviewer: people.get(post.reviewed_by) || null,
       reports: reportsByBlog.get(post.id) || [],
+      valid_report_count: (reportsByBlog.get(post.id) || []).length,
     }))
 
     return NextResponse.json({
@@ -204,7 +319,19 @@ export async function GET(request) {
       posts,
       adminId: authorization.session.user_id,
       pagination: { page, pageSize, total: count || 0, pages: Math.ceil((count || 0) / pageSize) },
-      stats: { totalPosts, pendingApprovals, approvedPosts, rejectedPosts, changesRequested, draftPosts, reportedPosts: reportedResult.count || 0 },
+      stats: {
+        totalPosts,
+        pendingApprovals,
+        approvedPosts: Math.max(0, (approvedPosts || 0) - (autoPublishedPosts.count || 0)),
+        autoPublishedPosts: autoPublishedPosts.count || 0,
+        highRiskPending: highRiskPending.count || 0,
+        mediumRiskPending: mediumRiskPending.count || 0,
+        workload,
+        rejectedPosts,
+        changesRequested,
+        draftPosts,
+        reportedPosts: reportedResult.count || 0,
+      },
     }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
     console.error('Admin blog moderation list failed:', error)

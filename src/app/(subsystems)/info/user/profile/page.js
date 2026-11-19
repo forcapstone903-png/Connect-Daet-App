@@ -919,7 +919,8 @@ export default function UserProfilePage() {
                   </div>
                   <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
                     <Link href="/info/user/blogs/new" className="usr-section-secondary"><FilePenLine className="h-4 w-4" />Create Post</Link>
-                <Link href="/info/user/profile/edit" className="usr-section-primary"><Wand2 className="h-4 w-4" />Edit Profile</Link>
+                    <Link href="/info/user/profile/edit#interests" className="usr-section-secondary">Edit Interests</Link>
+                    <Link href="/info/user/profile/edit" className="usr-section-primary"><Wand2 className="h-4 w-4" />Edit Profile</Link>
               </div>
             </div>
           </div>
@@ -1418,6 +1419,7 @@ export default function UserProfilePage() {
         confirmText={loggingOut ? 'Logging out...' : 'Log out'}
         cancelText="Cancel"
         isDangerous
+        hideNavigation
         onConfirm={handleLogout}
         onCancel={() => setShowLogoutConfirm(false)}
       />

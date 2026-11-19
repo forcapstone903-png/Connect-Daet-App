@@ -247,7 +247,7 @@ function LoginContent() {
             >
               <div className="mb-6 text-center sm:mb-8">
                 <img src="/logo.png" alt="Daet logo" className="mx-auto mb-4 h-12 w-12 object-contain" />
-                <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700">Daet Connect</p>
+                <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700">Connect Daet</p>
                 <h2 className="mt-3 text-2xl font-black text-slate-900 sm:text-3xl">Welcome back</h2>
                 <p className="mt-2 text-sm text-slate-600">Sign in to continue your local travel journey.</p>
               </div>
@@ -374,6 +374,11 @@ function LoginContent() {
                   Don&apos;t have an account?{' '}
                   <Link href="/info/register" className="font-semibold text-[#2563EB] transition hover:text-blue-800 hover:underline">
                     Sign up here
+                  </Link>
+                </div>
+                <div>
+                  <Link href="/info/account-appeal" className="font-semibold text-[#2563EB] transition hover:text-blue-800 hover:underline">
+                    Appeal a suspended or banned account
                   </Link>
                 </div>
                 <div>

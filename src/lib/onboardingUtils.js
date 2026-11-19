@@ -1,4 +1,3 @@
-const FALLBACK_TOPICS = ['Beaches', 'Food', 'History', 'Culture', 'Events', 'Nature']
 const FALLBACK_PLACES = ['Bagasbas Beach', 'Daet Elevated Town Plaza', 'First Rizal Monument', 'Morga House', 'Vinzons Watersports']
 
 function getRequiredSelectionCount(totalOptions, minimumRequired) {
@@ -41,7 +40,6 @@ function getOnboardingStepMeta(step) {
 }
 
 module.exports = {
-  FALLBACK_TOPICS,
   FALLBACK_PLACES,
   getRequiredSelectionCount,
   getOnboardingStepMeta,

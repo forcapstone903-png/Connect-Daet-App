@@ -89,7 +89,7 @@ const en = {
   'settings.notifications.forumMentions': 'Comments, replies and mentions',
   'settings.notifications.announcementAlerts': 'Announcement alerts',
   'settings.notifications.push': 'Device push notifications',
-  'settings.notifications.pushHint': 'Get alerts even when Daet Connect is closed.',
+  'settings.notifications.pushHint': 'Get alerts even when Connect Daet is closed.',
 
   'settings.privacy.title': 'Privacy',
   'settings.privacy.description': 'Decide who can find you and what visitors can see.',
@@ -140,7 +140,7 @@ const en = {
   'settings.data.downloadHint': 'Exports your saved preferences as a JSON file.',
   'settings.data.install': 'Install app',
   'settings.data.installReady': 'Use the install prompt when available, or your browser menu.',
-  'settings.data.installHint': 'Add Daet Connect to your home screen.',
+  'settings.data.installHint': 'Add Connect Daet to your home screen.',
   'settings.data.storageStatus': 'Local storage',
 
   'settings.legal.title': 'About & legal',
@@ -292,7 +292,7 @@ const fil = {
   'settings.data.downloadHint': 'I-export ang preferences bilang JSON file.',
   'settings.data.install': 'I-install ang app',
   'settings.data.installReady': 'Gamitin ang install prompt kung available, o ang browser menu.',
-  'settings.data.installHint': 'Idagdag ang Daet Connect sa home screen.',
+  'settings.data.installHint': 'Idagdag ang Connect Daet sa home screen.',
   'settings.data.storageStatus': 'Local storage',
 
   'settings.legal.title': 'Tungkol at legal',
@@ -443,7 +443,7 @@ const bik = {
   'settings.data.downloadHint': 'I-export an preferences bilang JSON file.',
   'settings.data.install': 'I-install an app',
   'settings.data.installReady': 'Gamiton an install prompt kun available, o an browser menu.',
-  'settings.data.installHint': 'Idagdag an Daet Connect sa home screen.',
+  'settings.data.installHint': 'Idagdag an Connect Daet sa home screen.',
   'settings.data.storageStatus': 'Local storage',
 
   'settings.legal.title': 'Manungod asin legal',

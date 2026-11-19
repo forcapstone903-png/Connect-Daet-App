@@ -30,9 +30,6 @@ function getDashboardSummary(blogs, moderation) {
   const pendingCommunity = [
     stats.pendingPosts,
     stats.pendingForumTopics,
-    stats.pendingForumReplies,
-    stats.pendingComments,
-    stats.pendingBlogComments,
   ].reduce((total, value) => total + count(value), 0)
   const openInquiries = count(stats.openInquiries) + count(stats.inProgressInquiries)
 
@@ -41,7 +38,6 @@ function getDashboardSummary(blogs, moderation) {
     pendingCommunity,
     pendingPosts: count(stats.pendingPosts),
     pendingForumTopics: count(stats.pendingForumTopics),
-    pendingDiscussion: count(stats.pendingForumReplies) + count(stats.pendingComments) + count(stats.pendingBlogComments),
     pendingReports: count(stats.pendingReports),
     pendingAppeals: count(stats.pendingAppeals),
     flaggedPosts: count(stats.flaggedPosts),
@@ -161,7 +157,6 @@ export default function ModeratorDashboard() {
     { label: 'Blog approvals', value: summary.pendingBlogs, color: 'bg-orange-500' },
     { label: 'Community posts', value: summary.pendingPosts, color: 'bg-blue-500' },
     { label: 'Forum topics', value: summary.pendingForumTopics, color: 'bg-violet-500' },
-    { label: 'Comments and replies', value: summary.pendingDiscussion, color: 'bg-cyan-500' },
     { label: 'Open reports', value: summary.pendingReports, color: 'bg-red-500' },
     { label: 'Restriction appeals', value: summary.pendingAppeals, color: 'bg-amber-500' },
     { label: 'Inquiries', value: summary.openInquiries, color: 'bg-emerald-500' },
@@ -169,7 +164,7 @@ export default function ModeratorDashboard() {
   ] : []
   const actionItems = summary ? [
     { label: 'Blog approvals', description: 'Review submitted blog posts', count: summary.pendingBlogs, href: '/info/admin/blogs?status=pending' },
-    { label: 'Community submissions', description: 'Review posts, topics, comments, and replies', count: summary.pendingCommunity, href: '/info/admin/moderation?tab=posts' },
+    { label: 'Community submissions', description: 'Review posts and topics', count: summary.pendingCommunity, href: '/info/admin/moderation?tab=posts' },
     { label: 'Open reports', description: 'Review reports submitted by community members', count: summary.pendingReports, href: '/info/admin/moderation?tab=reports' },
     { label: 'Restriction appeals', description: 'Review appeals from restricted accounts', count: summary.pendingAppeals, href: '/info/admin/moderation?tab=reports' },
     { label: 'Inquiries needing a reply', description: 'Respond to open and in-progress inquiries', count: summary.openInquiries, href: '/info/admin/moderation?tab=inquiries' },

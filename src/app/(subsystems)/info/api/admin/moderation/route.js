@@ -11,9 +11,19 @@ import {
 } from '@/lib/contentDeletionNotifications.mjs'
 import { decodeReviewText } from '@/lib/reviewText'
 import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
+import { notifyAdministrators } from '@/lib/adminNotifications'
+import {
+  sendRestrictionLiftedEmail,
+} from '@/lib/moderatorReviewEmail'
+import { signModerationAppealEvidence } from '@/lib/moderationAppealEvidence.mjs'
 
 const MISSING_RELATION_CODES = new Set(['42P01', 'PGRST205'])
-const BAN_TYPES = ['posting', 'suspension']
+const BAN_TYPES = ['posting', 'suspension', 'permanent']
+
+function normalizeStaffRole(role) {
+  const normalized = String(role || '').trim().toLowerCase()
+  return normalized === 'super_admin' || normalized === 'administrator' ? 'admin' : normalized
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -194,6 +204,119 @@ export async function GET(request) {
   if (!client) return respond({ success: false, message: 'Moderation is not configured.' }, 500)
 
   const params = new URL(request.url).searchParams
+  const reviewReportId = params.get('reviewReportId')
+  if (reviewReportId) {
+    if (!isValidUuid(reviewReportId)) return respond({ success: false, message: 'A valid report id is required.' }, 400)
+
+    const { data: report, error: reportError } = await client
+      .from('info_moderation')
+      .select('id, report_type, reason, description, severity, reported_by, reported_user_id, reported_item_id, reported_item_table, status, assigned_to, moderation_notes, resolution, created_at, resolved_at')
+      .eq('id', reviewReportId)
+      .maybeSingle()
+    if (reportError) throw reportError
+    if (!report) return respond({ success: false, message: 'Report not found.' }, 404)
+    if (report.reported_item_table !== 'info_users' || report.reported_item_id !== report.reported_user_id) {
+      return respond({ success: false, message: 'This review interface is only available for account reports.' }, 400)
+    }
+
+    const userIds = [...new Set([report.reported_by, report.reported_user_id, report.assigned_to].filter(Boolean))]
+    const [
+      usersResult,
+      reportsResult,
+      postingQueries,
+      warningsResult,
+      bansResult,
+      auditResult,
+    ] = await Promise.all([
+      client.from('info_users').select('id, full_name, user_name, email, user_type, status, profile_image_url, created_at').in('id', userIds),
+      client.from('info_moderation')
+        .select('id, report_type, reason, description, severity, reported_by, reported_user_id, reported_item_id, reported_item_table, status, resolution, moderation_notes, created_at, resolved_at')
+        .eq('reported_user_id', report.reported_user_id)
+        .order('created_at', { ascending: false })
+        .limit(100),
+      Promise.all([
+        client.from('info_blogs').select('id, title, status, approval_status, created_at').eq('created_by', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+        client.from('info_user_posts').select('id, title, content, status, created_at').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+        client.from('forum_threads').select('id, title, content, status, created_at').eq('created_by', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+        client.from('forum_replies').select('id, content, status, created_at, thread_id').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+        client.from('content_comments').select('id, body, status, created_at, content_type, content_id').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+        client.from('info_comments').select('id, content, status, created_at, blog_id').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+      ]),
+      client.from('user_warnings').select('id, reason, issued_by, report_id, created_at').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+      client.from('admin_user_bans').select('*').eq('user_id', report.reported_user_id).order('banned_at', { ascending: false }).limit(50),
+      client.from('info_audit_log')
+        .select('id, user_id, action, table_name, record_id, changes, created_at')
+        .or(`record_id.eq.${report.reported_user_id},record_id.eq.${reviewReportId}`)
+        .order('created_at', { ascending: false })
+        .limit(100),
+    ])
+
+    const failed = [usersResult, reportsResult, warningsResult, bansResult, auditResult, ...postingQueries].find((result) => result.error && !MISSING_RELATION_CODES.has(result.error.code))
+    if (failed) {
+      console.error('Account review detail load failed:', failed.error)
+      return respond({ success: false, message: 'Unable to load the account review.' }, 500)
+    }
+
+    const users = new Map((usersResult.data || []).map((item) => [item.id, item]))
+    const reporterIds = (reportsResult.data || []).map((item) => item.reported_by).filter(Boolean)
+    if (reporterIds.length) {
+      const reporterResult = await client.from('info_users').select('id, full_name, email, user_type, status, created_at').in('id', [...new Set(reporterIds)])
+      if (!reporterResult.error) {
+        for (const reporter of reporterResult.data || []) users.set(reporter.id, reporter)
+      }
+    }
+
+    const violations = reportsResult.data || []
+    const reportsByTable = new Map()
+    for (const violation of violations) {
+      if (!REPORTED_CONTENT_TABLES[violation.reported_item_table] || !violation.reported_item_id) continue
+      const ids = reportsByTable.get(violation.reported_item_table) || new Set()
+      ids.add(violation.reported_item_id)
+      reportsByTable.set(violation.reported_item_table, ids)
+    }
+
+    const evidenceByType = new Map()
+    try {
+      await Promise.all([...reportsByTable.entries()].map(async ([tableName, ids]) => {
+        const result = await client.from(tableName).select(REPORTED_CONTENT_TABLES[tableName].select).in('id', [...ids])
+        if (result.error) throw result.error
+        evidenceByType.set(tableName, new Map((result.data || []).map((item) => [item.id, item])))
+      }))
+    } catch (error) {
+      console.error('Account review evidence load failed:', error)
+      return respond({ success: false, message: 'Unable to load reported evidence.' }, 500)
+    }
+
+    const postingHistory = [
+      ...(postingQueries[0].data || []).map((item) => ({ ...item, type: 'Blog', title: item.title })),
+      ...(postingQueries[1].data || []).map((item) => ({ ...item, type: 'Community post', title: item.title })),
+      ...(postingQueries[2].data || []).map((item) => ({ ...item, type: 'Forum topic', title: item.title })),
+      ...(postingQueries[3].data || []).map((item) => ({ ...item, type: 'Forum reply', title: item.content })),
+      ...(postingQueries[4].data || []).map((item) => ({ ...item, type: 'Comment', title: item.body })),
+      ...(postingQueries[5].data || []).map((item) => ({ ...item, type: 'Blog comment', title: item.content })),
+    ].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).slice(0, 100)
+
+    const moderatorId = report.assigned_to
+    return respond({
+      success: true,
+      review: {
+        report,
+        account: users.get(report.reported_user_id) || null,
+        reporter: users.get(report.reported_by) || null,
+        moderator: moderatorId ? users.get(moderatorId) || null : null,
+        violations: violations.map((violation) => ({
+          ...violation,
+          reporter: users.get(violation.reported_by) || null,
+          evidence: evidenceByType.get(violation.reported_item_table)?.get(violation.reported_item_id) || null,
+        })),
+        postingHistory,
+        warnings: warningsResult.error ? [] : warningsResult.data || [],
+        restrictions: bansResult.error ? [] : bansResult.data || [],
+        auditHistory: auditResult.error ? [] : auditResult.data || [],
+      },
+    })
+  }
+
   if (params.get('view') === 'summary') {
     const now = new Date().toISOString()
     const [
@@ -205,9 +328,6 @@ export async function GET(request) {
       bans,
       pendingPosts,
       pendingForumTopics,
-      pendingForumReplies,
-      pendingComments,
-      pendingBlogComments,
       openInquiries,
       inProgressInquiries,
     ] = await Promise.all([
@@ -234,16 +354,6 @@ export async function GET(request) {
       client.from('forum_threads')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'pending'),
-      client.from('forum_replies')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending'),
-      client.from('content_comments')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending')
-        .neq('content_type', 'blog'),
-      client.from('info_comments')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'pending'),
       client.from('info_inquiries')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'open'),
@@ -260,9 +370,6 @@ export async function GET(request) {
       bans,
       pendingPosts,
       pendingForumTopics,
-      pendingForumReplies,
-      pendingComments,
-      pendingBlogComments,
       openInquiries,
       inProgressInquiries,
     ].find((result) => result.error)
@@ -283,9 +390,6 @@ export async function GET(request) {
         activeBans: bans.count || 0,
         pendingPosts: pendingPosts.count || 0,
         pendingForumTopics: pendingForumTopics.count || 0,
-        pendingForumReplies: pendingForumReplies.count || 0,
-        pendingComments: pendingComments.count || 0,
-        pendingBlogComments: pendingBlogComments.count || 0,
         openInquiries: openInquiries.count || 0,
         inProgressInquiries: inProgressInquiries.count || 0,
       },
@@ -372,12 +476,11 @@ export async function GET(request) {
       .limit(100),
     client.from('info_audit_log')
       .select('id, user_id, action, table_name, record_id, changes, created_at')
-      .in('table_name', ['info_moderation', 'admin_user_bans', 'admin_comment_mutes', 'admin_app_settings', 'content', 'report', 'user', 'info_user_posts', 'forum_threads', 'forum_replies', 'content_comments', 'info_comments', 'info_blogs'])
+      .in('table_name', ['info_moderation', 'user_moderation_appeals', 'admin_user_bans', 'admin_comment_mutes', 'admin_app_settings', 'content', 'report', 'user', 'info_user_posts', 'forum_threads', 'forum_replies', 'content_comments', 'info_comments', 'info_blogs'])
       .order('created_at', { ascending: false })
       .limit(50),
     client.from('user_moderation_appeals')
-      .select('id, user_id, reason, status, created_at')
-      .eq('status', 'pending')
+      .select('id, user_id, restriction_id, reason, explanation, appeal_type, evidence_paths, status, decision_notes, reviewed_by, reviewed_at, created_at, updated_at')
       .order('created_at', { ascending: false })
       .limit(100),
     client.from('admin_app_settings')
@@ -393,21 +496,37 @@ export async function GET(request) {
   const pendingResults = await Promise.all([
     client.from('info_user_posts').select('id, user_id, title, content, created_at').eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
     client.from('forum_threads').select('id, created_by, title, content, created_at').eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
-    client.from('forum_replies').select('id, user_id, content, created_at').eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
-    client.from('content_comments').select('id, user_id, body, content_type, content_id, created_at').eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
-    client.from('info_comments').select('id, user_id, content, blog_id, created_at').eq('status', 'pending').order('created_at', { ascending: true }).limit(100),
   ])
   const pendingError = pendingResults.find((result) => result.error)
   if (pendingError) {
     console.error('Pending submission load failed:', pendingError.error)
     return respond({ success: false, message: 'Unable to load pending submissions.' }, 500)
   }
+  const appealRestrictionIds = [...new Set((appeals || []).map((appeal) => appeal.restriction_id).filter(Boolean))]
+  const appealRestrictionResult = appealRestrictionIds.length
+    ? await client.from('admin_user_bans')
+      .select('id, user_id, reason, ban_type, banned_at, expires_at, lifted_at')
+      .in('id', appealRestrictionIds)
+    : { data: [], error: null }
+  if (appealRestrictionResult.error) {
+    console.error('Account appeal suspension details load failed:', { code: appealRestrictionResult.error.code || null })
+    return respond({ success: false, message: 'Unable to load restriction details for open appeals.' }, 500)
+  }
+  const appealRestrictionsById = new Map((appealRestrictionResult.data || []).map((ban) => [ban.id, ban]))
+  const appealIds = (appeals || []).map((appeal) => appeal.id).filter(Boolean)
+  const appealReviewResult = appealIds.length
+    ? await client.from('moderation_appeal_reviews')
+      .select('id, appeal_id, reviewer_id, reviewer_role, decision, reason, previous_status, new_status, previous_expires_at, new_expires_at, created_at')
+      .in('appeal_id', appealIds)
+      .order('created_at', { ascending: true })
+    : { data: [], error: null }
+  if (appealReviewResult.error) {
+    console.error('Appeal review history load failed:', { code: appealReviewResult.error.code || null })
+    return respond({ success: false, message: 'Unable to load appeal review history.' }, 500)
+  }
   const pendingSubmissions = [
     ...(pendingResults[0].data || []).map((item) => ({ ...item, table: 'info_user_posts', userId: item.user_id, title: item.title, content: item.content, label: 'Community post' })),
     ...(pendingResults[1].data || []).map((item) => ({ ...item, table: 'forum_threads', userId: item.created_by, title: item.title, content: item.content, label: 'Forum topic' })),
-    ...(pendingResults[2].data || []).map((item) => ({ ...item, table: 'forum_replies', userId: item.user_id, title: 'Forum reply', content: item.content, label: 'Forum reply' })),
-    ...(pendingResults[3].data || []).map((item) => ({ ...item, table: 'content_comments', userId: item.user_id, title: 'Comment', content: item.body, label: 'Comment' })),
-    ...(pendingResults[4].data || []).map((item) => ({ ...item, table: 'info_comments', userId: item.user_id, title: 'Blog comment', content: item.content, label: 'Blog comment' })),
   ].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
   const pendingUserIds = [...new Set(pendingSubmissions.map((item) => item.userId).filter(Boolean))]
 
@@ -415,14 +534,29 @@ export async function GET(request) {
     ...(reports || []).flatMap((report) => [report.reported_by, report.reported_user_id]),
     ...(bans || []).flatMap((ban) => [ban.user_id, ban.banned_by]),
     ...(appeals || []).map((appeal) => appeal.user_id),
+    ...(appealReviewResult.data || []).map((review) => review.reviewer_id),
     ...(logs || []).map((entry) => entry.user_id),
     ...pendingUserIds,
   ].filter(Boolean))]
   const { data: users, error: usersError } = userIds.length
-    ? await client.from('info_users').select('id, full_name, email').in('id', userIds)
+    ? await client.from('info_users').select('id, full_name, email, status').in('id', userIds)
     : { data: [], error: null }
   if (usersError) return respond({ success: false, message: 'Unable to load moderation user details.' }, 500)
   const people = new Map((users || []).map((user) => [user.id, user]))
+  const bansByUser = new Map((bans || []).map((ban) => [ban.user_id, ban]))
+  const signedAppeals = await signModerationAppealEvidence(client, appeals || [])
+  const reviewsByAppeal = new Map()
+  for (const review of appealReviewResult.data || []) {
+    const reviews = reviewsByAppeal.get(review.appeal_id) || []
+    reviews.push({ ...review, reviewer: people.get(review.reviewer_id) || null })
+    reviewsByAppeal.set(review.appeal_id, reviews)
+  }
+  const appealDetails = signedAppeals.map((appeal) => ({
+    ...appeal,
+    user: people.get(appeal.user_id) || null,
+    suspension: appealRestrictionsById.get(appeal.restriction_id) || bansByUser.get(appeal.user_id) || null,
+    reviewHistory: reviewsByAppeal.get(appeal.id) || [],
+  }))
 
   const reportsByTable = new Map()
   for (const report of reports || []) {
@@ -503,8 +637,16 @@ export async function GET(request) {
       user: people.get(ban.user_id) || null,
       moderator: people.get(ban.banned_by) || null,
     })),
-    appeals: (appeals || []).map((appeal) => ({ ...appeal, user: people.get(appeal.user_id) || null })),
+    appeals: appealDetails,
     profanityTerms,
+    autoPublish: {
+      enabled: moderationSettings?.value?.autoPublish?.enabled === true,
+      minAccountAgeDays: moderationSettings?.value?.autoPublish?.minAccountAgeDays ?? 7,
+      minApprovedPosts: moderationSettings?.value?.autoPublish?.minApprovedPosts ?? 3,
+      maxRejectedPosts: moderationSettings?.value?.autoPublish?.maxRejectedPosts ?? 0,
+      maxViolations: moderationSettings?.value?.autoPublish?.maxViolations ?? 0,
+      maxRecentSubmissions: moderationSettings?.value?.autoPublish?.maxRecentSubmissions ?? 2,
+    },
     logs: (logs || []).map((entry) => ({ ...entry, actor: people.get(entry.user_id) || null })),
   })
 }
@@ -534,9 +676,6 @@ export async function PATCH(request) {
       const statuses = {
         info_user_posts: { approve: 'published', reject: 'rejected' },
         forum_threads: { approve: 'published', reject: 'rejected' },
-        forum_replies: { approve: 'active', reject: 'rejected' },
-        content_comments: { approve: 'active', reject: 'rejected' },
-        info_comments: { approve: 'approved', reject: 'rejected' },
       }
       if (!isValidUuid(submissionId) || !statuses[tableName] || !['approve', 'reject'].includes(decision) || !reason || reason.length > 1000) {
         return respond({ success: false, message: 'Provide a valid submission decision and reason.' }, 400)
@@ -689,13 +828,54 @@ export async function PATCH(request) {
       return respond({ success: true, profanityTerms: terms })
     }
 
+    if (action === 'save-auto-publish-policy') {
+      const input = body.policy && typeof body.policy === 'object' && !Array.isArray(body.policy)
+        ? body.policy
+        : null
+      const numberFields = [
+        ['minAccountAgeDays', 0, 3650],
+        ['minApprovedPosts', 0, 10000],
+        ['maxRejectedPosts', 0, 10000],
+        ['maxViolations', 0, 10000],
+        ['maxRecentSubmissions', 0, 100],
+      ]
+      if (!input || typeof input.enabled !== 'boolean') {
+        return respond({ success: false, message: 'A valid auto-publishing policy is required.' }, 400)
+      }
+      const policy = { enabled: input.enabled }
+      for (const [field, minimum, maximum] of numberFields) {
+        const value = input[field]
+        if (typeof value !== 'number' || !Number.isInteger(value) || value < minimum || value > maximum) {
+          return respond({ success: false, message: `Enter a whole number between ${minimum} and ${maximum} for ${field}.` }, 400)
+        }
+        policy[field] = value
+      }
+
+      const { data: current, error: settingsError } = await client
+        .from('admin_app_settings')
+        .select('value')
+        .eq('id', 'moderation')
+        .maybeSingle()
+      if (settingsError) throw settingsError
+
+      const { error } = await client.from('admin_app_settings').upsert({
+        id: 'moderation',
+        value: { ...(current?.value || {}), autoPublish: policy },
+        updated_by: actorId,
+        updated_at: now,
+      }, { onConflict: 'id' })
+      if (error) throw error
+      await writeAudit(client, actorId, action, 'admin_app_settings', null, policy)
+      return respond({ success: true, autoPublish: policy })
+    }
+
     if (action === 'warn-user') {
       const userId = String(body.userId || '')
       const reason = String(body.reason || '').trim()
       if (!userId || userId === actorId || !reason || reason.length > 1000) {
         return respond({ success: false, message: 'Select another user and provide a valid warning.' }, 400)
       }
-      const { data: target, error: targetError } = await client.from('info_users').select('id, user_type').eq('id', userId).maybeSingle()
+      const { data: target, error: targetError } = await client.from('info_users').select('id, user_type, username').eq('id', userId).maybeSingle()
       if (targetError) throw targetError
       if (!target) return respond({ success: false, message: 'User not found.' }, 404)
       if (['admin', 'administrator', 'tourism_officer', 'moderator'].includes(String(target.user_type || '').toLowerCase())) {
@@ -720,25 +900,66 @@ export async function PATCH(request) {
         link: '/info/user/notifications',
       })
       if (error) throw error
+      const { error: emailQueueError } = await client.rpc('enqueue_moderation_email', {
+        p_dedupe_key: `warning:${userId}:${reportId || now}`,
+        p_user_id: userId,
+        p_event_type: 'account_warning',
+        p_payload: {
+          username: target.username,
+          reason,
+          guideline: String(body.guideline || '').trim() || 'Connect Daet Community Guidelines',
+        },
+      })
+      if (emailQueueError) {
+        console.error('Account warning email queue failed:', { code: emailQueueError.code || null })
+      }
       await writeAudit(client, actorId, action, 'info_users', userId, { reason, reportId })
-      return respond({ success: true })
+      return respond({ success: true, emailQueued: !emailQueueError })
     }
 
     if (action === 'review-appeal') {
       const appealId = String(body.appealId || '')
       const decision = String(body.decision || '')
       const reason = String(body.reason || '').trim()
-      if (!isValidUuid(appealId) || !['approve', 'reject'].includes(decision) || !reason || reason.length > 1000) {
-        return respond({ success: false, message: 'Provide a valid appeal decision and reason.' }, 400)
+      const durationDays = body.durationDays == null || body.durationDays === '' ? null : Number(body.durationDays)
+      const validDecisions = ['start_review', 'approve', 'reject', 'reduce_suspension', 'request_more_information']
+      if (!isValidUuid(appealId) || !validDecisions.includes(decision) || !reason || reason.length > 2000
+        || (decision === 'reduce_suspension' && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365))
+        || (decision !== 'reduce_suspension' && durationDays !== null)) {
+        return respond({ success: false, message: 'Provide a valid appeal decision, reason, and duration when reducing a suspension.' }, 400)
       }
-      const { data, error } = await client.rpc('review_user_moderation_appeal', {
+      const { data, error } = await client.rpc('review_user_moderation_appeal_v2', {
         p_appeal_id: appealId,
         p_reviewer_id: actorId,
         p_decision: decision,
         p_reason: reason,
+        p_duration_days: durationDays,
       })
-      if (error) throw error
-      return respond({ success: true, appeal: data })
+      if (error) {
+        if (error.message?.includes('no longer')
+          || error.message?.includes('original decision-maker')
+          || error.message?.includes('no longer active')) {
+          return respond({ success: false, message: error.message }, 409)
+        }
+        throw error
+      }
+
+      let sessionRevocationWarning = null
+      if (data.account_restored) {
+        try {
+          await revokeUserSessions(client, data.user_id)
+        } catch (revokeError) {
+          console.error('Session revocation after suspension appeal approval failed:', revokeError)
+          sessionRevocationWarning = 'The account was restored, but the suspended session could not be revoked.'
+        }
+      }
+
+      return respond({
+        success: true,
+        appeal: data,
+        emailQueued: decision !== 'start_review',
+        sessionRevocationWarning,
+      })
     }
 
     if (action === 'moderate-content') {
@@ -917,55 +1138,153 @@ export async function PATCH(request) {
       })
     }
 
-    if (action === 'approve-account-report') {
+    if (action === 'submit-moderator-account-investigation') {
       const reportId = String(body.reportId || '')
+      const assessment = String(body.assessment || '').trim()
+      const recommendation = String(body.recommendation || '')
       const reason = String(body.reason || '').trim()
-      const severity = String(body.severity || '')
-      if (!isValidUuid(reportId) || !reason || reason.length > 1000 || !['low', 'medium', 'high', 'critical'].includes(severity)) {
-        return respond({ success: false, message: 'Provide a valid account report decision, severity, and reason.' }, 400)
+      const supportingExplanation = String(body.supportingExplanation || '').trim()
+      const suspensionDurationDays = body.suspensionDurationDays == null ? null : Number(body.suspensionDurationDays)
+      const customDurationDays = body.customDurationDays == null ? null : Number(body.customDurationDays)
+      const evidenceSnapshot = body.evidenceSnapshot && typeof body.evidenceSnapshot === 'object'
+        ? body.evidenceSnapshot
+        : {}
+
+      if (!isValidUuid(reportId)) {
+        return respond({ success: false, message: 'A valid account report is required.' }, 400)
+      }
+      if (normalizeStaffRole(authorization.session.role) !== 'moderator') {
+        return respond({ success: false, message: 'Only authenticated moderators can submit account investigations.' }, 403)
+      }
+      if (!assessment || assessment.length > 5000) {
+        return respond({ success: false, message: 'A written assessment is required.' }, 400)
+      }
+      if (!reason || reason.length > 1000) {
+        return respond({ success: false, message: 'A recommendation reason is required.' }, 400)
+      }
+      if (!supportingExplanation || supportingExplanation.length > 5000) {
+        return respond({ success: false, message: 'Supporting explanation is required.' }, 400)
+      }
+      if (![
+        'no_violation',
+        'issue_warning',
+        'recommend_temporary_suspension',
+        'recommend_permanent_ban',
+      ].includes(recommendation)) {
+        return respond({ success: false, message: 'A valid recommendation is required.' }, 400)
+      }
+      if (recommendation === 'recommend_temporary_suspension') {
+        const preset = [1, 3, 7, 14, 30].includes(suspensionDurationDays)
+        const custom = suspensionDurationDays == null && Number.isInteger(customDurationDays) && customDurationDays >= 1 && customDurationDays <= 365
+        if (!preset && !custom) {
+          return respond({ success: false, message: 'Select a valid temporary suspension duration.' }, 400)
+        }
+      } else if (suspensionDurationDays != null || customDurationDays != null) {
+        return respond({ success: false, message: 'Suspension duration is only valid for temporary suspension recommendations.' }, 400)
       }
 
-      const { data: report, error: reportError } = await client.from('info_moderation')
-        .select('id, reported_user_id, reported_item_id, reported_item_table, status')
-        .eq('id', reportId)
-        .in('status', ['pending', 'reviewing'])
-        .maybeSingle()
-      if (reportError) throw reportError
-      if (!report) return respond({ success: false, message: 'This report is no longer open.' }, 409)
-      if (report.reported_item_table !== 'info_users' || report.reported_item_id !== report.reported_user_id) {
-        return respond({ success: false, message: 'Only reports against a user account can suspend an account.' }, 400)
+      const { data: investigation, error: investigationError } = await client.rpc(
+        'submit_moderator_account_investigation',
+        {
+          p_report_id: reportId,
+          p_moderator_id: actorId,
+          p_assessment: assessment,
+          p_recommendation: recommendation,
+          p_reason: reason,
+          p_supporting_explanation: supportingExplanation,
+          p_suspension_duration_days: recommendation === 'recommend_temporary_suspension'
+            ? suspensionDurationDays
+            : null,
+          p_custom_duration_days: recommendation === 'recommend_temporary_suspension'
+            ? customDurationDays
+            : null,
+          p_evidence_snapshot: evidenceSnapshot,
+        },
+      )
+      if (investigationError) {
+        if (investigationError.message?.includes('already been submitted') || investigationError.message?.includes('no longer available')) {
+          return respond({ success: false, message: investigationError.message }, 409)
+        }
+        if (investigationError.message?.includes('Only an active moderator')) {
+          return respond({ success: false, message: investigationError.message }, 403)
+        }
+        throw investigationError
       }
 
-      const { data: target, error: targetError } = await client.from('info_users')
-        .select('id, user_type')
-        .eq('id', report.reported_user_id)
-        .maybeSingle()
-      if (targetError) throw targetError
-      if (!target) return respond({ success: false, message: 'The reported account no longer exists.' }, 404)
-      if (['admin', 'administrator', 'tourism_officer', 'moderator'].includes(String(target.user_type || '').toLowerCase())) {
-        return respond({ success: false, message: 'Staff accounts cannot be suspended through community reports.' }, 400)
+      const { error: notificationLinkError } = await client
+        .from('info_notifications')
+        .update({ link: `/info/admin/suspension-cases?case=${investigation.investigation_id}` })
+        .eq('title', 'Account investigation submitted')
+        .like('link', `%reviewReportId=${reportId}`)
+      if (notificationLinkError) {
+        console.error('Tourism Officer investigation notification link update failed:', {
+          code: notificationLinkError.code || null,
+        })
       }
 
-      const { data: suspension, error: suspensionError } = await client.rpc('approve_account_report_and_suspend', {
-        p_report_id: reportId,
-        p_reviewer_id: actorId,
-        p_reason: reason,
-        p_severity: severity,
-      })
-      if (suspensionError) throw suspensionError
-
-      let sessionRevocationWarning = null
-      try {
-        await revokeUserSessions(client, target.id)
-      } catch (revokeError) {
-        console.error('Session revocation after account report suspension failed:', revokeError)
-        sessionRevocationWarning = 'The account suspension was saved, but existing sessions could not be revoked.'
-      }
       return respond({
         success: true,
-        suspension,
-        sessionRevocationWarning,
+        investigation,
+        confirmation: 'Investigation submitted. The case is pending Tourism Officer review.',
+        notificationLinkWarning: notificationLinkError ? 'The case was submitted, but the Tourism Officer notification link could not be updated.' : null,
       })
+    }
+
+    if (action === 'approve-suspension') {
+      return respond({
+        success: false,
+        message: 'Use the audited account status workflow to apply a suspension or permanent ban.',
+      }, 403)
+    }
+
+    if (action === 'reject-account-report') {
+      const reportId = String(body.reportId || '')
+      const reason = String(body.reason || '').trim()
+      if (!isValidUuid(reportId) || !reason || reason.length > 1000) {
+        return respond({ success: false, message: 'A rejection reason is required.' }, 400)
+      }
+      if (!['tourism_officer', 'admin'].includes(normalizeStaffRole(authorization.session.role))) {
+        return respond({ success: false, message: 'Only a Tourism Officer or Administrator can reject reports.' }, 403)
+      }
+      const { error: decisionError } = await client.rpc('decide_account_moderation_report', {
+        p_report_id: reportId,
+        p_reviewer_id: actorId,
+        p_decision: 'reject-account-report',
+        p_reason: reason,
+        p_duration_days: null,
+      })
+      if (decisionError) {
+        if (decisionError.message?.includes('already been recorded') || decisionError.message?.includes('no longer open')) {
+          return respond({ success: false, message: decisionError.message }, 409)
+        }
+        throw decisionError
+      }
+      return respond({ success: true, notificationSent: true })
+    }
+
+    if (action === 'escalate-account-review') {
+      const reportId = String(body.reportId || '')
+      const reason = String(body.reason || '').trim()
+      if (!isValidUuid(reportId) || !reason || reason.length > 1000) {
+        return respond({ success: false, message: 'An escalation reason is required.' }, 400)
+      }
+      if (!['tourism_officer', 'admin'].includes(normalizeStaffRole(authorization.session.role))) {
+        return respond({ success: false, message: 'Only a Tourism Officer or Administrator can escalate account reviews.' }, 403)
+      }
+      const { error: decisionError } = await client.rpc('decide_account_moderation_report', {
+        p_report_id: reportId,
+        p_reviewer_id: actorId,
+        p_decision: 'escalate-account-review',
+        p_reason: reason,
+        p_duration_days: null,
+      })
+      if (decisionError) {
+        if (decisionError.message?.includes('already been recorded') || decisionError.message?.includes('no longer open')) {
+          return respond({ success: false, message: decisionError.message }, 409)
+        }
+        throw decisionError
+      }
+      return respond({ success: true, escalated: true, administratorNotified: true })
     }
 
     if (action === 'record-action') {
@@ -1029,10 +1348,21 @@ export async function PATCH(request) {
       const reason = String(body.reason || '').trim()
       const durationDays = body.durationDays == null || body.durationDays === '' ? null : Number(body.durationDays)
       const banType = BAN_TYPES.includes(body.banType) ? body.banType : 'posting'
+      const reportId = body.reportId == null || body.reportId === '' ? null : String(body.reportId)
+      const actorRole = normalizeStaffRole(authorization.session.role)
       if (!userId || userId === actorId || !reason || reason.length > 1000) {
         return respond({ success: false, message: 'Select another user and provide a valid ban reason.' }, 400)
       }
-      if (durationDays !== null && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365)) {
+      if (reportId && !isValidUuid(reportId)) {
+        return respond({ success: false, message: 'A valid related report is required.' }, 400)
+      }
+      if (banType === 'suspension' && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365)) {
+        return respond({ success: false, message: 'A temporary suspension must be between 1 and 365 days.' }, 400)
+      }
+      if (banType === 'permanent' && (durationDays !== null || body.confirmPermanentBan !== true)) {
+        return respond({ success: false, message: 'Confirm the permanent account ban and do not provide a duration.' }, 400)
+      }
+      if (banType === 'posting' && durationDays !== null && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365)) {
         return respond({ success: false, message: 'A temporary restriction must be between 1 and 365 days.' }, 400)
       }
       const { data: target, error: targetError } = await client.from('info_users').select('id, user_type').eq('id', userId).maybeSingle()
@@ -1041,18 +1371,71 @@ export async function PATCH(request) {
       if (['admin', 'administrator', 'tourism_officer', 'moderator'].includes(String(target.user_type || '').toLowerCase())) {
         return respond({ success: false, message: 'Staff accounts cannot be restricted through community moderation.' }, 400)
       }
-      const { error } = await client.from('admin_user_bans').upsert({
-        user_id: userId,
+      if (banType === 'suspension' || banType === 'permanent') {
+        if (!['moderator', 'admin'].includes(actorRole)) {
+          return respond({ success: false, message: 'Only Moderators or System Administrators can suspend or ban accounts.' }, 403)
+        }
+        const newStatus = banType === 'suspension' ? 'suspended' : 'banned'
+        const { data: decision, error } = await client.rpc('admin_set_account_status', {
+          p_admin_id: actorId,
+          p_user_id: userId,
+          p_new_status: newStatus,
+          p_reason: reason,
+          p_duration_days: durationDays,
+          p_report_id: reportId,
+        })
+        if (error) {
+          if (/already has an active restriction|already has an active permanent ban|already has this status|not eligible|open report/i.test(error.message || '')) {
+            return respond({ success: false, message: error.message }, 409)
+          }
+          if (/Only an active System Administrator or Moderator/i.test(error.message || '')) {
+            return respond({ success: false, message: error.message }, 403)
+          }
+          if (/reason|required|duration|moderator|administrator|staff account/i.test(error.message || '')) {
+            return respond({ success: false, message: error.message }, 400)
+          }
+          throw error
+        }
+
+        let sessionRevocationWarning = null
+        if (newStatus === 'banned') {
+          try {
+            await revokeUserSessions(client, userId)
+          } catch (revokeError) {
+            console.error('Session revocation after moderator account ban failed:', { code: revokeError.code || null })
+            sessionRevocationWarning = 'The ban was saved, but existing sessions could not be revoked.'
+          }
+        }
+        return respond({
+          success: true,
+          action: decision,
+          message: banType === 'suspension'
+            ? 'Account suspension saved with reason, duration, notification, and audit history.'
+            : 'Permanent account ban saved with reason, notification, and audit history.',
+          sessionRevocationWarning,
+        })
+      }
+      const { data: restriction, error } = await client.rpc('create_account_restriction', {
+        p_user_id: userId,
+        p_actor_id: actorId,
+        p_reason: reason,
+        p_duration_days: durationDays,
+        p_ban_type: banType,
+      })
+      if (error) {
+        if (error.message?.includes('already has an active restriction')
+          || error.message?.includes('not eligible')) {
+          return respond({ success: false, message: error.message }, 409)
+        }
+        throw error
+      }
+      await writeAudit(client, actorId, action, 'admin_user_bans', restriction.id, {
+        userId,
         reason,
-        banned_by: actorId,
-        banned_at: now,
-        expires_at: durationDays ? new Date(Date.now() + durationDays * 86400000).toISOString() : null,
-        lifted_by: null,
+        durationDays,
+        banType,
         lifted_at: null,
-        ban_type: banType,
-      }, { onConflict: 'user_id' })
-      if (error) throw error
-      await writeAudit(client, actorId, action, 'admin_user_bans', userId, { reason, durationDays, banType, lifted_at: null })
+      })
 
       const untilText = durationDays ? ` for ${durationDays} day${durationDays === 1 ? '' : 's'}` : ''
       const { error: noticeError } = await client.from('info_notifications').insert({
@@ -1080,17 +1463,97 @@ export async function PATCH(request) {
 
     if (action === 'unban-user') {
       const userId = String(body.userId || '')
-      if (!userId) return respond({ success: false, message: 'A user is required.' }, 400)
-      const { data, error } = await client.from('admin_user_bans')
-        .update({ lifted_by: actorId, lifted_at: now })
+      const reason = String(body.reason || '').trim()
+      if (!isValidUuid(userId) || !reason || reason.length > 1000) {
+        return respond({ success: false, message: 'Select an account and provide a reason for lifting its restriction.' }, 400)
+      }
+      const { data: activeRestriction, error: restrictionError } = await client
+        .from('admin_user_bans')
+        .select('ban_type')
         .eq('user_id', userId)
         .is('lifted_at', null)
-        .select('user_id')
+        .order('banned_at', { ascending: false })
+        .limit(1)
         .maybeSingle()
-      if (error) throw error
-      if (!data) return respond({ success: false, message: 'This user is not currently blocked.' }, 409)
-      await writeAudit(client, actorId, action, 'admin_user_bans', userId, { lifted_at: now })
-      return respond({ success: true })
+      if (restrictionError) throw restrictionError
+      if (activeRestriction && activeRestriction.ban_type !== 'posting') {
+        return respond({
+          success: false,
+          message: activeRestriction?.ban_type === 'permanent'
+            ? 'Permanent bans can only be reversed through Administrator Account Oversight.'
+            : 'Account suspensions can only be lifted through Administrator Account Oversight.',
+        }, 403)
+      }
+      const { data: lifted, error } = await client.rpc('lift_account_restriction', {
+        p_user_id: userId,
+        p_actor_id: actorId,
+        p_reason: reason,
+      })
+      if (error) {
+        if (error.message?.includes('no active restriction')
+          || error.message?.includes('already been lifted')
+          || error.message?.includes('cannot be restored')) {
+          return respond({ success: false, message: error.message }, 409)
+        }
+        throw error
+      }
+
+      let emailNotification = { sent: false, reason: 'not_sent' }
+      try {
+        const { data: target, error: targetError } = await client
+          .from('info_users')
+          .select('email')
+          .eq('id', userId)
+          .maybeSingle()
+        if (targetError) throw targetError
+        emailNotification = await sendRestrictionLiftedEmail(target?.email, {
+          banType: lifted.ban_type,
+          reason,
+        })
+      } catch (emailError) {
+        console.error('Restriction lift email notification failed:', { code: emailError.code || null })
+      }
+
+      const { error: emailAuditError } = await client
+        .from('info_audit_log')
+        .insert({
+          user_id: actorId,
+          action: 'restriction-lift-email-notification',
+          table_name: 'admin_user_bans',
+          record_id: lifted.id,
+          changes: {
+            userId,
+            restrictionType: lifted.ban_type,
+            restrictionReason: lifted.restriction_reason,
+            liftReason: reason,
+            reviewerId: actorId,
+            liftedAt: lifted.lifted_at,
+            ...(lifted.ban_type === 'suspension' ? { accountStatus: 'active' } : {}),
+            emailNotificationSent: emailNotification.sent,
+            emailNotificationReason: emailNotification.sent ? null : emailNotification.reason,
+          },
+        })
+      if (emailAuditError) {
+        console.error('Restriction lift email audit update failed:', { code: emailAuditError.code || null })
+      }
+
+      let sessionRevocationWarning = null
+      if (lifted.ban_type === 'suspension') {
+        try {
+          await revokeUserSessions(client, userId)
+        } catch (revokeError) {
+          console.error('Session revocation after suspension lift failed:', revokeError)
+          sessionRevocationWarning = 'The suspension was lifted, but the prior restricted session could not be revoked.'
+        }
+      }
+
+      return respond({
+        success: true,
+        restriction: lifted,
+        emailNotificationSent: emailNotification.sent,
+        emailNotificationReason: emailNotification.sent ? null : emailNotification.reason,
+        sessionRevocationWarning,
+      })
     }
 
     return respond({ success: false, message: 'Unsupported moderation action.' }, 400)

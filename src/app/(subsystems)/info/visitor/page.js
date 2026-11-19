@@ -503,7 +503,7 @@ export default function VisitorHomePage() {
           {/* Header */}
           <div className="flex items-center justify-between gap-4 mb-6">
             <div className="flex items-center gap-3">
-              <span className="text-3xl" role="img" aria-label="Palm Tree">🌴</span>
+              <Umbrella className="h-8 w-8 text-sky-600" aria-hidden="true" />
               <div>
                 <h2 id="featured-heading" className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
                   Featured Destinations
@@ -684,7 +684,7 @@ export default function VisitorHomePage() {
                   </div>
                   <div>
                     <h2 className="text-lg sm:text-xl font-black text-slate-900">Popular Blogs</h2>
-                    <p className="text-xs text-slate-500">The most-viewed stories on Daet Connect.</p>
+                    <p className="text-xs text-slate-500">The most-viewed stories on Connect Daet.</p>
                   </div>
                 </div>
                 <Link
@@ -817,7 +817,10 @@ export default function VisitorHomePage() {
                 <form onSubmit={handleSubscribe} className="mt-6">
                   {emailSubscribed ? (
                     <div className="rounded-full bg-white/20 px-4 py-2.5 text-center text-xs font-bold backdrop-blur">
-                      🎉 Thank you for subscribing!
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                        Thank you for subscribing!
+                      </span>
                     </div>
                   ) : (
                     <div className="flex items-center rounded-full bg-white p-1 shadow-lg">

@@ -2,10 +2,26 @@
 
 import { useEffect, useRef } from 'react'
 
-export default function ConfirmationModal({ isOpen, title, message, children, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel', isDangerous = false, confirmDisabled = false }) {
+export default function ConfirmationModal({ isOpen, title, message, children, onConfirm, onCancel, confirmText = 'Confirm', cancelText = 'Cancel', isDangerous = false, confirmDisabled = false, hideNavigation = false }) {
   const cancelRef = useRef(null)
   const confirmRef = useRef(null)
   const modalRef = useRef(null)
+
+  useEffect(() => {
+    if (!isOpen || !hideNavigation) return undefined
+
+    const navigation = Array.from(document.querySelectorAll('.usr-desktop-sidebar, .usr-mobile-bottom-nav'))
+    const previousVisibility = navigation.map((element) => element.style.visibility)
+    navigation.forEach((element) => {
+      element.style.visibility = 'hidden'
+    })
+
+    return () => {
+      navigation.forEach((element, index) => {
+        element.style.visibility = previousVisibility[index]
+      })
+    }
+  }, [hideNavigation, isOpen])
 
   // Focus management: move focus into the dialog when it opens, restore it on close,
   // trap Tab navigation inside, and close on Escape.
@@ -55,7 +71,7 @@ export default function ConfirmationModal({ isOpen, title, message, children, on
 
   return (
     <div
-      className="confirmation-modal fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="confirmation-modal fixed inset-0 z-[70] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirmation-modal-title"

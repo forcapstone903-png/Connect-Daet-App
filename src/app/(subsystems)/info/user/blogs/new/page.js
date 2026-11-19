@@ -26,12 +26,14 @@ import { supabase } from '@/lib/supabase'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import MultiMediaUpload from '@/app/(subsystems)/info/components/MultiMediaUpload'
 import RichTextEditor from '@/app/(subsystems)/info/components/user/RichTextEditor'
+import StarRating from '@/app/(subsystems)/info/components/user/StarRating'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import { SectionLoading } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import { normalizeErrorMessage, trackUserActivity } from '@/lib/trackActivity'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { getCacheKey, invalidateCache } from '@/lib/cache'
 import { notifyToast } from '@/lib/toast.mjs'
+import { isValidRating } from '@/lib/ratings.mjs'
 
 const categories = [
   { value: 'travel_guides', label: 'Travel Guides' },
@@ -181,7 +183,7 @@ export default function CreateBlogPage() {
     is_free: true,
     ticket_price: '',
   })
-  const [feedbackForm, setFeedbackForm] = useState({ category: 'suggestion', message: '', rating: 5, location: '', image: '' })
+  const [feedbackForm, setFeedbackForm] = useState({ category: 'suggestion', message: '', rating: 0, location: '', image: '' })
   const [mediaItems, setMediaItems] = useState([])
   const [forumMediaItems, setForumMediaItems] = useState([])
   const [mediaLayout, setMediaLayout] = useState('swipe')
@@ -596,11 +598,14 @@ export default function CreateBlogPage() {
         savedSnapshotRef.current = JSON.stringify({ ...payload, status: 'draft' })
         setLastSavedAt(new Date())
         setAutosaveWarning(result.warning || '')
-        setSuccessStatus(blogStatus)
+        const submissionStatus = result.moderation?.auto_published ? 'auto_published' : blogStatus
+        setSuccessStatus(submissionStatus)
         if (blogStatus === 'draft') {
           showToast('Your story was saved as a draft.')
+        } else if (result.moderation?.auto_published) {
+          showToast('Your story passed automated checks and is now published.')
         } else {
-          showToast('Your story is pending administrator approval.')
+          showToast(result.warning || 'Your story is saved and awaiting administrator review.')
         }
         if (blogStatus === 'published' && session?.user?.id) {
           try {
@@ -652,6 +657,10 @@ export default function CreateBlogPage() {
       alert('Please add your feedback message.')
       return
     }
+    if (shareType === 'feedback' && feedbackForm.rating !== 0 && !isValidRating(feedbackForm.rating)) {
+      alert('Choose a rating from 1 to 5 stars.')
+      return
+    }
     if (uploadingGallery || uploadingFeedbackImage || uploadingCover) {
       alert('Wait for your attachments to finish uploading before submitting.')
       return
@@ -669,7 +678,7 @@ export default function CreateBlogPage() {
       }
       const feedbackPayload = {
         category: feedbackForm.category,
-        rating: feedbackForm.rating,
+        rating: feedbackForm.rating || null,
         message: feedbackForm.message.trim(),
         location: feedbackForm.location.trim(),
         images: feedbackForm.image ? [feedbackForm.image] : [],
@@ -1037,7 +1046,7 @@ export default function CreateBlogPage() {
         {success ? (
           <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-800">
             <CheckCircle2 className="h-5 w-5 shrink-0" />
-            <div><p className="font-bold">{shareType === 'blog' && successStatus === 'draft' ? 'Your story was saved as a draft.' : shareType === 'blog' ? 'Your story is pending administrator approval.' : shareType === 'event' ? 'Your event is pending administrator approval.' : shareType === 'forum' && successStatus === 'published' ? 'Your forum post was published.' : shareType === 'forum' ? 'Your forum post is pending moderator approval.' : 'Your feedback was submitted.'}</p></div>
+            <div><p className="font-bold">{shareType === 'blog' && successStatus === 'draft' ? 'Your story was saved as a draft.' : shareType === 'blog' && successStatus === 'auto_published' ? 'Your story passed automated checks and is now published.' : shareType === 'blog' ? 'Your story is saved and awaiting administrator review.' : shareType === 'event' ? 'Your event is pending administrator approval.' : shareType === 'forum' && successStatus === 'published' ? 'Your forum post was published.' : shareType === 'forum' ? 'Your forum post is pending moderator approval.' : 'Your feedback was submitted.'}</p></div>
           </div>
         ) : previewMode ? (
           <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1270,7 +1279,21 @@ export default function CreateBlogPage() {
             ) : (
               <form id="content-studio-form" onSubmit={handleSubmit} className="content-studio-form">
                 <label className="block"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Your feedback</span><textarea rows={7} value={feedbackForm.message} onChange={(event) => setFeedbackForm((current) => ({ ...current, message: event.target.value }))} placeholder="Tell us what is working well or what could be improved…" className="w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-800 outline-none focus:border-blue-400 focus:bg-white focus:ring-4 focus:ring-blue-50" /></label>
-                <label className="block max-w-xs"><span className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Rating <span className="font-normal normal-case text-slate-400">Optional</span></span><select value={feedbackForm.rating} onChange={(event) => setFeedbackForm((current) => ({ ...current, rating: Number(event.target.value) }))} className="w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-50"><option value={5}>5 — Excellent</option><option value={4}>4 — Good</option><option value={3}>3 — Fair</option><option value={2}>2 — Needs improvement</option><option value={1}>1 — Poor</option></select></label>
+                <div>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                    Rating <span className="font-normal normal-case text-slate-400">Optional</span>
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StarRating
+                      value={feedbackForm.rating}
+                      onChange={(rating) => setFeedbackForm((current) => ({ ...current, rating }))}
+                      label="Rate your experience"
+                    />
+                    <span aria-live="polite" className="text-sm text-slate-600">
+                      {feedbackForm.rating ? `${feedbackForm.rating} / 5 stars` : 'No rating selected'}
+                    </span>
+                  </div>
+                </div>
                 <div className="rounded-2xl border border-slate-200 p-4"><p className="mb-3 text-sm font-bold text-slate-800">Photo attachment <span className="font-normal text-slate-400">Optional</span></p><MediaUpload bucket="blogs" folder="feedback" mediaType="image" existingMediaUrl={feedbackForm.image} onUploadComplete={(url) => setFeedbackForm((current) => ({ ...current, image: url || '' }))} onUploadStateChange={setUploadingFeedbackImage} onUploadError={(error) => alert(error)} buttonText="Upload a photo" maxSizeMB={5} /></div>
               </form>
             )}

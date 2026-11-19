@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import Image from 'next/image'
+import { Camera } from 'lucide-react'
 import { usePublicSettings } from '@/lib/usePublicSettings'
 import connectDaetLogo from '@/app/(subsystems)/info/assets/images/logo.png'
 
@@ -30,7 +31,7 @@ export default function VisitorFooter() {
                 />
               </span>
               <span className="text-xl font-black tracking-tight text-white">
-                Daet <span className="text-sky-400 font-bold">Connect</span>
+                Connect <span className="text-sky-400 font-bold">Daet</span>
               </span>
             </Link>
             <p className="mt-3 text-sm font-medium text-slate-300">
@@ -90,7 +91,7 @@ export default function VisitorFooter() {
                 { name: 'Facebook', label: 'f', href: 'https://facebook.com', bg: 'hover:bg-blue-600' },
                 { name: 'YouTube', label: '▶', href: 'https://youtube.com', bg: 'hover:bg-red-600' },
                 { name: 'TikTok', label: '♪', href: 'https://tiktok.com', bg: 'hover:bg-pink-600' },
-                { name: 'Instagram', label: '📷', href: 'https://instagram.com', bg: 'hover:bg-purple-600' },
+                { name: 'Instagram', Icon: Camera, href: 'https://instagram.com', bg: 'hover:bg-purple-600' },
               ].map((social) => (
                 <a
                   key={social.name}
@@ -100,7 +101,7 @@ export default function VisitorFooter() {
                   aria-label={social.name}
                   className={`flex h-10 w-10 items-center justify-center rounded-full border border-white/20 bg-white/10 text-xs font-black text-white shadow-sm backdrop-blur transition-all duration-200 hover:scale-110 hover:border-transparent ${social.bg}`}
                 >
-                  {social.label}
+                  {social.Icon ? <social.Icon className="h-4 w-4" aria-hidden="true" /> : social.label}
                 </a>
               ))}
             </div>
@@ -165,7 +166,7 @@ export default function VisitorFooter() {
         {/* Bottom Bar */}
         <div className="mt-12 flex flex-col items-center justify-between gap-4 border-t border-white/10 pt-6 sm:flex-row">
           <p className="text-xs text-slate-400">
-            &copy; {new Date().getFullYear()} Daet Connect. All rights reserved.
+            &copy; {new Date().getFullYear()} Connect Daet. All rights reserved.
           </p>
           <div className="flex items-center gap-2">
             <span

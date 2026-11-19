@@ -34,6 +34,15 @@ function SearchContentView({ initialQuery, initialType }) {
   const [searchFocused, setSearchFocused] = useState(false)
   const { users: suggestedUsers, loading: suggestedUsersLoading } = useUserSearchSuggestions(query, searchFocused)
   const [showFilters, setShowFilters] = useState(false)
+  const [smartCategories, setSmartCategories] = useState(() =>
+    String(searchParams?.get('categories') || '').split(',').map((value) => value.trim()).filter(Boolean).slice(0, 10)
+  )
+  const [smartLocation, setSmartLocation] = useState(searchParams?.get('location') || '')
+  const [smartSort, setSmartSort] = useState(searchParams?.get('sort') || 'relevance')
+  const [smartDate, setSmartDate] = useState(searchParams?.get('date') || 'all')
+  const [smartFree, setSmartFree] = useState(searchParams?.get('free') === '1')
+  const [smartFollowing, setSmartFollowing] = useState(searchParams?.get('following') === '1')
+  const [smartSaved, setSmartSaved] = useState(searchParams?.get('saved') === '1')
   const [recentSearches, setRecentSearches] = useState(() => {
     if (typeof window === 'undefined') return []
 
@@ -98,6 +107,24 @@ function SearchContentView({ initialQuery, initialType }) {
   }, [])
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams()
+      if (query.trim()) params.set('q', query.trim())
+      if (activeTab !== 'all') params.set('type', activeTab)
+      if (smartLocation) params.set('location', smartLocation)
+      if (smartSort !== 'relevance') params.set('sort', smartSort)
+      if (smartDate !== 'all') params.set('date', smartDate)
+      if (smartFree) params.set('free', '1')
+      if (smartFollowing) params.set('following', '1')
+      if (smartSaved) params.set('saved', '1')
+      if (smartCategories.length) params.set('categories', smartCategories.join(','))
+      const nextUrl = `${searchPath}${params.toString() ? `?${params}` : ''}`
+      router.replace(nextUrl, { scroll: false })
+    }, 300)
+    return () => window.clearTimeout(timer)
+  }, [query, activeTab, smartLocation, smartSort, smartDate, smartFree, smartFollowing, smartSaved, smartCategories, router, searchPath])
+
+  useEffect(() => {
     const handleLiveSearch = (event) => {
       setQuery(String(event.detail?.query ?? ''))
       setLoading(true)
@@ -157,8 +184,81 @@ function SearchContentView({ initialQuery, initialType }) {
       setError('')
       try {
         const q = query.trim().toLowerCase()
+        const hasSmartFilters = smartCategories.length > 0
+          || Boolean(smartLocation)
+          || smartSort !== 'relevance'
+          || smartDate !== 'all'
+          || smartFree
+          || smartFollowing
+          || smartSaved
+        if (hasSmartFilters) {
+          const discoveryParams = new URLSearchParams({
+            type: activeTab === 'spots' ? 'spots'
+              : activeTab === 'events' ? 'events'
+                : activeTab === 'blogs' ? 'blogs'
+                  : activeTab === 'threads' ? 'threads'
+                    : activeTab === 'people' ? 'people'
+                      : 'all',
+            q: query.trim(),
+            sort: smartSort,
+            date: smartDate,
+            location: smartLocation,
+            categories: smartCategories.join(','),
+          })
+          if (smartFree) discoveryParams.set('free', '1')
+          if (smartFollowing) discoveryParams.set('following', '1')
+          if (smartSaved) discoveryParams.set('saved', '1')
+          const response = await fetch(`/info/api/user/discover?${discoveryParams}`, {
+            credentials: 'same-origin',
+            cache: 'no-store',
+          })
+          const result = await response.json().catch(() => ({}))
+          if (!active) return
+          if (!response.ok || !result.success) throw new Error(result.message || 'Unable to apply smart filters.')
+          setResults({
+            spots: result.spots || [],
+            events: result.events || [],
+            blogs: result.blogs || [],
+            threads: result.threads || [],
+            users: result.people || [],
+            userContent: [],
+            userComments: [],
+            forumComments: [],
+            mentions: [],
+          })
+          setLoading(false)
+          return
+        }
 
         if (!q) {
+          if (initialType === 'blogs') {
+            const { data: blogs, error: blogsError } = await supabase
+              .from('info_blogs')
+              .select('id, created_by, title, excerpt, featured_image, images, category, published_at, created_at')
+              .eq('status', 'published')
+              .eq('approval_status', 'approved')
+              .or(`published_at.is.null,published_at.lte.${new Date().toISOString()}`)
+              .order('published_at', { ascending: false, nullsFirst: false })
+              .order('created_at', { ascending: false })
+
+            if (blogsError) throw blogsError
+            if (!active) return
+
+            setResults({
+              spots: [],
+              events: [],
+              blogs: blogs || [],
+              threads: [],
+              users: [],
+              userContent: [],
+              userComments: [],
+              forumComments: [],
+              mentions: [],
+            })
+            setLoading(false)
+            return
+          }
+
           setResults({ spots: [], events: [], blogs: [], threads: [], users: [], userContent: [], userComments: [], forumComments: [], mentions: [] })
           setLoading(false)
           return
@@ -286,7 +386,7 @@ function SearchContentView({ initialQuery, initialType }) {
       active = false
       clearTimeout(debounceTimer)
     }
-  }, [query, refreshKey])
+  }, [query, refreshKey, initialType, activeTab, smartCategories, smartLocation, smartSort, smartDate, smartFree, smartFollowing, smartSaved])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -344,6 +444,7 @@ function SearchContentView({ initialQuery, initialType }) {
 
   const communityCount = results.users.length + results.userContent.length + results.userComments.length + results.mentions.length
   const totalCount = results.spots.length + results.events.length + results.blogs.length + results.threads.length + communityCount
+  const isBrowsingBlogs = initialType === 'blogs' && !query.trim()
 
   const tabs = [
     { id: 'all', label: 'All', count: totalCount },
@@ -575,14 +676,80 @@ function SearchContentView({ initialQuery, initialType }) {
           </div>
 
           {showFilters && (
-            <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto border-t border-slate-100 pt-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:mx-auto lg:max-w-xl">
-              <span className="mr-1 shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Filter by</span>
-              {tabs.map((tab) => (
-                <button key={tab.id} type="button" onClick={() => { setActiveTab(tab.id); setShowFilters(false) }} className="usr-section-tab usr-press" aria-pressed={activeTab === tab.id}>
-                  {tab.label}
-                  <span className="usr-section-tab-count">{tab.count}</span>
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:mx-auto lg:max-w-3xl">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="mr-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Category</span>
+                {['Travel', 'Food', 'Culture', 'Adventure', 'Events', 'Beach', 'Nature', 'Historical', 'Restaurant', 'Hotel'].map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    aria-pressed={smartCategories.includes(category)}
+                    onClick={() => setSmartCategories((current) => current.includes(category) ? current.filter((value) => value !== category) : [...current, category])}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-bold ${smartCategories.includes(category) ? 'border-teal-700 bg-teal-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-teal-300'}`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="text-xs font-bold text-slate-600">Sort
+                  <select value={smartSort} onChange={(event) => setSmartSort(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800">
+                    <option value="relevance">Recommended / Relevance</option>
+                    <option value="recent">Newest</option>
+                    <option value="popular">Most popular</option>
+                    <option value="rated">Highest rated</option>
+                    <option value="reviewed">Most reviewed</option>
+                    <option value="liked">Most liked</option>
+                    <option value="commented">Most commented</option>
+                    <option value="viewed">Most viewed</option>
+                    <option value="distance">Nearest</option>
+                    <option value="mutual">Most mutual followers</option>
+                    <option value="most_followed">Most followed</option>
+                    <option value="active">Most active</option>
+                    <option value="joined">Recently joined</option>
+                  </select>
+                </label>
+                <label className="text-xs font-bold text-slate-600">Location
+                  <input value={smartLocation} onChange={(event) => setSmartLocation(event.target.value)} placeholder="City or municipality" className="mt-1 min-h-10 w-full rounded-xl border border-slate-200 px-3 text-sm font-medium" />
+                </label>
+                <label className="text-xs font-bold text-slate-600">Event date
+                  <select value={smartDate} onChange={(event) => setSmartDate(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800">
+                    <option value="all">Any date</option>
+                    <option value="today">Today</option>
+                    <option value="week">This week</option>
+                    <option value="month">This month</option>
+                  </select>
+                </label>
+                <div className="flex flex-wrap content-end gap-2">
+                  <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={smartFree} onChange={(event) => setSmartFree(event.target.checked)} />Free events
+                  </label>
+                  <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={smartFollowing} onChange={(event) => setSmartFollowing(event.target.checked)} />Following
+                  </label>
+                  <label className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700">
+                    <input type="checkbox" checked={smartSaved} onChange={(event) => setSmartSaved(event.target.checked)} />Saved
+                  </label>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-slate-500">{totalCount} matching result{totalCount === 1 ? '' : 's'}{smartCategories.length ? ` · ${smartCategories.join(', ')}` : ''}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSmartCategories([])
+                    setSmartLocation('')
+                    setSmartSort('relevance')
+                    setSmartDate('all')
+                    setSmartFree(false)
+                    setSmartFollowing(false)
+                    setSmartSaved(false)
+                  }}
+                  className="rounded-full border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                >
+                  Clear all
                 </button>
-              ))}
+              </div>
             </div>
           )}
         </header>
@@ -590,9 +757,11 @@ function SearchContentView({ initialQuery, initialType }) {
 
         {/* Search Results Header */}
         <div className="usr-card usr-enter usr-search-results mb-6">
-          <p className="usr-section-eyebrow">{query.trim() ? 'Search results' : 'Start exploring'}</p>
+          <p className="usr-section-eyebrow">{isBrowsingBlogs ? 'Blogs' : query.trim() ? 'Search results' : 'Start exploring'}</p>
           <h2 className="mt-1 text-2xl font-black text-slate-900">
-            {query.trim() ? (
+            {isBrowsingBlogs ? (
+              'Blogs from the community'
+            ) : query.trim() ? (
               <>
                 Results for <span className="text-teal-700">&quot;{query.trim()}&quot;</span>
               </>
@@ -601,9 +770,13 @@ function SearchContentView({ initialQuery, initialType }) {
             )}
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            {loading ? 'Searching...' : `${totalCount} result${totalCount === 1 ? '' : 's'} found`}
+            {loading
+              ? isBrowsingBlogs ? 'Loading blogs...' : 'Searching...'
+              : isBrowsingBlogs
+                ? `${results.blogs.length} published blog${results.blogs.length === 1 ? '' : 's'}`
+                : `${totalCount} result${totalCount === 1 ? '' : 's'} found`}
           </p>
-          {!query.trim() && (
+          {!query.trim() && !isBrowsingBlogs && (
             <div className="mt-4 flex flex-wrap gap-2">
               {popularSearches.map((suggestion) => (
                 <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:border-teal-200 hover:bg-teal-100">
@@ -641,9 +814,13 @@ function SearchContentView({ initialQuery, initialType }) {
           <div className="usr-empty-state sm:p-10">
             <SearchIcon className="mx-auto mb-3 h-10 w-10 text-slate-400" />
             <p className="text-sm text-slate-500">
-              {query.trim() ? 'No results found. Try different keywords.' : 'Type something to search across Daet.'}
+              {isBrowsingBlogs
+                ? 'No blogs have been published yet.'
+                : query.trim()
+                  ? 'No results found. Try different keywords.'
+                  : 'Type something to search across Daet.'}
             </p>
-            {!query.trim() && <div className="mt-5 flex flex-wrap justify-center gap-2">{searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
+            {!query.trim() && !isBrowsingBlogs && <div className="mt-5 flex flex-wrap justify-center gap-2">{searchSuggestionOptions.map((suggestion) => <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700 transition hover:border-teal-300 hover:text-teal-700">{suggestion}<ArrowRight className="h-3 w-3" /></button>)}</div>}
             {query.trim() && (
               <button
                 type="button"

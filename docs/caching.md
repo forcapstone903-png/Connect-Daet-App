@@ -45,6 +45,14 @@ time boundary; posts younger than one day use relative time, posts from one to
 six days old show their calendar date and age, and older posts show the date.
 There is no cache key, invalidation, or manual-clear action.
 
+## Hybrid blog post moderation
+
+Submission moderation, author history, risk details, and the administrator queue
+are private, change frequently, and are not cached. They use fresh server-side
+Supabase reads and private no-store API responses. See
+[hybrid-post-moderation.md](./hybrid-post-moderation.md) for the full cache and
+privacy decision.
+
 ## Admin destination popularity analytics
 
 The admin dashboard reads the five most-viewed active destination detail pages
@@ -85,6 +93,29 @@ Security notes: Signed staff session and analytics.view authorization; database 
 Manual clear method: Reload the dashboard or select a reporting period to request a fresh report
 ```
 
+## Administrator account oversight and moderation cases
+
+The Account Oversight dashboard and escalated-case review contain private account
+identifiers, reports, evidence, appeal counts, and moderation history. They are
+queried from Supabase on each request and are never cached.
+
+```text
+Feature: System Administrator Account Oversight
+Data fetched: Community account status and history, investigation decisions, restrictions, reports, evidence, appeals, and audit details
+Change frequency: Changes whenever an account, appeal, restriction, investigation, or decision is recorded
+Visibility: System Administrators only; case data is returned by server-authorized endpoints
+Freshness: Fetch current database state when opening or refreshing the dashboard or case
+Stale behavior: Do not display stale account or case data; show an explicit error and allow retry
+Missing-cache behavior: Read Supabase; report a clear error if the schema or database is unavailable
+Invalidation trigger: None; no cached data exists
+Cache layer: None; responses use private, no-store
+Cache key: None
+TTL: None
+Offline behavior: No offline account-management data or decisions
+Security notes: Service-role reads are behind System Administrator session checks; the decision RPC verifies the active administrator and atomically records status changes and audit history; RLS denies direct status changes and audit-log edits
+Manual clear method: Reload Account Oversight or reopen the case to fetch current server data
+```
+
 ## Tourism-officer notification dropdown
 
 The dashboard always reads the signed-in staff member's unread count. It fetches
@@ -109,6 +140,31 @@ TTL: None; API responses use no-store
 Offline behavior: Keep the last displayed count and preview; refresh after reconnect
 Security notes: Count and previews are scoped to the authenticated user; alert-broadcast deliveries are excluded from the staff-notification scope and remain on the separate Alert Broadcasts page; the background count request returns no notification bodies or actor profiles
 Manual clear method: None; marking a notification read updates the dropdown and the next Realtime refresh
+```
+
+## Account suspension review
+
+Investigation and decision data is sensitive staff-only moderation information.
+The queue, case detail, and mutations use private `no-store` responses and query
+Supabase on each load. No local or shared cache is used; successful decisions
+are committed transactionally before the UI refreshes.
+
+```text
+Feature: Tourism Officer suspension review and administrator permanent-ban authorization
+Data fetched: Private account investigations, recommendation, report evidence snapshot, user profile, and decision history
+Change frequency: Staff may submit or decide a case at any time
+Visibility: Authenticated staff only; officers see the queue, while administrators see only escalated permanent-ban requests
+Freshness: Fetch on page load, filter/page changes, case open, and after every successful decision
+Stale behavior: Do not treat stale review data as actionable; database transactions lock and validate the latest case status before applying a decision
+Missing-cache behavior: No cache; read the authorized API directly and surface load errors
+Invalidation trigger: No cache; refresh the queue and case detail after a successful write
+Cache layer: None
+Cache key: None
+TTL: None; API responses use private, no-store
+
+Offline behavior: No decision is reported as successful unless the server transaction commits
+Security notes: The API checks the signed-in role; security-definer database functions independently verify the active Tourism Officer or Administrator. User content and decision history are not cached or exposed to public roles
+Manual clear method: None; reload to fetch current server data
 ```
 
 ## Rewards and point settings
@@ -204,6 +260,27 @@ TTL: None
 Offline behavior: No persisted results; show the current in-memory results during refresh, otherwise show an explicit error or empty state
 Security notes: Queries return only public, approved content and aggregate counts; no user-specific data is queried or stored
 Manual clear method: None; reload the page to fetch current rankings
+```
+
+## Public Visitor Content Directories
+
+The visitor navigation opens public listings for all published events, forum discussions, and blogs. These lists are fetched directly on entry and are not cached so newly published or unpublished posts are reflected on the next visit.
+
+```text
+Feature: Public visitor event, forum, and blog directories
+Data fetched: Public published event records, published/closed forum threads, and approved published blog titles, excerpts, images, categories, publication timestamps, and author IDs
+Change frequency: Public content may be published, edited, or unpublished at any time
+Visibility: Public; blog records must be approved and not scheduled for a future publication time
+Freshness: Fetch current records on page entry; Events and Forum refresh on their existing Realtime updates
+Stale behavior: Keep the Events and Forum list visible during silent Realtime refresh; show an explicit error and retry action on load failure. Blogs has no stale snapshot and shows a retry action on load failure.
+Missing-cache behavior: No cache; query Supabase for current public records
+Invalidation trigger: No cache; opening a directory again fetches current records, with Realtime refresh for Events and Forum
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: No offline list; show the retryable load error
+Security notes: Queries return only public records and exclude drafts, unapproved blogs/events, and future-scheduled blogs; no user-specific data is cached
+Manual clear method: None; reload a directory to fetch current public records
 ```
 
 ## Admin Tourist Spot Management
@@ -487,7 +564,7 @@ Manual clear method: None; reload the forum
 Feature: Moderation reports, restrictions, and audit history
 Data fetched: Open reports for content, comments, reposts, reviews, and accounts; active publishing restrictions; moderation audit entries
 Change frequency: Changes on report submission, resolution, restriction, or restoration
-Visibility: Private; moderation data is administrator/moderator-only
+Visibility: Private; moderation data is available to active administrators, moderators, and Tourism Officers
 Freshness: Fetch directly from authenticated APIs
 Stale behavior: Keep the last rendered data and surface request failures
 Missing-cache behavior: Fetch from the database
@@ -499,10 +576,25 @@ Offline behavior: Do not show successful report or moderation actions without se
 Security notes: Reporter identity is derived from the signed-in server session; report queues are private; account-report approval records the suspension and resolves the report atomically; publishing restrictions are enforced by database triggers and authenticated APIs
 Manual clear method: None; reload moderation data
 
+Feature: Account suspension appeals and evidence
+Data fetched: Private appeal explanations, suspension state, moderation decisions, audit records, and signed URLs for optional evidence files
+Change frequency: User submissions and administrator/moderation staff decisions
+Visibility: Submitter-only appeal history and staff-only review queue; evidence is stored in a private Supabase Storage bucket
+Freshness: Fetch current state from authenticated no-store APIs; signed evidence links expire after ten minutes
+Stale behavior: Do not present stale appeal state or evidence as current; show the API error and retry
+Missing-cache behavior: Read the current appeal and suspension records from Supabase; surface failures
+Invalidation trigger: No cache; refresh appeal history or the staff queue after successful writes
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: No appeal submission or decision is reported successful without server confirmation
+Security notes: Restricted suspended sessions can access only the suspension page, appeal API, and sign-out; evidence URLs are signed for the owner or authorized staff and are never placed in a shared cache
+Manual clear method: None; reload the appeal page or staff moderation queue
+
 Feature: Moderator dashboard action queues
 Data fetched: Counts for pending blog/community submissions, open reports, appeals, flagged posts, and unanswered inquiries
-Change frequency: Changes when a user submits content or a moderator completes an action
-Visibility: Private; moderator/admin-only aggregate counts
+Change frequency: Changes when a user submits content or moderation staff completes an action
+Visibility: Private; active administrator/moderator/Tourism Officer aggregate counts
 Freshness: Fetch on dashboard load and manual refresh
 Stale behavior: Keep the last successful summary visible alongside a refresh error; show no fabricated counts before the first successful load
 Missing-cache behavior: Read current counts from the authorized moderation and blog APIs
@@ -886,6 +978,7 @@ Session cache rules:
 - Clear user-specific caches on logout and account switch
 - Do not use cached auth state as proof of authorization
 - Revalidate authorization on the server for every protected write
+- Staff sessions are checked against active account status, stored role, and session version through a service-role RPC on each request; do not cache this result, and fail closed if verification is unavailable.
 
 ### Offline actions
 

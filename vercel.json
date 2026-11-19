@@ -11,6 +11,10 @@
     {
       "path": "/info/api/cron/backups",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/info/api/cron/moderation-lifecycle",
+      "schedule": "0 2 * * *"
     }
   ]
 }

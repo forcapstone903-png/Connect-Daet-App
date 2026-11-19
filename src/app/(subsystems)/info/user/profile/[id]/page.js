@@ -522,7 +522,7 @@ export default function PublicProfilePage() {
   const shareProfile = async () => {
     setMenuOpen(false);
     const url = typeof window === "undefined" ? "" : window.location.href;
-    const shareTitle = `${profile?.full_name || "Community member"} on Daet Connect`;
+    const shareTitle = `${profile?.full_name || "Community member"} on Connect Daet`;
 
     try {
       if (navigator.share) {

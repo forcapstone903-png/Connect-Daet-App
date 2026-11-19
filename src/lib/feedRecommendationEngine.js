@@ -1,12 +1,14 @@
+const { getInterestMatchScore, getInterestRecommendationTerms, normalizeUserInterests } = require('./userInterests.js')
+
 const FEED_RECOMMENDATION_DEFAULTS = {
   weights: {
-    interest: 1.15,
+    interest: 1.5,
     interaction: 1.05,
     authorAffinity: 0.8,
     contentTypeAffinity: 0.65,
     freshness: 0.72,
     popularity: 0.25,
-    relationship: 0.35,
+    relationship: 0.55,
     exploration: 0.18,
     diversity: 0.35,
   },
@@ -60,6 +62,7 @@ function normalizeProfile(profile = {}) {
     destinations: profile.destinations || {},
     topics: profile.topics || {},
     interactions: profile.interactions || {},
+    preferredCategories: profile.preferredCategories || [],
     lastSeen: profile.lastSeen || {},
   }
 }
@@ -77,13 +80,21 @@ function normalizeCategory(category) {
   return normalizeKey(category || '').replace(/[_-]+/g, ' ')
 }
 
+function normalizeFeedContentType(type) {
+  const key = normalizeKey(type)
+  if (key === 'forum_thread') return 'forum'
+  if (key === 'user_post') return 'post'
+  if (key === 'spot') return 'tourist_spot'
+  return key
+}
+
 function getCategoryBoost(category, profile) {
   const key = normalizeCategory(category)
   return safeNumber(profile.categories?.[key] || profile.topics?.[key] || 0, 0)
 }
 
 function getContentTypeBoost(type, profile) {
-  const key = normalizeKey(type)
+  const key = normalizeFeedContentType(type)
   return safeNumber(profile.contentTypes?.[key] || 0, 0)
 }
 
@@ -98,7 +109,10 @@ function getDestinationBoost(destination, profile) {
 }
 
 function getFreshnessScore(item, now) {
-  const timestamp = new Date(item?.published_at || item?.created_at || item?.start_date || item?.last_activity_at || 0).getTime()
+  const timestampValue = item?.type === 'event'
+    ? item?.start_date || item?.published_at || item?.created_at
+    : item?.published_at || item?.created_at || item?.start_date || item?.last_activity_at
+  const timestamp = new Date(timestampValue || 0).getTime()
   if (!Number.isFinite(timestamp)) return 0.2
   const ageHours = Math.max(1, (now - timestamp) / 3_600_000)
   const decay = 1 / (1 + Math.log(ageHours + 1))
@@ -109,7 +123,11 @@ function getPopularityScore(item) {
   const reactions = safeNumber(item?.likes, 0) + safeNumber(item?.reaction_count, 0)
   const comments = safeNumber(item?.comments_count, 0) + safeNumber(item?.reply_count, 0)
   const views = safeNumber(item?.views, 0)
-  return clamp((reactions * 0.2 + comments * 0.3 + views * 0.05) / 25, 0, 1)
+  const attendees = safeNumber(item?.current_attendees, 0)
+  const visits = safeNumber(item?.visit_count, 0)
+  const reviews = safeNumber(item?.review_count, 0)
+  const rating = clamp(safeNumber(item?.rating, 0) / 5, 0, 1)
+  return clamp((reactions * 0.2 + comments * 0.3 + views * 0.05 + attendees * 0.08 + visits * 0.02 + reviews * 0.1) / 25 + rating * 0.15, 0, 1)
 }
 
 function computeDiversificationPenalty(item, previousItems = []) {
@@ -154,7 +172,7 @@ function buildInteractionScore(item, profile) {
   const history = profile.interactions || {}
   const base = Object.entries(history).reduce((total, [key, value]) => {
     const normalizedKey = normalizeKey(key)
-    const itemKey = normalizeKey(item?.type || item?.content_type)
+    const itemKey = normalizeFeedContentType(item?.type || item?.content_type)
     const categoryKey = normalizeCategory(item?.category)
     const itemDestination = normalizeCategory(item?.location || item?.destination)
     const itemTopic = normalizeCategory(item?.topic || item?.category)
@@ -179,6 +197,22 @@ function scoreItem(item, profile, context = {}) {
 
   const typeBoost = getContentTypeBoost(item?.type, profile)
   const categoryBoost = getCategoryBoost(item?.category, profile)
+  const interestMatchCount = getInterestMatchScore([
+    item?.category,
+    item?.topic,
+    item?.type,
+    item?.title,
+    item?.excerpt,
+    item?.description,
+    item?.content,
+    item?.location,
+    item?.destination,
+    item?.venue,
+    item?.best_time_to_visit,
+    ...(Array.isArray(item?.tags) ? item.tags : []),
+  ], profile.preferredCategories)
+  const explicitInterestBoost = Math.min(interestMatchCount * 0.85, 1.7)
+  const interestBoost = Math.max(categoryBoost, explicitInterestBoost)
   const authorBoost = getAuthorBoost(item?.created_by || item?.author?.id, profile)
   const destinationBoost = getDestinationBoost(item?.location || item?.destination, profile)
   const interactionBoost = buildInteractionScore(item, profile)
@@ -191,7 +225,7 @@ function scoreItem(item, profile, context = {}) {
   const confidenceBoost = item?.is_repost ? 0.18 : 0
   const recommendationScore = (
     typeBoost * FEED_RECOMMENDATION_DEFAULTS.weights.contentTypeAffinity +
-    categoryBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest +
+    interestBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest +
     authorBoost * FEED_RECOMMENDATION_DEFAULTS.weights.authorAffinity +
     destinationBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest +
     interactionBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interaction +
@@ -208,7 +242,7 @@ function scoreItem(item, profile, context = {}) {
     recommendationScore,
     recommendationKey: getItemIdentity(item),
     contributionBreakdown: {
-      interest: typeBoost * FEED_RECOMMENDATION_DEFAULTS.weights.contentTypeAffinity + categoryBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest + destinationBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest,
+      interest: typeBoost * FEED_RECOMMENDATION_DEFAULTS.weights.contentTypeAffinity + interestBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest + destinationBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interest,
       interaction: interactionBoost * FEED_RECOMMENDATION_DEFAULTS.weights.interaction,
       authorAffinity: authorBoost * FEED_RECOMMENDATION_DEFAULTS.weights.authorAffinity,
       freshness: freshnessScore * FEED_RECOMMENDATION_DEFAULTS.weights.freshness,
@@ -252,6 +286,7 @@ function createColdStartProfile({ userId } = {}) {
       travel: 0.24,
     },
     interactions: {},
+    preferredCategories: [],
     lastSeen: {},
     userId,
   }
@@ -261,6 +296,9 @@ function createColdStartProfile({ userId } = {}) {
 
 function buildRecommendationProfile({ activities = [], reactions = [], favorites = [], preferredCategories = [], follows = [], profile = {} } = {}) {
   const nextProfile = normalizeProfile(profile || createColdStartProfile())
+  nextProfile.preferredCategories = normalizeUserInterests(
+    preferredCategories.length ? preferredCategories : nextProfile.preferredCategories
+  )
 
   const addNumeric = (map, key, value) => {
     const normalized = normalizeKey(key)
@@ -268,16 +306,16 @@ function buildRecommendationProfile({ activities = [], reactions = [], favorites
     map[normalized] = safeNumber(map[normalized], 0) + safeNumber(value, 0)
   }
 
-  preferredCategories.forEach((category) => addNumeric(nextProfile.categories, category, 0.28))
+  getInterestRecommendationTerms(preferredCategories).forEach((category) => addNumeric(nextProfile.categories, category, 0.28))
   follows.forEach((userId) => addNumeric(nextProfile.authors, userId, 0.22))
 
   activities.forEach((activity) => {
-    const entityType = activity?.entity_type || ''
+    const entityType = normalizeFeedContentType(activity?.entity_type || '')
     const meta = activity?.metadata || {}
     const category = meta?.category || meta?.topic || meta?.destination || activity?.entity_type || ''
     const isImpression = activity?.activity_type === 'content_impression'
     const signalWeight = isImpression ? 0.01 : 0.12
-    addNumeric(nextProfile.contentTypes, meta?.contentType || entityType, isImpression ? 0.01 : 0.06)
+    addNumeric(nextProfile.contentTypes, normalizeFeedContentType(meta?.contentType || entityType), isImpression ? 0.01 : 0.06)
     addNumeric(nextProfile.categories, category, signalWeight)
     addNumeric(nextProfile.interactions, entityType, isImpression ? 0.005 : 0.08)
     if (meta?.authorId) addNumeric(nextProfile.authors, meta.authorId, isImpression ? 0.015 : 0.14)
@@ -288,13 +326,13 @@ function buildRecommendationProfile({ activities = [], reactions = [], favorites
 
   reactions.forEach((reaction) => {
     const contentType = reaction?.content_type || ''
-    const itemType = contentType === 'forum_thread' ? 'forum' : contentType
+    const itemType = normalizeFeedContentType(contentType)
     addNumeric(nextProfile.contentTypes, itemType, 0.26)
     addNumeric(nextProfile.interactions, itemType, 0.26)
   })
 
   favorites.forEach((favorite) => {
-    const itemType = favorite?.item_type || ''
+    const itemType = normalizeFeedContentType(favorite?.item_type || '')
     addNumeric(nextProfile.contentTypes, itemType, 0.24)
     addNumeric(nextProfile.interactions, itemType, 0.18)
   })
@@ -302,8 +340,52 @@ function buildRecommendationProfile({ activities = [], reactions = [], favorites
   return nextProfile
 }
 
-function rankFeedItems({ items = [], profile, userFollows = new Set(), now = Date.now(), coldStart = false }) {
+function getDaetDateString(value = Date.now()) {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(value))
+  const values = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]))
+  return `${values.year}-${values.month}-${values.day}`
+}
+
+function getDaetTimeString(value = Date.now()) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Manila',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date(value))
+  const values = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]))
+  return `${values.hour}:${values.minute}:${values.second}`
+}
+
+function isUpcomingEvent(item, now = Date.now()) {
+  const status = normalizeKey(item?.status)
+  if (status && status !== 'published') {
+    return false
+  }
+
+  const startDate = String(item?.start_date || '').slice(0, 10)
+  const endDate = String(item?.end_date || startDate).slice(0, 10)
+  if (!startDate || !endDate || endDate < startDate) return false
+  const today = getDaetDateString(now)
+  if (endDate < today) return false
+  if (endDate > today) return true
+
+  const rawEndTime = String(item?.end_time || '23:59:59').match(/^\d{2}:\d{2}(?::\d{2})?/)?.[0] || '23:59:59'
+  const endTime = rawEndTime.length === 5 ? `${rawEndTime}:00` : rawEndTime
+  return endTime >= getDaetTimeString(now)
+}
+
+function rankFeedItems({ items = [], profile, preferredCategories = [], userFollows = new Set(), now = Date.now(), coldStart = false }) {
   const normalizedProfile = normalizeProfile(profile || createColdStartProfile())
+  if (preferredCategories.length) {
+    normalizedProfile.preferredCategories = normalizeUserInterests(preferredCategories)
+  }
   const remaining = items.map((item, index) => ({ item, index }))
   const ranked = []
 
@@ -342,4 +424,6 @@ module.exports = {
   scoreItem,
   getFreshnessScore,
   getPopularityScore,
+  getDaetDateString,
+  isUpcomingEvent,
 }

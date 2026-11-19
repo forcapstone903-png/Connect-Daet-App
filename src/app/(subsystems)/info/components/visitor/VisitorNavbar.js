@@ -78,7 +78,7 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
           </span>
           <div className="flex flex-col">
             <span className="truncate text-base font-black tracking-tight text-white sm:text-lg">
-              Daet <span className="text-sky-400 font-bold">Connect</span>
+              Connect <span className="text-sky-400 font-bold">Daet</span>
             </span>
           </div>
         </Link>

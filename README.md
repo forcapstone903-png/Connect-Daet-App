@@ -89,6 +89,7 @@ Admin, Tourism Officer, and Moderator each have a separate staff dashboard entry
 - View and manage in-app notifications, including read state and deletion.
 - Receive application-generated notifications for supported content and social events.
 - Opt in to browser push when the browser supports service workers, notifications, and Push API.
+- Comments and forum replies publish immediately; reported content may still be hidden or removed by staff.
 - Web Push uses a browser service worker, VAPID public/private keys, Supabase notification/subscription records, database webhook/bridge configuration, and a Supabase Edge Function.
 - Push subscription writes are associated with the authenticated server-session user.
 - iOS push support has platform requirements: users may need to install the site as a Home Screen app and grant permission from the installed app.

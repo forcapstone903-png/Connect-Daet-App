@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { CalendarDays, CheckCircle2, Trash2, TriangleAlert } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
@@ -502,7 +503,7 @@ export default function AdminEventsPage() {
     const icsLines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Daet Connect//Events//EN'
+      'PRODID:-//Connect Daet//Events//EN'
     ];
 
     exportEvents.forEach(ev => {
@@ -1217,7 +1218,7 @@ export default function AdminEventsPage() {
                 })
               ) : (
                 <div className="text-center py-8 text-gray-400">
-                  <span className="text-3xl">📅</span>
+                  <CalendarDays className="mx-auto h-7 w-7" aria-hidden="true" />
                   <p className="mt-2 text-sm">No upcoming events</p>
                   <p className="text-xs">Click on any date in the calendar to create one</p>
                 </div>
@@ -1597,7 +1598,7 @@ export default function AdminEventsPage() {
             </table>
             {filteredEvents.length === 0 && (
               <div className="text-center py-12 text-gray-400">
-                <span className="text-4xl">📅</span>
+                <CalendarDays className="mx-auto h-10 w-10" aria-hidden="true" />
                 <p className="mt-2">No events found matching your criteria</p>
                 <button onClick={() => openCreateModal()} className="mt-3 text-blue-600 hover:underline">
                   Create your first event →
@@ -2043,7 +2044,7 @@ export default function AdminEventsPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
             <div className="text-center">
               <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">⚠️</span>
+                <TriangleAlert className="h-8 w-8 text-red-600" aria-hidden="true" />
               </div>
               <h3 className="text-xl font-bold text-gray-800 mb-2">Delete Event</h3>
               <p className="text-gray-600 mb-4">
@@ -2069,7 +2070,7 @@ export default function AdminEventsPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-xl">
             <div className="text-center">
               <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">⚠️</span>
+                <TriangleAlert className="h-8 w-8 text-red-600" aria-hidden="true" />
               </div>
               <h3 className="text-xl font-bold text-gray-800 mb-2">Bulk Delete</h3>
               <p className="text-gray-600 mb-4">
@@ -2092,7 +2093,9 @@ export default function AdminEventsPage() {
       {/* Toast Notification */}
       {toastMessage && (
         <div role={toastMessage.isError ? 'alert' : 'status'} aria-live={toastMessage.isError ? 'assertive' : 'polite'} className={`admin-toast ${toastMessage.isError ? 'admin-toast-error' : 'admin-toast-success'}`}>
-          <span className="shrink-0">{toastMessage.isError ? '⚠️' : '✅'}</span>
+          {toastMessage.isError
+            ? <TriangleAlert className="h-4 w-4 shrink-0" aria-hidden="true" />
+            : <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />}
           <span>{toastMessage.message}</span>
         </div>
       )}
@@ -2100,7 +2103,8 @@ export default function AdminEventsPage() {
       {/* Trash Drop Zone */}
       {showTrashDropZone && (
         <div ref={trashRef} className="fixed bottom-5 right-20 z-30 flex items-center gap-2 bg-red-600 text-white rounded-full p-3 shadow-lg transition-all animate-pulse">
-          <span className="text-sm font-medium">🗑️ Drop to delete</span>
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          <span className="text-sm font-medium">Drop to delete</span>
         </div>
       )}
 

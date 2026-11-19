@@ -46,6 +46,21 @@ export async function getActiveSuspension(client, userId) {
   return data || null
 }
 
+export async function getActivePermanentBan(client, userId) {
+  const { data, error } = await client
+    .from('admin_user_bans')
+    .select('id, reason, banned_at')
+    .eq('user_id', userId)
+    .eq('ban_type', 'permanent')
+    .is('lifted_at', null)
+    .is('expires_at', null)
+    .order('banned_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  if (error) throw error
+  return data || null
+}
+
 export function describeSuspension(suspension) {
   const until = suspension?.expires_at
     ? ` until ${new Date(suspension.expires_at).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Manila' })}`

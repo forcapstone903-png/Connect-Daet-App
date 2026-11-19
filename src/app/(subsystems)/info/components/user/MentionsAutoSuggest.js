@@ -73,7 +73,8 @@ function createMentionNode(user, router) {
 
 export default function MentionsAutoSuggest({ value, onChange, placeholder, rows = 3, onMentionAdded, userId, initialMention = null, inputRef = null }) {
   const router = useRouter()
-  const editorRef = useRef(null)
+  const internalEditorRef = useRef(null)
+  const editorRef = inputRef || internalEditorRef
   const suggestionRef = useRef(null)
   const debounceRef = useRef(null)
   const requestIdRef = useRef(0)
@@ -260,7 +261,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
     } else {
       editor.textContent = nextValue
     }
-  }, [value, initialMention, router])
+  }, [value, initialMention, router, editorRef])
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -275,7 +276,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
 
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
+  }, [editorRef])
 
   useEffect(() => {
     return () => {
@@ -289,7 +290,7 @@ export default function MentionsAutoSuggest({ value, onChange, placeholder, rows
   return (
     <div className="relative">
       <div
-        ref={inputRef || editorRef}
+        ref={editorRef}
         contentEditable
         role="textbox"
         aria-label={placeholder}

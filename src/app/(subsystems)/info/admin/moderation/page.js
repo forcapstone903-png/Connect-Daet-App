@@ -1,7 +1,7 @@
 // app/(subsystems)/info/admin/moderation/page.js
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -11,6 +11,7 @@ import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { notifyToast } from '@/lib/toast.mjs';
+import { getTotalSuspensionDays } from '@/lib/suspensionDuration.mjs'
 
 const isUrgentInquiry = (inquiry) => {
   if (!inquiry?.created_at) return false;
@@ -61,7 +62,6 @@ export default function AdminModerationPage() {
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [moderationLog, setModerationLog] = useState([]);
   const [reportQueue, setReportQueue] = useState([]);
-  const [accountReportSeverities, setAccountReportSeverities] = useState({});
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [editingReport, setEditingReport] = useState(null);
   const [reportEditValues, setReportEditValues] = useState({});
@@ -71,11 +71,32 @@ export default function AdminModerationPage() {
   const [profanityTerms, setProfanityTerms] = useState([]);
   const [profanityTermsText, setProfanityTermsText] = useState('');
   const [savingProfanityTerms, setSavingProfanityTerms] = useState(false);
+  const [autoPublishPolicy, setAutoPublishPolicy] = useState({
+    enabled: false,
+    minAccountAgeDays: 7,
+    minApprovedPosts: 3,
+    maxRejectedPosts: 0,
+    maxViolations: 0,
+    maxRecentSubmissions: 2,
+  });
+  const [savingAutoPublishPolicy, setSavingAutoPublishPolicy] = useState(false);
   const [historyUser, setHistoryUser] = useState(null);
   const [postingHistory, setPostingHistory] = useState([]);
   const [loadingPostingHistory, setLoadingPostingHistory] = useState(false);
   const [historyMeta, setHistoryMeta] = useState({ warnings: [], warningCount: 0, activeRestriction: null });
   const [restrictDialog, setRestrictDialog] = useState(null);
+  const [liftDialog, setLiftDialog] = useState(null);
+  const [liftingRestriction, setLiftingRestriction] = useState(false);
+  const [reviewDialog, setReviewDialog] = useState(null);
+  const [accountReview, setAccountReview] = useState(null);
+  const [loadingAccountReview, setLoadingAccountReview] = useState(false);
+  const [reviewReason, setReviewReason] = useState('');
+  const [investigationAssessment, setInvestigationAssessment] = useState('');
+  const [recommendation, setRecommendation] = useState('');
+  const [supportingExplanation, setSupportingExplanation] = useState('');
+  const [suspensionDurationMonths, setSuspensionDurationMonths] = useState('0');
+  const [suspensionDurationDays, setSuspensionDurationDays] = useState('7');
+  const openedDeepLinkedReview = useRef(false);
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab')
@@ -104,6 +125,14 @@ export default function AdminModerationPage() {
     setAppeals(result.appeals || []);
     setProfanityTerms(result.profanityTerms || []);
     setProfanityTermsText((result.profanityTerms || []).join('\n'));
+    setAutoPublishPolicy(result.autoPublish || {
+      enabled: false,
+      minAccountAgeDays: 7,
+      minApprovedPosts: 3,
+      maxRejectedPosts: 0,
+      maxViolations: 0,
+      maxRecentSubmissions: 2,
+    });
   }, []);
 
   const appendModerationLog = async (_actor, action, details, targetType = 'content') => {
@@ -124,38 +153,52 @@ export default function AdminModerationPage() {
     }
   };
 
-  const blockUser = async (userId, reason = 'Content violation', durationDays = null, banType = 'posting') => {
+  const blockUser = async (userId, reason = 'Content violation', durationDays = null, banType = 'posting', reportId = null, confirmPermanentBan = false) => {
     if (!userId) return;
     try {
       const response = await fetch('/info/api/admin/moderation', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'ban-user', userId, reason, durationDays, banType }),
+        body: JSON.stringify({ action: 'ban-user', userId, reason, durationDays, banType, reportId, confirmPermanentBan }),
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to block this user.');
       await loadModerationState();
-      showToast(banType === 'suspension' ? 'Account suspended and signed out.' : 'User has been blocked from publishing.');
+      showToast(banType === 'suspension'
+        ? 'Account suspended for the selected duration.'
+        : banType === 'permanent'
+          ? 'Permanent account ban applied.'
+          : 'User has been blocked from publishing.');
     } catch (error) {
       showToast(error.message || 'Unable to block this user.', true);
     }
   };
 
-  const unblockUser = async (userId) => {
+  const unblockUser = async (userId, reason, banType) => {
+    setLiftingRestriction(true);
     try {
       const response = await fetch('/info/api/admin/moderation', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'unban-user', userId }),
+        body: JSON.stringify({ action: 'unban-user', userId, reason }),
       });
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to unblock this user.');
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to lift this restriction.');
       await loadModerationState();
-      showToast('User has been unblocked.');
+      const notices = [
+        banType === 'suspension'
+          ? 'Account suspension lifted; the user can sign in again.'
+          : 'Posting ban lifted; the user can publish again.',
+        result.emailNotificationSent === false ? 'The in-app notice was saved, but the email could not be sent.' : null,
+        result.sessionRevocationWarning,
+      ].filter(Boolean);
+      showToast(notices.join(' '), result.emailNotificationSent === false || Boolean(result.sessionRevocationWarning));
     } catch (error) {
-      showToast(error.message || 'Unable to unblock this user.', true);
+      showToast(error.message || 'Unable to lift this restriction.', true);
+    } finally {
+      setLiftingRestriction(false);
     }
   };
 
@@ -178,37 +221,123 @@ export default function AdminModerationPage() {
     }
   };
 
-  const approveAccountReport = async (report) => {
-    const severity = accountReportSeverities[report.id] || report.severity || 'medium';
-    const reason = window.prompt('Reason for suspending this account:', report.reason || '')?.trim();
-    if (!reason) return;
+  const submitAccountInvestigation = async () => {
+    if (!reviewDialog) return;
+    const assessment = investigationAssessment.trim();
+    const reason = reviewReason.trim();
+    const explanation = supportingExplanation.trim();
+    if (!assessment) {
+      showToast('A written assessment is required.', true);
+      return;
+    }
+    if (!recommendation) {
+      showToast('Select a recommendation.', true);
+      return;
+    }
+    if (!reason) {
+      showToast('A recommendation reason is required.', true);
+      return;
+    }
+    if (!explanation) {
+      showToast('Supporting explanation is required.', true);
+      return;
+    }
+    const recommendedDurationDays = recommendation === 'recommend_temporary_suspension'
+      ? getTotalSuspensionDays(suspensionDurationMonths, suspensionDurationDays)
+      : null;
+    if (recommendation === 'recommend_temporary_suspension' && recommendedDurationDays === null) {
+        showToast('Enter a valid duration from 1 to 365 days. Each month is 30 days.', true);
+        return;
+    }
+
     try {
+      const presetDuration = null;
+      const customDuration = recommendedDurationDays;
+      const evidenceSnapshot = {
+        report: accountReview?.report || null,
+        account: accountReview?.account || null,
+        reporter: accountReview?.reporter || null,
+        violations: accountReview?.violations || [],
+        postingHistory: accountReview?.postingHistory || [],
+        warnings: accountReview?.warnings || [],
+        restrictions: accountReview?.restrictions || [],
+        auditHistory: accountReview?.auditHistory || [],
+      };
       const response = await fetch('/info/api/admin/moderation', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'approve-account-report',
-          reportId: report.id,
+          action: 'submit-moderator-account-investigation',
+          reportId: reviewDialog.id,
+          assessment,
+          recommendation,
           reason,
-          severity,
+          supportingExplanation: explanation,
+          suspensionDurationDays: presetDuration,
+          customDurationDays: customDuration,
+          evidenceSnapshot,
         }),
       });
       const result = await response.json();
-      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to approve this account report.');
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to submit the investigation.');
       await loadModerationState();
-      if (result.sessionRevocationWarning) {
-        showToast(result.sessionRevocationWarning, true);
-      } else {
-        const suspension = result.suspension || {};
-        showToast(suspension.expires_at
-          ? `Account suspended until ${new Date(suspension.expires_at).toLocaleDateString()}.`
-          : 'Account suspended permanently.');
-      }
+      showToast(
+        [result.confirmation || 'Investigation submitted. The case is pending Tourism Officer review.', result.notificationLinkWarning]
+          .filter(Boolean)
+          .join(' '),
+        Boolean(result.notificationLinkWarning),
+      );
+      setReviewDialog(null);
     } catch (error) {
-      showToast(error.message || 'Unable to approve this account report.', true);
+      showToast(error.message || 'Unable to submit the investigation.', true);
     }
   };
+
+  const openAccountReview = useCallback(async (report) => {
+    setReviewDialog(report);
+    setAccountReview(null);
+    setReviewReason('');
+    setInvestigationAssessment('');
+    setRecommendation('');
+    setSupportingExplanation('');
+    setSuspensionDurationDays('');
+    setCustomSuspensionDays('');
+    setLoadingAccountReview(true);
+    try {
+      const response = await fetch(`/info/api/admin/moderation?reviewReportId=${encodeURIComponent(report.id)}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load account review details.');
+      setAccountReview(result.review);
+      setReviewReason(result.review.report.moderation_notes || result.review.report.resolution?.replace(/^Moderator recommendation:[^.]*\.?\s*/i, '') || '');
+    } catch (error) {
+      showToast(error.message || 'Unable to load account review details.', true);
+      setReviewDialog(null);
+    } finally {
+      setLoadingAccountReview(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    if (loading || openedDeepLinkedReview.current) return;
+    const reportId = new URLSearchParams(window.location.search).get('reviewReportId');
+    if (!reportId) return;
+    openedDeepLinkedReview.current = true;
+    const report = reportQueue.find((item) => item.id === reportId);
+    if (report) {
+      const timeoutId = window.setTimeout(() => openAccountReview(report), 0);
+      return () => window.clearTimeout(timeoutId);
+    } else if (reportQueue.length) {
+      const timeoutId = window.setTimeout(
+        () => showToast('The escalated report is no longer available for review.', true),
+        0,
+      );
+      return () => window.clearTimeout(timeoutId);
+    }
+  }, [loading, openAccountReview, reportQueue, showToast]);
 
   const warnUser = async (userId, reportId = null) => {
     const reason = window.prompt('Warning to send to this user:')?.trim();
@@ -327,21 +456,44 @@ export default function AdminModerationPage() {
   };
 
   const reviewAppeal = async (appeal, decision) => {
-    const reason = window.prompt(
-      decision === 'approve' ? 'Reason for approving this appeal:' : 'Reason for rejecting this appeal:'
-    )?.trim();
+    const prompts = {
+      start_review: 'Add a note to start reviewing this appeal:',
+      approve: 'Reason for approving this appeal:',
+      reject: 'Reason for rejecting this appeal:',
+      reduce_suspension: 'Reason for reducing the suspension duration:',
+      request_more_information: 'Instructions describing the additional information required:',
+    };
+    const reason = window.prompt(prompts[decision] || 'Provide the review reason:')?.trim();
     if (!reason) return;
+    let durationDays;
+    if (decision === 'reduce_suspension') {
+      const input = window.prompt('New suspension duration in days (1-365):')?.trim();
+      if (!input) return;
+      durationDays = Number(input);
+      if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365) {
+        showToast('Enter a whole number between 1 and 365 days.', true);
+        return;
+      }
+    }
     try {
       const response = await fetch('/info/api/admin/moderation', {
         method: 'PATCH',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'review-appeal', appealId: appeal.id, decision, reason }),
+        body: JSON.stringify({ action: 'review-appeal', appealId: appeal.id, decision, reason, durationDays }),
       });
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to review this appeal.');
       await loadModerationState();
-      showToast(decision === 'approve' ? 'Appeal approved; restriction lifted.' : 'Appeal rejected.');
+      const messages = {
+        start_review: 'Appeal moved to Under Review.',
+        approve: `Appeal approved. Current account status: ${String(result.appeal?.new_status || 'updated').toUpperCase()}.`,
+        reject: 'Appeal rejected; the existing restriction remains in effect.',
+        reduce_suspension: 'Suspension duration reduced and the updated expiration was saved.',
+        request_more_information: 'Additional information requested from the account holder.',
+      };
+      const warnings = [result.emailQueued === false ? 'The user email could not be queued.' : null, result.sessionRevocationWarning].filter(Boolean);
+      showToast([messages[decision] || 'Appeal review saved.', ...warnings].join(' '), warnings.length > 0);
     } catch (error) {
       showToast(error.message || 'Unable to review this appeal.', true);
     }
@@ -366,6 +518,26 @@ export default function AdminModerationPage() {
       showToast(error.message || 'Unable to save the word filter.', true);
     } finally {
       setSavingProfanityTerms(false);
+    }
+  };
+
+  const saveAutoPublishPolicy = async () => {
+    setSavingAutoPublishPolicy(true);
+    try {
+      const response = await fetch('/info/api/admin/moderation', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save-auto-publish-policy', policy: autoPublishPolicy }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to save auto-publishing requirements.');
+      setAutoPublishPolicy(result.autoPublish);
+      showToast('Auto-publishing requirements saved.');
+    } catch (error) {
+      showToast(error.message || 'Unable to save auto-publishing requirements.', true);
+    } finally {
+      setSavingAutoPublishPolicy(false);
     }
   };
 
@@ -1240,6 +1412,56 @@ export default function AdminModerationPage() {
 
         {activeTab === 'reports' && (
           <div className="space-y-6">
+            <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-800">Low-risk auto-publishing</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Only posts that pass every configured content and media check can publish automatically. Missing checks, flags, reports, or unmet trust requirements always keep posts unpublished for review.
+              </p>
+              <label className="mt-4 flex items-start gap-3 text-sm font-medium text-gray-700">
+                <input
+                  type="checkbox"
+                  checked={autoPublishPolicy.enabled}
+                  onChange={(event) => setAutoPublishPolicy((current) => ({ ...current, enabled: event.target.checked }))}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600"
+                />
+                Enable auto-publishing for eligible low-risk submissions
+              </label>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {[
+                  ['minAccountAgeDays', 'Minimum account age (days)'],
+                  ['minApprovedPosts', 'Minimum previously approved posts'],
+                  ['maxRejectedPosts', 'Maximum previous rejections'],
+                  ['maxViolations', 'Maximum moderation violations'],
+                  ['maxRecentSubmissions', 'Maximum posts in the last 10 minutes'],
+                ].map(([field, label]) => (
+                  <label key={field} className="text-xs font-semibold text-gray-600">
+                    {label}
+                    <input
+                      type="number"
+                      min="0"
+                      max={field === 'minAccountAgeDays' ? '3650' : field === 'maxRecentSubmissions' ? '100' : '10000'}
+                      value={autoPublishPolicy[field]}
+                      onChange={(event) => setAutoPublishPolicy((current) => ({
+                        ...current,
+                        [field]: event.target.value === '' ? '' : Number(event.target.value),
+                      }))}
+                      className="mt-1 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-800 outline-none focus:border-blue-400"
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  type="button"
+                  onClick={saveAutoPublishPolicy}
+                  disabled={savingAutoPublishPolicy}
+                  className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {savingAutoPublishPolicy ? 'Saving...' : 'Save auto-publishing policy'}
+                </button>
+              </div>
+            </section>
+
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-800">Profanity filter</h2>
               <p className="mt-1 text-sm text-gray-500">
@@ -1308,24 +1530,6 @@ export default function AdminModerationPage() {
                               )}
                             </div>
                           )}
-                          {report.reported_item_table === 'info_users' && (
-                            <label className="mt-3 block max-w-xs text-xs font-semibold text-slate-700">
-                              Violation severity
-                              <select
-                                value={accountReportSeverities[report.id] || report.severity || 'medium'}
-                                onChange={(event) => setAccountReportSeverities((current) => ({
-                                  ...current,
-                                  [report.id]: event.target.value,
-                                }))}
-                                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-normal"
-                              >
-                                <option value="low">Minor — 7-day suspension</option>
-                                <option value="medium">Moderate — 30-day suspension</option>
-                                <option value="high">Severe — 90-day suspension</option>
-                                <option value="critical">Critical — permanent suspension</option>
-                              </select>
-                            </label>
-                          )}
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {report.reported_user_id && (
@@ -1348,9 +1552,12 @@ export default function AdminModerationPage() {
                                 type="button"
                                 onClick={() => setRestrictDialog({
                                   userId: report.reported_user_id,
-                                  reason: report.reason || '',
+                                  reportId: report.id,
+                                  reason: '',
+                                  durationMonths: '0',
                                   durationDays: '7',
                                   banType: 'posting',
+                                  confirmPermanentBan: false,
                                 })}
                                 className="rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700"
                               >
@@ -1388,10 +1595,10 @@ export default function AdminModerationPage() {
                           {report.reported_item_table === 'info_users' ? (
                             <button
                               type="button"
-                              onClick={() => void approveAccountReport(report)}
+                              onClick={() => void openAccountReview(report)}
                               className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
                             >
-                              Approve &amp; suspend
+                              Review Account
                             </button>
                           ) : (
                             <button
@@ -1452,7 +1659,7 @@ export default function AdminModerationPage() {
                     </article>
                   ))}
                 </div>
-              ) : <p className="text-sm text-gray-500">No pending forum replies or comments.</p>}
+              ) : <p className="text-sm text-gray-500">No pending forum topics.</p>}
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1473,8 +1680,12 @@ export default function AdminModerationPage() {
                           {' '}{entry.expires_at ? `until ${new Date(entry.expires_at).toLocaleDateString()}` : 'permanent'}
                         </p>
                       </div>
-                      <button type="button" onClick={() => void unblockUser(entry.user_id)} className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700">
-                        {entry.ban_type === 'suspension' ? 'Lift suspension' : 'Restore publishing'}
+                      <button
+                        type="button"
+                        onClick={() => setLiftDialog({ userId: entry.user_id, banType: entry.ban_type || 'posting', reason: '' })}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700"
+                      >
+                        {entry.ban_type === 'suspension' ? 'Lift Suspension' : 'Lift Ban'}
                       </button>
                     </div>
                   ))}
@@ -1483,24 +1694,69 @@ export default function AdminModerationPage() {
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-lg font-semibold text-gray-800">Restriction appeals</h2>
+              <h2 className="mb-4 text-lg font-semibold text-gray-800">Account and posting restriction appeals</h2>
               {appeals.length ? (
                 <div className="space-y-3">
                   {appeals.map((appeal) => (
                     <article key={appeal.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-gray-200 p-4">
                       <div>
                         <p className="font-semibold text-gray-800">{appeal.user?.full_name || appeal.user?.email || 'Account holder'}</p>
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-sky-800">
+                          {appeal.appeal_type === 'account_suspension'
+                            ? 'Account suspension appeal'
+                            : appeal.appeal_type === 'permanent_ban'
+                              ? 'Permanent ban appeal'
+                              : 'Posting restriction appeal'}
+                          {appeal.user?.status ? ` · Account ${appeal.user.status}` : ''}
+                          {` · ${appeal.status.replaceAll('_', ' ')}`}
+                        </p>
+                        {appeal.suspension && (
+                          <p className="mt-1 text-xs text-red-700">
+                            {appeal.suspension.ban_type === 'suspension' ? 'Suspension' : appeal.suspension.ban_type === 'permanent' ? 'Permanent ban' : 'Posting restriction'} reason: {appeal.suspension.reason}
+                            {appeal.suspension.expires_at ? ` · Ends ${new Date(appeal.suspension.expires_at).toLocaleString()}` : appeal.suspension.ban_type === 'permanent' ? ' · No expiry' : ''}
+                          </p>
+                        )}
                         <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">{appeal.reason}</p>
+                        {appeal.explanation && <p className="mt-2 whitespace-pre-wrap text-sm text-gray-600">{appeal.explanation}</p>}
+                        {appeal.status === 'more_information_required' && appeal.decision_notes && (
+                          <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Information requested: {appeal.decision_notes}</p>
+                        )}
                         <p className="mt-1 text-xs text-gray-500">Submitted {new Date(appeal.created_at).toLocaleString()}</p>
+                        {appeal.evidence?.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                            {appeal.evidence.map((file) => file.url
+                              ? <a key={file.name} href={file.url} target="_blank" rel="noreferrer" className="font-semibold text-sky-700 underline">{file.name}</a>
+                              : <span key={file.name} className="text-gray-500">{file.name} (unavailable)</span>)}
+                          </div>
+                        )}
+                        {appeal.reviewHistory?.length > 0 && (
+                          <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Review history</p>
+                            {appeal.reviewHistory.map((review) => (
+                              <p key={review.id} className="text-xs leading-5 text-gray-600">
+                                {review.reviewer?.full_name || review.reviewer_role} · {review.decision.replaceAll('_', ' ')} · {new Date(review.created_at).toLocaleString()}: {review.reason}
+                              </p>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => void reviewAppeal(appeal, 'approve')} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Approve appeal</button>
-                        <button type="button" onClick={() => void reviewAppeal(appeal, 'reject')} className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700">Reject appeal</button>
-                      </div>
+                      {['pending', 'under_review', 'more_information_required'].includes(appeal.status) && (
+                        <div className="flex flex-wrap gap-2">
+                          {appeal.status === 'pending' && (
+                            <button type="button" onClick={() => void reviewAppeal(appeal, 'start_review')} className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-800">Start Review</button>
+                          )}
+                          <button type="button" onClick={() => void reviewAppeal(appeal, 'approve')} className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white">Approve Appeal</button>
+                          <button type="button" onClick={() => void reviewAppeal(appeal, 'reject')} className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700">Reject Appeal</button>
+                          {appeal.appeal_type === 'account_suspension' && (
+                            <button type="button" onClick={() => void reviewAppeal(appeal, 'reduce_suspension')} className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900">Reduce Duration</button>
+                          )}
+                          <button type="button" onClick={() => void reviewAppeal(appeal, 'request_more_information')} className="rounded-full border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700">Request Information</button>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
-              ) : <p className="text-sm text-gray-500">No pending appeals.</p>}
+              ) : <p className="text-sm text-gray-500">No appeals on record.</p>}
             </section>
 
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -1514,6 +1770,12 @@ export default function AdminModerationPage() {
                         {entry.actor?.full_name || entry.actor?.email || 'Moderator'} · {entry.table_name} · {new Date(entry.created_at).toLocaleString()}
                       </p>
                       {entry.changes?.details && <p className="mt-1 text-sm text-gray-600">{entry.changes.details}</p>}
+                      {entry.changes?.appealType && <p className="mt-1 text-xs font-medium text-sky-800">{entry.changes.appealType.replaceAll('_', ' ')} · {entry.changes.status}</p>}
+                      {(entry.changes?.reason || entry.changes?.liftReason) && (
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-gray-600">
+                          {entry.changes.reason || entry.changes.liftReason}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1919,6 +2181,199 @@ export default function AdminModerationPage() {
         </div>
       )}
 
+      {reviewDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="account-review-title">
+          <div className="max-h-[92vh] w-full max-w-6xl overflow-y-auto rounded-2xl bg-white shadow-xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Account suspension review</p>
+                <h2 id="account-review-title" className="text-xl font-bold text-slate-900">
+                  {accountReview?.account?.full_name || accountReview?.account?.email || 'Reported account'}
+                </h2>
+              </div>
+              <button type="button" onClick={() => setReviewDialog(null)} className="rounded-full border border-slate-300 px-3 py-1.5 text-sm text-slate-700">Close</button>
+            </div>
+
+            {loadingAccountReview ? (
+              <p className="py-16 text-center text-sm text-slate-500">Loading account review...</p>
+            ) : accountReview ? (
+              <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="min-w-0 space-y-5">
+                  <section className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-900">User account information</h3>
+                    <dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                      <div><dt className="text-xs text-slate-500">Name</dt><dd className="font-medium text-slate-800">{accountReview.account?.full_name || 'Not provided'}</dd></div>
+                      <div><dt className="text-xs text-slate-500">Username</dt><dd className="font-medium text-slate-800">{accountReview.account?.user_name || 'Not provided'}</dd></div>
+                      <div><dt className="text-xs text-slate-500">Email</dt><dd className="font-medium text-slate-800">{accountReview.account?.email || 'Not provided'}</dd></div>
+                      <div><dt className="text-xs text-slate-500">Role</dt><dd className="font-medium text-slate-800">{accountReview.account?.user_type || 'tourist'}</dd></div>
+                      <div><dt className="text-xs text-slate-500">Status</dt><dd className="font-medium text-slate-800">{accountReview.account?.status || 'active'}</dd></div>
+                      <div className="sm:col-span-2"><dt className="text-xs text-slate-500">Account created</dt><dd className="font-medium text-slate-800">{accountReview.account?.created_at ? new Date(accountReview.account.created_at).toLocaleString() : 'Unknown'}</dd></div>
+                    </dl>
+                  </section>
+
+                  <section className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-900">Reported violations and evidence</h3>
+                    {accountReview.violations.length ? (
+                      <div className="mt-3 space-y-3">
+                        {accountReview.violations.map((violation) => (
+                          <article key={violation.id} className="rounded-lg bg-slate-50 p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-800">{violation.report_type || 'Account/report violation'}</p>
+                              <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-600">{violation.status}</span>
+                            </div>
+                            <p className="mt-1 text-xs text-slate-500">Reported {new Date(violation.created_at).toLocaleString()}</p>
+                            <p className="mt-2 text-sm text-slate-700"><strong>Reason:</strong> {violation.reason}</p>
+                            {violation.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600"><strong>Description:</strong> {violation.description}</p> : null}
+                            {violation.reporter ? <p className="mt-2 text-xs text-slate-500">Reporting user: {violation.reporter.full_name || violation.reporter.email || 'Community member'}</p> : null}
+                            {violation.evidence ? (
+                              <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Original reported item</p>
+                                {violation.evidence.title ? <p className="mt-1 text-sm font-semibold text-slate-800">{violation.evidence.title}</p> : null}
+                                {violation.evidence.name ? <p className="mt-1 text-sm font-semibold text-slate-800">{violation.evidence.name}</p> : null}
+                                {violation.evidence.content ? <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{violation.evidence.content}</p> : null}
+                                {violation.evidence.body ? <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{violation.evidence.body}</p> : null}
+                                {violation.evidence.description ? <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{violation.evidence.description}</p> : null}
+                                {violation.evidence.content && violation.evidence.title ? null : null}
+                              </div>
+                            ) : null}
+                          </article>
+                        ))}
+                      </div>
+                    ) : <p className="mt-3 text-sm text-slate-500">No violation records were found.</p>}
+                  </section>
+
+                  <section className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-900">Reported posts, comments and replies</h3>
+                    {accountReview.postingHistory.length ? (
+                      <div className="mt-3 grid gap-2">
+                        {accountReview.postingHistory.slice(0, 30).map((item) => (
+                          <article key={`${item.type}-${item.id}`} className="rounded-lg border border-slate-100 px-3 py-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-semibold text-slate-700">{item.type}</p>
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{item.approval_status || item.status || 'submitted'}</span>
+                            </div>
+                            <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{item.title || 'Untitled content'}</p>
+                            {item.content && item.content !== item.title ? <p className="mt-1 whitespace-pre-wrap text-xs text-slate-500">{item.content}</p> : null}
+                            <p className="mt-1 text-xs text-slate-400">{new Date(item.created_at).toLocaleString()}</p>
+                          </article>
+                        ))}
+                      </div>
+                    ) : <p className="mt-3 text-sm text-slate-500">No posts, comments or replies were found.</p>}
+                  </section>
+
+                  <section className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-900">Previous moderation history</h3>
+                    {accountReview.warnings.length || accountReview.restrictions.length || accountReview.auditHistory.length ? (
+                      <div className="mt-3 space-y-2">
+                        {accountReview.restrictions.map((restriction) => (
+                          <p key={restriction.banned_at} className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                            <strong>{restriction.ban_type === 'suspension' ? 'Suspension' : 'Posting restriction'}:</strong> {restriction.reason} · {new Date(restriction.banned_at).toLocaleString()}
+                          </p>
+                        ))}
+                        {accountReview.warnings.map((warning) => (
+                          <p key={warning.id} className="rounded-lg bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
+                            <strong>Warning:</strong> {warning.reason} · {new Date(warning.created_at).toLocaleString()}
+                          </p>
+                        ))}
+                        {accountReview.auditHistory.slice(0, 20).map((entry) => (
+                          <p key={entry.id} className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                            <strong>{entry.action}</strong> · {new Date(entry.created_at).toLocaleString()}
+                          </p>
+                        ))}
+                      </div>
+                    ) : <p className="mt-3 text-sm text-slate-500">No previous moderation history was found.</p>}
+                  </section>
+                </div>
+
+                <aside className="space-y-4">
+                  <section className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-900">Reporting user</h3>
+                    {accountReview.reporter ? (
+                      <div className="mt-2 text-sm text-slate-700">
+                        <p className="font-semibold">{accountReview.reporter.full_name || 'Community member'}</p>
+                        <p className="text-xs text-slate-500">{accountReview.reporter.email || 'Email unavailable'}</p>
+                        <p className="mt-1 text-xs text-slate-500">Role: {accountReview.reporter.user_type || 'tourist'}</p>
+                      </div>
+                    ) : <p className="mt-2 text-sm text-slate-500">Reporter unavailable.</p>}
+                  </section>
+
+                  <section className="rounded-xl border border-slate-200 p-4">
+                    <h3 className="text-sm font-bold text-slate-900">Submit Recommendation</h3>
+                    {accountReview.report.status === 'reviewing' ? (
+                      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                        This case is pending Tourism Officer review. The account remains unchanged.
+                      </p>
+                    ) : null}
+                    {accountReview.report.resolution?.startsWith('Returned for investigation:') ? (
+                      <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        Tourism Officer instructions: {accountReview.report.resolution.replace('Returned for investigation:', '').trim()}
+                      </p>
+                    ) : null}
+                    <label className="mt-3 block text-xs font-semibold text-slate-700">
+                      Moderator assessment
+                      <textarea
+                        value={investigationAssessment}
+                        onChange={(event) => setInvestigationAssessment(event.target.value)}
+                        maxLength={5000}
+                        rows={5}
+                        placeholder="Explain your findings and the evidence considered."
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+                    <label className="mt-3 block text-xs font-semibold text-slate-700">
+                      Recommendation
+                      <select
+                        value={recommendation}
+                        onChange={(event) => {
+                          setRecommendation(event.target.value)
+                          setSuspensionDurationDays('')
+                          setCustomSuspensionDays('')
+                        }}
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                      >
+                        <option value="">Select a recommendation</option>
+                        <option value="no_violation">No Violation</option>
+                        <option value="issue_warning">Issue Warning</option>
+                        <option value="recommend_temporary_suspension">Recommend Temporary Suspension</option>
+                        <option value="recommend_permanent_ban">Recommend Permanent Ban</option>
+                      </select>
+                    </label>
+                    {recommendation === 'recommend_temporary_suspension' ? (
+                      <div className="mt-3">
+                        <p className="text-xs font-semibold text-slate-700">Suspension duration (1 month = 30 days; maximum 365 days)</p>
+                        <div className="mt-2 grid grid-cols-2 gap-3">
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Months
+                            <input type="number" min="0" max="12" step="1" value={suspensionDurationMonths} onChange={(event) => setSuspensionDurationMonths(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                          </label>
+                          <label className="block text-xs font-semibold text-slate-700">
+                            Additional days
+                            <input type="number" min="0" max="29" step="1" value={suspensionDurationDays} onChange={(event) => setSuspensionDurationDays(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                          </label>
+                        </div>
+                      </div>
+                    ) : null}
+                    <label className="mt-3 block text-xs font-semibold text-slate-700">
+                      Reason
+                      <textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} maxLength={1000} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </label>
+                    <label className="mt-3 block text-xs font-semibold text-slate-700">
+                      Supporting explanation
+                      <textarea value={supportingExplanation} onChange={(event) => setSupportingExplanation(event.target.value)} maxLength={5000} rows={5} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+                    </label>
+                    <button type="button" onClick={() => void submitAccountInvestigation()} className="mt-4 w-full rounded-full bg-sky-700 py-2.5 text-sm font-semibold text-white hover:bg-sky-800">
+                      Submit Investigation
+                    </button>
+                  </section>
+                </aside>
+              </div>
+            ) : (
+              <p className="py-16 text-center text-sm text-slate-500">Account review unavailable.</p>
+            )}
+          </div>
+        </div>
+      )}
+
       {restrictDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="restrict-user-title">
           <form
@@ -1926,40 +2381,120 @@ export default function AdminModerationPage() {
             onSubmit={(event) => {
               event.preventDefault();
               const reason = restrictDialog.reason.trim();
-              const durationDays = restrictDialog.durationDays.trim() ? Number(restrictDialog.durationDays) : null;
+              const durationDays = restrictDialog.banType === 'suspension'
+                ? getTotalSuspensionDays(restrictDialog.durationMonths, restrictDialog.durationDays)
+                : restrictDialog.banType === 'posting' && restrictDialog.durationDays.trim()
+                  ? Number(restrictDialog.durationDays)
+                  : null;
               if (!reason) { showToast('Enter a reason.', true); return; }
-              if (durationDays !== null && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365)) {
-                showToast('Use a whole number between 1 and 365 days, or leave it blank for permanent.', true);
+              if (restrictDialog.banType === 'suspension' && durationDays === null) {
+                showToast('Enter a suspension duration from 1 to 365 days. Each month is 30 days.', true);
                 return;
               }
-              const { userId, banType } = restrictDialog;
+              if (restrictDialog.banType === 'posting' && durationDays !== null && (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365)) {
+                showToast('Use a whole number between 1 and 365 days, or leave blank for no expiry.', true);
+                return;
+              }
+              if (restrictDialog.banType === 'permanent' && !restrictDialog.confirmPermanentBan) {
+                showToast('Confirm the permanent account ban before submitting.', true);
+                return;
+              }
+              const { userId, banType, reportId, confirmPermanentBan } = restrictDialog;
               setRestrictDialog(null);
-              void blockUser(userId, reason, durationDays, banType);
+              void blockUser(userId, reason, durationDays, banType, reportId, confirmPermanentBan);
             }}
           >
             <h2 id="restrict-user-title" className="text-lg font-bold text-gray-900">Restrict this user</h2>
             <fieldset className="mt-4 space-y-2">
-              <legend className="text-sm font-medium text-gray-700">Restriction type</legend>
+              <legend className="text-sm font-medium text-gray-700">Moderation action</legend>
               <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input type="radio" name="ban-type" checked={restrictDialog.banType === 'posting'} onChange={() => setRestrictDialog((current) => ({ ...current, banType: 'posting' }))} className="mt-1" />
                 <span><strong>Posting ban</strong> — can still sign in and browse, but cannot publish posts, comments or replies. Can appeal.</span>
               </label>
               <label className="flex items-start gap-2 text-sm text-gray-700">
                 <input type="radio" name="ban-type" checked={restrictDialog.banType === 'suspension'} onChange={() => setRestrictDialog((current) => ({ ...current, banType: 'suspension' }))} className="mt-1" />
-                <span><strong>Suspension</strong> — signed out now and cannot sign in until it ends.</span>
+                <span><strong>Temporary account suspension</strong> — requires a reason and duration.</span>
+              </label>
+              <label className="flex items-start gap-2 text-sm text-gray-700">
+                <input type="radio" name="ban-type" checked={restrictDialog.banType === 'permanent'} onChange={() => setRestrictDialog((current) => ({ ...current, banType: 'permanent', durationMonths: '0', durationDays: '' }))} className="mt-1" />
+                <span><strong>Permanent account ban</strong> — requires a reason and final confirmation.</span>
               </label>
             </fieldset>
             <label className="mt-4 block text-sm font-medium text-gray-700">
               Reason (shown to the user)
               <textarea value={restrictDialog.reason} onChange={(event) => setRestrictDialog((current) => ({ ...current, reason: event.target.value }))} maxLength={1000} rows={3} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm" required />
             </label>
-            <label className="mt-3 block text-sm font-medium text-gray-700">
-              Duration in days (blank = permanent)
-              <input type="number" min="1" max="365" value={restrictDialog.durationDays} onChange={(event) => setRestrictDialog((current) => ({ ...current, durationDays: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm" />
-            </label>
+            {restrictDialog.banType === 'suspension' ? (
+              <>
+                <p className="mt-3 text-sm font-medium text-gray-700">Suspension duration (1 month = 30 days; maximum 365 days)</p>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <label className="text-xs font-semibold text-gray-600">
+                    Months
+                    <input type="number" min="0" max="12" step="1" value={restrictDialog.durationMonths} onChange={(event) => setRestrictDialog((current) => ({ ...current, durationMonths: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm" />
+                  </label>
+                  <label className="text-xs font-semibold text-gray-600">
+                    Additional days
+                    <input type="number" min="0" max="29" step="1" value={restrictDialog.durationDays} onChange={(event) => setRestrictDialog((current) => ({ ...current, durationDays: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm" />
+                  </label>
+                </div>
+              </>
+            ) : restrictDialog.banType === 'posting' ? (
+              <label className="mt-3 block text-sm font-medium text-gray-700">
+                Posting restriction in days (blank = no expiry)
+                <input type="number" min="1" max="365" value={restrictDialog.durationDays} onChange={(event) => setRestrictDialog((current) => ({ ...current, durationDays: event.target.value }))} className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm" />
+              </label>
+            ) : null}
+            {restrictDialog.banType === 'permanent' ? (
+              <label className="mt-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                <input type="checkbox" checked={restrictDialog.confirmPermanentBan} onChange={(event) => setRestrictDialog((current) => ({ ...current, confirmPermanentBan: event.target.checked }))} className="mt-1" />
+                <span>I understand this permanently bans the account and prevents sign-in unless an authorized decision reverses it.</span>
+              </label>
+            ) : null}
             <div className="mt-5 flex gap-2">
               <button type="button" onClick={() => setRestrictDialog(null)} className="flex-1 rounded-full border border-gray-300 py-2 text-sm">Cancel</button>
               <button type="submit" className="flex-1 rounded-full bg-amber-600 py-2 text-sm font-semibold text-white">Apply restriction</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {liftDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="lift-restriction-title">
+          <form
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const reason = liftDialog.reason.trim();
+              if (!reason) { showToast('Enter a reason for lifting this restriction.', true); return; }
+              const { userId, banType } = liftDialog;
+              setLiftDialog(null);
+              void unblockUser(userId, reason, banType);
+            }}
+          >
+            <h2 id="lift-restriction-title" className="text-lg font-bold text-gray-900">
+              {liftDialog.banType === 'suspension' ? 'Lift account suspension' : 'Lift posting ban'}
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              {liftDialog.banType === 'suspension'
+                ? 'The account will return to Active and the user will be able to sign in.'
+                : 'The user will be able to publish posts, comments and replies again.'}
+            </p>
+            <label className="mt-4 block text-sm font-medium text-gray-700">
+              Reason for lifting
+              <textarea
+                value={liftDialog.reason}
+                onChange={(event) => setLiftDialog((current) => ({ ...current, reason: event.target.value }))}
+                maxLength={1000}
+                rows={4}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm"
+                required
+              />
+            </label>
+            <div className="mt-5 flex gap-2">
+              <button type="button" disabled={liftingRestriction} onClick={() => setLiftDialog(null)} className="flex-1 rounded-full border border-gray-300 py-2 text-sm disabled:opacity-50">Cancel</button>
+              <button type="submit" disabled={liftingRestriction} className="flex-1 rounded-full bg-emerald-700 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                {liftingRestriction ? 'Lifting...' : 'Confirm lift'}
+              </button>
             </div>
           </form>
         </div>

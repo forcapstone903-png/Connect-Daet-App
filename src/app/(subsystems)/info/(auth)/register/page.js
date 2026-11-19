@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight, CheckCircle2, Eye, EyeOff, MapPin, ShieldCheck, Sparkles, XCircle } from 'lucide-react'
+import InterestSelector from '@/app/(subsystems)/info/components/user/InterestSelector'
 import '../auth.css'
 import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 
@@ -16,6 +17,7 @@ export default function RegisterPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [fieldErrors, setFieldErrors] = useState({})
   const [acceptsConsent, setAcceptsConsent] = useState(false)
+  const [selectedInterests, setSelectedInterests] = useState([])
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -117,6 +119,7 @@ export default function RegisterPage() {
           full_name: formData.full_name.trim(),
           email: formData.email.trim(),
           password: formData.password,
+          interests: selectedInterests,
         }),
       })
 
@@ -132,7 +135,7 @@ export default function RegisterPage() {
         throw new Error(data.message || `Unable to register your account right now (${response.status})`)
       }
 
-      setSuccess('✅ ' + (data.message || 'Registration successful! Please check your email to confirm your account.'))
+      setSuccess(data.message || 'Registration successful! Please check your email to confirm your account.')
 
       setFormData({
         full_name: '',
@@ -140,6 +143,7 @@ export default function RegisterPage() {
         password: '',
         confirm_password: '',
       })
+      setSelectedInterests([])
 
       setTimeout(() => {
         router.push('/info/login?message=Please check your email to confirm your account before logging in.&onboarding=1')
@@ -213,7 +217,7 @@ export default function RegisterPage() {
           >
             <div className="mb-8 text-center">
               <img src="/logo.png" alt="Daet logo" className="mx-auto mb-4 h-12 w-12 object-contain" />
-              <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700">Daet Connect</p>
+              <p className="text-xs font-bold uppercase tracking-[0.28em] text-blue-700">Connect Daet</p>
               <h2 className="mt-3 text-2xl font-black text-slate-900 sm:text-3xl">Create account</h2>
               <p className="mt-2 text-sm text-slate-600">Join the local tourism community in Daet.</p>
             </div>
@@ -359,6 +363,23 @@ export default function RegisterPage() {
                   </div>
                   {fieldErrors.confirm_password && <p id="reg-confirm-password-error" aria-live="polite" className="mt-1 text-xs font-medium text-red-600">{fieldErrors.confirm_password}</p>}
                 </div>
+
+                <section aria-labelledby="registration-interests-title" className="rounded-2xl border border-slate-200 bg-white/80 p-4 sm:p-5">
+                  <div className="mb-4">
+                    <h2 id="registration-interests-title" className="text-sm font-bold text-slate-800">Select your interests</h2>
+                    <p className="mt-1 text-xs leading-5 text-slate-500">Choose as many as you like. We’ll use them to personalize stories, people, places, and events.</p>
+                  </div>
+                  <InterestSelector
+                    selectedInterests={selectedInterests}
+                    disabled={loading}
+                    onToggle={(interest) => setSelectedInterests((current) => (
+                      current.includes(interest)
+                        ? current.filter((item) => item !== interest)
+                        : [...current, interest]
+                    ))}
+                  />
+                  <p className="mt-3 text-xs text-slate-500" aria-live="polite">{selectedInterests.length} selected</p>
+                </section>
 
                 <div className={`rounded-xl border bg-white/80 p-3 ${fieldErrors.consent ? 'border-red-300' : 'border-slate-200'}`}>
                   <label className="flex items-start gap-3 text-sm text-slate-700">

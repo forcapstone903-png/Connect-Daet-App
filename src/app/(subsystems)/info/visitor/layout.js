@@ -6,7 +6,7 @@ import VisitorFooter from '@/app/(subsystems)/info/components/visitor/VisitorFoo
 
 export default function VisitorLayout({ children }) {
   const pathname = usePathname()
-  const isVisitorHome = pathname === '/info/visitor'
+  const isVisitorHome = pathname === '/info/visitor' || pathname === '/info/visitor/'
 
   if (isVisitorHome) {
     return <div className="visitor-home-content min-h-screen">{children}</div>

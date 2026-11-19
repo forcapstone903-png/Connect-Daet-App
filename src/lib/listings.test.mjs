@@ -132,3 +132,10 @@ test('public place bookmarks use the database-supported spot favorite type', () 
   assert.match(detail, /item_type: 'spot'/)
   assert.doesNotMatch(detail, /item_type: 'tourist_spot'|item_type', 'tourist_spot'/)
 })
+
+test('tourist spot detail requests only the unread notification count', () => {
+  const detail = readFileSync(new URL('../app/(subsystems)/info/visitor/tourist-spots/[id]/page.js', import.meta.url), 'utf8')
+
+  assert.match(detail, /fetch\('\/info\/api\/notifications\?count_only=true'/)
+  assert.match(detail, /notificationResponse\.status === 401/)
+})

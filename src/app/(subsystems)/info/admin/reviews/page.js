@@ -9,6 +9,10 @@ import { notifyToast } from '@/lib/toast.mjs'
 const API = '/info/api/admin/reviews'
 
 function Stars({ value }) {
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    return <span className="text-slate-500" aria-label="No star rating">No star rating</span>
+  }
+
   return (
     <span className="text-amber-500" aria-label={`${value} out of 5 stars`}>
       {'★'.repeat(value)}<span className="text-slate-300">{'★'.repeat(5 - value)}</span>

@@ -9,6 +9,7 @@ import { useScrollReveal, staggerDelay } from '@/lib/useScrollReveal'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
+import { getInterestMatchScore, normalizeUserInterests } from '@/lib/userInterests'
 
 function formatDateRange(startDate, endDate) {
   if (!startDate) return 'TBA'
@@ -49,6 +50,7 @@ export default function EventsIndexPage() {
   const [location, setLocation] = useState('all')
   const [showFilters, setShowFilters] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
+  const [preferredCategories, setPreferredCategories] = useState([])
   const refreshEventsRef = useRef(null)
   const realtime = useRealtimeRefresh({
     channelName: 'visitor-events-index',
@@ -64,14 +66,12 @@ export default function EventsIndexPage() {
       if (!silent) setLoading(true)
       setError('')
       try {
-        const today = new Date().toISOString().slice(0, 10)
         const { data, error } = await supabase
           .from('info_events')
           .select('id, title, description, location, venue, start_date, end_date, start_time, category, featured_image, is_free, ticket_price')
           .eq('status', 'published')
           .eq('approval_status', 'approved')
-          .gte('end_date', today)
-          .order('start_date', { ascending: true })
+          .order('start_date', { ascending: false })
 
         if (error) {
           console.error('Events index load failed:', error)
@@ -97,6 +97,35 @@ export default function EventsIndexPage() {
       refreshEventsRef.current = null
     }
   }, [retryKey])
+
+  useEffect(() => {
+    let active = true
+    const loadInterests = async () => {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      const userId = sessionData?.session?.user?.id
+      if (!userId) return
+      const { data, error } = await supabase
+        .from('user_feed_preferences')
+        .select('preferred_categories')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (error) throw error
+      if (active) setPreferredCategories(normalizeUserInterests(data?.preferred_categories || []))
+    }
+
+    void loadInterests().catch((interestError) => {
+      console.error('Event recommendations interests load failed:', interestError)
+    })
+    const handleInterestsUpdated = (event) => {
+      setPreferredCategories(normalizeUserInterests(event.detail?.interests))
+    }
+    window.addEventListener('daet-user-interests-updated', handleInterestsUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('daet-user-interests-updated', handleInterestsUpdated)
+    }
+  }, [])
 
   useEffect(() => {
     setRefreshCallback(() => refreshEventsRef.current?.() ?? false)
@@ -128,8 +157,12 @@ export default function EventsIndexPage() {
         event.location?.toLowerCase().includes(q) ||
         event.venue?.toLowerCase().includes(q)
       return matchesCategory && matchesLocation && matchesSearch
-    })
-  }, [events, search, category, location])
+    }).sort((left, right) => (
+      getInterestMatchScore([right.category, right.title], preferredCategories)
+      - getInterestMatchScore([left.category, left.title], preferredCategories)
+      || new Date(right.start_date || 0) - new Date(left.start_date || 0)
+    ))
+  }, [events, search, category, location, preferredCategories])
 
   const hasActiveFilters = search.trim() || category !== 'all' || location !== 'all'
   const clearFilters = () => {

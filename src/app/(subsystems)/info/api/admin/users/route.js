@@ -185,7 +185,6 @@ export async function POST(request) {
   )
 }
 
-const USER_STATUSES = ['active', 'pending', 'suspended', 'banned']
 const STAFF_OVERRIDE_ROLES = ['tourism_officer', 'moderator']
 
 async function audit(actorId, action, targetUserId, changes = {}) {
@@ -208,9 +207,8 @@ async function revokeQuietly(targetUserId) {
 }
 
 // Update an account. Administrator only (users.manage).
-// Body: { userId, full_name?, email?, status?, points?, role?, password?, permissions?: { grant, revoke } }
-// Profile fields, role, password and permissions are all optional; changes
-// that affect access (role, password, status, permissions) sign the user out.
+// Body: { userId, full_name?, email?, points?, role?, password?, permissions?: { grant, revoke } }
+// Account status changes are handled only by the Account Oversight workflow.
 export async function PATCH(request) {
   const { session, response: authError } = authorizeAdminApi(request)
   if (authError) return authError
@@ -218,6 +216,9 @@ export async function PATCH(request) {
 
   const { body, error: bodyError } = await readJsonBody(request)
   if (bodyError) return bodyError
+  if (Object.prototype.hasOwnProperty.call(body || {}, 'status')) {
+    return jsonError(400, 'Account status changes must use the Account Oversight review workflow.')
+  }
 
   const targetUserId = typeof body?.userId === 'string' ? body.userId : ''
   if (!UUID_PATTERN.test(targetUserId)) return jsonError(400, 'A valid user ID is required.')
@@ -233,12 +234,10 @@ export async function PATCH(request) {
   }
   if (!target) return jsonError(404, 'The selected account was not found.')
 
-  const isSelf = targetUserId === session.user_id
   const role = typeof body?.role === 'string' ? body.role.trim().toLowerCase() : ''
   const password = typeof body?.password === 'string' ? body.password : ''
   const fullName = body?.full_name === undefined ? null : String(body.full_name).trim().slice(0, 120)
   const email = body?.email === undefined ? null : String(body.email).trim().toLowerCase()
-  const status = body?.status === undefined ? null : String(body.status)
   const points = body?.points === undefined ? null : Number(body.points)
   const permissions = body?.permissions === undefined ? null : normalizePermissionOverrides(body.permissions)
 
@@ -247,8 +246,6 @@ export async function PATCH(request) {
   if (password && !isPasswordValid(password, passwordPolicy)) return jsonError(400, describePasswordPolicy(passwordPolicy))
   if (fullName !== null && !fullName) return jsonError(400, 'Full name is required.')
   if (email !== null && !EMAIL_PATTERN.test(email)) return jsonError(400, 'A valid email address is required.')
-  if (status !== null && !USER_STATUSES.includes(status)) return jsonError(400, `Status must be one of: ${USER_STATUSES.join(', ')}.`)
-  if (status !== null && isSelf && status !== target.status) return jsonError(409, 'You cannot change the status of your own account.')
   if (points !== null && (!Number.isInteger(points) || points < 0 || points > 10_000_000)) return jsonError(400, 'Points must be a whole number of 0 or more.')
 
   const finalRole = role || normalizeStaffRole(target.user_type)
@@ -274,7 +271,6 @@ export async function PATCH(request) {
   const profileUpdate = {}
   if (fullName !== null && fullName !== target.full_name) profileUpdate.full_name = fullName
   if (email !== null && email !== String(target.email || '').toLowerCase()) profileUpdate.email = email
-  if (status !== null && status !== target.status) profileUpdate.status = status
   if (points !== null && points !== Number(target.points || 0)) profileUpdate.points = points
   if (Object.keys(profileUpdate).length) {
     const { error } = await adminSupabase
@@ -287,9 +283,7 @@ export async function PATCH(request) {
     }
     await audit(session.user_id, 'account_updated_by_admin', targetUserId, {
       fields: Object.keys(profileUpdate).sort(),
-      ...(profileUpdate.status ? { status: { from: target.status, to: profileUpdate.status } } : {}),
     })
-    if (profileUpdate.status && profileUpdate.status !== 'active') accessChanged = true
     if (!messages.length) messages.push('Account details saved.')
   }
 

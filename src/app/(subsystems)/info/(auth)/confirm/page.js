@@ -1,7 +1,9 @@
 'use client'
 
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 function AuthConfirmContent() {
   const router = useRouter()
@@ -10,19 +12,47 @@ function AuthConfirmContent() {
   const type = searchParams.get('type')
   const queryEmail = searchParams.get('email')
   const missingVerification = !tokenHash || !type
-  const [message, setMessage] = useState('Verifying your email...')
-  const emailInputRef = useRef(null)
+  const [message, setMessage] = useState(
+    missingVerification ? 'Checking your verification status...' : 'Verifying your email...'
+  )
+  const [emailVerified, setEmailVerified] = useState(false)
+  const [emailAddress, setEmailAddress] = useState(queryEmail || '')
   const [canResend, setCanResend] = useState(false)
   const [resending, setResending] = useState(false)
   const [resendMessage, setResendMessage] = useState('')
   const [resendError, setResendError] = useState('')
 
   useEffect(() => {
-    if (emailInputRef.current) {
-      emailInputRef.current.value = queryEmail || ''
-    }
-
     if (missingVerification) {
+      const checkVerifiedSession = async () => {
+        try {
+          if (!supabase) throw new Error('Supabase authentication is not configured.')
+
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+          if (sessionError) throw sessionError
+
+          if (!session) {
+            setMessage('Verification link data is missing or may already have been used. If you already verified your email, sign in; otherwise request a new confirmation email.')
+            return
+          }
+
+          const { data: { user }, error: userError } = await supabase.auth.getUser()
+          if (userError) throw userError
+
+          if (user?.email_confirmed_at) {
+            setMessage('Your email is already verified. Continue to sign in.')
+            setEmailVerified(true)
+            return
+          }
+
+          setMessage('The verification link is missing its token or may no longer be valid. Sign in if you already verified, or request a new email below.')
+        } catch (error) {
+          console.error('Email verification status check failed:', error)
+          setMessage('We could not confirm your email status. If you have already verified, sign in; otherwise request a new confirmation email below.')
+        }
+      }
+
+      void checkVerifiedSession()
       return
     }
 
@@ -40,7 +70,8 @@ function AuthConfirmContent() {
           throw new Error(data.message || 'Email verification failed.')
         }
 
-        setMessage('✅ Email verified successfully. Redirecting to login...')
+        setMessage('Email verified successfully. Redirecting to login...')
+        setEmailVerified(true)
 
         setTimeout(() => {
           router.push('/info/login?message=Your email has been verified. Please sign in.&onboarding=1')
@@ -52,12 +83,11 @@ function AuthConfirmContent() {
     }
 
     confirmEmail()
-  }, [missingVerification, queryEmail, router, tokenHash, type])
+  }, [missingVerification, router, tokenHash, type])
 
   const handleResend = async (event) => {
     event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const email = String(formData.get('email') || '').trim()
+    const email = emailAddress.trim()
     setResending(true)
     setResendMessage('')
     setResendError('')
@@ -91,18 +121,40 @@ function AuthConfirmContent() {
           </svg>
         </div>
         <h2 className="text-2xl font-bold text-gray-800">Email Verification</h2>
-        <p className="mt-4 text-gray-600">
-          {missingVerification
-            ? 'Missing or expired verification data. Request a new confirmation email below.'
-            : message}
-        </p>
-        {(canResend || missingVerification) && (
+        <p className="mt-4 text-gray-600">{message}</p>
+        {emailVerified && (
+          <Link
+            href="/info/login"
+            className="mt-6 inline-flex min-h-12 w-full items-center justify-center rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition hover:bg-blue-700"
+          >
+            Continue to sign in
+          </Link>
+        )}
+        {missingVerification && !emailVerified && !canResend && (
+          <div className="mt-6 space-y-3">
+            <Link
+              href="/info/login"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-lg border border-blue-200 bg-white px-4 py-3 font-semibold text-blue-700 transition hover:bg-blue-50"
+            >
+              Already verified? Sign in
+            </Link>
+            <button
+              type="button"
+              onClick={() => setCanResend(true)}
+              className="w-full text-sm font-semibold text-blue-700 underline-offset-2 hover:underline"
+            >
+              Need another email? Request one
+            </button>
+          </div>
+        )}
+        {canResend && !emailVerified && (
           <form onSubmit={handleResend} className="mt-6 space-y-3 text-left">
             <label htmlFor="verification-email" className="block text-sm font-medium text-gray-700">
               Email address
             </label>
             <input
-              ref={emailInputRef}
+              value={emailAddress}
+              onChange={(event) => setEmailAddress(event.target.value)}
               name="email"
               id="verification-email"
               type="email"

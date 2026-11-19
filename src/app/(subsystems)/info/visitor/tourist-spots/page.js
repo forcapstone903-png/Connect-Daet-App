@@ -25,6 +25,7 @@ import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStat
 import { DAET_BARANGAYS, LISTINGS_CACHE_VERSION, LISTING_TYPES, getListingTypeLabel } from '@/lib/listings.mjs'
 import styles from './TouristSpotsPage.module.css'
 import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
+import { getInterestMatchScore, normalizeUserInterests } from '@/lib/userInterests'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 // Public data only (active listings). Invalidated by the admin page after
@@ -87,6 +88,7 @@ function PlacesDirectory() {
   const [showFilters, setShowFilters] = useState(false)
 
   const { observe } = useScrollReveal()
+  const [preferredCategories, setPreferredCategories] = useState([])
 
   // The listing type lives in the URL (?type=restaurant) so tabs are shareable.
   const selectListingType = (value) => {
@@ -129,9 +131,14 @@ function PlacesDirectory() {
         const authUserId = sessionData?.session?.user?.id || ''
         const viewerId = appUserId && appUserId === authUserId ? appUserId : ''
         if (!ignore) setViewerUserId(viewerId)
-        const { data: favoriteRows } = viewerId
-          ? await supabase.from('user_favorites').select('item_id').eq('user_id', viewerId).eq('item_type', 'spot')
-          : { data: [] }
+        const [favoriteResult, preferenceResult] = viewerId
+          ? await Promise.all([
+            supabase.from('user_favorites').select('item_id').eq('user_id', viewerId).eq('item_type', 'spot'),
+            supabase.from('user_feed_preferences').select('preferred_categories').eq('user_id', viewerId).maybeSingle(),
+          ])
+          : [{ data: [] }, { data: null, error: null }]
+        if (favoriteResult.error) console.error('Tourist spot favorites load failed:', favoriteResult.error)
+        if (preferenceResult.error) console.error('Place recommendations interests load failed:', preferenceResult.error)
 
         if (error) {
           console.error('Error loading tourist spots:', error)
@@ -142,7 +149,8 @@ function PlacesDirectory() {
         if (!ignore) {
           setSpots(data || [])
           setPersistentCache(SPOTS_CACHE_KEY, data || [], SPOTS_CACHE_TTL_MS)
-          setFavorites(new Set((favoriteRows || []).map((favorite) => favorite.item_id)))
+          setFavorites(new Set((favoriteResult.data || []).map((favorite) => favorite.item_id)))
+          setPreferredCategories(normalizeUserInterests(preferenceResult.data?.preferred_categories || []))
           setLoading(false)
         }
         return true
@@ -160,6 +168,14 @@ function PlacesDirectory() {
       ignore = true
       refreshSpotsRef.current = null
     }
+  }, [])
+
+  useEffect(() => {
+    const handleInterestsUpdated = (event) => {
+      setPreferredCategories(normalizeUserInterests(event.detail?.interests))
+    }
+    window.addEventListener('daet-user-interests-updated', handleInterestsUpdated)
+    return () => window.removeEventListener('daet-user-interests-updated', handleInterestsUpdated)
   }, [])
 
   useEffect(() => {
@@ -214,9 +230,14 @@ function PlacesDirectory() {
     if (sortBy === 'rating') sorted.sort((a, b) => Number(b.rating || 0) - Number(a.rating || 0))
     else if (sortBy === 'reviews') sorted.sort((a, b) => Number(b.review_count || 0) - Number(a.review_count || 0))
     else if (sortBy === 'name') sorted.sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')))
-    else sorted.sort((a, b) => Number(Boolean(b.featured)) - Number(Boolean(a.featured)) || Number(b.rating || 0) - Number(a.rating || 0))
+    else sorted.sort((a, b) => (
+      getInterestMatchScore([b.category, b.listing_type, ...(b.tags || [])], preferredCategories)
+      - getInterestMatchScore([a.category, a.listing_type, ...(a.tags || [])], preferredCategories)
+      || Number(Boolean(b.featured)) - Number(Boolean(a.featured))
+      || Number(b.rating || 0) - Number(a.rating || 0)
+    ))
     return sorted
-  }, [spotsOfType, category, barangay, minRating, search, sortBy])
+  }, [spotsOfType, category, barangay, minRating, search, sortBy, preferredCategories])
 
   const hasActiveFilters = category !== 'all' || barangay !== 'all' || minRating > 0 || search.trim()
   const clearFilters = () => {

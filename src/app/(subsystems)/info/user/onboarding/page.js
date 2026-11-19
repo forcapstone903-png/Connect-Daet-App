@@ -20,7 +20,8 @@ import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSecti
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
-import { FALLBACK_PLACES, FALLBACK_TOPICS, getOnboardingStepMeta, getRequiredSelectionCount } from '@/lib/onboardingUtils'
+import { FALLBACK_PLACES, getOnboardingStepMeta, getRequiredSelectionCount } from '@/lib/onboardingUtils'
+import { USER_INTEREST_CATEGORIES, normalizeUserInterests } from '@/lib/userInterests'
 import { subscribeUserToPush } from '@/lib/pushNotifications'
 
 export default function OnboardingPage() {
@@ -40,6 +41,7 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [interestsLoaded, setInterestsLoaded] = useState(false)
 
   useEffect(() => {
     const loadOptions = async () => {
@@ -52,23 +54,25 @@ export default function OnboardingPage() {
       }
 
       try {
-        const [{ data: categoryRows, error: categoryError }, { data: placeRows, error: placeError }, { data: peopleRows, error: peopleError }] = await Promise.all([
-          supabase.from('system_categories').select('id, name, icon_emoji').eq('is_active', true).order('sort_order').limit(12),
+        const [{ data: placeRows, error: placeError }, { data: peopleRows, error: peopleError }, { data: preferenceRow, error: preferenceError }] = await Promise.all([
           supabase.from('info_tourist_spots').select('id, name, category, location, featured_image').eq('status', 'active').order('rating', { ascending: false }).limit(12),
           supabase.from('info_users').select('id, full_name, profile_image_url, user_type').neq('id', id).eq('status', 'active').limit(8),
+          supabase.from('user_feed_preferences').select('preferred_categories').eq('user_id', id).maybeSingle(),
         ])
 
-        if (categoryError) console.error('Onboarding categories fetch failed:', categoryError)
         if (placeError) console.error('Onboarding places fetch failed:', placeError)
         if (peopleError) console.error('Onboarding people fetch failed:', peopleError)
+        if (preferenceError) throw preferenceError
 
-        setTopics((categoryRows || []).length ? categoryRows : FALLBACK_TOPICS.map((name) => ({ id: name, name, icon_emoji: '' })))
+        setTopics(USER_INTEREST_CATEGORIES.map((name) => ({ id: name, name, icon_emoji: '' })))
+        setSelectedTopics(normalizeUserInterests(preferenceRow?.preferred_categories || []))
+        setInterestsLoaded(true)
         setPlaces((placeRows || []).length ? placeRows : FALLBACK_PLACES.map((name) => ({ id: name, name })))
         setPeople((peopleRows || []).filter((person) => person.user_type !== 'admin'))
       } catch (loadError) {
         console.error('Onboarding options load failed:', loadError)
-        setError('We could not load your welcome setup. Showing default options instead — you can change these later.')
-        setTopics(FALLBACK_TOPICS.map((name) => ({ id: name, name, icon_emoji: '' })))
+        setError('We could not load your saved interests. Please reload before completing setup so your recommendations stay up to date.')
+        setTopics(USER_INTEREST_CATEGORIES.map((name) => ({ id: name, name, icon_emoji: '' })))
         setPlaces(FALLBACK_PLACES.map((name) => ({ id: name, name })))
       } finally {
         setLoading(false)
@@ -79,9 +83,9 @@ export default function OnboardingPage() {
   }, [router])
 
   const progressLabel = useMemo(() => `Step ${step} of 4`, [step])
-  const requiredTopics = getRequiredSelectionCount(topics.length || FALLBACK_TOPICS.length, 3)
+  const requiredTopics = getRequiredSelectionCount(topics.length || USER_INTEREST_CATEGORIES.length, 3)
   const requiredPlaces = getRequiredSelectionCount(places.length || FALLBACK_PLACES.length, 3)
-  const canContinue = step === 1 ? selectedTopics.length >= requiredTopics : step === 2 ? selectedPlaces.length >= requiredPlaces : true
+  const canContinue = step === 1 ? interestsLoaded && selectedTopics.length >= requiredTopics : step === 2 ? selectedPlaces.length >= requiredPlaces : true
   const stepMeta = getOnboardingStepMeta(step)
 
   const getPlaceHighlight = (place) => {
@@ -115,7 +119,7 @@ export default function OnboardingPage() {
     setError('')
     try {
       const [{ error: preferenceError }, { error: profileError }, { error: userError }] = await Promise.all([
-        supabase.from('user_feed_preferences').upsert({ user_id: userId, preferred_categories: selectedTopics, favorite_places: selectedPlaces, onboarding_completed: true, enabled: true, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }),
+        supabase.from('user_feed_preferences').upsert({ user_id: userId, preferred_categories: normalizeUserInterests(selectedTopics), favorite_places: selectedPlaces, onboarding_completed: true, enabled: true, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }),
         supabase.from('profiles').upsert({ user_id: userId, profile_image_url: avatarUrl || null, cover_photo_url: coverUrl || null, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }),
         avatarUrl ? supabase.from('info_users').update({ profile_image_url: avatarUrl, onboarding_completed: true, updated_at: new Date().toISOString() }).eq('id', userId) : supabase.from('info_users').update({ onboarding_completed: true, updated_at: new Date().toISOString() }).eq('id', userId),
       ])
@@ -389,7 +393,7 @@ export default function OnboardingPage() {
                       <button
                         key={topic.id}
                         type="button"
-                        onClick={() => toggleSelection(topic.name, selectedTopics, setSelectedTopics, requiredTopics)}
+                        onClick={() => toggleSelection(topic.name, selectedTopics, setSelectedTopics, topics.length)}
                         className={`rounded-[1.5rem] border p-4 text-left transition ${selectedTopics.includes(topic.name) ? 'border-sky-500 bg-sky-50 ring-2 ring-sky-100' : 'border-slate-200 bg-slate-50 hover:border-sky-300 hover:bg-sky-50/50'}`}
                       >
                         <div className="flex items-center justify-between">

@@ -3,9 +3,10 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ClipboardList, Heart, Star, Trash2 } from 'lucide-react';
+import { ClipboardList, Heart, Scale, Star, Trash2, XCircle } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import AdminAvatar from '@/app/(subsystems)/info/components/admin/AdminAvatar';
+import AccountStatusSelect from '@/app/(subsystems)/info/components/admin/AccountStatusSelect';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminButton, AdminPageHeader, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
@@ -454,7 +455,6 @@ export default function ManageUsersPage() {
           userId: selectedUser.id,
           full_name: userForm.full_name.trim(),
           email: userForm.email.trim(),
-          ...(selectedUser.status === 'pending_deletion' ? {} : { status: userForm.status }),
           points: parseInt(userForm.points) || 0,
           ...(roleChanged ? { role: userForm.user_type } : {}),
           ...(password ? { password } : {}),
@@ -499,23 +499,6 @@ export default function ManageUsersPage() {
       showToast('Failed to schedule account deletion: ' + err.message, true);
     } finally {
       setSaving(false);
-    }
-  };
-
-  // ─── Quick status change ───────────────────────────────────────────────────
-  const updateStatus = async (userId, newStatus) => {
-    try {
-      const response = await fetch('/info/api/admin/users', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, status: newStatus }),
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok || !result.success) throw new Error(result.message || 'Request failed');
-      showToast(`Status updated to ${newStatus}`);
-      await fetchUsers();
-    } catch (err) {
-      showToast('Failed to update status: ' + err.message, true);
     }
   };
 
@@ -600,17 +583,6 @@ export default function ManageUsersPage() {
     return map[type] || 'bg-gray-100 text-gray-800';
   };
 
-  const getStatusBadge = (status) => {
-    const map = {
-      active: 'bg-green-100 text-green-800',
-      inactive: 'bg-gray-100 text-gray-600',
-      suspended: 'bg-red-100 text-red-800',
-      pending: 'bg-yellow-100 text-yellow-800',
-      pending_deletion: 'bg-orange-100 text-orange-800',
-    };
-    return map[status] || 'bg-gray-100 text-gray-800';
-  };
-
   const getPostStatusBadge = (status) => {
     const map = {
       pending: 'bg-yellow-100 text-yellow-800',
@@ -619,11 +591,6 @@ export default function ManageUsersPage() {
       flagged: 'bg-orange-100 text-orange-800',
     };
     return map[status] || 'bg-gray-100 text-gray-800';
-  };
-
-  const getStatusDot = (status) => {
-    const map = { active: 'bg-green-500', inactive: 'bg-gray-400', suspended: 'bg-red-500', pending: 'bg-yellow-400', pending_deletion: 'bg-orange-500' };
-    return map[status] || 'bg-gray-400';
   };
 
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
@@ -775,24 +742,13 @@ export default function ManageUsersPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getStatusDot(u.status)}`}></span>
-                          {u.status === 'pending_deletion' ? (
-                            <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${getStatusBadge(u.status)}`}>
-                              Deletion scheduled
-                            </span>
-                          ) : (
-                            <select
-                              value={u.status || 'active'}
-                              onChange={e => updateStatus(u.id, e.target.value)}
-                              className={`text-xs font-medium rounded-full px-2 py-0.5 border-0 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500 ${getStatusBadge(u.status)}`}
-                            >
-                              {userStatuses.filter(s => s !== 'pending_deletion').map(s => (
-                                <option key={s} value={s}>{formatStatusLabel(s)}</option>
-                              ))}
-                            </select>
+                        <AccountStatusSelect
+                          key={`${u.id}-${u.status}`}
+                          account={u}
+                          continueHref={(account, requestedStatus) => (
+                            `/info/admin/account-oversight?userId=${encodeURIComponent(account.id)}&requestedStatus=${encodeURIComponent(requestedStatus)}`
                           )}
-                        </div>
+                        />
                         {u.status === 'pending_deletion' && u.deletion_scheduled_for ? (
                           <p className="mt-1 text-[11px] text-orange-700">
                             Permanently deleted after {formatDateTime(u.deletion_scheduled_for)}
@@ -860,7 +816,7 @@ export default function ManageUsersPage() {
             <div className="p-5 border-b border-gray-100 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="bg-purple-100 p-2 rounded-2xl">
-                  <span className="text-2xl">📋</span>
+                  <ClipboardList className="h-6 w-6 text-purple-700" aria-hidden="true" />
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-gray-800">User Activity</h3>
@@ -928,18 +884,18 @@ export default function ManageUsersPage() {
                                     onClick={() => openModerateModal(post)}
                                     className="p-1.5 rounded-lg hover:bg-purple-50 text-purple-600 text-sm"
                                     title="Moderate"
-                                  >⚖️</button>
+                                  ><Scale className="h-4 w-4" aria-hidden="true" /></button>
                                 )}
                                 <button
                                   onClick={() => deletePost(post.id)}
                                   className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 text-sm"
                                   title="Delete"
-                                >🗑️</button>
+                                ><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
                               </div>
                             </div>
                             <p className="text-sm text-gray-600 mt-2 line-clamp-3">{post.content}</p>
                             <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
-                              <span>❤️ {post.likes || 0} likes</span>
+                              <span><Heart className="mr-1 inline-block h-4 w-4 fill-current text-rose-500" aria-hidden="true" />{post.likes || 0} likes</span>
                               <span><Icon name="feedback" className="w-4 h-4 inline-block mr-1" />{post.comments_count || 0} comments</span>
                               <span><Icon name="events" className="w-4 h-4 inline-block mr-1" />{formatDateTime(post.created_at)}</span>
                               {post.location && <span><Icon name="attractions" className="w-4 h-4 inline-block mr-1" />{post.location}</span>}
@@ -982,7 +938,7 @@ export default function ManageUsersPage() {
                                 className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 text-sm"
                                 title="Delete Comment"
                                 aria-label="Delete comment"
-                              >🗑️</button>
+                              ><Trash2 className="h-4 w-4" aria-hidden="true" /></button>
                             </div>
                             <p className="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{comment.body}</p>
                             {comment.parent_id && <p className="mt-2 text-xs text-gray-400">Reply to a comment</p>}
@@ -1033,7 +989,7 @@ export default function ManageUsersPage() {
           <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
             <div className="flex items-center gap-3 mb-5">
               <div className="bg-purple-100 p-3 rounded-2xl">
-                <span className="text-2xl">⚖️</span>
+                <Scale className="h-6 w-6 text-purple-700" aria-hidden="true" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-gray-800">Moderate Post</h3>
@@ -1077,7 +1033,7 @@ export default function ManageUsersPage() {
                 disabled={saving}
                 className="flex-1 px-4 py-2 bg-red-500 text-white rounded-full text-sm hover:bg-red-600 disabled:opacity-50"
               >
-                ❌ Reject
+                <XCircle className="mr-1 inline-block h-4 w-4" aria-hidden="true" /> Reject
               </button>
             </div>
           </div>
@@ -1150,15 +1106,12 @@ export default function ManageUsersPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                  <select
-                    value={userForm.status}
-                    onChange={e => setUserForm(p => ({ ...p, status: e.target.value }))}
-                    disabled={selectedUser?.status === 'pending_deletion'}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none text-gray-800 bg-white"
-                  >
-                    {userStatuses.filter(s => s !== 'pending_deletion' || selectedUser?.status === 'pending_deletion').map(s => <option key={s} value={s}>{formatStatusLabel(s)}</option>)}
-                  </select>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Account Status</label>
+                  <p className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                    {selectedUser
+                      ? `${formatStatusLabel(selectedUser.status || 'active')} · Change status through Account Oversight.`
+                      : 'New accounts start Active. Use Account Oversight for future status changes.'}
+                  </p>
                 </div>
               </div>
 
@@ -1226,7 +1179,7 @@ export default function ManageUsersPage() {
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
             <div className="text-center mb-5">
               <div className="bg-red-100 w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3">
-                <span className="text-3xl">🗑️</span>
+                <Trash2 className="h-7 w-7 text-red-600" aria-hidden="true" />
               </div>
               <h3 className="text-lg font-bold text-gray-800">Schedule Account Deletion?</h3>
               <p className="text-sm text-gray-500 mt-2">
@@ -1249,7 +1202,7 @@ export default function ManageUsersPage() {
           <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
             <div className="flex items-center gap-3 mb-5">
               <div className="bg-yellow-100 p-3 rounded-2xl">
-                <span className="text-2xl">⭐</span>
+                <Star className="h-6 w-6 fill-current text-yellow-500" aria-hidden="true" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-gray-800">Adjust Points</h3>

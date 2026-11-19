@@ -3,8 +3,13 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { parseMentionCandidates } from '@/lib/mentions'
 import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
-import { notifyModerators } from '@/lib/adminNotifications'
 import { publicErrorMessage } from '@/lib/publicError'
+import {
+  checkCommentRateLimit,
+  hasConfiguredCriticalCommentSafetySignal,
+  MAX_COMMENT_LENGTH,
+  sanitizeCommentContent,
+} from '@/lib/commentSafety.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -105,7 +110,7 @@ async function createBlogCommentNotification(adminSupabase, { recipientId, actor
   }
 }
 
-async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId, blogId, mentionRefs = []) {
+async function persistBlogCommentMentions(adminSupabase, text, actorId, commentId, blogId, mentionRefs = [], isReply = false) {
   const mentions = []
   const audienceMentions = []
   const refs = Array.isArray(mentionRefs) ? mentionRefs : []
@@ -158,7 +163,7 @@ async function persistBlogCommentMentions(adminSupabase, text, actorId, commentI
         actorName: 'Someone you follow',
         content: text,
         commentId,
-        isReply: Boolean(commentId),
+        isReply,
         isMention: true,
       })
     }
@@ -218,20 +223,31 @@ export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}))
     const blogId = String(body.blogId || '').trim()
-    const content = String(body.content || '').trim()
+    const rawContent = String(body.content || '').trim()
     const parentId = body.parentId ? String(body.parentId).trim() : null
 
-    if (!blogId || !content) {
+    if (!blogId || !rawContent) {
+      return NextResponse.json({ success: false, message: 'Comment content is required.' }, { status: 400 })
+    }
+    if (rawContent.length > MAX_COMMENT_LENGTH) {
+      return NextResponse.json({ success: false, message: 'Your comment is too long.' }, { status: 400 })
+    }
+    const content = sanitizeCommentContent(rawContent)
+    if (!content) {
       return NextResponse.json({ success: false, message: 'Comment content is required.' }, { status: 400 })
     }
 
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
-    const isModerator = ['admin', 'administrator', 'moderator'].includes(
-      String(session.role || '').trim().toLowerCase()
-    )
+    const rateLimit = await checkCommentRateLimit(adminSupabase, request, userId)
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ success: false, message: rateLimit.message }, { status: rateLimit.status })
+    }
     const restriction = await getActiveCommentRestriction(adminSupabase, userId)
     if (restriction) {
       return NextResponse.json({ success: false, message: 'Your account is currently restricted from posting comments.' }, { status: 403 })
+    }
+    if (await hasConfiguredCriticalCommentSafetySignal(adminSupabase, content)) {
+      return NextResponse.json({ success: false, message: 'This comment cannot be published because it violates a critical safety rule.' }, { status: 422 })
     }
     const { data: blog, error: blogError } = await adminSupabase
       .from('info_blogs')
@@ -252,21 +268,12 @@ export async function POST(request) {
         parent_id: parentId,
         user_id: userId,
         content,
-        status: isModerator ? 'approved' : 'pending',
+        status: 'approved',
       })
       .select('*, info_users(full_name, email, profile_image_url)')
       .single()
 
     if (error) throw error
-    if (data.status === 'pending') {
-      await notifyModerators(adminSupabase, {
-        actorId: userId,
-        title: 'Blog comment awaiting approval',
-        message: 'A new blog comment needs review.',
-        link: '/info/admin/moderation',
-      })
-      return NextResponse.json({ success: true, comment: data, pending: true })
-    }
 
     const { data: actor } = await adminSupabase
       .from('info_users')
@@ -295,7 +302,7 @@ export async function POST(request) {
       }
     }
 
-    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id, blogId, body.mentionRefs)
+    const mentionRows = await persistBlogCommentMentions(adminSupabase, content, userId, data.id, blogId, body.mentionRefs, Boolean(parentId))
     const mentionData = mentionRows.map((mention) => ({ mentioned_user_id: mention.mentioned_user_id, display_name: mention.display_name || mention.mention_text }))
     if (mentionData.length) {
       await adminSupabase.from('info_comments').update({ mention_data: mentionData }).eq('id', data.id)

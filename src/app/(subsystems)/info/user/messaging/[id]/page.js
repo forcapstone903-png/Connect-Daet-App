@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Archive, ChevronLeft, CornerUpLeft, Forward, LoaderCircle, MoreHorizontal, Pin, Plus, Search, Send, Smile, Trash2, Volume2, VolumeX, X } from 'lucide-react'
+import { Archive, ChevronLeft, CornerUpLeft, Film, Forward, Image as ImageIcon, LoaderCircle, MoreHorizontal, Pencil, Pin, Plus, Search, Send, Smile, Sticker, Trash2, Volume2, VolumeX, X } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import { supabase } from '@/lib/supabase'
@@ -1075,7 +1075,7 @@ export default function ConversationPage() {
                         {message.body && <p>{message.body}</p>}
                         <time className={`mt-1 block text-[10px] ${isOwnMessage ? 'text-white/70' : 'text-slate-400'}`}>{message.created_at ? new Date(message.created_at).toLocaleString() : 'Recently'}{message.metadata?.edited ? ' · Edited' : ''}{isOwnMessage && message.read_at ? ' · Seen' : ''}</time>
                       </div>
-                      {message.metadata?.pinned && <span className="absolute -top-2 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm" title="Pinned message">📌</span>}
+                      {message.metadata?.pinned && <span className="absolute -top-2 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm" title="Pinned message"><Pin className="h-3 w-3" aria-hidden="true" /></span>}
                       {messageReactions[message.id]?.length ? <span key={messageReactions[message.id][0].reaction} className="usr-message-reaction absolute -bottom-3 right-2 z-10 rounded-full border border-slate-200 bg-white px-1.5 py-0.5 text-xs shadow-sm">{messageReactions[message.id][0].reaction}</span> : null}
                     </div>
                     {isOwnMessage && <ProfileAvatar user={currentUser} size="h-8 w-8" />}
@@ -1115,11 +1115,11 @@ export default function ConversationPage() {
                     </div>
                   )}
                   {showMoreActions && !messageToDelete && <div className="mx-auto mt-2 flex max-w-3xl flex-wrap gap-2 border-t border-slate-100 pt-2">
-                    <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">📌 {messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</button>
+                    <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700"><Pin className="h-4 w-4" aria-hidden="true" /> {messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</button>
                     {(() => {
                       const selectedMessage = messages.find((item) => item.id === actionMessageId)
                       const canEdit = canEditMessage(selectedMessage)
-                      return canEdit ? <button type="button" onClick={() => beginEditMessage(selectedMessage)} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">✏️ Edit Message</button> : null
+                      return canEdit ? <button type="button" onClick={() => beginEditMessage(selectedMessage)} className="flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700"><Pencil className="h-4 w-4" aria-hidden="true" /> Edit Message</button> : null
                     })()}
                     <button type="button" onClick={() => openForward(messages.find((message) => message.id === actionMessageId))} className="flex min-h-10 flex-1 items-center justify-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">↗ Forward</button>
                   </div>}
@@ -1135,9 +1135,9 @@ export default function ConversationPage() {
                 <div className="relative flex shrink-0 items-center">
                   <button type="button" onClick={() => setAttachmentMenuOpen((open) => !open)} aria-label="Open attachment menu" title="Add attachment" className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-xl font-bold text-slate-700 shadow-sm transition hover:bg-slate-100"> <Plus className="h-5 w-5" /> </button>
                   {attachmentMenuOpen && <div ref={attachmentMenuRef} className="absolute bottom-[calc(100%+0.75rem)] left-0 z-30 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-                    <button type="button" onClick={() => handleAttachmentAction('photo-video')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><span className="text-base">🖼️</span>Photo / Video</button>
-                    <button type="button" onClick={() => handleAttachmentAction('gif')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><span className="text-base">🎞️</span>GIF</button>
-                    <button type="button" onClick={() => handleAttachmentAction('sticker')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><span className="text-base">🏷️</span>Sticker</button>
+                    <button type="button" onClick={() => handleAttachmentAction('photo-video')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><ImageIcon className="h-4 w-4" aria-hidden="true" />Photo / Video</button>
+                    <button type="button" onClick={() => handleAttachmentAction('gif')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><Film className="h-4 w-4" aria-hidden="true" />GIF</button>
+                    <button type="button" onClick={() => handleAttachmentAction('sticker')} className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50"><Sticker className="h-4 w-4" aria-hidden="true" />Sticker</button>
                   </div>}
                 </div>
                 <div className="message-input-wrapper relative min-w-0 flex-1">
@@ -1180,11 +1180,11 @@ export default function ConversationPage() {
                     <button type="button" onClick={() => setShowMoreActions(false)} aria-label="Close more actions" className="rounded-full px-2 py-1 text-xl leading-none text-slate-400 hover:bg-slate-800 hover:text-white">&times;</button>
                   </div>
                   <div className="grid gap-2">
-                    <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800">📌 <span>{messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</span></button>
+                    <button type="button" onClick={() => { const message = messages.find((item) => item.id === actionMessageId); void updateMessageAction(message, message?.metadata?.pinned ? 'unpin' : 'pin') }} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800"><Pin className="h-4 w-4" aria-hidden="true" /><span>{messages.find((item) => item.id === actionMessageId)?.metadata?.pinned ? 'Unpin Message' : 'Pin Message'}</span></button>
                     {(() => {
                       const selectedMessage = messages.find((item) => item.id === actionMessageId)
                       const canEdit = canEditMessage(selectedMessage)
-                      return canEdit ? <button type="button" onClick={() => beginEditMessage(selectedMessage)} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800">✏️ <span>Edit Message</span></button> : null
+                      return canEdit ? <button type="button" onClick={() => beginEditMessage(selectedMessage)} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800"><Pencil className="h-4 w-4" aria-hidden="true" /><span>Edit Message</span></button> : null
                     })()}
                     <button type="button" onClick={() => openForward(messages.find((item) => item.id === actionMessageId))} className="flex min-h-12 items-center gap-3 rounded-xl border border-slate-700 px-4 py-3 text-left text-sm font-bold text-slate-100 hover:bg-slate-800">↗ <span>Forward</span></button>
                   </div>

@@ -54,10 +54,12 @@ import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import DailyFeedback from '@/app/(subsystems)/info/components/user/DailyFeedback'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import AccountStatusNotice from '@/app/(subsystems)/info/components/user/AccountStatusNotice'
 import PostTimestamp from '@/app/(subsystems)/info/components/user/PostTimestamp'
 import DaetWeatherCard from '@/app/(subsystems)/info/components/user/DaetWeatherCard'
 import ConfirmationModal from '@/app/(subsystems)/info/components/ConfirmationModal'
-import { buildRecommendationProfile, rankFeedItems } from '@/lib/feedRecommendationEngine'
+import { buildRecommendationProfile, FEED_RECOMMENDATION_DEFAULTS, getDaetDateString, isUpcomingEvent, rankFeedItems } from '@/lib/feedRecommendationEngine'
+import { normalizeUserInterests } from '@/lib/userInterests'
 import { getAnnouncementPinExpiry, getPinnedAnnouncement, isHiddenByFeedPreferences, prioritizeNewestCommunityPost, prioritizeOwnerFeedItems, prioritizePinnedFeedItems } from '@/lib/feedOrdering'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getPostImages } from '@/lib/postMedia'
@@ -217,6 +219,10 @@ export default function UserDashboardPage() {
   const [followedSuggestions, setFollowedSuggestions] = useState(() => new Set())
   const [pendingSuggestedFollows, setPendingSuggestedFollows] = useState(() => new Set())
   const [followingUserIds, setFollowingUserIds] = useState(() => new Set())
+  const [peopleRecommendationVisibility, setPeopleRecommendationVisibility] = useState({ visible: new Set(), mutual: new Map() })
+  const [personalizedRecommendations, setPersonalizedRecommendations] = useState({ people: [], stories: [], places: [], events: [] })
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false)
+  const [recommendationsError, setRecommendationsError] = useState('')
   const impressionTimersRef = useRef(new Map())
   const trackedImpressionsRef = useRef(new Set())
   const [feedRefreshKey, setFeedRefreshKey] = useState(0)
@@ -697,25 +703,150 @@ export default function UserDashboardPage() {
       .map(([name, count]) => ({ name, count }))
   }, [feed, savedItems])
 
+  const peopleCandidateIds = useMemo(() => [...new Set(feed
+    .map((item) => item.author?.id)
+    .filter((id) => id && id !== userId && !followingUserIds.has(id)))]
+    .slice(0, 80), [feed, userId, followingUserIds])
+  const peopleRecommendationKey = peopleCandidateIds.join('|')
+
   const suggestions = useMemo(() => {
-    const availableFeed = feed.filter((item) => item.author?.id
-      && item.author.id !== userId
-      && !followingUserIds.has(item.author.id)
-      && !followedSuggestions.has(item.author.id))
-    const suggestedPeople = [...new Map(availableFeed.map((item) => [item.author.id, item.author])).values()].slice(0, 3)
+    const availableFeed = feed.filter((item) => !item.is_repost
+      && !item.isRepost
+      && (item.type !== 'event' || isUpcomingEvent(item, feedNow))
+      && !isHiddenByFeedPreferences(item, userId, hiddenPosts, notInterestedTopics))
+    const recommendationProfile = buildRecommendationProfile({
+      activities: userSignals.activities,
+      reactions: userSignals.reactions,
+      favorites: userSignals.favorites,
+      preferredCategories: userSignals.preferredCategories,
+      follows: [...followingUserIds],
+    })
+    const rankedItems = rankFeedItems({
+      items: availableFeed,
+      profile: recommendationProfile,
+      userFollows: followingUserIds,
+      now: feedNow,
+    })
+    const peopleByAuthor = new Map()
+    const visiblePeopleIds = peopleRecommendationVisibility.key === peopleRecommendationKey
+      ? peopleRecommendationVisibility.visible
+      : new Set()
+    const mutualPeopleRanks = peopleRecommendationVisibility.key === peopleRecommendationKey
+      ? peopleRecommendationVisibility.mutual
+      : new Map()
+    rankedItems.forEach((item) => {
+      const author = item.author
+      if (!author?.id
+        || author.id === userId
+        || followingUserIds.has(author.id)
+        || followedSuggestions.has(author.id)
+        || !visiblePeopleIds.has(author.id)) return
+
+      const score = item.recommendationScore
+        + FEED_RECOMMENDATION_DEFAULTS.weights.relationship * (mutualPeopleRanks.get(author.id) || 0)
+      const current = peopleByAuthor.get(author.id)
+      if (!current || score > current.score) peopleByAuthor.set(author.id, { author, score })
+    })
+    const suggestedPeople = personalizedRecommendations.people.length
+      ? personalizedRecommendations.people.filter((person) =>
+        !followingUserIds.has(person.id) && !followedSuggestions.has(person.id)
+      ).slice(0, 3)
+      : [...peopleByAuthor.values()]
+        .sort((left, right) => right.score - left.score)
+        .slice(0, 3)
+        .map(({ author }) => author)
     const suggestedLocations = [...new Map(
-      feed
-        .filter((item) => item.type === 'tourist_spot')
-        .map((spot) => [spot.id, spot])
+      rankedItems.filter((item) => item.type === 'tourist_spot').map((spot) => [spot.id, spot])
     ).values()].slice(0, 4)
-    const suggestedContent = feed.filter((item) => item.type === 'blog' || item.type === 'forum').slice(0, 2)
+    const suggestedContent = rankedItems.filter((item) => item.type === 'blog' || item.type === 'forum').slice(0, 2)
+    const suggestedPost = rankedItems.find((item) => item.author?.id !== userId
+      && !followingUserIds.has(item.author?.id)
+      && !followedSuggestions.has(item.author?.id)) || rankedItems[0] || null
     return {
-      suggestedPost: availableFeed[0] || feed[0] || null,
+      suggestedPost,
       suggestedPeople,
       suggestedContent,
       suggestedLocations,
     }
-  }, [feed, userId, followingUserIds, followedSuggestions])
+  }, [feed, userId, followingUserIds, followedSuggestions, userSignals, feedNow, hiddenPosts, notInterestedTopics, peopleRecommendationVisibility, peopleRecommendationKey, personalizedRecommendations])
+
+  useEffect(() => {
+    let active = true
+    if (!userId || !peopleCandidateIds.length) return () => { active = false }
+
+    const loadPeopleRecommendationVisibility = async () => {
+      try {
+        const response = await fetch('/info/api/user/recommendations/people', {
+          method: 'POST',
+          credentials: 'same-origin',
+          cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ candidateIds: peopleCandidateIds }),
+        })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || `Unable to load people recommendations (${response.status}).`)
+        }
+        if (!active) return
+        const mutualFollowerIds = result.mutual_follower_user_ids || []
+        setPeopleRecommendationVisibility({
+          key: peopleRecommendationKey,
+          visible: new Set(result.visible_user_ids || []),
+          mutual: new Map(mutualFollowerIds.map((id, index) => [id, 1 - index / mutualFollowerIds.length])),
+        })
+      } catch (recommendationError) {
+        console.error('People recommendation lookup failed:', recommendationError)
+        if (active) setPeopleRecommendationVisibility({
+          key: peopleRecommendationKey,
+          visible: new Set(),
+          mutual: new Map(),
+        })
+      }
+    }
+
+    void loadPeopleRecommendationVisibility()
+    return () => { active = false }
+  }, [peopleCandidateIds, peopleRecommendationKey, userId])
+
+  const loadPersonalizedRecommendations = useCallback(async (refresh = false) => {
+    if (!userId) return
+    setRecommendationsLoading(true)
+    setRecommendationsError('')
+    try {
+      const response = await fetch(`/info/api/user/recommendations?limit=10${refresh ? '&refresh=1' : ''}`, {
+        credentials: 'same-origin',
+        cache: 'no-store',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load recommendations.')
+      setPersonalizedRecommendations({
+        people: Array.isArray(result.people) ? result.people : [],
+        stories: Array.isArray(result.stories) ? result.stories : [],
+        places: Array.isArray(result.places) ? result.places : [],
+        events: Array.isArray(result.events) ? result.events : [],
+      })
+    } catch (recommendationError) {
+      setRecommendationsError(recommendationError.message || 'Unable to load recommendations.')
+    } finally {
+      setRecommendationsLoading(false)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    void loadPersonalizedRecommendations()
+  }, [loadPersonalizedRecommendations])
+
+  useEffect(() => {
+    const handleInterestsUpdated = (event) => {
+      setUserSignals((current) => ({
+        ...current,
+        preferredCategories: normalizeUserInterests(event.detail?.interests),
+      }))
+    }
+
+    window.addEventListener('daet-user-interests-updated', handleInterestsUpdated)
+    return () => window.removeEventListener('daet-user-interests-updated', handleInterestsUpdated)
+  }, [])
 
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
@@ -1204,6 +1335,21 @@ export default function UserDashboardPage() {
         if (!pendingDashboardRefreshRef.current) setLoading(true)
         setError(null)
 
+        const { data: blockedUserRows, error: blockedUsersError } = await supabase
+          .from('user_blocks')
+          .select('blocker_id, blocked_id')
+          .or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`)
+        if (blockedUsersError) throw blockedUsersError
+        const blockedUserIds = new Set((blockedUserRows || []).map((row) => (
+          row.blocker_id === userId ? row.blocked_id : row.blocker_id
+        )).filter(Boolean))
+        const excludeBlockedAuthors = (query) => (
+          blockedUserIds.size
+            ? query.or(`created_by.is.null,created_by.not.in.(${[...blockedUserIds].join(',')})`)
+            : query
+        )
+        const daetToday = getDaetDateString()
+
         const [categoriesResult, announcementsResult, feedResult] = await Promise.all([
           supabase
             .from(TABLES.CATEGORIES)
@@ -1218,31 +1364,32 @@ export default function UserDashboardPage() {
             .order('published_at', { ascending: false })
             .limit(4),
           Promise.all([
-            supabase
+            excludeBlockedAuthors(supabase
               .from(TABLES.BLOGS)
               .select('id, title, excerpt, category, tags, featured, featured_image, images, videos, media_layout, published_at, updated_at, views, likes, comments_count, created_by')
               .eq('status', 'published')
               .order('published_at', { ascending: false })
-              .limit(20),
-            supabase
+              .limit(40)),
+            excludeBlockedAuthors(supabase
               .from(TABLES.EVENTS)
               .select('id, title, description, category, start_date, end_date, start_time, end_time, location, venue, latitude, longitude, is_free, ticket_price, current_attendees, featured, featured_image, images, videos, organizer, published_at, updated_at, created_by, status')
               .eq('status', 'published')
               .eq('approval_status', 'approved')
+              .gte('start_date', daetToday)
               .order('start_date', { ascending: true })
-              .limit(20),
-            supabase
+              .limit(40)),
+            excludeBlockedAuthors(supabase
               .from(TABLES.FORUM_THREADS)
-              .select('id, title, content, category_id, reply_count, last_activity_at, created_at, updated_at, created_by, status')
+              .select('id, title, content, category_id, category:forum_categories(name), reply_count, last_activity_at, created_at, updated_at, created_by, status')
               .eq('status', 'active')
               .order('last_activity_at', { ascending: false })
-              .limit(20),
-            supabase
+              .limit(40)),
+            excludeBlockedAuthors(supabase
               .from('info_tourist_spots')
-              .select('id, name, description, category, location, rating, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_by, status, created_at')
+              .select('id, name, description, category, location, rating, review_count, visit_count, tags, entry_fee, opening_hours, best_visit_time, featured, featured_image, images, videos, created_by, status, created_at')
               .eq('status', 'active')
               .order('created_at', { ascending: false })
-              .limit(20),
+              .limit(40)),
             fetch('/info/api/users/following', { credentials: 'same-origin', cache: 'no-store' }).then(async (response) => {
               const result = await response.json()
               if (!response.ok || !result.success) {
@@ -1279,7 +1426,7 @@ export default function UserDashboardPage() {
             created_by: post.user_id,
             excerpt: post.content,
             published_at: post.created_at,
-            category: 'Community',
+            category: post.tags?.[0] || 'Community',
           }))
         const visibleReposts = memberContentFeed.data.reposts || []
         const repostFeed = (visibleReposts || [])
@@ -1322,7 +1469,9 @@ export default function UserDashboardPage() {
           })
           .filter(Boolean)
 
-        const touristSpotPosts = (touristSpotsFeed.data || []).map((spot) => ({
+        const touristSpotPosts = (touristSpotsFeed.data || [])
+          .filter((spot) => !String(spot.description || '').startsWith('Sample listing for testing'))
+          .map((spot) => ({
           ...spot,
           id: spot.id,
           title: spot.name,
@@ -1339,7 +1488,7 @@ export default function UserDashboardPage() {
           featured_image: spot.featured_image,
           images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
           gallery_images: Array.isArray(spot.images) && spot.images.length > 0 ? spot.images : (spot.featured_image ? [spot.featured_image] : []),
-        }))
+          }))
 
         const nextAnnouncements = (announcementsResult.data || []).map(normalizeAnnouncementRecord)
         const authorIds = [
@@ -1412,6 +1561,7 @@ export default function UserDashboardPage() {
               : null),
         })
 
+        const mixedFeedIdentities = new Set()
         const mixedFeed = [
           ...(blogsFeed.data || []).map((blog) => ({
             ...withAuthor(blog, 'blog'),
@@ -1425,6 +1575,7 @@ export default function UserDashboardPage() {
           })),
           ...(threadsFeed.data || []).map((thread) => ({
             ...withAuthor(thread),
+            category: thread.category?.name || 'Community Activities',
             type: 'forum',
             href: `/info/user/forums/${thread.id}`,
           })),
@@ -1466,6 +1617,15 @@ export default function UserDashboardPage() {
             href: `/info/user/announcements/${announcement.id}`,
           })),
         ].sort((a, b) => new Date(b.published_at || b.last_activity_at || 0) - new Date(a.published_at || a.last_activity_at || 0))
+          .filter((item) => {
+            if (item.type === 'event' && !isUpcomingEvent(item)) return false
+            const authorId = item.original_author_id || item.author?.id || item.created_by
+            if (blockedUserIds.has(authorId) || blockedUserIds.has(item.reposted_by)) return false
+            const identity = `${item.type}:${item.id}`
+            if (!item.id || mixedFeedIdentities.has(identity)) return false
+            mixedFeedIdentities.add(identity)
+            return true
+          })
 
         if (!isMounted) return
 
@@ -1534,6 +1694,7 @@ export default function UserDashboardPage() {
   const filteredFeed = useMemo(() => {
     let result = feed.filter((item) => {
       if (item.is_repost || item.isRepost) return false
+      if (item.type === 'event' && !isUpcomingEvent(item, feedNow)) return false
       if (isHiddenByFeedPreferences(item, userId, hiddenPosts, notInterestedTopics)) return false
       if (feedCategory === 'other') {
         if (DEDICATED_FEED_CATEGORIES.has(item.type)) return false
@@ -1571,7 +1732,11 @@ export default function UserDashboardPage() {
     })
 
     userSignals.reactions.forEach((reaction) => {
-      const normalizedType = reaction.content_type === 'forum_thread' ? 'forum' : reaction.content_type
+      const normalizedType = reaction.content_type === 'forum_thread'
+        ? 'forum'
+        : reaction.content_type === 'user_post'
+          ? 'post'
+          : reaction.content_type
       addWeight(typeWeights, normalizedType, 5)
       interactedIds.add(`${normalizedType}-${reaction.content_id}`)
     })
@@ -1581,12 +1746,40 @@ export default function UserDashboardPage() {
       interactedIds.add(`${favorite.item_type}-${favorite.item_id}`)
     })
 
+    const normalizeContentType = (contentType) => {
+      if (contentType === 'forum_thread') return 'forum'
+      if (contentType === 'user_post') return 'post'
+      if (contentType === 'spot') return 'tourist_spot'
+      return contentType
+    }
+    const feedItemsByKey = new Map(feed.map((item) => [
+      `${normalizeContentType(item.type)}-${item.id}`,
+      item,
+    ]))
+    const enrichedActivities = [...userSignals.activities]
+    const addEngagedItemActivity = (contentType, contentId) => {
+      const item = feedItemsByKey.get(`${normalizeContentType(contentType)}-${contentId}`)
+      if (!item) return
+      enrichedActivities.push({
+        entity_type: normalizeContentType(contentType),
+        activity_type: 'engaged_content',
+        metadata: {
+          contentType: normalizeContentType(contentType),
+          authorId: item.author?.id || item.created_by,
+          category: item.category || item.tags?.[0],
+          destination: item.location || item.destination,
+        },
+      })
+    }
+    userSignals.reactions.forEach((reaction) => addEngagedItemActivity(reaction.content_type, reaction.content_id))
+    userSignals.favorites.forEach((favorite) => addEngagedItemActivity(favorite.item_type, favorite.item_id))
+
     const recommendationProfile = buildRecommendationProfile({
-      activities: userSignals.activities,
+      activities: enrichedActivities,
       reactions: userSignals.reactions,
       favorites: userSignals.favorites,
       preferredCategories: userSignals.preferredCategories,
-      follows: [],
+      follows: [...followingUserIds],
       profile: {
         contentTypes: Object.fromEntries([...typeWeights.entries()].map(([key, value]) => [key, value / 10])),
         categories: Object.fromEntries([...categoryWeights.entries()].map(([key, value]) => [key, value / 10])),
@@ -1597,24 +1790,13 @@ export default function UserDashboardPage() {
       },
     })
 
-    const rankedResult = feedScope === 'featured'
-      ? [...result].sort((left, right) => {
-        const leftScore = Number(left.likes || 0) + Number(left.comments_count || left.reply_count || 0) + Number(left.views || left.view_count || 0) + Number(left.current_attendees || 0)
-        const rightScore = Number(right.likes || 0) + Number(right.comments_count || right.reply_count || 0) + Number(right.views || right.view_count || 0) + Number(right.current_attendees || 0)
-        return rightScore - leftScore
-          || new Date(right.published_at || right.created_at || right.start_date || 0) - new Date(left.published_at || left.created_at || left.start_date || 0)
-      })
-      : rankFeedItems({
-        items: result,
-        profile: recommendationProfile,
-        userFollows: followingUserIds,
-        now: feedNow,
-        coldStart: result.length > 0 && Object.keys(recommendationProfile.categories || {}).length === 0,
-      }).sort((left, right) => {
-        const lhs = left.recommendationScore ?? 0
-        const rhs = right.recommendationScore ?? 0
-        return rhs - lhs
-      }).map(({ recommendationScore, recommendationKey, contributionBreakdown, ...item }) => item)
+    const rankedResult = rankFeedItems({
+      items: result,
+      profile: recommendationProfile,
+      userFollows: followingUserIds,
+      now: feedNow,
+      coldStart: result.length > 0 && Object.keys(recommendationProfile.categories || {}).length === 0,
+    }).map(({ recommendationScore, recommendationKey, contributionBreakdown, ...item }) => item)
 
     const pinnedAnnouncement = feedScope === 'for-you' && feedCategory === 'all'
       ? getPinnedAnnouncement(rankedResult, feedNow)
@@ -1764,6 +1946,16 @@ export default function UserDashboardPage() {
         <div className="mb-3 flex items-center gap-2 text-sky-800">
           <UserPlus className="h-4 w-4" aria-hidden="true" />
           <h2 className="text-sm font-black">People to follow</h2>
+          <button
+            type="button"
+            onClick={() => void loadPersonalizedRecommendations(true)}
+            disabled={recommendationsLoading}
+            className="ml-auto inline-flex h-8 items-center gap-1 rounded-full px-2 text-[10px] font-bold hover:bg-white"
+            aria-label="Refresh recommendations"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${recommendationsLoading ? 'usr-spin' : ''}`} aria-hidden="true" />
+            Refresh
+          </button>
         </div>
         <div className="space-y-3">
           {suggestions.suggestedPeople.map((person) => {
@@ -1775,7 +1967,10 @@ export default function UserDashboardPage() {
                   <span className="medium-home-follow-avatar flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-sky-600 text-[10px] font-bold text-white">
                     {person.profile_image_url ? <img src={person.profile_image_url} alt="" className="h-full w-full rounded-full object-cover" /> : getInitials(person.full_name)}
                   </span>
-                  <span className="truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold text-slate-800">{person.full_name || 'Community member'}</span>
+                    {person.reason ? <span className="block truncate text-[10px] text-slate-500">{person.reason}</span> : null}
+                  </span>
                 </UserProfileLink>
                 <button
                   type="button"
@@ -1865,6 +2060,7 @@ export default function UserDashboardPage() {
   return (
     <main className="tourism-shell dashboard-shell medium-home relative min-h-screen w-full overflow-x-clip overscroll-y-contain" onTouchStart={handleDashboardTouchStart} onTouchMove={handleDashboardTouchMove} onTouchEnd={handleDashboardTouchEnd} onTouchCancel={resetPullToRefresh}>
       <UserTopHeader edgeToEdgeMobile />
+      <AccountStatusNotice />
       {toastMessage && (
         <div role="status" aria-live="polite" className="usr-toast fixed left-1/2 top-[76px] z-[2147483647] max-w-[calc(100%-2rem)] -translate-x-1/2 truncate rounded-full bg-slate-950 px-4 py-2.5 text-center text-xs font-semibold text-white shadow-xl lg:top-6">
           {toastMessage}
@@ -1980,6 +2176,46 @@ export default function UserDashboardPage() {
           <section className="min-w-0 space-y-3">
 
             <div className="medium-home-feedback"><DailyFeedback userId={userId} /></div>
+
+            {!loading && (
+              <section className="usr-card usr-enter rounded-[22px] p-4 sm:p-5" aria-label="Personalized recommendations">
+                <div className="mb-3 flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-sky-600" aria-hidden="true" />
+                  <h2 className="text-base font-black leading-tight text-slate-900">Recommended for you</h2>
+                  <button type="button" onClick={() => void loadPersonalizedRecommendations(true)} disabled={recommendationsLoading} className="ml-auto inline-flex h-8 items-center gap-1 rounded-full px-2 text-[10px] font-bold text-sky-700 hover:bg-sky-50" aria-label="Refresh personalized recommendations">
+                    <RefreshCw className={`h-3.5 w-3.5 ${recommendationsLoading ? 'usr-spin' : ''}`} aria-hidden="true" />Refresh
+                  </button>
+                </div>
+                {recommendationsError ? (
+                  <p role="alert" className="rounded-xl bg-red-50 p-3 text-xs text-red-700">{recommendationsError}</p>
+                ) : recommendationsLoading ? (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Loading recommendations">
+                    {[0, 1, 2, 3].map((item) => <div key={item} className="usr-skeleton h-24 rounded-xl" />)}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {[
+                      { label: 'Stories', items: personalizedRecommendations.stories, type: 'story', href: (item) => `/info/user/blogs/${item.id}` },
+                      { label: 'Places', items: personalizedRecommendations.places, type: 'place', href: (item) => `/info/visitor/tourist-spots/${item.id}` },
+                      { label: 'Events', items: personalizedRecommendations.events, type: 'event', href: (item) => `/info/user/events/${item.id}` },
+                      { label: 'People', items: personalizedRecommendations.people, type: 'person', href: (item) => `/info/user/profile/${item.id}` },
+                    ].map((group) => (
+                      <div key={group.label} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">{group.label}</p>
+                        {group.items.length ? (
+                          <Link href={group.href(group.items[0])} className="mt-2 block">
+                            <span className="line-clamp-2 text-xs font-bold text-slate-800">{group.items[0].title || group.items[0].name || group.items[0].full_name}</span>
+                            <span className="mt-1 block line-clamp-2 text-[10px] text-slate-500">{group.items[0].reason || `${Math.round(group.items[0].recommendationScore || 0)} score`}</span>
+                          </Link>
+                        ) : (
+                          <p className="mt-2 text-[10px] text-slate-400">No suggestions yet</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
             {!loading && (suggestions.suggestedPost || suggestions.suggestedContent.length > 0 || suggestions.suggestedLocations.length > 0) && (
               <section className="medium-home-suggestions usr-card usr-enter rounded-[22px] p-4 sm:p-5 lg:hidden">
