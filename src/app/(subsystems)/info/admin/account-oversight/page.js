@@ -47,6 +47,7 @@ function formatAction(value) {
 }
 
 export default function AccountOversightPage() {
+  const [role, setRole] = useState('')
   const [accounts, setAccounts] = useState([])
   const [stats, setStats] = useState(EMPTY_STATS)
   const [pagination, setPagination] = useState({ page: 1, pageCount: 1, total: 0 })
@@ -90,6 +91,7 @@ export default function AccountOversightPage() {
       })
       const result = await response.json().catch(() => ({}))
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load account oversight data.')
+      setRole(result.role || '')
       setAccounts(Array.isArray(result.accounts) ? result.accounts : [])
       setStats(result.stats || EMPTY_STATS)
       setPagination(result.pagination || { page: 1, pageCount: 1, total: 0 })
@@ -127,6 +129,9 @@ export default function AccountOversightPage() {
   }, [])
 
   const continueStatusChange = (account, targetStatus) => {
+    if (role === 'moderator' && !['suspended', 'banned'].includes(targetStatus)) {
+      return 'Moderators can only suspend or permanently ban an account.'
+    }
     if (['admin', 'administrator', 'tourism_officer', 'moderator'].includes(String(account.user_type || '').toLowerCase())) {
       return 'Staff account status must be managed through staff administration.'
     }
@@ -210,13 +215,23 @@ export default function AccountOversightPage() {
 
   return (
     <AdminShell
-      roleLabel="Administrator"
-      eyebrow="System Administration"
+      roleLabel={role === 'tourism_officer' ? 'Tourism Officer' : role === 'moderator' ? 'Moderator' : 'Administrator'}
+      eyebrow={role === 'admin' ? 'System Administration' : 'Moderation'}
       title="Account Oversight"
-      description="Review account status, escalated cases, restrictions, and appeal activity."
+      description={role === 'tourism_officer'
+        ? 'View community account status and open suspension cases for Tourism Officer review.'
+        : role === 'moderator'
+          ? 'Review community account status and apply reasoned suspensions or permanent bans.'
+          : 'Review account status, escalated cases, restrictions, and appeal activity.'}
       headerIcon="users"
     >
       <div className="space-y-6">
+        {role === 'tourism_officer' ? (
+          <p className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            Account status is read-only here. Review and decide suspension cases in{' '}
+            <Link href="/info/admin/suspension-cases" className="font-semibold underline">Suspension Cases</Link>.
+          </p>
+        ) : null}
         <AdminStatGrid>
           <AdminStatCard label="Total Active Accounts" value={stats.activeAccounts} icon="users" tone="success" />
           <AdminStatCard label="Pending Reviews" value={stats.pendingReviews} icon="moderation" tone="warning" />
@@ -303,11 +318,18 @@ export default function AccountOversightPage() {
                       <td className="px-3 py-4 font-semibold text-slate-900">{account.full_name || account.username || '—'}</td>
                       <td className="px-3 py-4">{account.email || '—'}</td>
                       <td className="px-3 py-4">
-                        <AccountStatusSelect
-                          key={`${account.id}-${account.status}`}
-                          account={account}
-                          onContinue={continueStatusChange}
-                        />
+                        {role === 'tourism_officer' ? (
+                          <span className="inline-flex rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700">
+                            {ACCOUNT_STATUS_LABELS[account.status] || account.status}
+                          </span>
+                        ) : (
+                          <AccountStatusSelect
+                            key={`${account.id}-${account.status}`}
+                            account={account}
+                            statusOptions={role === 'moderator' ? ['suspended', 'banned'] : ACCOUNT_STATUS_OPTIONS}
+                            onContinue={continueStatusChange}
+                          />
+                        )}
                       </td>
                       <td className="px-3 py-4">{account.violation_count}</td>
                       <td className="px-3 py-4">
@@ -323,7 +345,7 @@ export default function AccountOversightPage() {
                       </td>
                       <td className="px-3 py-4">
                         <div className="flex flex-col items-start gap-2">
-                          {pendingAdminReview ? (
+                          {role === 'admin' && pendingAdminReview ? (
                             <Link
                               href={`/info/admin/suspension-cases?case=${encodeURIComponent(account.latest_investigation_id)}`}
                               className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
@@ -331,20 +353,28 @@ export default function AccountOversightPage() {
                               Review case
                             </Link>
                           ) : null}
-                          {account.status === 'suspended' ? (
+                          {role === 'admin' && account.status === 'suspended' ? (
                             <button type="button" onClick={() => openAction('lift_suspension', account)} className="font-semibold text-sky-700 hover:text-sky-900">
                               Lift suspension
                             </button>
                           ) : null}
-                          {['suspended', 'banned'].includes(account.status) && account.reversible_investigation_id ? (
+                          {role === 'admin' && ['suspended', 'banned'].includes(account.status) && account.reversible_investigation_id ? (
                             <button type="button" onClick={() => openAction('reverse_decision', account)} className="font-semibold text-amber-700 hover:text-amber-900">
                               Reverse decision
                             </button>
                           ) : null}
+                          {role === 'tourism_officer' && account.review_status === 'pending_tourism_officer_review' && account.latest_investigation_id ? (
+                            <Link
+                              href={`/info/admin/suspension-cases?case=${encodeURIComponent(account.latest_investigation_id)}`}
+                              className="font-semibold text-sky-700 underline decoration-sky-300 underline-offset-2 hover:text-sky-900"
+                            >
+                              Review suspension case
+                            </Link>
+                          ) : null}
                           <button type="button" onClick={() => setHistoryAccount(account)} className="font-semibold text-slate-600 hover:text-slate-900">
                             Moderation history
                           </button>
-                          {!pendingAdminReview && account.status !== 'suspended' && !(['banned'].includes(account.status) && account.reversible_investigation_id) ? <span className="text-xs text-slate-400">No action available</span> : null}
+                          {role !== 'tourism_officer' && role !== 'admin' && !pendingAdminReview && account.status !== 'suspended' && !(['banned'].includes(account.status) && account.reversible_investigation_id) ? <span className="text-xs text-slate-400">No action available</span> : null}
                         </div>
                       </td>
                     </tr>

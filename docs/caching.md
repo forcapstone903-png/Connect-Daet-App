@@ -103,7 +103,7 @@ queried from Supabase on each request and are never cached.
 Feature: System Administrator Account Oversight
 Data fetched: Community account status and history, investigation decisions, restrictions, reports, evidence, appeals, and audit details
 Change frequency: Changes whenever an account, appeal, restriction, investigation, or decision is recorded
-Visibility: System Administrators only; case data is returned by server-authorized endpoints
+Visibility: Account status and moderation history are available to active administrators, moderators, and Tourism Officers through server-authorized endpoints; escalated case details remain System Administrator-only
 Freshness: Fetch current database state when opening or refreshing the dashboard or case
 Stale behavior: Do not display stale account or case data; show an explicit error and allow retry
 Missing-cache behavior: Read Supabase; report a clear error if the schema or database is unavailable
@@ -112,7 +112,7 @@ Cache layer: None; responses use private, no-store
 Cache key: None
 TTL: None
 Offline behavior: No offline account-management data or decisions
-Security notes: Service-role reads are behind System Administrator session checks; the decision RPC verifies the active administrator and atomically records status changes and audit history; RLS denies direct status changes and audit-log edits
+Security notes: Service-role reads require an active staff role; Moderator status actions are limited to suspensions and permanent bans, Tourism Officers use the separate suspension-review workflow, and administrator-only decisions remain protected by server and database checks; RLS denies direct status changes and audit-log edits
 Manual clear method: Reload Account Oversight or reopen the case to fetch current server data
 ```
 

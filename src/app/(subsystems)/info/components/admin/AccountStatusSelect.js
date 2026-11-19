@@ -33,12 +33,13 @@ export default function AccountStatusSelect({
   onContinue,
   continueHref,
   continueLabel = 'Manage through Account Oversight',
+  statusOptions = ACCOUNT_STATUS_OPTIONS,
 }) {
   const router = useRouter()
   const currentStatus = account.status || 'active'
   const [selectedStatus, setSelectedStatus] = useState(currentStatus)
   const [message, setMessage] = useState('')
-  const hasUnsupportedCurrentStatus = !ACCOUNT_STATUS_OPTIONS.includes(currentStatus)
+  const hasUnsupportedCurrentStatus = !statusOptions.includes(currentStatus)
 
   const handleStatusChange = (nextStatus) => {
     setMessage('')
@@ -87,7 +88,7 @@ export default function AccountStatusSelect({
               {ACCOUNT_STATUS_LABELS[currentStatus] || currentStatus}
             </option>
           ) : null}
-          {ACCOUNT_STATUS_OPTIONS.map((option) => (
+          {statusOptions.map((option) => (
             <option key={option} value={option}>{ACCOUNT_STATUS_LABELS[option]}</option>
           ))}
         </select>

@@ -64,7 +64,7 @@ approval RPCs remain the administrator decision path.
 Feature: Hybrid blog post moderation queue
 Data fetched: Private post submissions, author moderation history, reports, and saved policy settings
 Change frequency: Changes on each submission, report, or moderation decision
-Visibility: Private; submission visibility follows existing blog RLS and the queue is administrator/moderator-only
+Visibility: Private; submission visibility follows existing blog RLS and the queue is available to active administrators, moderators, and Tourism Officers
 Freshness: Fetch at submission and queue load; no realtime subscription is added
 Stale behavior: Do not use cached risk or status; keep failed checks unpublished
 Missing-cache behavior: No cache; read current records from Supabase
