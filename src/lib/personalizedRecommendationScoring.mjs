@@ -10,7 +10,7 @@ export function normalizedOverlap(left = [], right = []) {
   if (!a.size || !b.size) return 0
   let intersection = 0
   for (const value of a) if (b.has(value)) intersection += 1
-  return clamp100((intersection / new Set([...a, ...b]).size) * 100)
+  return clamp100((intersection / a.size) * 100)
 }
 
 export function haversineDistanceKm(origin, destination) {
@@ -48,17 +48,17 @@ export function normalizePopularity(value, maxValue) {
 }
 
 export function scorePeople({ interests = 0, mutual = 0, activity = 0, popularity = 0 }) {
-  return interests * 0.30 + mutual * 0.25 + activity * 0.25 + popularity * 0.20
+  return interests * 0.55 + mutual * 0.20 + activity * 0.15 + popularity * 0.10
 }
 
-export function scoreStory({ interest = 0, engagement = 0, recency = 0, popularity = 0 }) {
-  return interest * 0.35 + engagement * 0.25 + recency * 0.25 + popularity * 0.15
+export function scoreStory({ interest = 0, engagement = 0, recency = 0, popularity = 0, interaction = 0 }) {
+  return interest * 0.60 + engagement * 0.13 + recency * 0.15 + popularity * 0.05 + interaction * 0.07
 }
 
-export function scorePlace({ interest = 0, distance = 50, rating = 0, popularity = 0 }) {
-  return interest * 0.30 + distance * 0.30 + rating * 0.20 + popularity * 0.20
+export function scorePlace({ interest = 0, distance = 50, rating = 0, popularity = 0, interaction = 0 }) {
+  return interest * 0.55 + distance * 0.15 + rating * 0.12 + popularity * 0.08 + interaction * 0.10
 }
 
 export function scoreEvent({ interest = 0, proximity = 50, upcoming = 0, popularity = 0 }) {
-  return interest * 0.30 + proximity * 0.25 + upcoming * 0.30 + popularity * 0.15
+  return interest * 0.55 + proximity * 0.15 + upcoming * 0.20 + popularity * 0.10
 }

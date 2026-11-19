@@ -85,6 +85,12 @@ function getInterestMatchScore(values, interests) {
   }, 0)
 }
 
+function getInterestRelevanceScore(values, interests) {
+  const normalizedInterests = normalizeUserInterests(interests)
+  if (!normalizedInterests.length) return 0
+  return (getInterestMatchScore(values, normalizedInterests) / normalizedInterests.length) * 100
+}
+
 function getStoryRecommendationCategories(interests) {
   const categories = new Set()
   normalizeUserInterests(interests).forEach((interest) => {
@@ -107,5 +113,6 @@ module.exports = {
   hasValidInterestInput,
   getInterestRecommendationTerms,
   getInterestMatchScore,
+  getInterestRelevanceScore,
   getStoryRecommendationCategories,
 }

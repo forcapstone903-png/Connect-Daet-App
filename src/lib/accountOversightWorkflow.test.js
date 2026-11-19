@@ -143,3 +143,16 @@ test('restricted sign-in and routes deny banned users without reactivating expir
   assert.match(migration, /current_user_account_is_active\(\)/)
   assert.match(migration, /account_status_active_insert/)
 })
+
+test('proxy account-status verification uses one uncached query and fails closed on timeout', () => {
+  const proxy = read('src', 'proxy.js')
+  const statusLookup = proxy.match(/async function getCurrentAccountStatus\(userId\) \{[\s\S]*?\n\}/)?.[0]
+
+  assert.ok(statusLookup)
+  assert.equal((statusLookup.match(/fetch\(/g) || []).length, 1)
+  assert.match(statusLookup, /admin_user_bans!admin_user_bans_user_id_fkey/)
+  assert.match(statusLookup, /admin_user_bans\.lifted_at/)
+  assert.match(statusLookup, /admin_user_bans\.or/)
+  assert.match(statusLookup, /AbortSignal\.timeout\(5000\)/)
+  assert.match(statusLookup, /return null/)
+})

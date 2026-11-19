@@ -245,40 +245,50 @@ async function getCurrentAccountStatus(userId) {
 
   try {
     const accountUrl = new URL('/rest/v1/info_users', supabaseUrl)
-    accountUrl.searchParams.set('select', 'status,deletion_requested_at,account_deactivated_at')
+    accountUrl.searchParams.set(
+      'select',
+      'status,deletion_requested_at,account_deactivated_at,admin_user_bans!admin_user_bans_user_id_fkey(ban_type,expires_at,lifted_at)',
+    )
     accountUrl.searchParams.set('id', `eq.${userId}`)
-    const bansUrl = new URL('/rest/v1/admin_user_bans', supabaseUrl)
-    bansUrl.searchParams.set('select', 'ban_type')
-    bansUrl.searchParams.set('user_id', `eq.${userId}`)
-    bansUrl.searchParams.set('ban_type', 'in.(suspension,permanent)')
-    bansUrl.searchParams.set('lifted_at', 'is.null')
-    bansUrl.searchParams.set('or', `(expires_at.is.null,expires_at.gt.${new Date().toISOString()})`)
+    accountUrl.searchParams.set('admin_user_bans.ban_type', 'in.(suspension,permanent)')
+    accountUrl.searchParams.set('admin_user_bans.lifted_at', 'is.null')
+    accountUrl.searchParams.set(
+      'admin_user_bans.or',
+      `(expires_at.is.null,expires_at.gt.${new Date().toISOString()})`,
+    )
     const headers = {
       apikey: serviceRoleKey,
       Authorization: `Bearer ${serviceRoleKey}`,
     }
-    const [accountResponse, bansResponse] = await Promise.all([
-      fetch(accountUrl, { headers, cache: 'no-store', signal: AbortSignal.timeout(3000) }),
-      fetch(bansUrl, { headers, cache: 'no-store', signal: AbortSignal.timeout(3000) }),
-    ])
-    if (!accountResponse.ok || !bansResponse.ok) {
-      console.error('Account status verification failed with HTTP status:', accountResponse.status, bansResponse.status)
+    const response = await fetch(accountUrl, {
+      headers,
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+    if (!response.ok) {
+      console.error('Account status verification failed with HTTP status:', response.status)
       return null
     }
 
-    const [accounts, restrictions] = await Promise.all([accountResponse.json(), bansResponse.json()])
+    const accounts = await response.json()
     const account = Array.isArray(accounts) ? accounts[0] : null
     if (!account) return null
     if (account.deletion_requested_at || account.account_deactivated_at || account.status === 'pending_deletion') {
       return 'pending_deletion'
     }
 
-    const activeBanTypes = Array.isArray(restrictions) ? restrictions.map((item) => item.ban_type) : []
+    const activeBanTypes = Array.isArray(account.admin_user_bans)
+      ? account.admin_user_bans.map((item) => item.ban_type)
+      : []
     if (account.status === 'banned' || activeBanTypes.includes('permanent')) return 'banned'
     if (account.status === 'suspended' || activeBanTypes.includes('suspension')) return 'suspended'
     return account.status === 'pending' ? 'pending' : 'active'
   } catch (error) {
-    console.error('Account status verification failed:', error)
+    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+      console.warn('Account status verification timed out after 5000ms.')
+    } else {
+      console.error('Account status verification failed:', error)
+    }
     return null
   }
 }
