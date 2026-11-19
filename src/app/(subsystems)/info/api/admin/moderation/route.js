@@ -12,6 +12,7 @@ import {
 import { decodeReviewText } from '@/lib/reviewText'
 import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
 import { notifyAdministrators } from '@/lib/adminNotifications'
+import { getPostImages } from '@/lib/postMedia'
 import {
   sendRestrictionLiftedEmail,
 } from '@/lib/moderatorReviewEmail'
@@ -65,7 +66,7 @@ const REPORTED_CONTENT_TABLES = {
   info_comments: { select: 'id, content, blog_id', label: 'Blog comment' },
   forum_replies: { select: 'id, content, thread_id', label: 'Forum reply' },
   forum_threads: { select: 'id, title, content', label: 'Forum topic' },
-  info_blogs: { select: 'id, title, excerpt, content', label: 'Blog post' },
+  info_blogs: { select: 'id, title, excerpt, content, featured_image, images, category, tags, location, created_at, published_at', label: 'Blog post' },
   info_events: { select: 'id, title, description', label: 'Event' },
   info_user_posts: { select: 'id, title, content', label: 'Community post' },
   info_announcements: { select: 'id, title, content', label: 'Announcement' },
@@ -178,6 +179,12 @@ function mapReportedContent(tableName, item, originalContent = null) {
     label: config.label,
     title,
     excerpt: String(body || '').replace(/\s+/g, ' ').trim().slice(0, 500),
+    summary: tableName === 'info_blogs' ? item.excerpt || '' : '',
+    images: tableName === 'info_blogs' ? getPostImages(item) : [],
+    category: tableName === 'info_blogs' ? item.category || '' : '',
+    tags: tableName === 'info_blogs' && Array.isArray(item.tags) ? item.tags : [],
+    location: tableName === 'info_blogs' ? item.location || '' : '',
+    publishedAt: tableName === 'info_blogs' ? item.published_at || item.created_at || null : null,
     photoUrl: tableName === 'attraction_ratings' ? item.photo_url || null : null,
     href: getContentLink(tableName, item),
     editable,

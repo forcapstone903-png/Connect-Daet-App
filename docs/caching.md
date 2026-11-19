@@ -983,6 +983,31 @@ Security notes: Service-role read stays in server proxy; message is public and R
 Manual clear method: None; there is no cache
 ```
 
+## Dashboard personalized suggestions
+
+The dashboard's People, Stories, Places, and Events suggestions are ranked from
+the current database catalog and the signed-in user's selected interests and
+interactions. The recommendation endpoint does not cache its personalized
+response, so changed interests and a manual refresh take effect on the next
+request.
+
+```text
+Feature: Personalized dashboard recommendations
+Data fetched: Published stories and events, active tourist destinations, active people, selected interests, follows, blocks, reactions, favorites, views, dismissals, and destination ratings
+Change frequency: Catalog, profile interests, social relationships, and user interactions
+Visibility: User-specific recommendations; underlying content remains subject to publication and account-status filters
+Freshness: Fetch current database records on dashboard load and manual refresh
+Stale behavior: Do not return stale recommendations; show the current request error
+Missing-cache behavior: Read from Supabase; surface failures rather than inventing recommendation data
+Invalidation trigger: None; no cache is populated, so interest changes, interactions, and refreshes read current data
+Cache layer: None; response uses private, no-store
+Cache key: None
+TTL: None
+Offline behavior: No stale recommendation snapshot; retain the current screen and provide refresh
+Security notes: The endpoint requires the signed-in user and scopes interaction signals to that user; only active, published, approved records are considered
+Manual clear method: None; refresh performs a fresh database read
+```
+
 ### Stale-while-revalidate
 
 For read-heavy data:

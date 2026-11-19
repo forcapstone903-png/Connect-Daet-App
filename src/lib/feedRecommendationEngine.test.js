@@ -35,60 +35,91 @@ test('canonical interest selections boost matching stories, events, and places',
     now: Date.now(),
   })
 
-  test('selected interests match post text and tags even without a category label', () => {
-    const scored = rankFeedItems({
-      items: [
-        { id: 'unrelated', type: 'post', title: 'A day in town', content: 'Visiting the market' },
-        { id: 'matching', type: 'post', title: 'Sunset at Bagasbas Beach!', tags: ['travel'] },
-      ],
-      preferredCategories: ['Beaches and Coastal Destinations'],
-      profile: { contentTypes: {}, categories: {}, authors: {}, destinations: {} },
-    })
-
-    assert.equal(scored[0].id, 'matching')
-  })
-
-  test('interest ranking keeps nonmatching fallback content in the feed', () => {
-    const scored = rankFeedItems({
-      items: [{ id: 'fallback', type: 'blog', title: 'A community update' }],
-      preferredCategories: ['Nature and Adventure'],
-      profile: { contentTypes: {}, categories: {}, authors: {}, destinations: {} },
-    })
-
-    test('engagement with user posts boosts compatible post content', () => {
-      const profile = buildRecommendationProfile({
-        reactions: [{ content_type: 'user_post', content_id: 'post-1' }],
-      })
-      const publishedAt = '2026-02-20T05:00:00.000Z'
-      const ranked = rankFeedItems({
-        items: [
-          { id: 'blog-1', type: 'blog', title: 'Town update', published_at: publishedAt },
-          { id: 'post-1', type: 'post', title: 'Community update', published_at: publishedAt },
-        ],
-        profile,
-        now: Date.parse(publishedAt),
-      })
-
-      assert.equal(ranked[0].id, 'post-1')
-    })
-
-    assert.deepEqual(scored.map((item) => item.id), ['fallback'])
-  })
-
-  test('only current or future published events qualify for upcoming recommendations', () => {
-    const now = Date.parse('2026-02-20T05:00:00.000Z')
-
-    assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-20', end_date: '2026-02-21' }, now), true)
-    assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-20', end_date: '2026-02-20', end_time: '15:00:00' }, now), true)
-    assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-20', end_date: '2026-02-20', end_time: '12:00:00' }, now), false)
-    assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-18', end_date: '2026-02-19' }, now), false)
-    assert.equal(isUpcomingEvent({ status: 'cancelled', start_date: '2026-02-21' }, now), false)
-    assert.equal(isUpcomingEvent({ status: 'completed', start_date: '2026-02-21' }, now), false)
-    assert.equal(isUpcomingEvent({ status: 'draft', start_date: '2026-02-21' }, now), false)
-    assert.equal(isUpcomingEvent({ status: 'published', start_date: null }, now), false)
-  })
-
   assert.deepEqual(scored.slice(0, 2).map((item) => item.id).sort(), ['beach', 'festival'])
+})
+
+test('selected beach interest outranks newer, popular nonmatching feed items', () => {
+  const scored = rankFeedItems({
+    items: [
+      {
+        id: 'market',
+        type: 'blog',
+        category: 'Food',
+        title: 'Popular local market',
+        created_by: 'followed-user',
+        published_at: '2026-11-19T06:00:00.000Z',
+        likes: 500,
+        comments_count: 300,
+        views: 10000,
+      },
+      {
+        id: 'beach',
+        type: 'post',
+        category: 'Community',
+        title: 'Sunset at Bagasbas Beach',
+        published_at: '2026-11-18T06:00:00.000Z',
+      },
+    ],
+    preferredCategories: ['Beaches and Coastal Destinations'],
+    profile: { contentTypes: {}, categories: {}, authors: {}, destinations: {} },
+    userFollows: new Set(['followed-user']),
+    now: Date.parse('2026-11-19T06:30:00.000Z'),
+  })
+
+  assert.equal(scored[0].id, 'beach')
+})
+
+test('selected interests match post text and tags even without a category label', () => {
+  const scored = rankFeedItems({
+    items: [
+      { id: 'unrelated', type: 'post', title: 'A day in town', content: 'Visiting the market' },
+      { id: 'matching', type: 'post', title: 'Weekend photos', tags: ['travel', 'Bagasbas beach'] },
+    ],
+    preferredCategories: ['Beaches and Coastal Destinations'],
+    profile: { contentTypes: {}, categories: {}, authors: {}, destinations: {} },
+  })
+
+  assert.equal(scored[0].id, 'matching')
+})
+
+test('interest ranking keeps nonmatching fallback content in the feed', () => {
+  const scored = rankFeedItems({
+    items: [{ id: 'fallback', type: 'blog', title: 'A community update' }],
+    preferredCategories: ['Nature and Adventure'],
+    profile: { contentTypes: {}, categories: {}, authors: {}, destinations: {} },
+  })
+
+  assert.deepEqual(scored.map((item) => item.id), ['fallback'])
+})
+
+test('engagement with user posts boosts compatible post content', () => {
+  const profile = buildRecommendationProfile({
+    reactions: [{ content_type: 'user_post', content_id: 'post-1' }],
+  })
+  const publishedAt = '2026-02-20T05:00:00.000Z'
+  const ranked = rankFeedItems({
+    items: [
+      { id: 'blog-1', type: 'blog', title: 'Town update', published_at: publishedAt },
+      { id: 'post-1', type: 'post', title: 'Community update', published_at: publishedAt },
+    ],
+    profile,
+    now: Date.parse(publishedAt),
+  })
+
+  assert.equal(ranked[0].id, 'post-1')
+})
+
+test('only current or future published events qualify for upcoming recommendations', () => {
+  const now = Date.parse('2026-02-20T05:00:00.000Z')
+
+  assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-20', end_date: '2026-02-21' }, now), true)
+  assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-20', end_date: '2026-02-20', end_time: '15:00:00' }, now), true)
+  assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-20', end_date: '2026-02-20', end_time: '12:00:00' }, now), false)
+  assert.equal(isUpcomingEvent({ status: 'published', start_date: '2026-02-18', end_date: '2026-02-19' }, now), false)
+  assert.equal(isUpcomingEvent({ status: 'cancelled', start_date: '2026-02-21' }, now), false)
+  assert.equal(isUpcomingEvent({ status: 'completed', start_date: '2026-02-21' }, now), false)
+  assert.equal(isUpcomingEvent({ status: 'draft', start_date: '2026-02-21' }, now), false)
+  assert.equal(isUpcomingEvent({ status: 'published', start_date: null }, now), false)
 })
 
 test('reposts keep independent feed item identity and are not merged together', () => {

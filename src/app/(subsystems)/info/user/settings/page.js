@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { Bell, Check, ChevronDown, ChevronLeft, CircleHelp, Eye, Languages, LockKeyhole, ShieldCheck, Sun, UserRound, UserRoundCog } from 'lucide-react'
+import { Bell, Check, ChevronDown, ChevronLeft, CircleHelp, Eye, Languages, LockKeyhole, ShieldCheck, Sun, UserRound, UserRoundCog, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -51,9 +51,11 @@ import ProfileInformationSection from './_components/ProfileInformationSection'
 import SecuritySection from './_components/SecuritySection'
 import DataStorageSection from './_components/DataStorageSection'
 import LegalSection from './_components/LegalSection'
+import InterestsSection from './_components/InterestsSection'
 
 const TABS = [
   { id: 'profile', label: 'Profile Information', description: 'Personal details and public profile', icon: UserRound },
+  { id: 'interests', label: 'Interests', description: 'Personalized content recommendations', icon: Sparkles },
   { id: 'security', label: 'Security & Authentication', description: 'Password, sign-ins, and sessions', icon: ShieldCheck },
   { id: 'notifications', label: 'Notifications', description: 'In-app and device notification preferences', icon: Bell },
   { id: 'privacy-data', label: 'Privacy & Data', description: 'Profile visibility, data export, and storage', icon: Eye },
@@ -527,6 +529,7 @@ export default function UserSettingsPage() {
               {activeTab === 'profile' ? (
                 <ProfileInformationSection profile={profileIdentity} email={email} />
               ) : null}
+              {activeTab === 'interests' ? <InterestsSection userId={userId} /> : null}
               {activeTab === 'security' ? (
                 <SecuritySection
                   t={t}

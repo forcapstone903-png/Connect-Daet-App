@@ -9,6 +9,7 @@ const {
   hasValidInterestInput,
   getInterestRecommendationTerms,
   getInterestMatchScore,
+  getInterestRelevanceScore,
   getStoryRecommendationCategories,
 } = require('./userInterests.js')
 
@@ -31,6 +32,9 @@ test('interest normalization keeps canonical values, maps legacy values, and rem
   assert.equal(hasValidInterestInput(['Food and Local Cuisine']), true)
   assert.equal(hasValidInterestInput(['Food']), false)
   assert.equal(getInterestMatchScore(['Seafood Grill'], ['Food and Local Cuisine']), 1)
+  assert.equal(getInterestRelevanceScore(['food', 'seafood'], ['Food and Local Cuisine']), 100)
+  assert.equal(getInterestRelevanceScore(['beach'], ['Food and Local Cuisine']), 0)
+  assert.equal(getInterestRelevanceScore(['food'], []), 0)
 })
 
 test('interest categories map to recommendation terms for the existing content categories', () => {

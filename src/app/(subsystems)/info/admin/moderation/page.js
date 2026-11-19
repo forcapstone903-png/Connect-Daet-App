@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import sanitizeHtml from 'sanitize-html'
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
 import { AdminBadge, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
@@ -12,6 +13,16 @@ import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { notifyToast } from '@/lib/toast.mjs';
 import { getTotalSuspensionDays } from '@/lib/suspensionDuration.mjs'
+import { sanitizeRichText } from '@/lib/sanitizeRichText'
+
+function sanitizeReportedContentPreview(value) {
+  return sanitizeHtml(sanitizeRichText(value), {
+    allowedTags: ['p', 'h1', 'h2', 'blockquote', 'ul', 'ol', 'li', 'strong', 'em', 'u', 'br', 'figure', 'figcaption', 'img', 'hr'],
+    allowedAttributes: { img: ['src', 'alt'] },
+    allowedSchemes: ['http', 'https'],
+    allowedSchemesByTag: { img: ['http', 'https'] },
+  })
+}
 
 const isUrgentInquiry = (inquiry) => {
   if (!inquiry?.created_at) return false;
@@ -62,6 +73,7 @@ export default function AdminModerationPage() {
   const [blockedUsers, setBlockedUsers] = useState([]);
   const [moderationLog, setModerationLog] = useState([]);
   const [reportQueue, setReportQueue] = useState([]);
+  const [previewedReport, setPreviewedReport] = useState(null);
   const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [editingReport, setEditingReport] = useState(null);
   const [reportEditValues, setReportEditValues] = useState({});
@@ -1524,9 +1536,13 @@ export default function AdminModerationPage() {
                                 <img src={report.reportedContent.photoUrl} alt="Reported review photo" loading="lazy" className="mt-2 max-h-48 w-full rounded-lg object-cover sm:max-w-sm" />
                               )}
                               {report.reportedContent.href && (
-                                <Link href={report.reportedContent.href} target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:underline">
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewedReport(report)}
+                                  className="mt-2 inline-flex text-xs font-semibold text-blue-700 hover:underline"
+                                >
                                   Open reported content
-                                </Link>
+                                </button>
                               )}
                             </div>
                           )}
@@ -2593,6 +2609,103 @@ export default function AdminModerationPage() {
                 {savingReportEdit ? 'Saving...' : 'Save edit and resolve'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {previewedReport && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reported-content-preview-title"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setPreviewedReport(null);
+          }}
+        >
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Read-only {previewedReport.reportedContent.label}
+                </p>
+                <h2 id="reported-content-preview-title" className="mt-1 text-lg font-bold text-slate-900">
+                  {previewedReport.reportedContent.title}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewedReport(null)}
+                className="rounded-full border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+            {previewedReport.reported_item_table === 'info_blogs' && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                {previewedReport.reportedUser?.full_name && <span>{previewedReport.reportedUser.full_name}</span>}
+                {previewedReport.reportedContent.category && <span>· {previewedReport.reportedContent.category}</span>}
+                {previewedReport.reportedContent.location && <span>· {previewedReport.reportedContent.location}</span>}
+                {previewedReport.reportedContent.publishedAt && (
+                  <time dateTime={previewedReport.reportedContent.publishedAt}>
+                    · {new Date(previewedReport.reportedContent.publishedAt).toLocaleDateString()}
+                  </time>
+                )}
+              </div>
+            )}
+            {previewedReport.reason && (
+              <p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+                <span className="font-semibold">Report reason:</span> {previewedReport.reason}
+              </p>
+            )}
+            {previewedReport.reportedContent.summary && (
+              <p className="mt-4 text-sm italic text-slate-600">{previewedReport.reportedContent.summary}</p>
+            )}
+            {previewedReport.reportedContent.tags?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {previewedReport.reportedContent.tags.map((tag, index) => (
+                  <span key={`${tag}-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            {previewedReport.reportedContent.images?.map((image) => (
+              <img
+                key={image.url}
+                src={image.url}
+                alt={image.alt || previewedReport.reportedContent.title}
+                className="mt-4 max-h-96 w-full rounded-xl object-contain"
+              />
+            ))}
+            {previewedReport.reportedContent.photoUrl && (
+              <img
+                src={previewedReport.reportedContent.photoUrl}
+                alt="Reported content"
+                className="mt-4 max-h-96 w-full rounded-xl object-contain"
+              />
+            )}
+            {previewedReport.reportedContent.editable?.content
+              || previewedReport.reportedContent.editable?.body
+              || previewedReport.reportedContent.excerpt ? (
+              <div
+                className="prose prose-slate mt-4 max-w-none break-words"
+                dangerouslySetInnerHTML={{
+                  __html: sanitizeReportedContentPreview(
+                    previewedReport.reportedContent.editable?.content
+                      || previewedReport.reportedContent.editable?.body
+                      || previewedReport.reportedContent.excerpt,
+                  ).replace(/\n/g, '<br />'),
+                }}
+              />
+            ) : (
+              <p className="mt-4 text-sm text-slate-700">No additional content is available.</p>
+            )}
+            {previewedReport.description && (
+              <p className="mt-4 border-t border-slate-200 pt-4 text-sm text-slate-600">
+                <span className="font-semibold">Report details:</span> {previewedReport.description}
+              </p>
+            )}
           </div>
         </div>
       )}

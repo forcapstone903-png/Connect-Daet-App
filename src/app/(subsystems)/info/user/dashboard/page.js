@@ -838,15 +838,17 @@ export default function UserDashboardPage() {
 
   useEffect(() => {
     const handleInterestsUpdated = (event) => {
+      const interests = normalizeUserInterests(event.detail?.interests)
       setUserSignals((current) => ({
         ...current,
-        preferredCategories: normalizeUserInterests(event.detail?.interests),
+        preferredCategories: interests,
       }))
+      void loadPersonalizedRecommendations(true)
     }
 
     window.addEventListener('daet-user-interests-updated', handleInterestsUpdated)
     return () => window.removeEventListener('daet-user-interests-updated', handleInterestsUpdated)
-  }, [])
+  }, [loadPersonalizedRecommendations])
 
   const followSuggestedPerson = async (personId) => {
     if (!userId) return
@@ -1801,6 +1803,12 @@ export default function UserDashboardPage() {
     const pinnedAnnouncement = feedScope === 'for-you' && feedCategory === 'all'
       ? getPinnedAnnouncement(rankedResult, feedNow)
       : null
+    const hasSavedInterests = recommendationProfile.preferredCategories.length > 0
+    if (feedScope === 'for-you' && hasSavedInterests) {
+      return pinnedAnnouncement
+        ? [pinnedAnnouncement, ...rankedResult.filter((item) => item.id !== pinnedAnnouncement.id)]
+        : rankedResult
+    }
     return prioritizeNewestCommunityPost(prioritizeOwnerFeedItems(rankedResult, userId, pinnedAnnouncement?.id))
   }, [feed, feedScope, feedCategory, userSignals, hiddenPosts, notInterestedTopics, feedNow, newRepostIds, savedItems, followingUserIds, userId])
 

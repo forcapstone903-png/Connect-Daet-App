@@ -2,7 +2,7 @@ const { getInterestMatchScore, getInterestRecommendationTerms, normalizeUserInte
 
 const FEED_RECOMMENDATION_DEFAULTS = {
   weights: {
-    interest: 1.5,
+    interest: 2,
     interaction: 1.05,
     authorAffinity: 0.8,
     contentTypeAffinity: 0.65,
@@ -211,7 +211,7 @@ function scoreItem(item, profile, context = {}) {
     item?.best_time_to_visit,
     ...(Array.isArray(item?.tags) ? item.tags : []),
   ], profile.preferredCategories)
-  const explicitInterestBoost = Math.min(interestMatchCount * 0.85, 1.7)
+  const explicitInterestBoost = Math.min(interestMatchCount * 2.5, 7.5)
   const interestBoost = Math.max(categoryBoost, explicitInterestBoost)
   const authorBoost = getAuthorBoost(item?.created_by || item?.author?.id, profile)
   const destinationBoost = getDestinationBoost(item?.location || item?.destination, profile)

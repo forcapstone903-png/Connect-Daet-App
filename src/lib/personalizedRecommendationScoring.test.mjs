@@ -26,7 +26,15 @@ test('distance is null when coordinates are missing', () => {
 
 test('hybrid weighted scores use the required weights', () => {
   assert.equal(scorePeople({ interests: 100, mutual: 100, activity: 100, popularity: 100 }), 100)
-  assert.equal(scoreStory({ interest: 100, engagement: 100, recency: 100, popularity: 100 }), 100)
-  assert.equal(scorePlace({ interest: 100, distance: 100, rating: 100, popularity: 100 }), 100)
+  assert.equal(scoreStory({ interest: 100, engagement: 100, recency: 100, popularity: 100, interaction: 100 }), 100)
+  assert.equal(scorePlace({ interest: 100, distance: 100, rating: 100, popularity: 100, interaction: 100 }), 100)
   assert.equal(scoreEvent({ interest: 100, proximity: 100, upcoming: 100, popularity: 100 }), 100)
+})
+
+test('selected interests outweigh all other individual recommendation factors', () => {
+  assert.ok(scorePeople({ interests: 100 }) > scorePeople({ mutual: 100 }))
+  assert.ok(scoreStory({ interest: 100 }) > scoreStory({ engagement: 100, recency: 100, popularity: 100, interaction: 100 }))
+  assert.ok(scorePlace({ interest: 100 }) > scorePlace({ distance: 100, rating: 100, popularity: 100, interaction: 100 }))
+  assert.ok(scoreEvent({ interest: 100 }) > scoreEvent({ proximity: 100, upcoming: 100, popularity: 100 }))
+  assert.equal(normalizedOverlap(['beach'], ['beach', 'food']), 100)
 })
