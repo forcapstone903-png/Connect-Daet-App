@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { loginUrlFor } from '@/lib/loginPrompt'
@@ -170,18 +170,8 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
-  const [commentsSheetVisible, setCommentsSheetVisible] = useState(false)
-  const [commentsSheetHeight, setCommentsSheetHeight] = useState(75)
-  const [commentsSheetDragging, setCommentsSheetDragging] = useState(false)
   const menuRef = useRef(null)
-  const commentsDialogRef = useRef(null)
-  const commentsCloseButtonRef = useRef(null)
-  const commentsTriggerRef = useRef(null)
-  const commentsHistoryRef = useRef(false)
-  const commentsCloseTimerRef = useRef(null)
-  const commentsDragRef = useRef(null)
-  const closeCommentsSheetRef = useRef(null)
+  const commentsSectionRef = useRef(null)
   const refreshEventRef = useRef(null)
   const realtime = useRealtimeRefresh({
     channelName: `event-detail-${eventId || 'unknown'}`,
@@ -190,151 +180,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   })
   const { setRefreshCallback } = realtime
 
-  const openCommentsSheet = () => {
-    if (commentsCloseTimerRef.current) window.clearTimeout(commentsCloseTimerRef.current)
-    setCommentsSheetHeight(75)
-    setCommentsSheetOpen(true)
-    window.requestAnimationFrame(() => setCommentsSheetVisible(true))
-  }
-
-  const closeCommentsSheet = useCallback(() => {
-    if (!commentsSheetOpen || commentsCloseTimerRef.current) return
-    setCommentsSheetVisible(false)
-    if (commentsHistoryRef.current) {
-      commentsHistoryRef.current = false
-      window.history.back()
-    }
-    commentsCloseTimerRef.current = window.setTimeout(() => {
-      commentsCloseTimerRef.current = null
-      setCommentsSheetOpen(false)
-      setCommentsSheetHeight(75)
-      commentsTriggerRef.current?.focus()
-    }, 300)
-  }, [commentsSheetOpen])
-
-  useEffect(() => {
-    closeCommentsSheetRef.current = closeCommentsSheet
-  }, [closeCommentsSheet])
-
-  const handleCommentsHeaderPointerDown = (event) => {
-    if (event.target.closest('button, select')) return
-    commentsDragRef.current = {
-      pointerId: event.pointerId,
-      startY: event.clientY,
-      startHeight: commentsSheetHeight,
-      deltaY: 0,
-    }
-    setCommentsSheetDragging(true)
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const handleCommentsHeaderPointerMove = (event) => {
-    const drag = commentsDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    const deltaY = event.clientY - drag.startY
-    drag.deltaY = deltaY
-    setCommentsSheetHeight(Math.max(35, Math.min(92, drag.startHeight - (deltaY / window.innerHeight) * 100)))
-  }
-
-  const handleCommentsHeaderPointerUp = (event) => {
-    const drag = commentsDragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
-    commentsDragRef.current = null
-    setCommentsSheetDragging(false)
-    if (drag.deltaY > 100) closeCommentsSheet()
-    else setCommentsSheetHeight(drag.deltaY < -20 ? 92 : 75)
-  }
-
-  useEffect(() => {
-    if (!commentsSheetOpen) return undefined
-
-    const previousOverflow = document.body.style.overflow
-    const previousPaddingRight = document.body.style.paddingRight
-    document.body.style.overflow = 'hidden'
-    document.body.style.paddingRight = `${Math.max(0, window.innerWidth - document.documentElement.clientWidth)}px`
-    document.body.classList.add('event-comments-sheet-open')
-
-    const sheet = commentsDialogRef.current
-    const visualViewport = window.visualViewport
-    const updateViewport = () => {
-      if (!sheet || !visualViewport) return
-      const visibleBottom = visualViewport.height + visualViewport.offsetTop
-      sheet.style.setProperty('--event-comments-viewport-height', `${visualViewport.height}px`)
-      sheet.style.setProperty('--event-comments-bottom-gap', `${Math.max(0, window.innerHeight - visibleBottom)}px`)
-    }
-    updateViewport()
-    visualViewport?.addEventListener('resize', updateViewport)
-    visualViewport?.addEventListener('scroll', updateViewport)
-
-    const handlePopState = () => {
-      if (!commentsHistoryRef.current) return
-      commentsHistoryRef.current = false
-      setCommentsSheetVisible(false)
-      if (commentsCloseTimerRef.current) window.clearTimeout(commentsCloseTimerRef.current)
-      commentsCloseTimerRef.current = window.setTimeout(() => {
-        commentsCloseTimerRef.current = null
-        setCommentsSheetOpen(false)
-        setCommentsSheetHeight(75)
-        commentsTriggerRef.current?.focus()
-      }, 300)
-    }
-
-    if (!commentsHistoryRef.current) {
-      window.history.pushState({ ...(window.history.state || {}), eventCommentsSheet: true }, '')
-      commentsHistoryRef.current = true
-    }
-    window.addEventListener('popstate', handlePopState)
-    const focusFrame = window.requestAnimationFrame(() => commentsCloseButtonRef.current?.focus())
-
-    return () => {
-      window.cancelAnimationFrame(focusFrame)
-      visualViewport?.removeEventListener('resize', updateViewport)
-      visualViewport?.removeEventListener('scroll', updateViewport)
-      window.removeEventListener('popstate', handlePopState)
-      document.body.style.overflow = previousOverflow
-      document.body.style.paddingRight = previousPaddingRight
-      document.body.classList.remove('event-comments-sheet-open')
-      if (commentsCloseTimerRef.current) {
-        window.clearTimeout(commentsCloseTimerRef.current)
-        commentsCloseTimerRef.current = null
-      }
-    }
-  }, [commentsSheetOpen])
-
-  useEffect(() => {
-    const dialog = commentsDialogRef.current
-    if (!commentsSheetOpen || !dialog) return undefined
-
-    const handleDialogKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        closeCommentsSheetRef.current?.()
-        return
-      }
-      if (event.key !== 'Tab') return
-
-      const focusable = [...dialog.querySelectorAll(
-        'button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [href], [tabindex]:not([tabindex="-1"])',
-      )].filter((element) => element.offsetParent !== null)
-      if (!focusable.length) {
-        event.preventDefault()
-        dialog.focus()
-        return
-      }
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
-    }
-
-    dialog.addEventListener('keydown', handleDialogKeyDown)
-    return () => dialog.removeEventListener('keydown', handleDialogKeyDown)
-  }, [commentsSheetOpen])
+  const scrollToComments = () => commentsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
   useEffect(() => {
     if (initialUserId) return undefined
@@ -816,14 +662,17 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
     }
   }
 
-  const renderEventEngagementActions = (optionsMenuRef, compact = false) => (
+  const renderEventEngagementActions = (optionsMenuRef) => (
     <>
       <div className="event-detail-engagement-group">
         <button type="button" onClick={() => void toggleEventReaction('love')} disabled={reactionLoading} aria-label={`${reaction === 'love' ? 'Unlike' : 'Like'} event, ${likeCount} likes`} aria-pressed={reaction === 'love'} title="Like event">
           <Heart className={reaction === 'love' ? 'fill-current text-rose-400' : ''} aria-hidden="true" /><span>{likeCount}</span>
         </button>
-        <button type="button" onClick={openCommentsSheet} aria-label={`View ${commentCount} comments`} title="Comments">
+        <button type="button" onClick={scrollToComments} aria-label={`View ${commentCount} comments`} title="Comments">
           <MessageCircle aria-hidden="true" /><span>{commentCount}</span>
+        </button>
+        <button type="button" onClick={() => void shareEvent()} aria-label="Share event" title="Share event">
+          <Share2 aria-hidden="true" /><span>Share</span>
         </button>
         <ShareRepost
           contentType="event"
@@ -840,16 +689,16 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
           aria-pressed={isSaved}
           title={isSaved ? 'Remove from saved items' : 'Save event'}
         >
-          <Bookmark className={isSaved ? 'fill-current text-blue-600' : ''} aria-hidden="true" />
+          <Bookmark className={isSaved ? 'fill-current text-blue-600' : ''} aria-hidden="true" /><span>{isSaved ? 'Saved' : 'Save'}</span>
         </button>
       </div>
-      {!compact && <div className="event-detail-engagement-group event-detail-engagement-end">
+      <div className="event-detail-engagement-group event-detail-engagement-end">
         <button type="button" onClick={() => void toggleEventReaction('dislike')} disabled={reactionLoading} aria-label={reaction === 'dislike' ? 'Remove dislike' : 'Dislike event'} aria-pressed={reaction === 'dislike'} title="Dislike event">
           <ThumbsDown className={reaction === 'dislike' ? 'fill-current text-sky-300' : ''} aria-hidden="true" />
         </button>
         <div className="relative" ref={optionsMenuRef}>
           <button type="button" onClick={() => setMenuOpen((open) => !open)} aria-label="More event options" aria-expanded={menuOpen} title="More options">
-            <MoreHorizontal aria-hidden="true" />
+            <MoreHorizontal aria-hidden="true" /><span>More</span>
           </button>
           {menuOpen && (
             <div className="event-detail-menu" role="menu">
@@ -867,13 +716,13 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
             </div>
           )}
         </div>
-      </div>}
+      </div>
     </>
   )
 
   if (loading) {
     return (
-      <main className="event-detail-page min-h-screen">
+      <main className="event-detail-page event-details-light-page min-h-screen">
         <div className="event-detail-loading" role="status" aria-live="polite">
           <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
           <span>Loading event details…</span>
@@ -884,7 +733,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
 
   if (error || !event) {
     return (
-      <main className="event-detail-page min-h-screen">
+      <main className="event-detail-page event-details-light-page min-h-screen">
         <div className="event-detail-error">
           <p role="alert">{error || 'This event is unavailable.'}</p>
           <button type="button" onClick={goBack} className="event-detail-back">
@@ -896,8 +745,22 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   }
 
   return (
-    <main className="event-detail-page min-h-screen">
-      <UserTopHeader detailMode spacer homeHref={backHref} />
+    <main className="event-detail-page event-details-light-page min-h-screen">
+      <UserTopHeader
+        detailMode
+        spacer
+        homeHref={backHref}
+        mobileHeaderAction={(
+          <Link
+            href="/info/user/messaging"
+            className="usr-mobile-search-trigger"
+            aria-label="Messages"
+            title="Messages"
+          >
+            <MessageCircle className="h-5 w-5" aria-hidden="true" />
+          </Link>
+        )}
+      />
       <div className="mx-auto max-w-[1080px] px-4 pt-2">
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
       </div>
@@ -994,7 +857,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
                   type="button"
                   onClick={() => void toggleEventRegistration()}
                   disabled={registrationLoading}
-                  className="mt-4 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                  className="event-detail-register-button"
                 >
                   {registrationLoading
                     ? 'Please wait…'
@@ -1004,24 +867,17 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
                 </button>
               )}
 
-              {!commentsSheetOpen && (
-                <section className="event-detail-engagement event-detail-engagement-secondary" aria-label="Event interactions">
-                  {renderEventEngagementActions(menuRef, true)}
-                </section>
-              )}
             </header>
           </div>
 
-          {!commentsSheetOpen && (
-            <section className="event-detail-engagement" aria-label="Event interactions">
-              {renderEventEngagementActions(menuRef)}
-            </section>
-          )}
+          <section className="event-detail-engagement" aria-label="Event interactions">
+            {renderEventEngagementActions(menuRef)}
+          </section>
 
           <div className="event-detail-sections">
             {event.description && (
               <section className="event-detail-section">
-                <h2>About this event</h2>
+                <h2>About This Event</h2>
                 <p>{event.description}</p>
               </section>
             )}
@@ -1042,52 +898,6 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
           </div>
         </div>
       </article>
-
-      <section className="event-detail-comments-entry" aria-label="Event comments">
-        <button
-          ref={commentsTriggerRef}
-          type="button"
-          className="event-detail-comments-link"
-          onClick={openCommentsSheet}
-        >
-          View all {commentCount} {commentCount === 1 ? 'comment' : 'comments'}
-        </button>
-      </section>
-
-      {commentsSheetOpen && (
-        <div
-          className={`event-comments-backdrop${commentsSheetVisible ? ' is-visible' : ''}`}
-          onClick={(clickEvent) => {
-            if (clickEvent.target === clickEvent.currentTarget) closeCommentsSheet()
-          }}
-        >
-          <div
-            ref={commentsDialogRef}
-            className={`event-comments-sheet${commentsSheetVisible ? ' is-visible' : ''}${commentsSheetDragging ? ' is-dragging' : ''}`}
-            style={{ '--event-comments-sheet-height': `${commentsSheetHeight}dvh` }}
-            role="dialog"
-            aria-modal="true"
-            aria-label="Event comments"
-            tabIndex={-1}
-          >
-            <Comments
-              contentType="event"
-              contentId={event.id}
-              userId={userId}
-              contentOwnerId={event.created_by}
-              contentTitle={event.title}
-              sheetMode
-              eventStyle
-              onClose={closeCommentsSheet}
-              onCommentCountChange={setCommentCount}
-              onHeaderPointerDown={handleCommentsHeaderPointerDown}
-              onHeaderPointerMove={handleCommentsHeaderPointerMove}
-              onHeaderPointerUp={handleCommentsHeaderPointerUp}
-              closeButtonRef={commentsCloseButtonRef}
-            />
-          </div>
-        </div>
-      )}
 
       {(relatedEvents.length > 0 || relatedError) && (
         <section className="event-detail-related" aria-labelledby="related-events-title">
@@ -1110,6 +920,18 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
           </div>
         </section>
       )}
+
+      <section ref={commentsSectionRef} className="event-detail-comments" aria-label="Event comments">
+        <Comments
+          contentType="event"
+          contentId={event.id}
+          userId={userId}
+          contentOwnerId={event.created_by}
+          contentTitle={event.title}
+          eventStyle
+          onCommentCountChange={setCommentCount}
+        />
+      </section>
 
     </main>
   )

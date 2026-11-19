@@ -45,6 +45,7 @@ export function createSecureSessionCookie(user, ttlSeconds = SESSION_TTL_SECONDS
     expires_at: issuedAt + ttlSeconds,
     session_version: Number.isSafeInteger(Number(sessionVersion)) ? Number(sessionVersion) : 0,
     ...(cleanPerms(options.perms) ? { perms: cleanPerms(options.perms) } : {}),
+    ...(options.suspendedLimitedAccess === true ? { suspended_limited_access: true } : {}),
     ...(idleSeconds ? { idle: idleSeconds, last_active: issuedAt } : {}),
   })
 }

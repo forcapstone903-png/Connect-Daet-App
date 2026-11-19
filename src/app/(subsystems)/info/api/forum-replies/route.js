@@ -3,9 +3,14 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
 import { isValidUuid } from '@/lib/uuid'
-import { notifyModerators } from '@/lib/adminNotifications'
 import { publicErrorMessage } from '@/lib/publicError'
 import { notifyUserRecipients } from '@/lib/userNotificationDelivery.mjs'
+import {
+  checkCommentRateLimit,
+  hasConfiguredCriticalCommentSafetySignal,
+  MAX_COMMENT_LENGTH,
+  sanitizeCommentContent,
+} from '@/lib/commentSafety.mjs'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,7 +28,6 @@ const OPTIONAL_COLUMNS = ['parent_reply_id', 'image_url', 'video_url', 'gif_url'
 
 const LOCKED_THREAD_STATUSES = new Set(['locked', 'closed', 'archived'])
 const PUBLIC_THREAD_STATUSES = new Set(['active', 'published'])
-const MAX_CONTENT_LENGTH = 5000
 const MAX_MEDIA_URL_LENGTH = 2048
 const MAX_STICKER_LENGTH = 24
 const MAX_MENTIONS = 25
@@ -119,15 +123,16 @@ export async function POST(request) {
   try {
     const body = await request.json().catch(() => ({}))
     const threadId = String(body.threadId || body.thread_id || '').trim()
-    const content = String(body.content || body.body || '').trim()
+    const rawContent = String(body.content || body.body || '').trim()
     const parentReplyId = String(body.parentReplyId || body.parent_reply_id || '').trim()
 
     if (!isValidUuid(threadId)) {
       return NextResponse.json({ success: false, message: 'A valid discussion id is required.' }, { status: 400 })
     }
-    if (content.length > MAX_CONTENT_LENGTH) {
+    if (rawContent.length > MAX_COMMENT_LENGTH) {
       return NextResponse.json({ success: false, message: 'Your reply is too long.' }, { status: 400 })
     }
+    const content = sanitizeCommentContent(rawContent)
 
     const imageUrl = normalizeMediaUrl(body.imageUrl ?? body.image_url)
     const videoUrl = normalizeMediaUrl(body.videoUrl ?? body.video_url)
@@ -141,8 +146,15 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: 'Add a message, photo, video, GIF or sticker before posting.' }, { status: 400 })
     }
 
+    const rateLimit = await checkCommentRateLimit(adminSupabase, request, session.user_id)
+    if (!rateLimit.allowed) {
+      return NextResponse.json({ success: false, message: rateLimit.message }, { status: rateLimit.status })
+    }
     const restrictionResponse = await getRestrictionResponse(adminSupabase, session.user_id)
     if (restrictionResponse) return restrictionResponse
+    if (await hasConfiguredCriticalCommentSafetySignal(adminSupabase, content)) {
+      return NextResponse.json({ success: false, message: 'This reply cannot be published because it violates a critical safety rule.' }, { status: 422 })
+    }
 
     const { data: thread, error: threadError } = await adminSupabase
       .from('forum_threads')
@@ -175,14 +187,11 @@ export async function POST(request) {
       parentReplyUserId = parentReply.user_id
     }
 
-    const isModerator = ['admin', 'administrator', 'moderator'].includes(
-      String(session.role || '').trim().toLowerCase()
-    )
     const payload = {
       thread_id: threadId,
       user_id: session.user_id,
       content,
-      status: isModerator ? 'active' : 'pending',
+      status: 'active',
       parent_reply_id: resolvedParentId,
       image_url: imageUrl,
       video_url: videoUrl,
@@ -211,33 +220,73 @@ export async function POST(request) {
       return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post the reply.') }, { status: 400 })
     }
 
-    if (reply.status === 'pending') {
-      await notifyModerators(adminSupabase, {
-        actorId: session.user_id,
-        title: 'Forum reply awaiting approval',
-        message: 'A new forum reply needs review.',
-        link: '/info/admin/moderation',
-      })
-    } else {
-      const recipients = new Map()
-      if (thread.created_by && thread.created_by !== session.user_id) {
-        recipients.set(thread.created_by, 'Someone replied to your discussion.')
-      }
-      if (parentReplyUserId && parentReplyUserId !== session.user_id) {
-        recipients.set(parentReplyUserId, 'Someone replied to your forum reply.')
+    const mentionIds = [...new Set(payload.mention_data.map((mention) => mention.mentioned_user_id))]
+    const { data: mentionedUsers, error: mentionLookupError } = mentionIds.length
+      ? await adminSupabase.from('info_users').select('id, full_name').in('id', mentionIds)
+      : { data: [], error: null }
+    if (mentionLookupError) throw mentionLookupError
+    const usersById = new Map((mentionedUsers || []).map((user) => [user.id, user]))
+    const verifiedMentionData = payload.mention_data
+      .filter((mention) => mention.mentioned_user_id !== session.user_id && usersById.has(mention.mentioned_user_id))
+      .map((mention) => ({
+        mentioned_user_id: mention.mentioned_user_id,
+        display_name: usersById.get(mention.mentioned_user_id)?.full_name || mention.display_name,
+      }))
+    reply.mention_data = verifiedMentionData
+    if (verifiedMentionData.length) {
+      const { error: mentionUpdateError } = await adminSupabase
+        .from('forum_replies')
+        .update({ mention_data: verifiedMentionData })
+        .eq('id', reply.id)
+      if (mentionUpdateError && !isMissingForumReplyColumnError(mentionUpdateError)) {
+        console.error('Forum reply mention update failed:', mentionUpdateError)
       }
 
-      await notifyUserRecipients(adminSupabase, [...recipients.entries()].map(([userId, message]) => ({
-        user_id: userId,
-        title: 'New forum reply',
-        message,
-        type: 'forum_reply',
-        link: `/info/user/forums/${threadId}?reply=${reply.id}`,
-        actor_id: session.user_id,
-      })), 'Forum reply')
+      const verifiedMentionRows = verifiedMentionData.map((mention) => ({
+        mentioned_user_id: mention.mentioned_user_id,
+        mentioned_by_user_id: session.user_id,
+        content_type: 'comment',
+        content_id: reply.id,
+        mention_text: mention.display_name,
+      }))
+      const { error: mentionsError } = await adminSupabase.from('mentions').upsert(verifiedMentionRows, {
+        onConflict: 'mentioned_user_id,content_type,content_id,mentioned_by_user_id',
+        ignoreDuplicates: true,
+      })
+      if (mentionsError) console.error('Forum reply mentions failed:', mentionsError)
     }
 
-    return NextResponse.json({ success: true, reply, pending: reply.status === 'pending' })
+    const recipients = new Map()
+    if (thread.created_by && thread.created_by !== session.user_id) {
+      recipients.set(thread.created_by, {
+        title: 'New forum reply',
+        message: 'Someone replied to your discussion.',
+        type: 'forum_reply',
+      })
+    }
+    if (parentReplyUserId && parentReplyUserId !== session.user_id) {
+      recipients.set(parentReplyUserId, {
+        title: 'New forum reply',
+        message: 'Someone replied to your forum reply.',
+        type: 'forum_reply',
+      })
+    }
+    for (const mention of verifiedMentionData) {
+      recipients.set(mention.mentioned_user_id, {
+        title: 'You were mentioned',
+        message: `${reply.info_users?.full_name || 'Someone'} mentioned you in a forum reply.`,
+        type: 'mention',
+      })
+    }
+
+    await notifyUserRecipients(adminSupabase, [...recipients.entries()].map(([userId, message]) => ({
+      user_id: userId,
+      ...message,
+      link: `/info/user/forums/${threadId}?reply=${reply.id}`,
+      actor_id: session.user_id,
+    })), 'Forum reply')
+
+    return NextResponse.json({ success: true, reply })
   } catch (error) {
     console.error('Forum reply route error:', error)
     return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to post the reply.') }, { status: 500 })
@@ -264,7 +313,7 @@ export async function PATCH(request) {
     if (!content) {
       return NextResponse.json({ success: false, message: 'The comment text is required.' }, { status: 400 })
     }
-    if (content.length > MAX_CONTENT_LENGTH) {
+    if (content.length > MAX_COMMENT_LENGTH) {
       return NextResponse.json({ success: false, message: 'Your comment is too long.' }, { status: 400 })
     }
 
@@ -283,12 +332,8 @@ export async function PATCH(request) {
     const restrictionResponse = await getRestrictionResponse(adminSupabase, session.user_id)
     if (restrictionResponse) return restrictionResponse
 
-    const isModerator = ['admin', 'administrator', 'moderator'].includes(
-      String(session.role || '').trim().toLowerCase()
-    )
     const updatePayload = {
       content,
-      status: isModerator ? existing.status : 'pending',
     }
 
     // `updated_at` is refreshed by the tr_forum_replies_updated_at trigger.
@@ -313,7 +358,7 @@ export async function PATCH(request) {
       return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to update the comment.') }, { status: 400 })
     }
 
-    return NextResponse.json({ success: true, reply, pending: reply.status === 'pending' })
+    return NextResponse.json({ success: true, reply })
   } catch (error) {
     console.error('Forum reply update route error:', error)
     return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to update the comment.') }, { status: 500 })

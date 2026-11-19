@@ -10,16 +10,17 @@ import {
   Pencil,
   Send,
   ShieldAlert,
-  Star,
   Trash2,
   Upload,
 } from 'lucide-react'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import { supabase } from '@/lib/supabase'
+import { isValidRating } from '@/lib/ratings.mjs'
 import { getStoredSession } from '@/lib/authCookies'
 import { notifyToast } from '@/lib/toast.mjs'
 import UserSectionHeader, { SectionTabs } from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
+import StarRating from '@/app/(subsystems)/info/components/user/StarRating'
 
 const subscribeToStoredSession = () => () => {}
 const getServerStoredSession = () => null
@@ -74,7 +75,7 @@ export default function UserFeedbackPage() {
     category: 'suggestion',
     title: 'General feedback',
     message: '',
-    rating: 5,
+    rating: 0,
     images: [],
   })
   const [editingId, setEditingId] = useState(null)
@@ -140,6 +141,10 @@ export default function UserFeedbackPage() {
       notifyToast('Please tell us a bit more about your feedback.', 'warning')
       return
     }
+    if (kind === 'feedback' && !isValidRating(form.rating)) {
+      notifyToast('Choose a rating from 1 to 5 stars.', 'warning')
+      return
+    }
 
     setSaving(true)
     try {
@@ -151,8 +156,10 @@ export default function UserFeedbackPage() {
               message: form.message,
               category: form.category,
               rating: form.rating,
+              images: Array.isArray(form.images) ? form.images : [],
             }
           : null,
+        feedbackId: kind === 'feedback' && editingTable === 'info_feedback' ? editingId : null,
         complaintForm: kind === 'complaint'
           ? {
               title: form.title || 'Complaint submission',
@@ -175,7 +182,7 @@ export default function UserFeedbackPage() {
       }
 
       notifyToast(kind === 'feedback' ? 'Feedback saved successfully.' : 'Complaint submitted successfully.', 'success')
-      setForm({ category: kind === 'feedback' ? FEEDBACK_CATEGORIES[0] : COMPLAINT_CATEGORIES[0], title: '', message: '', rating: 5, images: [] })
+      setForm({ category: kind === 'feedback' ? FEEDBACK_CATEGORIES[0] : COMPLAINT_CATEGORIES[0], title: '', message: '', rating: 0, images: [] })
       setEditingId(null)
       setEditingTable(null)
       await loadSubmissions(userId)
@@ -195,7 +202,7 @@ export default function UserFeedbackPage() {
       category: item.category,
       title: item.title || '',
       message: item.comments || item.message || '',
-      rating: item.rating || 5,
+      rating: Number(item.rating) || 0,
       images: item.image_urls || item.images || [],
     })
     notifyToast('Editing existing submission.', 'info')
@@ -313,18 +320,15 @@ export default function UserFeedbackPage() {
               {kind === 'feedback' && (
                 <div>
                   <label className="mb-1 block text-sm font-medium text-slate-700">Rate your experience</label>
-                  <div className="flex items-center gap-2">
-                    {[1,2,3,4,5].map((rating) => (
-                      <button
-                        key={rating}
-                        type="button"
-                        onClick={() => setForm((previous) => ({ ...previous, rating }))}
-                        className={`rounded-full p-2 transition ${form.rating >= rating ? 'text-amber-500' : 'text-slate-300'}`}
-                        aria-label={`Rate ${rating} star${rating > 1 ? 's' : ''}`}
-                      >
-                        <Star className="h-5 w-5 fill-current" />
-                      </button>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StarRating
+                      value={form.rating}
+                      onChange={(rating) => setForm((previous) => ({ ...previous, rating }))}
+                      label="Rate your experience"
+                    />
+                    <span aria-live="polite" className="text-sm text-slate-600">
+                      {form.rating ? `${form.rating} / 5 stars` : 'Select a rating'}
+                    </span>
                   </div>
                 </div>
               )}

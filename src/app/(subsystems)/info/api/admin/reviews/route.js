@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { authorizeAdminApi } from '@/lib/adminApiAuth'
 import { getSettingsClient } from '@/lib/appSettingsServer'
 import { decodeReviewText } from '@/lib/reviewText'
+import { isValidRating } from '@/lib/ratings.mjs'
 import { createPdfBuffer, createWorkbookBuffer } from '@/lib/reportExport'
 import { isValidUuid } from '@/lib/uuid'
 
@@ -82,16 +83,22 @@ function summarize(reviews) {
   const bySpot = new Map()
   for (const review of reviews) {
     const entry = bySpot.get(review.spotId) || {
-      spotId: review.spotId, spotName: review.spotName, count: 0, total: 0, answered: 0, stars: [0, 0, 0, 0, 0],
+      spotId: review.spotId, spotName: review.spotName, count: 0, ratingCount: 0, total: 0, answered: 0, stars: [0, 0, 0, 0, 0],
     }
     entry.count += 1
-    entry.total += review.rating
-    entry.stars[review.rating - 1] += 1
+    if (isValidRating(review.rating)) {
+      entry.ratingCount += 1
+      entry.total += review.rating
+      entry.stars[review.rating - 1] += 1
+    }
     if (review.officeReply) entry.answered += 1
     bySpot.set(review.spotId, entry)
   }
   return [...bySpot.values()]
-    .map((entry) => ({ ...entry, average: Math.round((entry.total / entry.count) * 100) / 100 }))
+    .map((entry) => ({
+      ...entry,
+      average: entry.ratingCount ? Math.round((entry.total / entry.ratingCount) * 100) / 100 : null,
+    }))
     .sort((a, b) => b.count - a.count)
 }
 
@@ -118,6 +125,7 @@ async function buildExport(client, params, format) {
     inquiryCounts.set(key, (inquiryCounts.get(key) || 0) + 1)
   }
   const feedbackRatings = (feedback.data || []).map((row) => Number(row.rating)).filter((value) => value >= 1 && value <= 5)
+  const ratedReviews = reviews.filter((review) => isValidRating(review.rating))
 
   const tables = [
     {
@@ -126,7 +134,8 @@ async function buildExport(client, params, format) {
       rows: [
         ['Generated at (UTC)', new Date().toISOString()],
         ['Reviews', reviews.length],
-        ['Average review rating', reviews.length ? (reviews.reduce((sum, item) => sum + item.rating, 0) / reviews.length).toFixed(2) : 0],
+        ['Ratings', ratedReviews.length],
+        ['Average review rating', ratedReviews.length ? (ratedReviews.reduce((sum, item) => sum + item.rating, 0) / ratedReviews.length).toFixed(2) : 'n/a'],
         ['Reviews answered by the office', reviews.filter((item) => item.officeReply).length],
         ['Feedback entries', feedback.data?.length || 0],
         ['Average feedback rating', feedbackRatings.length ? (feedbackRatings.reduce((a, b) => a + b, 0) / feedbackRatings.length).toFixed(2) : 'n/a'],
@@ -135,9 +144,9 @@ async function buildExport(client, params, format) {
     },
     {
       name: 'Reviews by listing',
-      headers: ['Listing', 'Reviews', 'Average', '5★', '4★', '3★', '2★', '1★', 'Answered'],
+      headers: ['Listing', 'Reviews', 'Ratings', 'Average', '5★', '4★', '3★', '2★', '1★', 'Answered'],
       rows: summarize(reviews).map((entry) => [
-        entry.spotName, entry.count, entry.average, ...[...entry.stars].reverse(), entry.answered,
+        entry.spotName, entry.count, entry.ratingCount, entry.average, ...[...entry.stars].reverse(), entry.answered,
       ]),
     },
     {

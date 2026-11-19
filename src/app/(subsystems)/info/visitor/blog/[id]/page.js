@@ -30,10 +30,10 @@ import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
+import { getStoryRecommendationCategories } from '@/lib/userInterests'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
-import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 
 const STORAGE_KEYS = {
   shareCounts: 'daet_blog_share_counts',
@@ -103,19 +103,6 @@ const categories = {
   history: 'History',
   events: 'Events',
   announcement: 'Announcements',
-}
-
-function getInterestCategoryValues(interests = []) {
-  const values = new Set()
-  interests.forEach((interest) => {
-    const value = String(interest || '').trim().toLowerCase()
-    if (/beach|nature|travel|outdoor/.test(value)) values.add('travel_guides')
-    if (/culture|heritage|art/.test(value)) values.add('cultural_insights')
-    if (/food|cuisine/.test(value)) values.add('food')
-    if (/history/.test(value)) values.add('history')
-    if (/event/.test(value)) values.add('events')
-  })
-  return [...values]
 }
 
 function canOptimizeImage(src) {
@@ -356,7 +343,7 @@ export default function PublicBlogDetailPage() {
           .find((result) => result.error)
         if (failedResult) throw failedResult.error
 
-        const interestCategories = getInterestCategoryValues(preferenceResult.data?.preferred_categories || [])
+        const interestCategories = getStoryRecommendationCategories(preferenceResult.data?.preferred_categories || [])
         const interestResult = interestCategories.length
           ? await supabase
               .from('info_blogs')
@@ -667,7 +654,6 @@ export default function PublicBlogDetailPage() {
   if (loading) {
     return (
       <main className="medium-article-page visitor-blog-detail min-h-screen px-3 py-6 sm:px-4 lg:px-6">
-        <UserTopHeader spacer homeHref="/info/visitor" />
         <div className="mx-auto max-w-3xl">
           <div className="mb-6 h-16 animate-pulse rounded-[20px] bg-slate-200" />
           <div className="mb-6 h-96 animate-pulse rounded-[20px] bg-slate-200" />
@@ -679,12 +665,8 @@ export default function PublicBlogDetailPage() {
   if (!blog) {
     return (
       <main className="medium-article-page visitor-blog-detail min-h-screen px-3 py-6 sm:px-4 lg:px-6">
-        <UserTopHeader spacer homeHref="/info/visitor" />
         <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <p className="text-sm text-slate-500">Article not found.</p>
-          <Link href="/info/visitor" className="mt-3 hidden text-xs font-semibold text-sky-600 hover:underline lg:inline">
-            Back to Home
-          </Link>
         </div>
       </main>
     )
@@ -716,7 +698,6 @@ export default function PublicBlogDetailPage() {
 
   return (
     <main className="medium-article-page visitor-blog-detail min-h-screen text-slate-900">
-      <UserTopHeader spacer homeHref="/info/visitor" />
       <style>{`@media print { body { background: white !important; } .print-hidden { display: none !important; } .print-article { border: 0 !important; box-shadow: none !important; } }`}</style>
       {showAuthModal && !userId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
@@ -932,9 +913,9 @@ export default function PublicBlogDetailPage() {
                       </div>
                       <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
                         <span>{comment.created_at ? new Date(comment.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recently'}</span>
-                        {comment.status && comment.status !== 'approved' && (
+                        {comment.status === 'rejected' && (
                           <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 border border-amber-200">
-                            {comment.status}
+                            Removed by moderation
                           </span>
                         )}
                       </div>

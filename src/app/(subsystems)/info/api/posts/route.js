@@ -9,6 +9,8 @@ import { notifyFollowers } from '@/lib/notificationAudience'
 import { getActivePublishingRestriction } from '@/lib/contentRestrictions'
 import { notifyAdministrators, notifyModerators, notifyTourismOfficers } from '@/lib/adminNotifications'
 import { publicErrorMessage } from '@/lib/publicError'
+import { isValidUuid } from '@/lib/uuid'
+import { isValidRating } from '@/lib/ratings.mjs'
 
 export async function POST(request) {
   try {
@@ -309,14 +311,25 @@ export async function POST(request) {
       const title = String(body.feedbackForm?.title || 'General feedback').trim()
       const message = String(body.feedbackForm?.message || '').trim()
       const category = String(body.feedbackForm?.category || '').trim()
-      const rating = Number(body.feedbackForm?.rating || 0)
+      const rawRating = body.feedbackForm?.rating
+      const rating = rawRating === undefined || rawRating === null || rawRating === ''
+        ? null
+        : Number(rawRating)
       const images = Array.isArray(body.feedbackForm?.images) ? body.feedbackForm.images.filter(Boolean) : []
       const location = String(body.feedbackForm?.location || '').trim()
+      const feedbackId = body.feedbackId ? String(body.feedbackId).trim() : ''
 
       if (!message) {
         return NextResponse.json({ success: false, message: 'Please add your feedback message.' }, { status: 400 })
       }
+      if (rating !== null && !isValidRating(rating)) {
+        return NextResponse.json({ success: false, message: 'Choose a rating from 1 to 5 stars.' }, { status: 400 })
+      }
+      if (feedbackId && !isValidUuid(feedbackId)) {
+        return NextResponse.json({ success: false, message: 'The feedback submission is invalid.' }, { status: 400 })
+      }
 
+      const now = new Date().toISOString()
       const extendedPayload = {
         user_id: userId,
         title,
@@ -324,17 +337,20 @@ export async function POST(request) {
         category,
         rating,
         image_urls: images,
-        location: location || null,
-        status: 'open',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        updated_at: now,
+      }
+      if (!feedbackId || typeof body.feedbackForm?.location === 'string') {
+        extendedPayload.location = location || null
+      }
+      const saveFeedback = (payload) => {
+        const query = adminSupabase.from('info_feedback')
+        const mutation = feedbackId
+          ? query.update(payload).eq('id', feedbackId).eq('user_id', userId)
+          : query.insert({ ...payload, status: 'open', created_at: now })
+        return mutation.select('id').maybeSingle()
       }
       let warning
-      let { data, error } = await adminSupabase
-        .from('info_feedback')
-        .insert(extendedPayload)
-        .select('id')
-        .single()
+      let { data, error } = await saveFeedback(extendedPayload)
 
       const optionalColumnMissing = error && (
         error.code === '42703'
@@ -347,20 +363,19 @@ export async function POST(request) {
           location ? `Location: ${location}` : '',
           images.length ? `Photos: ${images.join(', ')}` : '',
         ].filter(Boolean).join('\n')
-        const fallback = await adminSupabase
-          .from('info_feedback')
-          .insert({
-            user_id: userId,
-            title,
-            message: [message, details].filter(Boolean).join('\n\n'),
-            category,
-            rating,
-            status: 'open',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .select('id')
-          .single()
+        const fallbackPayload = {
+          user_id: userId,
+          title,
+          message: [message, details].filter(Boolean).join('\n\n'),
+          category,
+          rating,
+          updated_at: now,
+        }
+        if (!feedbackId) {
+          fallbackPayload.status = 'open'
+          fallbackPayload.created_at = now
+        }
+        const fallback = await saveFeedback(fallbackPayload)
         data = fallback.data
         error = fallback.error
       }
@@ -368,34 +383,39 @@ export async function POST(request) {
       if (error) {
         return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to submit feedback.') }, { status: 500 })
       }
+      if (!data) {
+        return NextResponse.json({ success: false, message: 'Feedback submission not found.' }, { status: 404 })
+      }
 
-      const { error: notificationError } = await adminSupabase
-        .from('info_notifications')
-        .insert({
-          user_id: userId,
-          title: 'Feedback received',
-          message: 'Thanks for sharing your feedback. Our team will review it soon.',
+      if (!feedbackId) {
+        const { error: notificationError } = await adminSupabase
+          .from('info_notifications')
+          .insert({
+            user_id: userId,
+            title: 'Feedback received',
+            message: 'Thanks for sharing your feedback. Our team will review it soon.',
+            type: 'info',
+            is_read: false,
+          })
+
+        if (notificationError) {
+          console.error('Feedback notification insert failed:', notificationError)
+        }
+
+        const feedbackNotification = {
+          actorId: userId,
+          title: 'New user feedback',
+          message: `A user submitted feedback: ${title}`,
           type: 'info',
-          is_read: false,
-        })
-
-      if (notificationError) {
-        console.error('Feedback notification insert failed:', notificationError)
+          link: '/info/admin/feedback',
+        }
+        await Promise.all([
+          notifyAdministrators(adminSupabase, feedbackNotification),
+          notifyTourismOfficers(adminSupabase, feedbackNotification),
+        ])
       }
 
-      const feedbackNotification = {
-        actorId: userId,
-        title: 'New user feedback',
-        message: `A user submitted feedback: ${title}`,
-        type: 'info',
-        link: '/info/admin/feedback',
-      }
-      await Promise.all([
-        notifyAdministrators(adminSupabase, feedbackNotification),
-        notifyTourismOfficers(adminSupabase, feedbackNotification),
-      ])
-
-      return NextResponse.json({ success: true, id: data?.id, destination: '/info/user/feedback', warning })
+      return NextResponse.json({ success: true, id: data.id, destination: '/info/user/feedback', warning })
     }
 
     return NextResponse.json({ success: false, message: 'Unsupported post type.' }, { status: 400 })

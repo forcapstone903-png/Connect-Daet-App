@@ -152,7 +152,7 @@ test('moderation appeals are bound to the signed-in user and forum replies use s
   )
 
   assert.match(appealRoute, /getServerSession\(request\)\?\.user_id/)
-  assert.match(appealRoute, /getActivePublishingRestriction\(client, userId\)/)
+  assert.match(appealRoute, /activeBanQuery\(client, userId, 'posting'/)
   assert.match(appealRoute, /user_moderation_appeals/)
   assert.doesNotMatch(appealRoute, /body\.userId|body\.user_id/)
   assert.match(appealMigration, /user_moderation_appeals_one_pending_idx/)
@@ -163,7 +163,7 @@ test('moderation appeals are bound to the signed-in user and forum replies use s
   assert.doesNotMatch(forumPage, /\.from\('forum_replies'\)\.insert\(/)
   assert.match(replyRoute, /getActiveCommentRestriction\(adminSupabase, userId\)/)
   assert.match(replyRoute, /LOCKED_THREAD_STATUSES = new Set\(\['locked', 'closed', 'archived'\]\)/)
-  assert.match(replyRoute, /status: isModerator \? 'active' : 'pending'/)
+  assert.match(replyRoute, /status: 'active'/)
 })
 
 test('comment mutes are enforced by the API and database for blogs and forums', () => {
@@ -194,8 +194,8 @@ test('moderator dashboard summarizes actionable queues and links to their tabs',
   const moderationPage = read('src', 'app', '(subsystems)', 'info', 'admin', 'moderation', 'page.js')
 
   assert.match(moderationApi, /pendingForumTopics/)
-  assert.match(moderationApi, /pendingForumReplies/)
-  assert.match(moderationApi, /pendingBlogComments/)
+  assert.doesNotMatch(moderationApi, /pendingForumReplies|pendingComments|pendingBlogComments/)
+  assert.doesNotMatch(dashboard, /pendingDiscussion|Comments and replies/)
   assert.match(moderationApi, /openInquiries/)
   assert.match(dashboard, /Moderation workload/)
   assert.match(dashboard, /Needs attention/)
@@ -226,23 +226,190 @@ test('users can report accounts, posts, forum discussions, reviews, comments, an
   assert.match(userDashboard, /reportItemId=\{canReportItem \? reportItemId : undefined\}/)
 })
 
-test('approving account reports applies severity-based suspensions atomically', () => {
+test('moderator account reports require investigation data or audited, reasoned restrictions', () => {
   const moderationApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'route.js')
   const moderationPage = read('src', 'app', '(subsystems)', 'info', 'admin', 'moderation', 'page.js')
-  const migration = read('supabase', 'migrations', '108_reported_account_moderation.sql')
+  const reviewApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'suspension-review', 'route.js')
+  const investigationMigration = read('supabase', 'migrations', '140_moderator_account_investigations.sql')
 
-  assert.match(moderationApi, /action === 'approve-account-report'/)
-  assert.match(moderationApi, /rpc\('approve_account_report_and_suspend'/)
-  assert.match(moderationApi, /Approve the account report to apply the suspension/)
-  assert.match(moderationPage, /Approve &amp; suspend/)
-  assert.match(moderationPage, /value="critical">Critical — permanent suspension/)
-  assert.match(migration, /WHEN 'low' THEN 7/)
-  assert.match(migration, /WHEN 'medium' THEN 30/)
-  assert.match(migration, /WHEN 'high' THEN 90/)
-  assert.match(migration, /ELSE NULL/)
-  assert.match(migration, /status = 'resolved'/)
-  assert.match(migration, /ban_type = 'suspension'/)
-  assert.match(migration, /REVOKE ALL ON FUNCTION public\.approve_account_report_and_suspend/)
+  assert.match(moderationApi, /action === 'submit-moderator-account-investigation'/)
+  assert.match(moderationApi, /client\.rpc\('admin_set_account_status'/)
+  assert.match(moderationApi, /A temporary suspension must be between 1 and 365 days/)
+  assert.match(moderationApi, /Confirm the permanent account ban and do not provide a duration/)
+  assert.match(moderationApi, /if \(!userId \|\| userId === actorId \|\| !reason/)
+  assert.match(reviewApi, /client\.rpc\('review_account_investigation'/)
+  assert.match(moderationPage, /Review Account/)
+  assert.match(moderationPage, /name="ban-type" checked=\{restrictDialog\.banType === 'suspension'/)
+  assert.match(moderationPage, /name="ban-type" checked=\{restrictDialog\.banType === 'permanent'/)
+  assert.match(moderationPage, /getTotalSuspensionDays/)
+  assert.match(investigationMigration, /pending_tourism_officer_review/)
+  assert.match(investigationMigration, /accountStatusChanged', FALSE/)
+  assert.doesNotMatch(investigationMigration, /UPDATE public\.info_users[\s\S]*status\s*=\s*'suspended'/)
+  assert.doesNotMatch(investigationMigration, /INSERT INTO public\.admin_user_bans/)
+})
+
+test('Tourism Officer review API and page include all four authorized review actions', () => {
+  const reviewApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'suspension-review', 'route.js')
+  const reviewPage = read('src', 'app', '(subsystems)', 'info', 'admin', 'suspension-cases', 'page.js')
+  const migration = read('supabase', 'migrations', '141_tourism_officer_suspension_review.sql')
+
+  for (const action of ['approve_suspension', 'reject_recommendation', 'return_for_investigation', 'escalate_to_administrator']) {
+    assert.match(reviewApi, new RegExp(action))
+    assert.match(migration, new RegExp(action))
+  }
+  assert.match(reviewPage, /Pending Reviews/)
+  assert.match(reviewPage, /Previous suspensions/)
+  assert.match(reviewPage, /Moderator investigation/)
+  assert.match(migration, /Only an active Tourism Officer can review this case/)
+  assert.match(migration, /previous_status/)
+  assert.match(migration, /new_status/)
+})
+
+test('Tourism Officer decisions preserve status except for approval and cannot finalize a permanent ban', () => {
+  const reviewApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'suspension-review', 'route.js')
+  const migration = read('supabase', 'migrations', '141_tourism_officer_suspension_review.sql')
+
+  assert.match(reviewApi, /tourismOfficerDecisions = new Set/)
+  assert.match(reviewApi, /administratorDecisions = new Set/)
+  assert.match(reviewApi, /'approve_permanent_ban', 'reject_permanent_ban'/)
+  assert.match(migration, /v_new_status := v_previous_status/)
+  assert.match(migration, /v_investigation\.status <> 'pending_administrator_review'/)
+  assert.match(migration, /expires_at/)
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.review_account_investigation/)
+})
+
+test('Tourism Officer review decisions notify and audit through the investigation workflow', () => {
+  const reviewApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'suspension-review', 'route.js')
+  const decisionMigration = read('supabase', 'migrations', '141_tourism_officer_suspension_review.sql')
+
+  assert.match(reviewApi, /client\.rpc\('review_account_investigation'/)
+  assert.match(reviewApi, /revokeUserSessions/)
+  assert.match(decisionMigration, /INSERT INTO public\.info_notifications/)
+  assert.match(decisionMigration, /INSERT INTO public\.info_audit_log/)
+  assert.match(decisionMigration, /INSERT INTO public\.moderation_decisions/)
+  assert.match(decisionMigration, /FOR UPDATE/)
+})
+
+test('administrator escalation notifications deep-link to the pending review', () => {
+  const moderationPage = read('src', 'app', '(subsystems)', 'info', 'admin', 'moderation', 'page.js')
+  const decisionMigration = read('supabase', 'migrations', '130_moderator_review_decisions.sql')
+
+  assert.match(decisionMigration, /reviewReportId=/)
+  assert.match(moderationPage, /get\('reviewReportId'\)/)
+  assert.match(moderationPage, /openAccountReview\(report\)/)
+})
+
+test('suspended sign-ins retain account access but are blocked from community actions', () => {
+  const loginApi = read('src', 'app', '(subsystems)', 'info', 'api', 'login', 'route.js')
+  const loginPage = read('src', 'app', '(subsystems)', 'info', '(auth)', 'login', 'page.js')
+  const sessionAuth = read('src', 'lib', 'serverAuth.js')
+  const proxy = read('src', 'proxy.js')
+  const statusNotice = read('src', 'app', '(subsystems)', 'info', 'components', 'user', 'AccountStatusNotice.js')
+
+  assert.match(loginApi, /suspendedLimitedAccess:\s*true/)
+  assert.match(loginPage, /router\.push\(safeRedirect \|\| '\/info\/user\/dashboard'\)/)
+  assert.match(sessionAuth, /suspended_limited_access:\s*true/)
+  assert.match(statusNotice, /Your account has been temporarily suspended/)
+  assert.match(proxy, /'\/info\/api\/account\/status'/)
+  assert.match(proxy, /'\/info\/api\/notifications'/)
+  assert.match(proxy, /'\/info\/api\/user\/moderation-appeals'/)
+  assert.match(proxy, /'\/info\/api\/users\/following',[\s\S]*?'\/info\/api\/user\/feed'[\s\S]*?\]\.includes\(pathname\)\) \{\s*return method === 'GET'/)
+  assert.match(proxy, /'\/info\/user\/dashboard'/)
+  assert.match(proxy, /currentAccountStatus === 'banned'/)
+  assert.match(proxy, /code: 'ACCOUNT_RESTRICTED'/)
+})
+
+test('account suspension appeals reuse the appeal table with private evidence and audited decisions', () => {
+  const appealApi = read('src', 'app', '(subsystems)', 'info', 'api', 'user', 'moderation-appeals', 'route.js')
+  const moderationApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'route.js')
+  const moderationPage = read('src', 'app', '(subsystems)', 'info', 'admin', 'moderation', 'page.js')
+  const appealPage = read('src', 'app', '(subsystems)', 'info', 'user', 'moderation-appeals', 'page.js')
+  const evidenceHelper = read('src', 'lib', 'moderationAppealEvidence.mjs')
+  const migration = read('supabase', 'migrations', '131_account_suspension_appeals.sql')
+  const emailHelper = read('src', 'lib', 'moderatorReviewEmail.js')
+
+  assert.match(appealApi, /rpc\('submit_user_moderation_appeal_v2'/)
+  assert.match(evidenceHelper, /moderation-appeal-evidence/)
+  assert.match(appealApi, /fileMatchesDeclaredType/)
+  assert.match(appealPage, /Supporting evidence \(optional\)/)
+  assert.match(moderationPage, />Approve Appeal</)
+  assert.match(moderationPage, />Reject Appeal</)
+  assert.match(moderationApi, /review_user_moderation_appeal_v2/)
+  assert.match(migration, /ALTER TABLE public\.user_moderation_appeals/)
+  assert.match(migration, /appeal_type IN \('posting_restriction', 'account_suspension'\)/)
+  assert.match(migration, /'moderation-appeal-evidence'[\s\S]*?FALSE/)
+  assert.match(migration, /SET status = 'active'/)
+  assert.match(migration, /'review-user-appeal'/)
+  assert.match(migration, /INSERT INTO public\.info_notifications/)
+  assert.match(emailHelper, /sendModerationAppealDecisionEmail/)
+})
+
+test('lifting restrictions preserves history and atomically restores permissions with notices', () => {
+  const moderationApi = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'route.js')
+  const moderationPage = read('src', 'app', '(subsystems)', 'info', 'admin', 'moderation', 'page.js')
+  const emailHelper = read('src', 'lib', 'moderatorReviewEmail.js')
+  const migration = read('supabase', 'migrations', '133_restriction_lift_history.sql')
+
+  assert.match(moderationApi, /rpc\('lift_account_restriction'/)
+  assert.match(moderationApi, /sendRestrictionLiftedEmail/)
+  assert.match(moderationApi, /revokeUserSessions\(client, userId\)/)
+  assert.match(moderationApi, /reason\.length > 1000/)
+  assert.match(moderationPage, /Lift Suspension/)
+  assert.match(moderationPage, /Lift Ban/)
+  assert.match(moderationPage, /Reason for lifting/)
+  assert.match(moderationPage, /entry\.changes\.liftReason/)
+  assert.match(migration, /ADD CONSTRAINT admin_user_bans_pkey PRIMARY KEY \(id\)/)
+  assert.match(migration, /admin_user_bans_one_unlifted_per_user_idx/)
+  assert.match(migration, /SET lifted_by = p_actor_id,[\s\S]*lift_reason = cleaned_reason/)
+  assert.match(migration, /'restriction_reason', restriction_row\.reason/)
+  assert.match(migration, /SET status = 'active'/)
+  assert.match(migration, /INSERT INTO public\.info_notifications/)
+  assert.match(migration, /'lift-account-restriction'/)
+  assert.match(emailHelper, /sendRestrictionLiftedEmail/)
+})
+
+test('moderation RLS helpers authorize only active staff and retain deduplication indexes', () => {
+  const migration = read('supabase', 'migrations', '134_active_staff_moderation_rls.sql')
+  const proxy = read('src', 'proxy.js')
+
+  assert.match(migration, /FUNCTION public\.is_admin[\s\S]*?staff\.status = 'active'/)
+  assert.match(migration, /FUNCTION public\.is_moderator[\s\S]*?staff\.status = 'active'/)
+  assert.match(migration, /lower\(staff\.user_type\) IN \('admin', 'administrator'\)/)
+  assert.match(migration, /lower\(staff\.user_type\) IN \('admin', 'administrator', 'moderator', 'tourism_officer'\)/)
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS user_moderation_appeals_one_pending_idx/)
+  assert.match(migration, /CREATE UNIQUE INDEX IF NOT EXISTS info_audit_log_moderator_review_decision_unique/)
+  assert.match(migration, /FUNCTION public\.is_staff_session_current/)
+  assert.match(migration, /staff\.status = 'active'/)
+  assert.match(migration, /COALESCE\(versions\.version, 0\) = p_session_version/)
+  assert.match(migration, /REVOKE ALL ON FUNCTION public\.is_staff_session_current\(UUID, TEXT, BIGINT\) FROM PUBLIC, anon, authenticated/)
+  assert.match(migration, /GRANT EXECUTE ON FUNCTION public\.is_staff_session_current\(UUID, TEXT, BIGINT\) TO service_role/)
+  assert.match(proxy, /isStaffRole\(serverSession\.role\)[\s\S]*?isStaffSessionCurrent\(serverSession\)/)
+  assert.match(proxy, /rpc\/is_staff_session_current/)
+  assert.match(proxy, /response\.status === 404[\s\S]*?isSessionVersionCurrent\(session\)[\s\S]*?isStaffAccountCurrent\(session\)/)
+  assert.match(proxy, /account\?\.status === 'active'/)
+
+  const deduplicationMigration = read('supabase', 'migrations', '129_moderator_review_notification_dedup.sql')
+  assert.ok(deduplicationMigration.indexOf('duplicateDecisionHistory') < deduplicationMigration.indexOf('DELETE FROM'))
+
+  const migrationVersions = fs.readdirSync(path.join(repoRoot, 'supabase', 'migrations'))
+    .map((filename) => filename.match(/^(\d+)_.*\.sql$/)?.[1])
+    .filter(Boolean)
+  assert.equal(new Set(migrationVersions).size, migrationVersions.length, 'migration version prefixes must be unique')
+
+  const tourismOfficerMigration = read('supabase', 'migrations', '135_tourism_officer_moderation.sql')
+  for (const functionName of [
+    'moderate_info_blog',
+    'admin_transition_info_blog',
+    'admin_edit_info_blog',
+    'admin_delete_info_blog',
+    'create_account_restriction',
+    'lift_account_restriction',
+    'decide_account_moderation_report',
+    'review_user_moderation_appeal',
+  ]) {
+    assert.match(tourismOfficerMigration, new RegExp(`'${functionName}'`))
+  }
+  assert.match(tourismOfficerMigration, /ARRAY\[''moderator'', ''tourism_officer''\]/)
 })
 
 test('moderator blog unpublishing accepts an optional note and notifies the author', () => {
@@ -277,9 +444,13 @@ test('staff deletion workflows notify authors for user content across dashboards
   assert.match(tourismPage, /fetch\('\/info\/api\/admin\/events'[\s\S]*?method:\s*'DELETE'/)
 })
 
-test('community submissions use pre-moderation and moderator review stays server-authorized', () => {
+test('community posts remain moderated while comments and replies publish immediately', () => {
   const migration = read('supabase', 'migrations', '101_moderator_workflows.sql')
+  const commentsMigration = read('supabase', 'migrations', '117_comments_publish_without_approval.sql')
   const moderationRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'moderation', 'route.js')
+  const commentRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'comments', 'route.js')
+  const blogCommentRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'blog-comments', 'route.js')
+  const replyRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'forum-replies', 'route.js')
 
   assert.match(migration, /CREATE OR REPLACE FUNCTION public\.hold_user_content_for_moderation/)
   assert.match(migration, /NEW\.status := 'pending'/)
@@ -287,12 +458,20 @@ test('community submissions use pre-moderation and moderator review stays server
   assert.match(migration, /TG_TABLE_NAME IN \('info_user_posts', 'forum_threads'\)[\s\S]*?NEW\.status = 'draft'[\s\S]*?RETURN NEW/)
   assert.match(migration, /BEFORE INSERT OR UPDATE ON public\.%I/)
   assert.match(read('src', 'app', '(subsystems)', 'info', 'api', 'posts', 'route.js'), /status: isModerator \? 'published' : 'pending'/)
-  assert.match(read('src', 'app', '(subsystems)', 'info', 'api', 'comments', 'route.js'), /status: isModerator \? 'active' : 'pending'/)
-  assert.match(read('src', 'app', '(subsystems)', 'info', 'api', 'blog-comments', 'route.js'), /status: isModerator \? 'approved' : 'pending'/)
+  assert.match(commentRoute, /status: 'active'/)
+  assert.match(blogCommentRoute, /status: 'approved'/)
+  assert.match(replyRoute, /status: 'active'/)
+  assert.doesNotMatch(moderationRoute, /forum_replies: \{ approve:|content_comments: \{ approve:|info_comments: \{ approve:/)
+  assert.match(commentsMigration, /NEW\.status := CASE TG_TABLE_NAME/)
+  assert.match(commentsMigration, /UPDATE public\.info_comments[\s\S]*?SET status = 'approved'[\s\S]*?status = 'pending'/)
+  assert.match(commentsMigration, /UPDATE public\.content_comments[\s\S]*?SET status = 'active'[\s\S]*?status = 'pending'/)
+  assert.match(commentsMigration, /UPDATE public\.forum_replies[\s\S]*?SET status = 'active'[\s\S]*?status = 'pending'/)
   assert.match(migration, /content_comments_select_active_or_owner_or_staff/)
   assert.match(moderationRoute, /action === 'review-submission'/)
   assert.match(moderationRoute, /authorizeAdminApi\(request\)/)
   assert.match(moderationRoute, /action === 'edit-reported-content'/)
+  assert.match(moderationRoute, /content_comments: \{ status: 'hidden' \}/)
+  assert.match(moderationRoute, /info_comments: \{ status: 'rejected' \}/)
 })
 
 test('community guidelines are public-read and moderator-write only', () => {
@@ -307,7 +486,7 @@ test('community guidelines are public-read and moderator-write only', () => {
   assert.match(roles, /\['\/info\/api\/admin\/community-guidelines', 'moderation\.manage'\]/)
 })
 
-test('new community submissions notify moderators and appear in their staff inbox', () => {
+test('moderated community submissions notify moderators but comments do not enter approval queues', () => {
   const notificationHelper = read('src', 'lib', 'adminNotifications.js')
   const sidebar = read('src', 'app', '(subsystems)', 'info', 'components', 'AdminSidebar.js')
   const inbox = read('src', 'app', '(subsystems)', 'info', 'admin', 'moderation', 'notifications', 'page.js')
@@ -315,6 +494,7 @@ test('new community submissions notify moderators and appear in their staff inbo
   const forumRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'posts', 'route.js')
   const replyRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'forum-replies', 'route.js')
   const commentRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'comments', 'route.js')
+  const blogCommentRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'blog-comments', 'route.js')
   const blogRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'user', 'blogs', 'route.js')
 
   assert.match(notificationHelper, /export function notifyModerators/)
@@ -325,8 +505,9 @@ test('new community submissions notify moderators and appear in their staff inbo
   assert.match(dashboard, /href="\/info\/admin\/moderation\/notifications"/)
   assert.match(dashboard, /AdminButton icon="refresh"/)
   assert.match(forumRoute, /notifyModerators\(adminSupabase/)
-  assert.match(replyRoute, /notifyModerators\(adminSupabase/)
-  assert.match(commentRoute, /notifyModerators\(adminSupabase/)
+  assert.doesNotMatch(replyRoute, /notifyModerators|awaiting approval/)
+  assert.doesNotMatch(commentRoute, /notifyModerators|awaiting approval/)
+  assert.doesNotMatch(blogCommentRoute, /notifyModerators|awaiting approval/)
   assert.match(blogRoute, /notifyModerators\(adminSupabase/)
 })
 

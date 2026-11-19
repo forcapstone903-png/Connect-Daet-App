@@ -6,6 +6,7 @@ import { ChevronLeft, CalendarDays, Loader, MapPin, Search } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
+import { getInterestMatchScore, normalizeUserInterests } from '@/lib/userInterests'
 
 function formatDateRange(startDate, endDate) {
   if (!startDate) return 'TBA'
@@ -45,6 +46,7 @@ export default function EventsIndexPage() {
   const [category, setCategory] = useState('all')
   const [location, setLocation] = useState('all')
   const [retryKey, setRetryKey] = useState(0)
+  const [preferredCategories, setPreferredCategories] = useState([])
   const refreshEventsRef = useRef(null)
   const realtime = useRealtimeRefresh({
     channelName: 'visitor-events-index',
@@ -59,14 +61,12 @@ export default function EventsIndexPage() {
       if (!silent) setLoading(true)
       setError('')
       try {
-        const today = new Date().toISOString().slice(0, 10)
         const { data, error } = await supabase
           .from('info_events')
           .select('id, title, description, location, venue, start_date, end_date, start_time, category, featured_image, is_free, ticket_price')
           .eq('status', 'published')
           .eq('approval_status', 'approved')
-          .gte('end_date', today)
-          .order('start_date', { ascending: true })
+          .order('start_date', { ascending: false })
 
         if (error) {
           console.error('Events index load failed:', error)
@@ -92,6 +92,35 @@ export default function EventsIndexPage() {
       refreshEventsRef.current = null
     }
   }, [retryKey])
+
+  useEffect(() => {
+    let active = true
+    const loadInterests = async () => {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw sessionError
+      const userId = sessionData?.session?.user?.id
+      if (!userId) return
+      const { data, error } = await supabase
+        .from('user_feed_preferences')
+        .select('preferred_categories')
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (error) throw error
+      if (active) setPreferredCategories(normalizeUserInterests(data?.preferred_categories || []))
+    }
+
+    void loadInterests().catch((interestError) => {
+      console.error('Event recommendations interests load failed:', interestError)
+    })
+    const handleInterestsUpdated = (event) => {
+      setPreferredCategories(normalizeUserInterests(event.detail?.interests))
+    }
+    window.addEventListener('daet-user-interests-updated', handleInterestsUpdated)
+    return () => {
+      active = false
+      window.removeEventListener('daet-user-interests-updated', handleInterestsUpdated)
+    }
+  }, [])
 
   useEffect(() => {
     setRefreshCallback(() => refreshEventsRef.current?.() ?? false)
@@ -123,8 +152,12 @@ export default function EventsIndexPage() {
         event.location?.toLowerCase().includes(q) ||
         event.venue?.toLowerCase().includes(q)
       return matchesCategory && matchesLocation && matchesSearch
-    })
-  }, [events, search, category, location])
+    }).sort((left, right) => (
+      getInterestMatchScore([right.category, right.title], preferredCategories)
+      - getInterestMatchScore([left.category, left.title], preferredCategories)
+      || new Date(right.start_date || 0) - new Date(left.start_date || 0)
+    ))
+  }, [events, search, category, location, preferredCategories])
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
@@ -144,9 +177,9 @@ export default function EventsIndexPage() {
         {/* Hero */}
         <div className="rounded-[24px] bg-gradient-to-br from-sky-600 via-sky-700 to-emerald-700 p-6 text-white shadow-lg sm:p-10">
           <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-200">Daet Events</p>
-          <h1 className="mt-2 text-2xl font-black tracking-[-0.02em] sm:text-4xl">Upcoming events in Daet</h1>
+          <h1 className="mt-2 text-2xl font-black tracking-[-0.02em] sm:text-4xl">Events in Daet</h1>
           <p className="mt-3 max-w-xl text-sm leading-6 text-sky-100">
-            Festivals, concerts, workshops, and community gatherings happening across Camarines Norte.
+            Browse published festivals, concerts, workshops, and community gatherings across Camarines Norte.
           </p>
         </div>
 
@@ -219,7 +252,7 @@ export default function EventsIndexPage() {
           <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-8 text-center">
             <CalendarDays className="mx-auto h-10 w-10 text-slate-300" />
             <p className="mt-3 text-sm font-semibold text-slate-700">
-              {search || category !== 'all' || location !== 'all' ? 'No events match your filters.' : 'No upcoming events have been published yet.'}
+              {search || category !== 'all' || location !== 'all' ? 'No events match your filters.' : 'No events have been published yet.'}
             </p>
             <p className="mt-1 text-sm text-slate-500">Check back soon — new events are added regularly.</p>
             {(search || category !== 'all' || location !== 'all') && (

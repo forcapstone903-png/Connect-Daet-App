@@ -748,6 +748,23 @@ export default function TourismOfficerDashboard() {
         </AdminStatGrid>
 
         <AdminPanel
+          title="Account suspension review"
+          description="Review moderator investigations and make an authorized decision before any account restriction is applied."
+          actions={(
+            <Link
+              href="/info/admin/moderation/suspension-review"
+              className="inline-flex items-center rounded-full bg-sky-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-800"
+            >
+              Open Suspension Review
+            </Link>
+          )}
+        >
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Temporary suspensions require Tourism Officer approval. Permanent ban recommendations are forwarded to a System Administrator.
+          </p>
+        </AdminPanel>
+
+        <AdminPanel
           title="Event calendar"
           description="Browse published tourism events by date."
           actions={(

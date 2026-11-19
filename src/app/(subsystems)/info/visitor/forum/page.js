@@ -47,7 +47,6 @@ export default function PublicForumPage() {
         .select('id, title, content, created_at, last_activity_at, reply_count, views, pinned, tags, category_id, forum_categories(name), info_users!forum_threads_created_by_fkey(full_name)')
         .in('status', ['published', 'closed'])
         .order('last_activity_at', { ascending: false })
-        .limit(100)
 
       if (ignore) return
 

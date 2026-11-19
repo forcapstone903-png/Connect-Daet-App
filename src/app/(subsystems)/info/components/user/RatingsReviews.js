@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Heart, Pencil, ThumbsUp, Trash2 } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { Pencil, Star as StarIcon, ThumbsUp, Trash2, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getCacheKey, invalidateCache } from '@/lib/cache'
 import { decodeReviewText, encodeReviewText } from '@/lib/reviewText'
+import { isOptionalRating, isValidRating } from '@/lib/ratings.mjs'
 import { usePublicSettings } from '@/lib/usePublicSettings'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
+import StarRating from '@/app/(subsystems)/info/components/user/StarRating'
 
 const PAGE_SIZE = 3
 
@@ -21,38 +24,11 @@ const EMPTY_SUMMARY = {
   one_star_count: 0,
 }
 
-function StarRating({ value, onChange, readOnly = false, compact = false }) {
-  return (
-    <div
-      className="flex items-center gap-0.5"
-      role={readOnly ? 'img' : 'group'}
-      aria-label={readOnly ? `${value} out of 5 hearts` : 'Rate this place'}
-    >
-      {[1, 2, 3, 4, 5].map((star) => (
-        <button
-          key={star}
-          type="button"
-          disabled={readOnly}
-          onClick={() => onChange(star)}
-          aria-label={`${star} heart${star === 1 ? '' : 's'}`}
-          aria-pressed={!readOnly && value === star}
-          className={`flex items-center justify-center transition ${
-            readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
-          } ${compact ? 'h-5 w-5' : 'h-9 w-9'}`}
-        >
-          <Heart className={`${compact ? 'h-4 w-4' : 'h-6 w-6'} ${
-            star <= value ? 'fill-rose-500 text-rose-500' : 'text-slate-300'
-          }`} />
-        </button>
-      ))}
-    </div>
-  )
-}
-
-export default function RatingsReviews({ attractionId, userId, onRatingSummaryChange }) {
+export default function RatingsReviews({ attractionId, userId, onRatingSummaryChange, onOpenPhoto }) {
   const { settings: publicSettings } = usePublicSettings()
   const [reviews, setReviews] = useState([])
   const [summary, setSummary] = useState(EMPTY_SUMMARY)
+  const [reviewCount, setReviewCount] = useState(0)
   const [myReview, setMyReview] = useState(null)
   const [userRating, setUserRating] = useState(0)
   const [reviewTitle, setReviewTitle] = useState('')
@@ -68,10 +44,34 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
+  const [reviewModalOpen, setReviewModalOpen] = useState(false)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const modalOpen = reviewModalOpen || deleteConfirmOpen
   const [helpfulVotes, setHelpfulVotes] = useState({})
   const [helpfulCounts, setHelpfulCounts] = useState({})
   const requestId = useRef(0)
   const loadedCount = useRef(0)
+  const reviewTriggerRef = useRef(null)
+
+  useEffect(() => {
+    if (!modalOpen) return undefined
+
+    const trigger = reviewTriggerRef.current
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        setReviewModalOpen(false)
+        setDeleteConfirmOpen(false)
+      }
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+      trigger?.focus()
+    }
+  }, [modalOpen])
 
   const removeReviewPhoto = async (url) => {
     const response = await fetch('/info/api/upload', {
@@ -102,13 +102,13 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       const reviewPage = (columns) => {
         const baseQuery = supabase
           .from('attraction_ratings')
-          .select(columns)
+          .select(columns, { count: 'exact' })
           .eq('attraction_type', 'tourist_spot')
           .eq('attraction_id', attractionId)
         const sortedQuery = sortBy === 'recent'
           ? baseQuery.order('created_at', { ascending: false })
           : baseQuery
-            .order('rating', { ascending: sortBy === 'lowest' })
+            .order('rating', { ascending: sortBy === 'lowest', nullsFirst: false })
             .order('created_at', { ascending: false })
         return sortedQuery.order('id', { ascending: false }).range(offset, offset + PAGE_SIZE - 1)
       }
@@ -174,10 +174,11 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
 
       setSummary(nextSummary)
       setReviews((current) => append ? [...current, ...nextReviews] : nextReviews)
+      setReviewCount(Number(reviewsResult.count || 0))
       loadedCount.current = offset + rows.length
       setHelpfulCounts((current) => append ? { ...current, ...nextHelpfulCounts } : nextHelpfulCounts)
       setHelpfulVotes((current) => append ? { ...current, ...nextHelpfulVotes } : nextHelpfulVotes)
-      setHasMore(loadedCount.current < Number(nextSummary.total_count || 0))
+      setHasMore(loadedCount.current < Number(reviewsResult.count || 0))
       onRatingSummaryChange?.({
         average_rating: nextSummary.average_rating,
         total_count: Number(nextSummary.total_count || 0),
@@ -251,7 +252,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       setActionError('Please sign in to submit a review.')
       return
     }
-    if (!Number.isInteger(userRating) || userRating < 1 || userRating > 5) {
+    if (!isOptionalRating(userRating)) {
       setActionError('Choose a rating from 1 to 5 stars.')
       return
     }
@@ -268,7 +269,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
           user_id: userId,
           attraction_type: 'tourist_spot',
           attraction_id: attractionId,
-          rating: userRating,
+          rating: isValidRating(userRating) ? userRating : null,
           review_text: encodeReviewText(reviewTitle, reviewText),
           pros: myReview?.pros || [],
           cons: myReview?.cons || [],
@@ -279,6 +280,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       if (error) throw error
 
       setMyReview(data)
+      setReviewModalOpen(false)
       if (myReview?.photo_url && myReview.photo_url !== data.photo_url) {
         try {
           await removeReviewPhoto(myReview.photo_url)
@@ -299,7 +301,6 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
 
   const handleDeleteRating = async () => {
     if (!userId || !myReview) return
-    if (!window.confirm('Delete your rating and review for this destination?')) return
 
     const photosToRemove = [...new Set([myReview.photo_url, reviewPhotoUrl].filter(Boolean))]
     setActionError('')
@@ -320,6 +321,8 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       setReviewTitle('')
       setReviewText('')
       setReviewPhotoUrl('')
+      setReviewModalOpen(false)
+      setDeleteConfirmOpen(false)
       await loadReviews()
       for (const photoUrl of photosToRemove) {
         try {
@@ -395,11 +398,18 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
   ]
 
   return (
-    <section id="ratings-reviews" className="scroll-mt-24 border-t border-slate-200 pt-5" aria-labelledby="ratings-reviews-title">
-      <h2 id="ratings-reviews-title" className="text-lg font-bold text-slate-900">Ratings &amp; reviews</h2>
+    <section id="ratings-reviews" className="scroll-mt-24 rounded-2xl border border-slate-200 bg-[white] p-4 shadow-sm sm:p-5" aria-labelledby="ratings-reviews-title">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="ratings-reviews-title" className="text-lg font-bold text-slate-900">Ratings &amp; Reviews</h2>
+        {reviewCount > 0 && (
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+            {reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
+          </span>
+        )}
+      </div>
 
       {averageRating === null ? (
-        <p className="mt-2 text-sm text-slate-500">No ratings yet</p>
+        <p className="mt-3 text-sm text-slate-500">No ratings yet</p>
       ) : (
         <div className="mt-3 grid gap-4 sm:grid-cols-[auto_minmax(12rem,20rem)] sm:items-center">
           <div className="flex items-center gap-3">
@@ -407,7 +417,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
             <div>
               <StarRating value={Math.round(averageRating)} readOnly compact />
               <p className="mt-1 text-xs text-slate-500">
-                out of 5 · {totalCount} {totalCount === 1 ? 'review' : 'reviews'}
+                out of 5 · {totalCount} {totalCount === 1 ? 'rating' : 'ratings'}
               </p>
             </div>
           </div>
@@ -415,7 +425,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
             {distribution.map(({ stars, count }) => (
               <div key={stars} className="grid grid-cols-[1.5rem_minmax(0,1fr)_1.5rem] items-center gap-2 text-xs">
                 <span className="flex items-center gap-0.5 text-slate-600">
-                  {stars}<Heart className="h-3 w-3 fill-rose-500 text-rose-500" />
+                  {stars}<StarIcon aria-hidden="true" className="h-3 w-3 fill-amber-400 text-amber-500" />
                 </span>
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                   <div className="h-full rounded-full bg-rose-500" style={{ width: `${(count / totalCount) * 100}%` }} />
@@ -428,99 +438,194 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       )}
 
       {userId ? (
-        <div className="mt-4 rounded-xl bg-slate-50 p-3 sm:p-4">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <h3 className="text-sm font-semibold text-slate-900">
-              {myReview ? 'Edit your review' : 'Rate this place'}
-            </h3>
-            {myReview && (
+        <button
+          ref={reviewTriggerRef}
+          type="button"
+          onClick={() => setReviewModalOpen(true)}
+          className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-blue-600 px-5 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700"
+        >
+          Write a review
+        </button>
+      ) : (
+        <>
+          <Link href="/info/login" className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-blue-600 px-5 text-sm font-semibold text-white transition hover:bg-blue-700">
+            Write a review
+          </Link>
+          <p className="mt-3 text-sm text-slate-600">
+            <Link href="/info/login" className="font-semibold text-blue-700 hover:underline">Sign in</Link>
+            {' '}to rate this place.
+          </p>
+        </>
+      )}
+
+      {reviewModalOpen && userId && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setReviewModalOpen(false)
+          }}
+        >
+          <section
+            className="max-h-[88dvh] w-full max-w-sm overflow-y-auto rounded-2xl border border-slate-200 bg-[white] p-4 shadow-2xl sm:p-5"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tourist-review-modal-title"
+          >
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h3 id="tourist-review-modal-title" className="text-lg font-bold text-slate-900">Write a Review</h3>
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                aria-label="Close review form"
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mb-1.5 text-sm font-medium text-slate-700">How would you rate this place?</p>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <StarRating value={userRating} onChange={setUserRating} label="Rate this place" />
+              <span aria-live="polite" className="text-xs text-slate-500">
+                {userRating ? `${userRating} / 5 stars` : 'Rating optional'}
+              </span>
+            </div>
+
+            <label className="mb-3 block text-sm font-medium text-slate-700">
+              Share your experience
+              <textarea
+                value={reviewText}
+                onChange={(event) => setReviewText(event.target.value)}
+                placeholder="Write your review here... What did you like or dislike? How was your visit?"
+                rows={4}
+                maxLength={2000}
+                required
+                className="mt-2 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm leading-6 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+
+            <div className="mb-3">
+              <p className="mb-2 text-sm font-medium text-slate-700">Add photos <span className="font-normal text-slate-400">(optional)</span></p>
+              <div className="rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3 [&>div:first-child]:justify-center">
+                <MediaUpload
+                  key={`${attractionId}-${myReview?.id || 'new'}`}
+                  bucket="profile-media"
+                  folder={`reviews/${userId}`}
+                  mediaType="image"
+                  maxSizeMB={5}
+                  buttonText="Upload photos"
+                  onUploadComplete={(url) => setReviewPhotoUrl(url || '')}
+                  onUploadError={(message) => setActionError(message)}
+                  onUploadStateChange={setUploadingPhoto}
+                />
+              </div>
+              {myReview?.photo_url && reviewPhotoUrl === myReview.photo_url ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => onOpenPhoto?.(myReview.photo_url, 'Your review photo')}
+                    aria-label="Preview your review photo"
+                    className="h-20 w-20 overflow-hidden rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700"
+                  >
+                    <img src={myReview.photo_url} alt="Your review photo" className="h-full w-full object-cover" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReviewPhotoUrl('')}
+                    disabled={submitting || deleting || uploadingPhoto}
+                    className="min-h-11 rounded-full bg-rose-50 px-4 text-sm font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                  >
+                    Remove current photo
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
+            <details className="mb-4 rounded-lg border border-slate-200 px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-slate-600">Review title (optional)</summary>
+              <input
+                type="text"
+                value={reviewTitle}
+                onChange={(event) => setReviewTitle(event.target.value)}
+                placeholder="Sum up your visit"
+                maxLength={120}
+                className="mt-2 min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+            </details>
+
+            {actionError && <p role="alert" className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>}
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setReviewModalOpen(false)}
+                disabled={submitting || deleting || uploadingPhoto}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitRating}
+                disabled={submitting || deleting || uploadingPhoto}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {submitting ? 'Submitting…' : 'Submit'}
+              </button>
+            </div>
+          </section>
+        </div>,
+        document.body,
+      )}
+
+      {deleteConfirmOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !deleting) setDeleteConfirmOpen(false)
+          }}
+        >
+          <section
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-review-title"
+            aria-describedby="delete-review-description"
+          >
+            <h3 id="delete-review-title" className="text-base font-bold text-slate-900">Delete your review?</h3>
+            <p id="delete-review-description" className="mt-2 text-sm leading-6 text-slate-600">
+              This will permanently remove your rating and review for this destination.
+            </p>
+            {actionError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{actionError}</p>}
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setActionError('')
+                  setDeleteConfirmOpen(false)
+                }}
+                disabled={deleting}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 bg-slate-100 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-200 disabled:opacity-50"
+              >
+                Cancel
+              </button>
               <button
                 type="button"
                 onClick={handleDeleteRating}
-                disabled={deleting || submitting || uploadingPhoto}
-                className="inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                disabled={deleting}
+                className="inline-flex min-h-11 items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <Trash2 className="h-3.5 w-3.5" />{deleting ? 'Deleting…' : 'Delete'}
-              </button>
-            )}
-          </div>
-
-          <div className="mb-2 flex items-center gap-2">
-            <StarRating value={userRating} onChange={setUserRating} />
-            <span className="text-xs text-slate-500">{userRating ? `${userRating} / 5` : 'Select hearts'}</span>
-          </div>
-
-          {myReview?.photo_url && reviewPhotoUrl === myReview.photo_url ? (
-            <div className="mb-3 flex flex-wrap items-center gap-3">
-              <img src={myReview.photo_url} alt="Your review photo" className="h-20 w-20 rounded-lg object-cover" />
-              <button
-                type="button"
-                onClick={() => setReviewPhotoUrl('')}
-                disabled={submitting || deleting || uploadingPhoto}
-                className="rounded-lg bg-rose-50 px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-100 disabled:opacity-50"
-              >
-                Remove current photo
+                {deleting ? 'Deleting…' : 'Delete review'}
               </button>
             </div>
-          ) : null}
-          <div className="mb-3">
-            <p className="mb-1 text-xs font-medium text-slate-600">Review photo <span className="font-normal text-slate-400">(optional)</span></p>
-            <MediaUpload
-              key={`${attractionId}-${myReview?.id || 'new'}`}
-              bucket="profile-media"
-              folder={`reviews/${userId}`}
-              mediaType="image"
-              maxSizeMB={5}
-              buttonText={reviewPhotoUrl && reviewPhotoUrl !== myReview?.photo_url ? 'Change photo' : 'Add a photo'}
-              onUploadComplete={(url) => setReviewPhotoUrl(url || '')}
-              onUploadError={(message) => setActionError(message)}
-              onUploadStateChange={setUploadingPhoto}
-            />
-          </div>
-
-          <label className="mb-2 block text-xs font-medium text-slate-600">
-            Review title <span className="font-normal text-slate-400">(optional)</span>
-            <input
-              type="text"
-              value={reviewTitle}
-              onChange={(event) => setReviewTitle(event.target.value)}
-              placeholder="Sum up your visit"
-              maxLength={120}
-              className="mt-1 min-h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-sky-400"
-            />
-          </label>
-
-          <label className="mb-3 block text-xs font-medium text-slate-600">
-            Your review
-            <textarea
-              value={reviewText}
-              onChange={(event) => setReviewText(event.target.value)}
-              placeholder="What should other visitors know?"
-              rows={3}
-              maxLength={2000}
-              required
-              className="mt-1 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-400"
-            />
-          </label>
-
-          <button
-            type="button"
-            onClick={handleSubmitRating}
-            disabled={submitting || deleting || uploadingPhoto}
-            className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-amber-500 px-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {myReview && <Pencil className="h-3.5 w-3.5" />}
-            {submitting ? 'Saving…' : myReview ? 'Save review' : 'Submit review'}
-          </button>
-        </div>
-      ) : (
-        <p className="mt-3 text-sm text-slate-600">
-          <Link href="/info/login" className="font-semibold text-sky-700 hover:underline">Sign in</Link>
-          {' '}to rate this place.
-        </p>
+          </section>
+        </div>,
+        document.body,
       )}
 
-      {(loadError || actionError) && (
+      {(loadError || (actionError && !reviewModalOpen && !deleteConfirmOpen)) && (
         <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {loadError || actionError}
           {loadError && (
@@ -532,10 +637,8 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       )}
 
       <div className="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-4">
-        <h3 className="text-sm font-semibold text-slate-900">
-          Visitor reviews{totalCount > 0 ? ` (${totalCount})` : ''}
-        </h3>
-        {totalCount > 0 && (
+        <h3 className="text-sm font-semibold text-slate-900">Visitor ratings &amp; reviews</h3>
+        {reviewCount > 0 && (
           <label className="flex items-center gap-2 text-xs text-slate-500">
             Sort
             <select
@@ -563,7 +666,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
             const profileHref = `/info/user/profile/${review.user_id}`
             const reviewContent = decodeReviewText(review.review_text)
             return (
-              <article key={review.id} className="py-3 first:pt-0">
+              <article key={review.id} className="rounded-2xl border border-slate-200/80 bg-slate-50/80 p-3.5 sm:p-4">
                 <div className="flex items-start gap-3">
                   <Link href={profileHref} aria-label={`View ${reviewerName}'s profile`} className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-amber-100 text-sm font-semibold text-amber-800">
                     {review.profile?.profile_image_url ? (
@@ -578,14 +681,29 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
                       </time>
                     </div>
                     <div className="mt-0.5 flex items-center gap-2">
-                      <StarRating value={review.rating} readOnly compact />
-                      <span className="text-xs font-medium text-slate-600">{review.rating}.0</span>
+                      {review.rating ? (
+                        <>
+                          <StarRating value={review.rating} readOnly compact />
+                          <span className="text-xs font-medium text-slate-600">{review.rating}.0</span>
+                        </>
+                      ) : <span className="text-xs text-slate-500">No rating</span>}
                     </div>
-                    {reviewContent.title && <h4 className="mt-2 text-sm font-semibold text-slate-900">{reviewContent.title}</h4>}
-                    {reviewContent.body && <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">{reviewContent.body}</p>}
-                    {review.photo_url ? (
-                      <img src={review.photo_url} alt="Photo shared with this review" loading="lazy" className="mt-2 max-h-64 w-full rounded-lg object-cover sm:max-w-sm" />
-                    ) : null}
+                    <div className="mt-3 flex min-w-0 items-start gap-3">
+                      <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
+                        {reviewContent.title && <h4 className="text-sm font-semibold text-slate-900">{reviewContent.title}</h4>}
+                        {reviewContent.body && <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6 text-slate-600 [overflow-wrap:anywhere]">{reviewContent.body}</p>}
+                      </div>
+                      {review.photo_url && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenPhoto?.(review.photo_url, 'Photo shared with this review')}
+                          aria-label="Open photo shared with this review"
+                          className="h-20 w-20 shrink-0 overflow-hidden rounded-xl border border-slate-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700 sm:h-24 sm:w-24"
+                        >
+                          <img src={review.photo_url} alt="Photo shared with this review" loading="lazy" className="h-full w-full object-cover" />
+                        </button>
+                      )}
+                    </div>
                     {review.office_reply ? (
                       <div className="mt-2 rounded-lg border-l-4 border-sky-400 bg-sky-50 px-3 py-2">
                         <p className="text-xs font-semibold text-sky-800">
@@ -595,19 +713,43 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
                         <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{review.office_reply}</p>
                       </div>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => handleHelpful(review.id)}
-                      disabled={!userId || review.user_id === userId}
-                      aria-pressed={helpfulVotes[review.id] === true}
-                      title={!userId ? 'Sign in to mark this review helpful' : review.user_id === userId ? 'You cannot vote on your own review' : undefined}
-                      className={`mt-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                        helpfulVotes[review.id] === true ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
-                      }`}
-                    >
-                      <ThumbsUp className="h-3.5 w-3.5" />
-                      Helpful{helpfulCounts[review.id] ? ` · ${helpfulCounts[review.id]}` : ''}
-                    </button>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleHelpful(review.id)}
+                        disabled={!userId || review.user_id === userId}
+                        aria-pressed={helpfulVotes[review.id] === true}
+                        title={!userId ? 'Sign in to mark this review helpful' : review.user_id === userId ? 'You cannot vote on your own review' : undefined}
+                        className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-[white] px-4 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                          helpfulVotes[review.id] === true ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                        {helpfulCounts[review.id] ? `${helpfulCounts[review.id]} Helpful` : 'Helpful'}
+                      </button>
+                      {myReview?.id === review.id && review.user_id === userId && (
+                        <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setReviewModalOpen(true)}
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-700"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActionError('')
+                            setDeleteConfirmOpen(true)
+                          }}
+                          disabled={deleting || submitting || uploadingPhoto}
+                          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-rose-200 bg-white px-4 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-rose-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />{deleting ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </article>
@@ -628,7 +770,7 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
           disabled={loadingMore || loadingReviews}
           className="mt-2 inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
         >
-          {loadingMore ? 'Loading…' : showAllReviews ? 'Load more reviews' : `View all reviews (${totalCount})`}
+          {loadingMore ? 'Loading…' : showAllReviews ? 'Load more reviews' : `View all reviews (${reviewCount})`}
         </button>
       )}
     </section>

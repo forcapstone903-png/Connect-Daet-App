@@ -37,10 +37,10 @@ const SEVERITY = {
 }
 
 const NAV = [
-  { href: '/info/visitor/tourist-spots', label: 'Places' },
+  { href: '/info/visitor/tourist-spots', label: 'Travels' },
   { href: '/info/visitor/events', label: 'Events' },
   { href: '/info/visitor/alerts', label: 'Alerts' },
-  { href: '/info/visitor/search?type=blogs', label: 'Stories' },
+  { href: '/info/visitor/search?type=blogs', label: 'Blogs' },
   { href: '/info/visitor/forum', label: 'Forum' },
   { href: '/info/about', label: 'About' },
   { href: '/info/contact', label: 'Contact' },
@@ -93,10 +93,14 @@ function MediaPlaceholder({ icon: Icon }) {
 }
 
 function Stars({ value }) {
-  const rounded = Math.round(Number(value) || 0)
+  const rating = Number(value)
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    return <span className="text-xs text-slate-500">No star rating</span>
+  }
+
   return (
-    <span className="inline-flex items-center gap-0.5" aria-label={`${rounded} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((n) => <Star key={n} className={`h-3.5 w-3.5 ${n <= rounded ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} aria-hidden="true" />)}
+    <span className="inline-flex items-center gap-0.5" aria-label={`${rating} out of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((n) => <Star key={n} className={`h-3.5 w-3.5 ${n <= rating ? 'fill-amber-400 text-amber-400' : 'text-slate-300'}`} aria-hidden="true" />)}
     </span>
   )
 }
@@ -137,7 +141,7 @@ export default function VisitorHomePage() {
         supabase.from('info_announcements').select('id, title, content, published_at')
           .eq('status', 'published').in('audience', ['all', 'tourists'])
           .or(`expires_at.is.null,expires_at.gt.${now}`).order('published_at', { ascending: false }).limit(3),
-        supabase.from('info_tourist_spots').select('id, name, listing_type, category, location, barangay, rating, image_url, featured_image, gallery_images, featured')
+        supabase.from('info_tourist_spots').select('id, name, listing_type, category, location, barangay, rating, rating_count, image_url, featured_image, gallery_images, featured')
           .eq('status', 'active').order('featured', { ascending: false }).order('rating', { ascending: false }).limit(6),
         supabase.from('info_events').select('id, title, location, venue, start_date, end_date, start_time, category, featured_image, is_free')
           .eq('status', 'published').eq('approval_status', 'approved')
@@ -465,7 +469,7 @@ export default function VisitorHomePage() {
                     <h3 className="mt-1 min-h-14 line-clamp-2 text-lg font-bold text-slate-900 group-hover:text-sky-700">{place.name}</h3>
                     <div className="mt-auto flex items-center justify-between gap-2 pt-2 text-sm text-slate-500">
                       <span className="flex min-w-0 items-center gap-1"><MapPin className="h-4 w-4 shrink-0" aria-hidden="true" /><span className="truncate">{place.barangay || place.location}</span></span>
-                      {Number(place.rating) > 0 ? <span className="flex items-center gap-1 font-semibold text-slate-700"><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />{Number(place.rating).toFixed(1)}</span> : null}
+                      {Number(place.rating_count) > 0 ? <span className="flex items-center gap-1 font-semibold text-slate-700" aria-label={`Rated ${Number(place.rating).toFixed(1)} out of 5 from ${place.rating_count} ratings`}><Star className="h-4 w-4 fill-amber-400 text-amber-400" aria-hidden="true" />{Number(place.rating).toFixed(1)} <span className="text-xs font-normal text-slate-500">({place.rating_count})</span></span> : null}
                     </div>
                   </div>
                 </Link>
@@ -673,7 +677,7 @@ export default function VisitorHomePage() {
             <ul className="mt-2 space-y-1.5 text-slate-600">
               <li><Link href="/info/visitor/alerts" className="hover:underline">Alerts</Link></li>
               <li><Link href="/info/visitor/forum" className="hover:underline">Forum</Link></li>
-              <li><Link href="/info/visitor/search?type=blogs" className="hover:underline">Stories</Link></li>
+              <li><Link href="/info/visitor/search?type=blogs" className="hover:underline">Blogs</Link></li>
               <li><Link href="/info/community-guidelines" className="hover:underline">Community guidelines</Link></li>
             </ul>
           </div>

@@ -31,14 +31,14 @@ test('authenticated roles trust the database profile and never staff metadata', 
   assert.equal(resolveAuthenticatedUserRole('tourist', 'admin'), 'tourist')
 })
 
-test('staff roles have separate dashboard routes with role-specific access', () => {
+test('staff roles retain their home routes and moderation access is shared', () => {
   assert.equal(getStaffHomePath('admin'), '/info/admin/dashboard')
   assert.equal(getStaffHomePath('tourism_officer'), '/info/admin/tourism-dashboard')
   assert.equal(getStaffHomePath('moderator'), '/info/admin/moderator-dashboard')
   assert.equal(getStaffHomePath('tourist'), '/info/user/dashboard')
 
   assert.equal(canAccessAdminPage('tourism_officer', '/info/admin/tourism-dashboard'), true)
-  assert.equal(canAccessAdminPage('tourism_officer', '/info/admin/moderator-dashboard'), false)
+  assert.equal(canAccessAdminPage('tourism_officer', '/info/admin/moderator-dashboard'), true)
   assert.equal(canAccessAdminPage('moderator', '/info/admin/moderator-dashboard'), true)
   assert.equal(canAccessAdminPage('moderator', '/info/admin/tourism-dashboard'), false)
 })
@@ -49,7 +49,7 @@ test('admin holds every permission', () => {
   }
 })
 
-test('tourism officer reaches tourism pages only', () => {
+test('tourism officer reaches tourism and moderation pages', () => {
   const role = 'tourism_officer'
   assert.equal(canAccessAdminPage(role, '/info/admin/dashboard'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/tourist-spots'), true)
@@ -61,8 +61,18 @@ test('tourism officer reaches tourism pages only', () => {
     assert.equal(canAccessAdminPage(role, `/info/admin/settings/${page}`), true, page)
   }
 
-  assert.equal(canAccessAdminPage(role, '/info/admin/moderation'), false)
+  assert.equal(canAccessAdminPage(role, '/info/admin/moderation'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/blogs'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/forum'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/moderation', 'PATCH'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/suspension-cases'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/moderation/suspension-review', 'GET'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/moderation/suspension-review', 'PATCH'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/forum', 'PATCH'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/blogs', 'PATCH'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/users'), false)
+  assert.equal(canAccessAdminPage('moderator', '/info/admin/suspension-cases'), false)
+  assert.equal(canAccessAdminApi('moderator', '/info/api/admin/moderation/suspension-review', 'PATCH'), false)
   assert.equal(canAccessAdminPage(role, '/info/admin/settings/security'), false)
   assert.equal(canAccessAdminPage(role, '/info/admin/settings/email'), false)
   assert.equal(canAccessAdminPage(role, '/info/admin/settings/maintenance'), false)
@@ -94,12 +104,21 @@ test('moderator reaches community pages only', () => {
   assert.equal(canAccessAdminPage('tourism_officer', '/info/admin/announcement'), false)
 })
 
-test('moderator discussion controls require moderation permission', () => {
+test('moderation discussion controls are available to moderators and tourism officers', () => {
   const apiPath = '/info/api/admin/moderation/comments'
   assert.equal(canAccessAdminApi('moderator', apiPath, 'GET'), true)
   assert.equal(canAccessAdminApi('moderator', apiPath, 'POST'), true)
   assert.equal(canAccessAdminApi('moderator', apiPath, 'DELETE'), true)
-  assert.equal(canAccessAdminApi('tourism_officer', apiPath, 'GET'), false)
+  assert.equal(canAccessAdminApi('tourism_officer', apiPath, 'GET'), true)
+})
+
+test('restriction lifting requires the moderation permission or administrator role', () => {
+  const apiPath = '/info/api/admin/moderation'
+  assert.equal(canAccessAdminApi('moderator', apiPath, 'PATCH'), true)
+  assert.equal(canAccessAdminApi('moderator', apiPath, 'PATCH', { revoke: ['moderation.manage'] }), false)
+  assert.equal(canAccessAdminApi('admin', apiPath, 'PATCH'), true)
+  assert.equal(canAccessAdminApi('tourism_officer', apiPath, 'PATCH'), true)
+  assert.equal(canAccessAdminApi('tourism_officer', apiPath, 'PATCH', { revoke: ['moderation.manage'] }), false)
 })
 
 test('public FAQ management is available to tourism officers and admins, not moderators', () => {
@@ -156,7 +175,7 @@ test('API rules are method aware', () => {
   assert.equal(canAccessAdminApi('tourism_officer', '/info/api/admin/tourist-spots/abc', 'PUT'), true)
   assert.equal(canAccessAdminApi('tourism_officer', '/info/api/admin/tourist-spots/geocode', 'GET'), true)
   assert.equal(canAccessAdminApi('moderator', '/info/api/admin/tourist-spots/geocode', 'GET'), false)
-  assert.equal(canAccessAdminApi('tourism_officer', '/info/api/admin/blogs', 'GET'), false)
+  assert.equal(canAccessAdminApi('tourism_officer', '/info/api/admin/blogs', 'GET'), true)
   assert.equal(canAccessAdminApi('moderator', '/info/api/admin/blogs/abc', 'PATCH'), true)
   assert.equal(canAccessAdminApi('moderator', '/info/api/admin/community-guidelines', 'PATCH'), true)
   assert.equal(canAccessAdminApi('moderator', '/info/api/admin/settings', 'GET'), false)

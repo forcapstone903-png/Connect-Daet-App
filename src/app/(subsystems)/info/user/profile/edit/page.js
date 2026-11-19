@@ -8,6 +8,8 @@ import { FileText, MapPin, Save, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject, updateStoredSession } from '@/lib/authCookies'
 import { notifyToast } from '@/lib/toast.mjs'
+import InterestSelector from '@/app/(subsystems)/info/components/user/InterestSelector'
+import { normalizeUserInterests } from '@/lib/userInterests'
 import ProfilePhotoCropper from '@/app/(subsystems)/info/components/user/ProfilePhotoCropper'
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
@@ -19,6 +21,12 @@ export default function EditProfilePage() {
   const [form, setForm] = useState({ full_name: '', username: '', phone_number: '', bio: '', location: '', avatar_url: '', cover_photo_url: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [savedInterests, setSavedInterests] = useState([])
+  const [draftInterests, setDraftInterests] = useState([])
+  const [interestsLoading, setInterestsLoading] = useState(true)
+  const [interestsLoadError, setInterestsLoadError] = useState('')
+  const [interestsRetry, setInterestsRetry] = useState(0)
+  const [savingInterests, setSavingInterests] = useState(false)
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -54,6 +62,37 @@ export default function EditProfilePage() {
 
     void loadProfile()
   }, [router])
+
+  useEffect(() => {
+    if (!userId) return undefined
+
+    let active = true
+    const loadInterests = async () => {
+      setInterestsLoading(true)
+      setInterestsLoadError('')
+      try {
+        const response = await fetch('/info/api/user/interests', { credentials: 'same-origin', cache: 'no-store' })
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to load your interests.')
+        if (active) {
+          const interests = normalizeUserInterests(result.interests)
+          setSavedInterests(interests)
+          setDraftInterests(interests)
+        }
+      } catch (error) {
+        if (active) {
+          const message = error?.message || 'Unable to load your interests.'
+          setInterestsLoadError(message)
+          notifyToast(message, 'error')
+        }
+      } finally {
+        if (active) setInterestsLoading(false)
+      }
+    }
+
+    void loadInterests()
+    return () => { active = false }
+  }, [userId, interestsRetry])
 
   const saveProfile = async () => {
     if (!userId) {
@@ -100,6 +139,35 @@ export default function EditProfilePage() {
       notifyToast(error?.message || 'Unable to update your profile.', 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const saveInterests = async () => {
+    if (!userId) {
+      notifyToast('Please log in to update your interests.', 'warning')
+      return
+    }
+
+    setSavingInterests(true)
+    try {
+      const response = await fetch('/info/api/user/interests', {
+        method: 'PUT',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interests: draftInterests }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to save your interests.')
+
+      const interests = normalizeUserInterests(result.interests)
+      setSavedInterests(interests)
+      setDraftInterests(interests)
+      window.dispatchEvent(new CustomEvent('daet-user-interests-updated', { detail: { interests } }))
+      notifyToast('Your interests were updated successfully.', 'success')
+    } catch (error) {
+      notifyToast(error?.message || 'Unable to save your interests.', 'error')
+    } finally {
+      setSavingInterests(false)
     }
   }
 
@@ -152,6 +220,56 @@ export default function EditProfilePage() {
             </div>
 
             <div className="mt-6 flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><Link href="/info/user/profile" className="text-center text-sm font-semibold text-slate-500 hover:text-teal-700">Cancel</Link><div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center"><button type="button" onClick={saveProfile} disabled={saving} className="usr-section-primary"><Save className="h-4 w-4" />{saving ? 'Saving...' : 'Save changes'}</button></div></div>
+
+            <section id="interests" aria-labelledby="edit-interests-title" className="mt-8 border-t border-slate-100 pt-6">
+              <div className="mb-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-teal-700">Personalization</p>
+                <h2 id="edit-interests-title" className="mt-1 text-xl font-black text-slate-900">Edit interests</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500">Choose what you enjoy to refresh recommendations for stories, people, places, and events.</p>
+              </div>
+              {interestsLoading ? (
+                <p className="py-4 text-sm text-slate-500" role="status">Loading your saved interests...</p>
+              ) : interestsLoadError ? (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
+                  <p>{interestsLoadError}</p>
+                  <button type="button" onClick={() => setInterestsRetry((value) => value + 1)} className="mt-3 font-semibold underline underline-offset-2">
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <InterestSelector
+                    selectedInterests={draftInterests}
+                    disabled={savingInterests}
+                    onToggle={(interest) => setDraftInterests((current) => (
+                      current.includes(interest)
+                        ? current.filter((item) => item !== interest)
+                        : [...current, interest]
+                    ))}
+                  />
+                  <p className="mt-3 text-xs text-slate-500" aria-live="polite">{draftInterests.length} selected</p>
+                  <div className="mt-5 flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      disabled={savingInterests}
+                      onClick={() => setDraftInterests(savedInterests)}
+                      className="usr-section-secondary justify-center disabled:opacity-60"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={savingInterests}
+                      onClick={saveInterests}
+                      className="usr-section-primary justify-center disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Save className="h-4 w-4" />
+                      {savingInterests ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </section>
           </section>
         </div>
       </div>

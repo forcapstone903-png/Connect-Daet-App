@@ -6,7 +6,6 @@ import { useParams, useRouter } from 'next/navigation'
 import { loginUrlFor } from '@/lib/loginPrompt'
 import {
   Bookmark,
-  Bell,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -21,6 +20,7 @@ import {
   MoreHorizontal,
   Phone,
   Share2,
+  Star,
   X,
 } from 'lucide-react'
 import { getListingTypeLabel } from '@/lib/listings.mjs'
@@ -30,8 +30,6 @@ import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import RatingsReviews from '@/app/(subsystems)/info/components/user/RatingsReviews'
-import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
-import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 
@@ -81,8 +79,6 @@ export default function TouristSpotDetailPage() {
   const [spotAuthor, setSpotAuthor] = useState(null)
   const [relatedSpots, setRelatedSpots] = useState([])
   const [userId, setUserId] = useState('')
-  const [profile, setProfile] = useState(null)
-  const [unreadCount, setUnreadCount] = useState(0)
   const [isSaved, setIsSaved] = useState(false)
   const [reaction, setReaction] = useState('')
   const [likeCount, setLikeCount] = useState(0)
@@ -93,6 +89,7 @@ export default function TouristSpotDetailPage() {
   const [busy, setBusy] = useState(false)
   const [aboutExpanded, setAboutExpanded] = useState(false)
   const [lightboxIndex, setLightboxIndex] = useState(null)
+  const [singleLightbox, setSingleLightbox] = useState(null)
   const [shareOpen, setShareOpen] = useState(false)
   const [shareMessage, setShareMessage] = useState('')
   const [moreOpen, setMoreOpen] = useState(false)
@@ -146,26 +143,6 @@ export default function TouristSpotDetailPage() {
         const currentUserId = sessionResult.data?.session?.user?.id
           || (cookie?.logged_in ? cookie.user_id : '')
         if (active) setUserId(currentUserId || '')
-        if (currentUserId) {
-          try {
-            const profileResult = await supabase.from('profiles')
-              .select('full_name, profile_image_url')
-              .eq('user_id', currentUserId)
-              .maybeSingle()
-            if (profileResult.error) throw profileResult.error
-            if (active) setProfile(profileResult.data)
-          } catch (profileError) {
-            console.error('Tourist spot header profile could not be loaded:', profileError)
-          }
-          try {
-            const notificationResponse = await fetch('/info/api/notifications', { credentials: 'same-origin', cache: 'no-store' })
-            if (!notificationResponse.ok) throw new Error('Notification request failed.')
-            const notificationData = await notificationResponse.json()
-            if (active) setUnreadCount(Number(notificationData?.unread_count || 0))
-          } catch (notificationError) {
-            console.error('Tourist spot notification count could not be loaded:', notificationError)
-          }
-        }
 
         const { data, error: spotError } = await supabase
           .from('info_tourist_spots')
@@ -397,26 +374,36 @@ export default function TouristSpotDetailPage() {
   }
 
   const scrollToComments = () => document.getElementById('tourist-comments')?.scrollIntoView({ behavior: 'smooth' })
+  const scrollToRatings = () => document.getElementById('ratings-reviews')?.scrollIntoView({ behavior: 'smooth' })
+  const openReviewPhoto = (url, alt) => setSingleLightbox({ url, alt })
   const moveLightbox = useCallback((direction) => {
     setLightboxIndex((index) => (index + direction + images.length) % images.length)
   }, [images.length])
 
   useEffect(() => {
-    if (lightboxIndex === null) return undefined
+    if (lightboxIndex === null && !singleLightbox) return undefined
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setLightboxIndex(null)
-      if (event.key === 'ArrowLeft') moveLightbox(-1)
-      if (event.key === 'ArrowRight') moveLightbox(1)
+      if (event.key === 'Escape') {
+        setLightboxIndex(null)
+        setSingleLightbox(null)
+      }
+      if (lightboxIndex !== null && event.key === 'ArrowLeft') moveLightbox(-1)
+      if (lightboxIndex !== null && event.key === 'ArrowRight') moveLightbox(1)
     }
     document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [lightboxIndex, moveLightbox])
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [lightboxIndex, moveLightbox, singleLightbox])
 
   if (loading) {
-    return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-loading"><LoaderCircle className="animate-spin" />Loading destination…</div></main></>
+    return <main className="event-detail-page tourist-detail-page"><div className="tourist-detail-loading"><LoaderCircle className="animate-spin" />Loading destination…</div></main>
   }
   if (error || !spot) {
-    return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><Link href="/info/visitor/tourist-spots" className="tourist-detail-error-back">Back to destinations</Link></div></main></>
+    return <main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><Link href="/info/visitor/tourist-spots" className="tourist-detail-error-back">Back to destinations</Link></div></main>
   }
 
   const heroImage = images[0]
@@ -426,155 +413,146 @@ export default function TouristSpotDetailPage() {
 
   return (
     <>
-      <div className="tourist-mobile-shell"><UserTopHeader detailMode homeHref="/info/visitor" /></div>
-      <main className="event-detail-page tourist-detail-page">
-        <header className="event-detail-header">
-          <div className="event-detail-header-inner">
-            <Link href="/info/visitor" className="event-detail-brand">
-              <img src="/logo.png" alt="" /><span>Connect Daet</span>
-            </Link>
-            <div className="event-detail-header-actions">
-              <Link href="/info/user/notifications" aria-label="Notifications" className="tourist-header-icon"><Bell size={18} />{unreadCount > 0 && <span className="tourist-unread-dot">{unreadCount > 9 ? '9+' : unreadCount}</span>}</Link>
-              <Link href="/info/user/profile" aria-label="Your profile" className="event-detail-header-avatar">
-                {profile?.profile_image_url ? <img src={profile.profile_image_url} alt="" /> : getInitials(profile?.full_name)}
-              </Link>
-            </div>
-          </div>
-        </header>
-
-        <div className="tourist-detail-content pt-2">
-          <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
-        </div>
-
+      <main className="event-detail-page tourist-detail-page min-h-screen !bg-[#F8FAFC] pb-28 text-slate-900 md:pb-10">
         <div className="tourist-detail-content">
-          <section className="tourist-detail-intro">
-            <Link href="/info/visitor" className="tourist-home-back">
-              <ChevronLeft size={17} aria-hidden="true" />
-              <span>Back to home</span>
-            </Link>
-            <div className="tourist-detail-kickers">
-              <span>{getListingTypeLabel(spot.listing_type)}</span>
-              {spot.category && <span>{spot.category}</span>}
+          <div className="w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+          <div className="pb-3 pt-1">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-700">{getListingTypeLabel(spot.listing_type)}</span>
+              {spot.category && <span className="rounded-full border border-teal-200 bg-teal-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.16em] text-teal-700">{spot.category}</span>}
               {(spot.is_popular || spot.is_featured) && <span className="tourist-popular-badge">Popular destination</span>}
             </div>
-            <h1>{spot.name}</h1>
-            {description && <p className="tourist-detail-deck">{description.slice(0, 220)}{description.length > 220 ? '…' : ''}</p>}
-            {address && <p className="tourist-detail-byline"><MapPin size={16} aria-hidden="true" />{address}</p>}
-            {spotAuthor && <Link href={`/info/user/profile/${spotAuthor.id}`} className="tourist-author-byline">
-              {spotAuthor.profile_image_url
-                ? <img src={spotAuthor.profile_image_url} alt="" />
-                : <span>{getInitials(spotAuthorName)}</span>}
-              <span>Posted by <strong>{spotAuthorName}</strong></span>
-            </Link>}
-          </section>
+            <h1 className="mt-2 break-words text-2xl font-black leading-tight tracking-tight text-slate-950 sm:text-3xl">{spot.name}</h1>
+            {description && <p className="mt-2 max-w-3xl text-sm leading-5 text-slate-600 sm:text-base">{description.slice(0, 220)}{description.length > 220 ? '…' : ''}</p>}
+            {(address || spotAuthor) && <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              {address && <p className="flex items-center gap-1.5 text-xs font-medium text-blue-700"><MapPin size={14} aria-hidden="true" />{address}</p>}
+              {spotAuthor && <Link href={`/info/user/profile/${spotAuthor.id}`} className="inline-flex min-h-8 items-center gap-1.5 text-xs text-slate-500 transition hover:text-blue-700">
+                {spotAuthor.profile_image_url
+                  ? <img src={spotAuthor.profile_image_url} alt="" className="h-6 w-6 rounded-full object-cover" />
+                  : <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-100 text-[9px] font-bold text-emerald-700">{getInitials(spotAuthorName)}</span>}
+                <span>Posted by <strong className="font-semibold text-slate-700">{spotAuthorName}</strong></span>
+              </Link>}
+            </div>}
+          </div>
 
-          <nav className="event-detail-engagement tourist-engagement" aria-label="Destination interactions">
-            <div className="event-detail-engagement-group">
-              <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'} aria-label={reaction === 'like' ? 'Unlike destination' : 'Like destination'}>
-                <Heart size={17} className={reaction === 'like' ? 'fill-rose-500 text-rose-500' : ''} /><span>{likeCount}</span><span className="tourist-action-label">Like</span>
+          <nav className="mt-1 flex min-h-12 items-center justify-between gap-2 border-t border-slate-200 pt-3" aria-label="Destination interactions">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'} aria-label={reaction === 'like' ? 'Unlike destination' : 'Like destination'} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700">
+                <Heart size={17} className={reaction === 'like' ? 'fill-rose-500 text-rose-500' : ''} /><span>{likeCount} Like</span>
               </button>
-              <button type="button" onClick={scrollToComments}><MessageCircle size={17} /><span>{commentCount}</span><span className="tourist-action-label">Comment</span></button>
-              <button type="button" onClick={openShareComposer}><Share2 size={17} /><span className="tourist-action-label">Share</span></button>
+              <button type="button" onClick={scrollToRatings} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700"><Star size={15} /><span>Ratings &amp; reviews</span></button>
+              <button type="button" onClick={openShareComposer} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"><Share2 size={15} /><span>Share</span></button>
             </div>
-            <div className="event-detail-engagement-group event-detail-engagement-end">
-              <button type="button" onClick={toggleFavorite} disabled={busy} aria-pressed={isSaved} aria-label={isSaved ? 'Remove bookmark' : 'Bookmark destination'}><Bookmark size={17} className={isSaved ? 'fill-current' : ''} /></button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" onClick={toggleFavorite} disabled={busy} aria-pressed={isSaved} aria-label={isSaved ? 'Remove bookmark' : 'Bookmark destination'} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100"><Bookmark size={16} className={isSaved ? 'fill-current' : ''} /></button>
               <div className="relative" ref={menuRef}>
-                <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="More options" aria-expanded={moreOpen}><MoreHorizontal size={19} /></button>
+                <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="More options" aria-expanded={moreOpen} className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100"><MoreHorizontal size={19} /></button>
                 {moreOpen && <div className="tourist-more-menu"><button type="button" onClick={copyLink}><Copy size={15} />Copy destination link</button></div>}
               </div>
             </div>
           </nav>
 
-          <section className="tourist-hero" aria-label={`${spot.name} destination`}>
+          <section className="tourist-hero !mt-3 !min-h-0 aspect-[16/7] overflow-hidden rounded-xl" aria-label={`${spot.name} destination`}>
             {heroImage
-              ? <img className="tourist-hero-image" src={heroImage} alt={spot.name} />
+              ? <button type="button" onClick={() => setLightboxIndex(0)} aria-label={`Open photo of ${spot.name}`} className="absolute inset-0 h-full w-full cursor-zoom-in">
+                <img className="tourist-hero-image" src={heroImage} alt={spot.name} />
+                <span className="absolute bottom-3 right-3 rounded-full bg-slate-950/60 px-3 py-1.5 text-[10px] font-semibold text-white shadow">View full photo</span>
+              </button>
               : <div className="tourist-hero-placeholder"><Camera size={30} /><span>No destination photo available</span></div>}
           </section>
 
+          <section className="mt-3 grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" aria-label="Destination quick information">
+            {[
+              spot.category && { label: 'Category', value: spot.category },
+              entranceFee !== null && { label: 'Entrance fee', value: entranceFee > 0 ? `₱${entranceFee.toLocaleString('en-PH')}` : 'Free' },
+              spot.opening_hours && { label: spot.listing_type === 'accommodation' ? 'Hours / check-in' : 'Opening hours', value: spot.opening_hours },
+            ].filter(Boolean).map(({ label, value }, index) => (
+              <div key={label} className={`min-w-0 p-3 sm:px-5 sm:py-4 ${index > 0 ? 'border-l border-slate-200' : ''}`}>
+                <p className="text-[9px] font-bold uppercase tracking-[0.13em] text-slate-500 sm:text-[10px]">{label}</p>
+                <p className="mt-1 break-words text-xs font-semibold leading-5 text-slate-900 sm:text-sm">{value}</p>
+              </div>
+            ))}
+          </section>
+          </div>
+
           {actionError && <p className="tourist-action-error" role="alert">{actionError}</p>}
 
-          <div className="tourist-detail-columns">
-            <div className="tourist-detail-primary">
-              <section className="event-detail-section tourist-about-section">
-                <h2>About This Destination</h2>
+          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
+            <div className="min-w-0 space-y-5 lg:col-span-7">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+                <h2 className="text-lg font-bold text-slate-900">About This Destination</h2>
                 {description
-                  ? <div className="tourist-description">
-                    <p className={showDescriptionToggle && !aboutExpanded ? 'is-clamped' : ''}>{description}</p>
-                    {showDescriptionToggle && <button type="button" onClick={() => setAboutExpanded((expanded) => !expanded)}>{aboutExpanded ? 'See less' : 'See more'}</button>}
+                  ? <div className="mt-3">
+                    <p className={`break-words text-sm leading-7 text-slate-600 [overflow-wrap:anywhere] ${showDescriptionToggle && !aboutExpanded ? 'line-clamp-6' : ''}`}>{description}</p>
+                    {showDescriptionToggle && <button type="button" onClick={() => setAboutExpanded((expanded) => !expanded)} className="mt-2 min-h-11 rounded-full px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50">{aboutExpanded ? 'See less' : 'See more'}</button>}
                   </div>
-                  : <p className="tourist-muted">Destination details have not been added yet.</p>}
-                <div className="tourist-facts">
-                  {spot.category && <span><strong>Category</strong>{spot.category}</span>}
-                  {(spot.visit_duration || spot.duration) && <span><strong>Recommended visit</strong>{spot.visit_duration || spot.duration}</span>}
-                  {spot.best_visit_time && <span><strong>Best time to visit</strong>{spot.best_visit_time}</span>}
-                  {entranceFee !== null && <span><strong>Entrance fee</strong>{entranceFee > 0 ? `₱${entranceFee.toLocaleString('en-PH')}` : 'Free'}</span>}
-                  {spot.price_range && <span><strong>Price range</strong>{spot.price_range}</span>}
-                  {spot.barangay && <span><strong>Barangay</strong>{spot.barangay}</span>}
-                  {spot.opening_hours && <span><strong>{spot.listing_type === 'accommodation' ? 'Hours / check-in' : 'Opening hours'}</strong>{spot.opening_hours}</span>}
-                  {spot.weather_average && <span><strong>Weather</strong>{spot.weather_average}</span>}
+                  : <p className="mt-3 text-sm text-slate-500">Destination details have not been added yet.</p>}
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {(spot.visit_duration || spot.duration) && <div className="rounded-xl bg-slate-50 p-3"><strong className="block text-xs font-semibold text-slate-500">Recommended visit</strong><span className="mt-1 block text-sm text-slate-800">{spot.visit_duration || spot.duration}</span></div>}
+                  {spot.best_visit_time && <div className="rounded-xl bg-slate-50 p-3"><strong className="block text-xs font-semibold text-slate-500">Best time to visit</strong><span className="mt-1 block text-sm text-slate-800">{spot.best_visit_time}</span></div>}
+                  {spot.price_range && <div className="rounded-xl bg-slate-50 p-3"><strong className="block text-xs font-semibold text-slate-500">Price range</strong><span className="mt-1 block text-sm text-slate-800">{spot.price_range}</span></div>}
+                  {spot.barangay && <div className="rounded-xl bg-slate-50 p-3"><strong className="block text-xs font-semibold text-slate-500">Barangay</strong><span className="mt-1 block text-sm text-slate-800">{spot.barangay}</span></div>}
+                  {spot.weather_average && <div className="rounded-xl bg-slate-50 p-3"><strong className="block text-xs font-semibold text-slate-500">Weather</strong><span className="mt-1 block text-sm text-slate-800">{spot.weather_average}</span></div>}
                 </div>
-                {spot.highlights && <div className="tourist-highlights"><h3>Highlights</h3><p>{Array.isArray(spot.highlights) ? spot.highlights.join(' · ') : spot.highlights}</p></div>}
+                {spot.highlights && <div className="mt-4"><h3 className="text-sm font-bold text-slate-900">Highlights</h3><p className="mt-1 break-words text-sm leading-6 text-slate-600">{Array.isArray(spot.highlights) ? spot.highlights.join(' · ') : spot.highlights}</p></div>}
                 {spot.tags?.length > 0 && <ul className="mt-4 flex flex-wrap gap-2" aria-label="Tags">
-                  {spot.tags.map((tag) => <li key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">#{tag}</li>)}
+                  {spot.tags.map((tag) => <li key={tag} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">#{tag}</li>)}
                 </ul>}
               </section>
 
-              {images.length > 0 && <section className="event-detail-section tourist-gallery-section">
-                <div className="tourist-section-heading"><h2>Photos</h2><span>{images.length} {images.length === 1 ? 'photo' : 'photos'}</span></div>
+              {images.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+                <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold text-slate-900">Photos</h2><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{images.length} {images.length === 1 ? 'photo' : 'photos'}</span></div>
                 <div className="tourist-gallery">
                   {images.slice(0, 5).map((image, index) => (
-                    <button type="button" key={`${image}-${index}`} onClick={() => setLightboxIndex(index)} aria-label={`Open photo ${index + 1} of ${images.length}`} className={index === 0 ? 'is-featured' : ''}>
+                    <button type="button" key={`${image}-${index}`} onClick={() => setLightboxIndex(index)} aria-label={`Open photo ${index + 1} of ${images.length}`} className={`rounded-xl ${index === 0 ? 'is-featured' : ''}`}>
                       <img src={image} alt={`${spot.name} photo ${index + 1}`} loading="lazy" />
                     </button>
                   ))}
                 </div>
               </section>}
 
-              <section className="event-detail-section tourist-location-section" id="tourist-location">
-                <h2>Location</h2>
-                {address && <p className="tourist-location-address"><MapPin size={16} />{address}</p>}
-                {mapDestination ? <div className="tourist-map-wrap">
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" id="tourist-location">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div><h2 className="text-lg font-bold text-slate-900">Location</h2>{address && <p className="mt-2 flex items-center gap-2 break-words text-sm text-slate-600"><MapPin size={16} className="shrink-0" />{address}</p>}</div>
+                </div>
+                {mapDestination ? <div className="tourist-map-wrap mt-4 overflow-hidden rounded-2xl">
                   <iframe title={`Map showing ${spot.name}`} src={mapEmbedUrl} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
-                </div> : <p className="tourist-muted">Location information is not available yet.</p>}
-                <div className="tourist-map-actions">
-                  {mapDestination && <a href={directionsUrl} target="_blank" rel="noreferrer">Get directions <ExternalLink size={14} /></a>}
-                  {mapDestination && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapDestination)}`} target="_blank" rel="noreferrer">Open in Google Maps <ExternalLink size={14} /></a>}
+                </div> : <p className="mt-3 text-sm text-slate-500">Location information is not available yet.</p>}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {mapDestination && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapDestination)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Open in Maps <ExternalLink size={14} /></a>}
+                  {mapDestination && <a href={directionsUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Get directions <ExternalLink size={14} /></a>}
+                  {mapDestination && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapDestination)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Open in Google Maps <ExternalLink size={14} /></a>}
+                </div>
+                <div className="mt-5 border-t border-slate-100 pt-4">
+                  <h3 className="text-base font-bold text-slate-900">Contact</h3>
+                  {contactLinks.length > 0 ? (
+                    <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {contactLinks.map(({ href, label, icon: ContactIcon, external }) => (
+                        <li key={href}>
+                          <a href={href} {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})} className="flex min-h-11 min-w-0 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                            <ContactIcon size={16} aria-hidden="true" className="shrink-0 text-slate-500" />
+                            <span className="min-w-0 break-all">{label}</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="mt-2 text-sm text-slate-500">Contact details have not been added yet.</p>}
+                  {mapDestination && <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 sm:w-auto">
+                    <MapPin size={16} aria-hidden="true" />Get directions
+                  </a>}
                 </div>
               </section>
 
-              <RatingsReviews key={spot.id} attractionId={spot.id} userId={userId} />
-
-              <section className="event-detail-section tourist-comments-section" id="tourist-comments">
-                <div className="tourist-section-heading"><h2>Comments</h2><span>{commentCount}</span></div>
+              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" id="tourist-comments">
+                <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold text-slate-900">Comments</h2><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{commentCount}</span></div>
                 <Comments contentType="tourist_spot" contentId={spot.id} userId={userId} contentOwnerId={spot.created_by} contentTitle={spot.name} eventStyle />
               </section>
             </div>
 
-            <aside className="tourist-detail-sidebar">
-              <section className="event-detail-related tourist-related">
-                <h2>Contact</h2>
-                {contactLinks.length > 0 ? (
-                  <ul className="mt-3 space-y-2">
-                    {contactLinks.map(({ href, label, icon: ContactIcon, external }) => (
-                      <li key={href}>
-                        <a
-                          href={href}
-                          {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-                          className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                        >
-                          <ContactIcon size={16} aria-hidden="true" className="shrink-0 text-slate-500" />
-                          <span className="min-w-0 truncate">{label}</span>
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p className="tourist-muted mt-2">Contact details have not been added yet.</p>}
-                {mapDestination && <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="mt-3 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-slate-900 px-3 text-sm font-semibold text-white hover:bg-slate-800">
-                  <MapPin size={16} aria-hidden="true" />Get directions
-                </a>}
-              </section>
-              {relatedSpots.length > 0 && <section className="event-detail-related tourist-related">
-                <h2>You might also like</h2>
+            <aside className="min-w-0 space-y-5 lg:sticky lg:top-24 lg:col-span-5 lg:self-start">
+              <RatingsReviews key={spot.id} attractionId={spot.id} userId={userId} onOpenPhoto={openReviewPhoto} />
+              {relatedSpots.length > 0 && <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <h2 className="text-base font-bold text-slate-900">You might also like</h2>
                 <div className="event-detail-related-list">
                   {relatedSpots.map((related) => {
                     const relatedImage = mediaItems(related.featured_image, related.gallery_images, related.images)[0]
@@ -599,12 +577,43 @@ export default function TouristSpotDetailPage() {
           </section>
         </div>}
 
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur md:hidden" style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}>
+          <div className="mx-auto grid max-w-lg grid-cols-[0.8fr_0.8fr_1.4fr] gap-2">
+            <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full border border-slate-200 px-2 text-xs font-semibold text-slate-700 disabled:opacity-50">
+              <Heart size={16} className={reaction === 'like' ? 'fill-rose-500 text-rose-500' : ''} />{likeCount} Like
+            </button>
+            <button type="button" onClick={openShareComposer} className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full border border-slate-200 px-2 text-xs font-semibold text-slate-700">
+              <Share2 size={16} />Share
+            </button>
+            {mapDestination && <a href={directionsUrl} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-blue-600 px-2 text-xs font-semibold text-white">
+              <MapPin size={16} />Get directions
+            </a>}
+          </div>
+        </div>
+
         {lightboxIndex !== null && images.length > 0 && <div className="tourist-lightbox" role="dialog" aria-modal="true" aria-label="Destination photo viewer" onClick={() => setLightboxIndex(null)}>
           <button type="button" className="tourist-lightbox-close" onClick={() => setLightboxIndex(null)} aria-label="Close photo viewer"><X /></button>
           {images.length > 1 && <button type="button" className="tourist-lightbox-prev" onClick={(event) => { event.stopPropagation(); moveLightbox(-1) }} aria-label="Previous photo"><ChevronLeft /></button>}
           <img src={images[lightboxIndex]} alt={`${spot.name} photo ${lightboxIndex + 1}`} onClick={(event) => event.stopPropagation()} />
           {images.length > 1 && <button type="button" className="tourist-lightbox-next" onClick={(event) => { event.stopPropagation(); moveLightbox(1) }} aria-label="Next photo"><ChevronRight /></button>}
           <span>{lightboxIndex + 1} / {images.length}</span>
+        </div>}
+        {singleLightbox && <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/95 p-3 backdrop-blur-sm sm:p-8"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Photo preview"
+          onClick={() => setSingleLightbox(null)}
+        >
+          <button type="button" onClick={() => setSingleLightbox(null)} aria-label="Close photo preview" className="absolute right-3 top-3 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/20 bg-white/10 text-white hover:bg-white/20">
+            <X className="h-5 w-5" />
+          </button>
+          <img
+            src={singleLightbox.url}
+            alt={singleLightbox.alt || ''}
+            className="max-h-full max-w-full rounded-xl object-contain"
+            onClick={(event) => event.stopPropagation()}
+          />
         </div>}
       </main>
     </>

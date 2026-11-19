@@ -10,6 +10,7 @@ import sidebarBackground from '@/app/(subsystems)/info/assets/images/rename_side
 import { Icon } from './Icon'
 import ConfirmationModal from './ConfirmationModal'
 import { STAFF_ROLES, canAccessAdminPage, getStaffHomePath, getStaffRoleLabel, hasPermission, normalizeStaffRole } from '@/lib/staffRoles.mjs'
+import { getActiveNavigationHref } from '@/lib/routeMatching.mjs'
 
 const adminNavigationSections = [
   {
@@ -39,12 +40,14 @@ const adminNavigationSections = [
     modules: [
       { id: 'analytics-dashboard', label: 'Analytics & Exports', iconName: 'analytics', href: '/info/admin/analytics' },
       { id: 'activity-logs', label: 'Audit & Activity Logs', iconName: 'analytics', href: '/info/admin/activity-logs' },
+      { id: 'escalated-account-cases', label: 'Escalated Account Cases', iconName: 'moderation', href: '/info/admin/suspension-cases' },
     ],
   },
   {
     id: 'system',
     label: 'System Administration',
     modules: [
+      { id: 'account-oversight', label: 'Account Oversight', iconName: 'users', href: '/info/admin/account-oversight' },
       {
         id: 'settings',
         label: 'System Settings',
@@ -98,6 +101,7 @@ const staffNavigationSections = [
         iconName: 'blog',
         badgeKey: 'pendingApprovals',
         href: '/info/admin/blogs?status=all',
+        ignoreQuery: true,
       },
       {
         id: 'tourist-spots',
@@ -166,6 +170,8 @@ const staffNavigationSections = [
     label: 'Moderation',
     modules: [
       { id: 'reported-content', label: 'Reported Content', iconName: 'moderation', href: '/info/admin/moderation', exact: true },
+      { id: 'account-review', label: 'Account Review', iconName: 'users', href: '/info/admin/moderation?tab=reports', ignoreQuery: true },
+      { id: 'suspension-review', label: 'Suspension Review', iconName: 'moderation', href: '/info/admin/suspension-cases', visibleFor: ['tourism_officer'] },
       { id: 'moderation-notifications', label: 'Post Notifications', iconName: 'notifications', badgeKey: 'unreadNotifications', href: '/info/admin/moderation/notifications' },
       { id: 'community-guidelines', label: 'Community Guidelines', iconName: 'content', href: '/info/admin/community-guidelines' },
     ],
@@ -310,6 +316,7 @@ function AdminSidebarContent({ user, roleLabel: pageRoleLabel = 'System Administ
           ...module,
           href: module.id === 'dashboard' ? staffHomePath : module.href,
         }))
+        .filter((module) => !module.visibleFor || module.visibleFor.includes(userRole))
         .filter((module) => module.items || canAccessAdminPage(userRole, module.href, permissionOverrides))
         .map((module) => ({
           ...module,
@@ -319,29 +326,17 @@ function AdminSidebarContent({ user, roleLabel: pageRoleLabel = 'System Administ
     }))
     .filter((section) => section.modules.length > 0)
 
-  const normalizeHref = (href) => href.split('?')[0]
-  const isActive = (href) => normalizeHref(pathname) === normalizeHref(href) || normalizeHref(pathname).startsWith(`${normalizeHref(href)}/`)
-  const isItemActive = (item) => {
-    const itemPath = normalizeHref(item.href)
-    if (item.exact && pathname !== itemPath) return false
-    if (!item.exact && !isActive(item.href)) return false
-
-    const expectedParams = new URLSearchParams(item.href.split('?')[1] || '')
-    for (const [key, value] of expectedParams) {
-      const actualValue = searchParams.get(key)
-      if (actualValue !== value && !(actualValue === null && item.defaultParams?.[key] === value)) return false
-    }
-    const expectedPresentParams = [...expectedParams].filter(([key, value]) => (
-      !(searchParams.get(key) === null && item.defaultParams?.[key] === value)
-    )).length
-    if (item.exact && searchParams.size !== expectedPresentParams) return false
-    return true
-  }
+  const activeNavigationHref = getActiveNavigationHref(
+    pathname,
+    filteredSections.flatMap((section) => section.modules.flatMap((module) => (
+      module.items || [module]
+    )).map((item) => ({ ...item, exactQuery: item.exact }))),
+    searchParams,
+  )
+  const isItemActive = (item) => activeNavigationHref === item.href
   const isModuleActive = (module) => module.items
     ? module.items.some(isItemActive)
-    : module.exact
-      ? normalizeHref(pathname) === normalizeHref(module.href)
-      : isActive(module.href)
+    : activeNavigationHref === module.href
 
   useEffect(() => {
     if (!hasPermission(userRole, 'moderation.manage')) return undefined

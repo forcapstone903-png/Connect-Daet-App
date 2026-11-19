@@ -254,16 +254,18 @@ export default function AdminDashboard() {
   const [analytics, setAnalytics] = useState(EMPTY_REPORT)
   const [auditLogs, setAuditLogs] = useState([])
   const [systemChecks, setSystemChecks] = useState(null)
-  const [errors, setErrors] = useState({ analytics: '', audit: '', health: '' })
+  const [errors, setErrors] = useState({ analytics: '', audit: '', health: '', escalation: '' })
+  const [escalatedCaseCount, setEscalatedCaseCount] = useState(0)
 
   const fetchDashboard = useCallback(() => Promise.allSettled([
       readJson('/info/api/admin/analytics?days=30'),
       readJson('/info/api/admin/audit-logs?limit=6'),
       readJson('/info/api/admin/system-health'),
+      readJson('/info/api/admin/moderation/suspension-review?page=1&pageSize=1'),
     ]), [])
 
   const applyDashboardResults = useCallback((results) => {
-    const [analyticsResult, auditResult, healthResult] = results
+    const [analyticsResult, auditResult, healthResult, escalationResult] = results
     if (analyticsResult.status === 'fulfilled') {
       setAnalytics(analyticsResult.value.analytics || EMPTY_REPORT)
     } else {
@@ -285,12 +287,19 @@ export default function AdminDashboard() {
       setErrors((current) => ({ ...current, health: healthResult.reason?.message || 'System health is unavailable.' }))
     }
 
+    if (escalationResult.status === 'fulfilled') {
+      setEscalatedCaseCount(Number(escalationResult.value.stats?.escalatedCases) || 0)
+    } else {
+      setEscalatedCaseCount(0)
+      setErrors((current) => ({ ...current, escalation: escalationResult.reason?.message || 'Escalated account cases are unavailable.' }))
+    }
+
     setDashboardLoaded(true)
   }, [])
 
   const loadDashboard = useCallback(async () => {
     setRefreshing(true)
-    setErrors({ analytics: '', audit: '', health: '' })
+    setErrors({ analytics: '', audit: '', health: '', escalation: '' })
     const results = await fetchDashboard()
     applyDashboardResults(results)
     setRefreshing(false)
@@ -373,7 +382,21 @@ export default function AdminDashboard() {
             loading={!dashboardLoaded}
             href="/info/admin/analytics#alerts"
           />
+          <AdminStatCard
+            label="Escalated account cases"
+            value={dashboardLoaded ? formatNumber(escalatedCaseCount) : undefined}
+            meta="Pending final authorization"
+            icon="moderation"
+            tone="danger"
+            loading={!dashboardLoaded}
+            href="/info/admin/suspension-cases"
+          />
         </AdminStatGrid>
+        {errors.escalation ? (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="status">
+            Escalated account cases could not be loaded: {errors.escalation}
+          </p>
+        ) : null}
 
         <div className="grid gap-6 xl:grid-cols-2">
           <AdminPanel

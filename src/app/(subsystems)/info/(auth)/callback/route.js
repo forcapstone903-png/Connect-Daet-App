@@ -2,10 +2,10 @@ import { createServerClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { clearSecureSessionCookie, setSecureSessionCookie } from '@/lib/serverAuth'
-import { createSessionAdminClient, getUserSessionVersion } from '@/lib/sessionVersions'
+import { createSessionAdminClient, getUserSessionVersion, revokeUserSessions } from '@/lib/sessionVersions'
 import { getStaffHomePath, isStaffRole, resolveAuthenticatedUserRole } from '@/lib/staffRoles.mjs'
 import { loadSessionOptions } from '@/lib/sessionIssue'
-import { describeSuspension, getActiveSuspension } from '@/lib/contentRestrictions'
+import { getActivePermanentBan, getActiveSuspension } from '@/lib/contentRestrictions'
 
 function clearCallbackAuthCookies(response, cookieStore) {
   clearSecureSessionCookie(response)
@@ -57,13 +57,34 @@ export async function GET(request) {
 
         const { data: profile, error: profileError } = await sessionAdmin
           .from('info_users')
-          .select('user_type, full_name, profile_image_url, email_verified')
+          .select('user_type, full_name, profile_image_url, email_verified, status, account_deactivated_at, deletion_requested_at')
           .eq('id', user.id)
           .maybeSingle()
         if (profileError) throw profileError
 
         const role = resolveAuthenticatedUserRole(profile?.user_type, user.user_metadata?.user_type)
 
+        if (profile?.status === 'pending_deletion' || profile?.deletion_requested_at || profile?.account_deactivated_at) {
+          const response = NextResponse.redirect(new URL('/info/account-recovery', request.url))
+          clearCallbackAuthCookies(response, cookieStore)
+          return response
+        }
+
+        const [permanentBan, suspension] = await Promise.all([
+          getActivePermanentBan(sessionAdmin, user.id),
+          getActiveSuspension(sessionAdmin, user.id),
+        ])
+        if (profile?.status === 'banned' || permanentBan) {
+          await revokeUserSessions(sessionAdmin, user.id)
+          const response = NextResponse.redirect(new URL(
+            '/info/login?message=Your%20account%20has%20been%20permanently%20banned.%20Contact%20support%20to%20submit%20an%20appeal.',
+            request.url
+          ))
+          clearCallbackAuthCookies(response, cookieStore)
+          return response
+        }
+
+        const isSuspended = profile?.status === 'suspended' || Boolean(suspension)
         const redirectUrl = isStaffRole(role) ? getStaffHomePath(role) : '/info/user/dashboard'
         const response = NextResponse.redirect(new URL(redirectUrl, request.url))
 
@@ -73,16 +94,14 @@ export async function GET(request) {
           email: user.email,
           user_type: role,
           profile_image_url: profile?.profile_image_url || null,
-        }
-        const suspension = await getActiveSuspension(sessionAdmin, user.id)
-        if (suspension) {
-          const deniedUrl = new URL('/info/login', request.url)
-          deniedUrl.searchParams.set('message', describeSuspension(suspension))
-          return NextResponse.redirect(deniedUrl)
+          status: isSuspended ? 'suspended' : profile?.status || 'active',
         }
         const sessionVersion = await getUserSessionVersion(sessionAdmin, user.id)
         const sessionOptions = await loadSessionOptions(sessionAdmin, userProfile)
-        setSecureSessionCookie(response, userProfile, false, sessionVersion, null, sessionOptions)
+        setSecureSessionCookie(response, userProfile, false, sessionVersion, null, {
+          ...sessionOptions,
+          ...(isSuspended ? { suspendedLimitedAccess: true } : {}),
+        })
         response.cookies.set(
           'daet_auth_session',
           encodeURIComponent(JSON.stringify({

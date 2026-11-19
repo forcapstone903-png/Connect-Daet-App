@@ -40,8 +40,10 @@ import {
 import AdminDiscussionModeration from '@/app/(subsystems)/info/components/admin/AdminDiscussionModeration'
 
 const TABS = [
-  { id: 'pending', label: 'Pending approvals' },
-  { id: 'all', label: 'All posts' },
+  { id: 'all', label: 'All submissions' },
+  { id: 'priority', label: 'Priority review' },
+  { id: 'pending', label: 'Pending review' },
+  { id: 'auto_published', label: 'Auto-published' },
   { id: 'approved', label: 'Approved' },
   { id: 'changes_requested', label: 'Changes requested' },
   { id: 'rejected', label: 'Rejected' },
@@ -52,6 +54,9 @@ const TABS = [
 const EMPTY_STATS = {
   totalPosts: 0,
   pendingApprovals: 0,
+  highRiskPending: 0,
+  mediumRiskPending: 0,
+  autoPublishedPosts: 0,
   approvedPosts: 0,
   rejectedPosts: 0,
   changesRequested: 0,
@@ -65,6 +70,16 @@ function formatDate(value) {
   return Number.isNaN(date.getTime())
     ? '—'
     : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+function waitingTime(value) {
+  const timestamp = Date.parse(value || '')
+  if (!Number.isFinite(timestamp)) return 'Waiting time unavailable'
+  const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000))
+  if (minutes < 60) return `Waiting ${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `Waiting ${hours}h`
+  return `Waiting ${Math.floor(hours / 24)}d`
 }
 
 function plainText(value) {
@@ -123,6 +138,7 @@ function AdminBlogsContent() {
   const [history, setHistory] = useState([])
   const [pagination, setPagination] = useState({ page: 1, pages: 0, total: 0 })
   const [stats, setStats] = useState(EMPTY_STATS)
+  const [workload, setWorkload] = useState([])
   const [adminId, setAdminId] = useState('')
   const [loading, setLoading] = useState(true)
   const [actionId, setActionId] = useState('')
@@ -164,6 +180,7 @@ function AdminBlogsContent() {
       }
 
       setStats(result.stats || EMPTY_STATS)
+      setWorkload(result.stats?.workload || [])
       setAdminId(result.adminId || '')
       setPagination(result.pagination || { page: 1, pages: 0, total: 0 })
       if (view === 'history') setHistory(result.history || [])
@@ -201,15 +218,43 @@ function AdminBlogsContent() {
     setModerationFeedback('')
     setReasonError('')
     setError('')
+    void fetch('/info/api/admin/moderation/claims', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entityType: 'blog', entityId: post.id }),
+    }).then(async (response) => {
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok) setError(result.message || 'This post is already being reviewed.')
+    }).catch(() => setError('Unable to claim this post for review.'))
   }
 
   const openBulkDecision = (decision) => {
     const selected = posts.filter((post) => selectedIds.includes(post.id) && post.approval_status === 'pending')
     if (!selected.length) return
+    if (decision === 'approve' && selected.some((post) => (
+      post.risk_level !== 'low'
+      || post.moderation_status !== 'review_required'
+      || (post.moderation_flags || []).length > 0
+    ))) {
+      setError('Bulk approval is limited to low-risk posts with no moderation flags. Review other posts individually.')
+      return
+    }
     setDecisionDialog({ post: null, decision, posts: selected })
     setModerationFeedback('')
     setReasonError('')
     setError('')
+    void Promise.all(selected.map((post) => fetch('/info/api/admin/moderation/claims', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entityType: 'blog', entityId: post.id }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}))
+        throw new Error(result.message || 'This post is already being reviewed.')
+      }
+    }))).catch((claimError) => setError(claimError.message || 'Unable to claim selected posts.'))
   }
 
   const openPostHistory = async (post) => {
@@ -268,6 +313,10 @@ function AdminBlogsContent() {
           failed.push({ post, message: moderationError.message || 'Unable to save the moderation decision.' })
         }
       }
+      await Promise.all(targets.map((post) => fetch(
+        `/info/api/admin/moderation/claims?entityType=blog&entityId=${encodeURIComponent(post.id)}`,
+        { method: 'DELETE', credentials: 'same-origin' },
+      ))).catch(() => {})
       if (succeeded.length) {
         const successfulIds = new Set(succeeded.map((post) => post.id))
         setSelectedIds((current) => current.filter((id) => !successfulIds.has(id)))
@@ -418,7 +467,9 @@ function AdminBlogsContent() {
 
   const tabCount = (tabId) => ({
     all: stats.totalPosts,
+    priority: stats.highRiskPending,
     pending: stats.pendingApprovals,
+    auto_published: stats.autoPublishedPosts,
     approved: stats.approvedPosts,
     changes_requested: stats.changesRequested,
     rejected: stats.rejectedPosts,
@@ -480,13 +531,23 @@ function AdminBlogsContent() {
       contentClassName="pb-10"
     >
       <div className="space-y-5 px-4 py-4 sm:px-6 lg:px-8">
-        <AdminStatGrid columns={5}>
+        <AdminStatGrid columns={4}>
           <AdminStatCard label="Total posts" value={stats.totalPosts} icon="content" href="/info/admin/blogs?status=all" />
-          <AdminStatCard label="Pending approvals" value={stats.pendingApprovals} icon="moderation" tone="warning" className="ring-1 ring-amber-300 shadow-md" href="/info/admin/blogs?status=pending" />
+          <AdminStatCard label="High-risk queue" value={stats.highRiskPending} icon="moderation" tone="danger" href="/info/admin/blogs?status=priority" />
+          <AdminStatCard label="Medium-risk posts" value={stats.mediumRiskPending} icon="moderation" tone="warning" href="/info/admin/blogs?status=pending" />
+          <AdminStatCard label="Pending review" value={stats.pendingApprovals} icon="moderation" tone="warning" className="ring-1 ring-amber-300 shadow-md" href="/info/admin/blogs?status=pending" />
+          <AdminStatCard label="Auto-published" value={stats.autoPublishedPosts} icon="blog" tone="success" href="/info/admin/blogs?status=auto_published" />
           <AdminStatCard label="Approved posts" value={stats.approvedPosts} icon="blog" tone="success" href="/info/admin/blogs?status=approved" />
+          <AdminStatCard label="Rejected posts" value={stats.rejectedPosts} icon="moderation" tone="danger" href="/info/admin/blogs?status=rejected" />
           <AdminStatCard label="Changes requested" value={stats.changesRequested} icon="moderation" tone="info" href="/info/admin/blogs?status=changes_requested" />
           <AdminStatCard label="Reported posts" value={stats.reportedPosts} icon="moderation" tone="danger" href="/info/admin/blogs?status=reported" />
         </AdminStatGrid>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600">
+          <strong className="text-slate-800">Moderator workload</strong>
+          {workload.length ? workload.map((member) => (
+            <span key={member.user_id}>{member.name}: {member.active_claims} active review{member.active_claims === 1 ? '' : 's'}</span>
+          )) : <span>No active review assignments.</span>}
+        </div>
 
         <AdminPanel
           title={view === 'history' ? 'Moderation history' : 'Content moderation'}
@@ -583,10 +644,10 @@ function AdminBlogsContent() {
                     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
                       <div>
                         <h3 className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-800">
-                          {status === 'pending' ? 'Pending approvals' : status === 'reported' ? 'Reported posts' : `${statusLabel(status)} posts`}
+                          {status === 'pending' ? 'Pending review' : status === 'priority' ? 'Priority review' : status === 'reported' ? 'Reported posts' : `${statusLabel(status)} posts`}
                         </h3>
                         <p className="mt-0.5 text-xs text-slate-500">
-                          {status === 'pending'
+                          {['pending', 'priority'].includes(status)
                             ? `${pagination.total} ${pagination.total === 1 ? 'post requires' : 'posts require'} review`
                             : `${pagination.total} posts · select a post to review`}
                         </p>
@@ -651,6 +712,12 @@ function AdminBlogsContent() {
                                 <span className="flex flex-wrap items-center justify-between gap-2">
                                   <span className="truncate text-sm font-bold text-slate-900">{post.title || 'Untitled post'}</span>
                                   <span className="shrink-0">{renderStatus(post.approval_status)}</span>
+                                  {post.risk_level && post.risk_level !== 'unknown' ? (
+                                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold uppercase ${post.risk_level === 'high' ? 'bg-red-100 text-red-700' : post.risk_level === 'medium' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'}`}>
+                                      Risk {post.risk_score ?? '—'} · {post.risk_level}
+                                    </span>
+                                  ) : null}
+                                  {post.auto_approved ? <span className="shrink-0 rounded-full bg-sky-100 px-2 py-1 text-[10px] font-bold uppercase text-sky-700">Auto-published</span> : null}
                                 </span>
                                 <span className="mt-1 block line-clamp-1 text-xs text-slate-600">{plainText(post.excerpt || post.content).slice(0, 120) || 'No excerpt provided.'}</span>
                                 <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
@@ -658,16 +725,17 @@ function AdminBlogsContent() {
                                   {post.author?.email ? <span>{post.author.email}</span> : null}
                                   <span className="capitalize">{String(post.category || 'Uncategorized').replace(/[_-]/g, ' ')}</span>
                                   <span>{formatDate(post.submitted_at || post.created_at)}</span>
+                                  {post.approval_status === 'pending' ? <span className="font-semibold text-amber-700">{waitingTime(post.submitted_at || post.created_at)}</span> : null}
                                 </span>
                               </span>
                           </button>
                         </div>
                         ))}
                       </div>
-                    ) : status === 'pending' && !search && !category && !submittedFrom && !submittedTo ? (
+                    ) : ['pending', 'priority'].includes(status) && !search && !category && !submittedFrom && !submittedTo ? (
                       <div className="flex min-h-[300px] flex-col items-center justify-center p-8 text-center">
                         <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check className="h-6 w-6" /></span>
-                        <h4 className="mt-4 text-sm font-bold text-slate-900">No pending approvals</h4>
+                        <h4 className="mt-4 text-sm font-bold text-slate-900">{status === 'priority' ? 'No high-risk posts' : 'No pending approvals'}</h4>
                         <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">All submitted posts have been reviewed.</p>
                         <button type="button" onClick={() => changeTab('all')} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50">View All Posts</button>
                       </div>
@@ -718,6 +786,16 @@ function AdminBlogsContent() {
                             {renderStatus(selectedPost.approval_status)}
                           </div>
                           {selectedPost.featured_image ? <img src={selectedPost.featured_image} alt="" className="mt-4 max-h-64 w-full rounded-xl border border-slate-200 object-cover" /> : null}
+                          {(selectedPost.images?.length || selectedPost.videos?.length) ? (
+                            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                              {(selectedPost.images || []).map((image, index) => (
+                                <img key={`${image}-${index}`} src={image} alt={`Submission attachment ${index + 1}`} className="max-h-64 w-full rounded-xl border border-slate-200 object-contain" />
+                              ))}
+                              {(selectedPost.videos || []).map((video, index) => (
+                                <video key={`${video}-${index}`} src={video} controls preload="metadata" className="max-h-64 w-full rounded-xl border border-slate-200 bg-black" />
+                              ))}
+                            </div>
+                          ) : null}
                           {selectedPost.excerpt ? <p className="mt-4 border-l-2 border-blue-200 pl-3 text-sm font-medium leading-6 text-slate-700">{selectedPost.excerpt}</p> : null}
                           <article className="mx-auto mt-5 max-w-3xl whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700">
                             {plainText(selectedPost.content) || 'No article content provided.'}
@@ -731,7 +809,21 @@ function AdminBlogsContent() {
                               <div><dt className="font-bold uppercase tracking-wide text-slate-400">Category</dt><dd className="mt-1 capitalize text-slate-700">{String(selectedPost.category || 'Uncategorized').replace(/[_-]/g, ' ')}</dd></div>
                               <div><dt className="font-bold uppercase tracking-wide text-slate-400">Last modified</dt><dd className="mt-1 text-slate-700">{formatDate(selectedPost.updated_at || selectedPost.reviewed_at || selectedPost.created_at)}</dd></div>
                               <div><dt className="font-bold uppercase tracking-wide text-slate-400">Moderated by</dt><dd className="mt-1 text-slate-700">{selectedPost.reviewer?.full_name || selectedPost.reviewer?.email || (selectedPost.reviewed_by ? 'Daet Tourism Admin' : 'Not reviewed')}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Automated risk</dt><dd className="mt-1 capitalize text-slate-700">{selectedPost.risk_score === null || selectedPost.risk_score === undefined ? 'Not scored' : `${selectedPost.risk_score}/100 · ${selectedPost.risk_level}`}</dd></div>
+                              <div><dt className="font-bold uppercase tracking-wide text-slate-400">Queue wait</dt><dd className="mt-1 text-slate-700">{selectedPost.approval_status === 'pending' ? waitingTime(selectedPost.submitted_at || selectedPost.created_at) : '—'}</dd></div>
                             </dl>
+                            {selectedPost.moderation_reason ? (
+                              <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs leading-5 text-sky-900">
+                                <strong>Automated review reason:</strong> {selectedPost.moderation_reason}
+                              </p>
+                            ) : null}
+                            {selectedPost.moderation_flags?.length ? (
+                              <div className="mt-3 flex flex-wrap gap-2" aria-label="Moderation flags">
+                                {selectedPost.moderation_flags.map((flag) => (
+                                  <span key={flag} className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-900">{String(flag).replace(/_/g, ' ')}</span>
+                                ))}
+                              </div>
+                            ) : null}
                             {selectedPost.rejection_reason ? (
                               <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
                                 <strong>Moderation reason:</strong> {selectedPost.rejection_reason}
@@ -813,6 +905,7 @@ function AdminBlogsContent() {
                         <th scope="col">Author</th>
                         <th scope="col">Category</th>
                         <th scope="col">Submitted</th>
+                        <th scope="col">Risk / wait</th>
                         <th scope="col">Last modified</th>
                         <th scope="col">Status</th>
                         <th scope="col" className="text-right">Actions</th>
@@ -848,6 +941,10 @@ function AdminBlogsContent() {
                         </td>
                         <td className="capitalize">{String(post.category || '—').replace(/[_-]/g, ' ')}</td>
                         <td>{formatDate(post.submitted_at || post.created_at)}</td>
+                        <td>
+                          <span className="block capitalize">{post.risk_score === null || post.risk_score === undefined ? 'Not scored' : `${post.risk_level} · ${post.risk_score}/100`}</span>
+                          {post.approval_status === 'pending' ? <span className="text-xs text-amber-700">{waitingTime(post.submitted_at || post.created_at)}</span> : null}
+                        </td>
                         <td>{formatDate(post.reviewed_at || post.updated_at || post.created_at)}</td>
                         <td>{renderStatus(post.approval_status)}</td>
                         <td>
@@ -862,9 +959,9 @@ function AdminBlogsContent() {
                 </>
               ) : (
                 <div className="p-8">
-                  {status === 'pending' && !search && !category && !submittedFrom && !submittedTo ? (
+                  {['pending', 'priority'].includes(status) && !search && !category && !submittedFrom && !submittedTo ? (
                     <div className="flex flex-col items-center text-center">
-                      <AdminEmptyState icon={Check} title="No pending approvals" description="All submitted posts have been reviewed." />
+                      <AdminEmptyState icon={Check} title={status === 'priority' ? 'No high-risk submissions' : 'No pending approvals'} description={status === 'priority' ? 'There are no high-risk posts waiting for review.' : 'All submitted posts have been reviewed.'} />
                       <button type="button" onClick={() => changeTab('all')} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700 hover:bg-blue-50">View All Posts</button>
                     </div>
                   ) : (

@@ -39,8 +39,9 @@ export const PERMISSIONS = Object.freeze({
   'announcements.manage': ['moderator'],
   'feedback.manage': ['tourism_officer'],
   'analytics.view': ['tourism_officer'],
-  'moderation.manage': ['moderator'],
-  'forum.manage': ['moderator'],
+  'moderation.manage': ['tourism_officer', 'moderator'],
+  'moderation.suspension_review': ['tourism_officer'],
+  'forum.manage': ['tourism_officer', 'moderator'],
   'users.view': ['moderator'],
   'users.manage': [],
   'system.manage': [],
@@ -49,6 +50,8 @@ export const PERMISSIONS = Object.freeze({
 // Page rules: first match wins, so more specific prefixes come first.
 const PAGE_RULES = [
   ['/info/admin/tourism-dashboard', 'tourism.manage'],
+  ['/info/admin/account-oversight', 'system.manage'],
+  ['/info/admin/suspension-cases', 'moderation.suspension_review'],
   ['/info/admin/moderator-dashboard', 'moderation.manage'],
   ['/info/admin/dashboard', 'console.access'],
   ['/info/admin/account', 'account.self'],
@@ -94,6 +97,8 @@ const PAGE_RULES = [
 // to those HTTP methods; otherwise the next matching rule is tried.
 const API_RULES = [
   ['/info/api/admin/me', 'console.access', ['GET']],
+  ['/info/api/admin/moderation/suspension-review', 'moderation.suspension_review'],
+  ['/info/api/admin/account-oversight', 'system.manage'],
   ['/info/api/admin/staff-chat', 'console.access'],
   ['/info/api/admin/users', 'users.view', ['GET']],
   ['/info/api/admin/users', 'users.manage'],

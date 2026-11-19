@@ -16,14 +16,16 @@ function errorResponse(message, status = 500) {
   })
 }
 
-function canViewContentVisibility(visibility, ownerId, viewerId, followedIds, isAdmin) {
+function canViewContentVisibility(visibility, ownerId, viewerId, followedIds, blockedIds, isAdmin) {
+  if (blockedIds.has(ownerId)) return false
   if (ownerId === viewerId || isAdmin) return true
   if (visibility === 'private') return false
   if (visibility === 'followers') return followedIds.has(ownerId)
   return true
 }
 
-function canViewAccount(profile, accountId, viewerId, followedIds, isAdmin) {
+function canViewAccount(profile, accountId, viewerId, followedIds, blockedIds, isAdmin) {
+  if (blockedIds.has(accountId)) return false
   if (!accountId || accountId === viewerId || isAdmin) return true
   const privacyLevel = profile?.is_public === false
     ? (['followers', 'private'].includes(profile.privacy_level) ? profile.privacy_level : 'followers')
@@ -44,6 +46,7 @@ export async function GET(request) {
       { data: posts, error: postsError },
       { data: reposts, error: repostsError },
       { data: followRows, error: followsError },
+      { data: blockRows, error: blocksError },
     ] = await Promise.all([
       adminSupabase
         .from('info_user_posts')
@@ -62,12 +65,20 @@ export async function GET(request) {
         .from('user_follows')
         .select('following_id')
         .eq('follower_id', viewerId),
+      adminSupabase
+        .from('user_blocks')
+        .select('blocker_id, blocked_id')
+        .or(`blocker_id.eq.${viewerId},blocked_id.eq.${viewerId}`),
     ])
     if (postsError) throw postsError
     if (repostsError) throw repostsError
     if (followsError) throw followsError
+    if (blocksError) throw blocksError
 
     const followedIds = new Set([viewerId, ...(followRows || []).map((row) => row.following_id).filter(Boolean)])
+    const blockedIds = new Set((blockRows || []).map((row) => (
+      row.blocker_id === viewerId ? row.blocked_id : row.blocker_id
+    )).filter(Boolean))
     const repostIdsByType = (type) => [...new Set(
       (reposts || [])
         .filter((repost) => repost.original_content_type === type)
@@ -104,7 +115,7 @@ export async function GET(request) {
       eventIds.length
         ? adminSupabase
           .from('info_events')
-          .select('id, created_by, title, description, featured_image, images, start_date, start_time, category, location, venue, created_at, status')
+          .select('id, created_by, title, description, featured_image, images, start_date, end_date, start_time, end_time, category, location, venue, created_at, status')
           .in('id', eventIds)
           .in('status', ['published', 'cancelled', 'completed'])
           .eq('approval_status', 'approved')
@@ -157,18 +168,18 @@ export async function GET(request) {
     const profilesByUserId = new Map((profiles || []).map((profile) => [profile.user_id, profile]))
 
     const visiblePosts = (posts || []).filter((post) => (
-      canViewContentVisibility(post.visibility, post.user_id, viewerId, followedIds, isAdmin)
-      && canViewAccount(profilesByUserId.get(post.user_id), post.user_id, viewerId, followedIds, isAdmin)
+      canViewContentVisibility(post.visibility, post.user_id, viewerId, followedIds, blockedIds, isAdmin)
+      && canViewAccount(profilesByUserId.get(post.user_id), post.user_id, viewerId, followedIds, blockedIds, isAdmin)
     ))
     const visibleReposts = (reposts || []).flatMap((repost) => {
       const originalPost = originalForRepost(repost)
       if (!originalPost) return []
 
       const originalOwnerId = originalPost.user_id || originalPost.created_by
-      const canViewRepost = canViewContentVisibility(repost.visibility, repost.user_id, viewerId, followedIds, isAdmin)
-        && canViewAccount(profilesByUserId.get(repost.user_id), repost.user_id, viewerId, followedIds, isAdmin)
-      const canViewOriginal = canViewContentVisibility(originalPost.visibility, originalOwnerId, viewerId, followedIds, isAdmin)
-        && canViewAccount(profilesByUserId.get(originalOwnerId), originalOwnerId, viewerId, followedIds, isAdmin)
+      const canViewRepost = canViewContentVisibility(repost.visibility, repost.user_id, viewerId, followedIds, blockedIds, isAdmin)
+        && canViewAccount(profilesByUserId.get(repost.user_id), repost.user_id, viewerId, followedIds, blockedIds, isAdmin)
+      const canViewOriginal = canViewContentVisibility(originalPost.visibility, originalOwnerId, viewerId, followedIds, blockedIds, isAdmin)
+        && canViewAccount(profilesByUserId.get(originalOwnerId), originalOwnerId, viewerId, followedIds, blockedIds, isAdmin)
       if (!canViewRepost || !canViewOriginal) return []
 
       return [{

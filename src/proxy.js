@@ -56,7 +56,12 @@ const MAINTENANCE_EXEMPT_PATHS = new Set([
   '/info/reset-password',
   '/info/confirm',
   '/info/callback',
+  '/info/account-suspended',
+  '/info/user/moderation-appeals',
+  '/info/account-appeal',
   '/info/api/login',
+  '/info/api/user/moderation-appeals',
+  '/info/api/cron/moderation-lifecycle',
   '/info/account-recovery',
   '/info/api/account/recovery',
   '/info/api/cron/account-deletions',
@@ -75,6 +80,7 @@ const AUTH_INDEPENDENT_API_PATHS = new Set([
   '/info/api/forgot-password',
   '/info/api/reset-password',
   '/info/api/account/recovery',
+  '/info/api/user/moderation-appeals',
   '/info/api/resend-verification',
   '/info/api/auth/confirm-email',
 ])
@@ -119,6 +125,88 @@ async function isSessionVersionCurrent(session) {
   }
 }
 
+async function isStaffSessionCurrent(session) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  const expectedVersion = Number(session.session_version || 0)
+  if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0) return false
+
+  try {
+    const url = new URL('/rest/v1/rpc/is_staff_session_current', supabaseUrl)
+    const response = await fetch(url, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+      body: JSON.stringify({
+        p_user_id: session.user_id,
+        p_role: normalizeStaffRole(session.role),
+        p_session_version: expectedVersion,
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (response.status === 404) {
+      const [versionCurrent, accountCurrent] = await Promise.all([
+        isSessionVersionCurrent(session),
+        isStaffAccountCurrent(session),
+      ])
+      if (versionCurrent === false || accountCurrent === false) return false
+      return versionCurrent === null || accountCurrent === null ? null : true
+    }
+
+    if (!response.ok) {
+      console.error('Staff session verification failed with HTTP status:', response.status)
+      return response.status >= 500 || response.status === 429 ? null : false
+    }
+
+    const current = await response.json()
+    return typeof current === 'boolean' ? current : null
+  } catch (error) {
+    console.error('Staff session verification failed:', error)
+    return null
+  }
+}
+
+async function isStaffAccountCurrent(session) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  try {
+    const url = new URL('/rest/v1/info_users', supabaseUrl)
+    url.searchParams.set('select', 'user_type,status')
+    url.searchParams.set('id', `eq.${session.user_id}`)
+    const response = await fetch(url, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5000),
+    })
+
+    if (!response.ok) {
+      console.error('Staff account verification failed with HTTP status:', response.status)
+      return response.status >= 500 || response.status === 429 ? null : false
+    }
+
+    const accounts = await response.json()
+    const account = Array.isArray(accounts) ? accounts[0] : null
+    return account?.status === 'active'
+      && isStaffRole(account.user_type)
+      && normalizeStaffRole(account.user_type) === normalizeStaffRole(session.role)
+  } catch (error) {
+    console.error('Staff account verification failed:', error)
+    return null
+  }
+}
+
 async function isAccountDeletionPending(userId) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
@@ -148,6 +236,94 @@ async function isAccountDeletionPending(userId) {
     console.error('Account deletion status lookup failed:', error)
     return false
   }
+}
+
+async function getCurrentAccountStatus(userId) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) return null
+
+  try {
+    const accountUrl = new URL('/rest/v1/info_users', supabaseUrl)
+    accountUrl.searchParams.set('select', 'status,deletion_requested_at,account_deactivated_at')
+    accountUrl.searchParams.set('id', `eq.${userId}`)
+    const bansUrl = new URL('/rest/v1/admin_user_bans', supabaseUrl)
+    bansUrl.searchParams.set('select', 'ban_type')
+    bansUrl.searchParams.set('user_id', `eq.${userId}`)
+    bansUrl.searchParams.set('ban_type', 'in.(suspension,permanent)')
+    bansUrl.searchParams.set('lifted_at', 'is.null')
+    bansUrl.searchParams.set('or', `(expires_at.is.null,expires_at.gt.${new Date().toISOString()})`)
+    const headers = {
+      apikey: serviceRoleKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+    }
+    const [accountResponse, bansResponse] = await Promise.all([
+      fetch(accountUrl, { headers, cache: 'no-store', signal: AbortSignal.timeout(3000) }),
+      fetch(bansUrl, { headers, cache: 'no-store', signal: AbortSignal.timeout(3000) }),
+    ])
+    if (!accountResponse.ok || !bansResponse.ok) {
+      console.error('Account status verification failed with HTTP status:', accountResponse.status, bansResponse.status)
+      return null
+    }
+
+    const [accounts, restrictions] = await Promise.all([accountResponse.json(), bansResponse.json()])
+    const account = Array.isArray(accounts) ? accounts[0] : null
+    if (!account) return null
+    if (account.deletion_requested_at || account.account_deactivated_at || account.status === 'pending_deletion') {
+      return 'pending_deletion'
+    }
+
+    const activeBanTypes = Array.isArray(restrictions) ? restrictions.map((item) => item.ban_type) : []
+    if (account.status === 'banned' || activeBanTypes.includes('permanent')) return 'banned'
+    if (account.status === 'suspended' || activeBanTypes.includes('suspension')) return 'suspended'
+    return account.status === 'pending' ? 'pending' : 'active'
+  } catch (error) {
+    console.error('Account status verification failed:', error)
+    return null
+  }
+}
+
+function isRestrictedAccountApiAllowed(pathname, method) {
+  if ([
+    '/info/api/users/following',
+    '/info/api/user/feed',
+  ].includes(pathname)) {
+    return method === 'GET'
+  }
+
+  if ([
+    '/info/api/account/status',
+    '/info/api/notifications',
+    '/info/api/user/moderation-appeals',
+    '/info/api/user/moderation-details',
+    '/info/api/user/settings',
+    '/info/api/user/password',
+    '/info/api/logout',
+  ].includes(pathname)) {
+    if (pathname === '/info/api/user/password') return method === 'POST'
+    return true
+  }
+  return method === 'GET' && publicRoutes.isPublicPathname(pathname)
+}
+
+function isRestrictedAccountPageAllowed(pathname, method) {
+  if (method === 'GET' && (
+    publicRoutes.isPublicPathname(pathname)
+    || VISITOR_CONTENT_ROUTE_PREFIXES.some((prefix) => (
+      pathname === `/info/visitor${prefix}` || pathname.startsWith(`/info/visitor${prefix}/`)
+    ))
+  )) return true
+
+  return new Set([
+    '/info/account-suspended',
+    '/info/user/dashboard',
+    '/info/user/profile',
+    '/info/user/profile/edit',
+    '/info/user/notifications',
+    '/info/user/moderation-appeals',
+    '/info/user/moderation-details',
+  ]).has(pathname)
+    || pathname.startsWith('/info/user/moderation-details/')
 }
 
 async function getMaintenanceSettings() {
@@ -257,11 +433,13 @@ async function handleRequest(request) {
   let loggedIn = Boolean(serverSession && serverSession.user_id)
   const isStaticOrAsset = pathname.startsWith('/_next') || pathname.includes('.')
 
-  const sessionVersionCurrent = loggedIn && !isStaticOrAsset
-    ? await isSessionVersionCurrent(serverSession)
+  const sessionCurrent = loggedIn && !isStaticOrAsset
+    ? isStaffRole(serverSession.role)
+      ? await isStaffSessionCurrent(serverSession)
+      : await isSessionVersionCurrent(serverSession)
     : true
 
-  if (sessionVersionCurrent === null) {
+  if (sessionCurrent === null) {
     const isApiRoute = pathname === '/info/api' || pathname.startsWith('/info/api/')
     if (isApiRoute) {
       return NextResponse.json(
@@ -305,7 +483,7 @@ async function handleRequest(request) {
 
   const idleExpired = loggedIn && !isStaticOrAsset && isSessionIdleExpired(serverSession)
 
-  if (loggedIn && !isStaticOrAsset && (!sessionVersionCurrent || idleExpired)) {
+  if (loggedIn && !isStaticOrAsset && (!sessionCurrent || idleExpired)) {
     loggedIn = false
     const expiredMessage = idleExpired
       ? 'You were signed out after a period of inactivity. Please sign in again.'
@@ -337,6 +515,78 @@ async function handleRequest(request) {
     return response
   }
 
+  const isUserApiRoute = pathname === '/info/api' || pathname.startsWith('/info/api/')
+  const isUserPageRoute = normalizedPathname === '/info/user'
+    || normalizedPathname.startsWith('/info/user/')
+    || normalizedPathname === '/info/account-suspended'
+    || normalizedPathname === '/info/visitor'
+    || normalizedPathname.startsWith('/info/visitor/')
+  const needsAccountStatus = loggedIn
+    && !isStaticOrAsset
+    && !isStaffRole(serverSession.role)
+    && (isUserApiRoute || isUserPageRoute)
+  let currentAccountStatus = null
+  if (needsAccountStatus) {
+    currentAccountStatus = await getCurrentAccountStatus(serverSession.user_id)
+    if (!currentAccountStatus) {
+      return NextResponse.json(
+        { success: false, message: 'Unable to verify your account status. Please try again.' },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      )
+    }
+
+    if (currentAccountStatus === 'banned' || currentAccountStatus === 'pending_deletion') {
+      const appealEndpoint = normalizedPathname === '/info/api/user/moderation-appeals' && request.method === 'POST'
+      const logoutEndpoint = normalizedPathname === '/info/api/logout'
+      if (!appealEndpoint && !logoutEndpoint) {
+        const blockedResponse = isUserApiRoute
+          ? NextResponse.json(
+            { success: false, message: currentAccountStatus === 'banned'
+              ? 'This account is permanently banned and cannot access Daet Connect.'
+              : 'This account is scheduled for deletion.' },
+            { status: 403, headers: { 'Cache-Control': 'no-store' } }
+          )
+          : NextResponse.redirect(new URL(
+            currentAccountStatus === 'banned'
+              ? '/info/login?message=Your%20account%20has%20been%20permanently%20banned.'
+              : '/info/account-recovery',
+            request.url
+          ))
+        clearSecureSessionCookie(blockedResponse)
+        blockedResponse.cookies.set('daet_auth_session', '', {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          maxAge: 0,
+          path: '/',
+        })
+        return blockedResponse
+      }
+    }
+
+    if (['pending', 'suspended'].includes(currentAccountStatus)) {
+      const allowed = isUserApiRoute
+        ? isRestrictedAccountApiAllowed(normalizedPathname, request.method)
+        : isRestrictedAccountPageAllowed(normalizedPathname, request.method)
+      if (!allowed) {
+        if (isUserApiRoute) {
+          return NextResponse.json(
+            {
+              success: false,
+              code: 'ACCOUNT_RESTRICTED',
+              accountStatus: currentAccountStatus,
+              message: currentAccountStatus === 'pending'
+                ? 'Community features are unavailable while this account is pending review.'
+                : 'Community features are unavailable while this account is suspended.',
+            },
+            { status: 403, headers: { 'Cache-Control': 'no-store' } }
+          )
+        }
+        return NextResponse.redirect(new URL('/info/account-suspended', request.url))
+      }
+    }
+  }
+
   if (!loggedIn && normalizedPathname === '/') {
     const landingUrl = request.nextUrl.clone()
     landingUrl.pathname = '/info/visitor'
@@ -352,7 +602,12 @@ async function handleRequest(request) {
   // users, so it is exempt from the "signed-in users leave /info/visitor" rule.
   const isVisitorTouristSpotDetailRoute = /^\/info\/visitor\/(tourist-spots|alerts)(\/[^/]+)?$/.test(normalizedPathname)
 
-  if (loggedIn && isVisitorRoute && !isVisitorTouristSpotDetailRoute) {
+  if (
+    loggedIn
+    && isVisitorRoute
+    && !isVisitorTouristSpotDetailRoute
+    && !['pending', 'suspended'].includes(currentAccountStatus)
+  ) {
     return NextResponse.redirect(
       new URL(isAdmin ? getStaffHomePath(serverSession.role) : '/info/user/dashboard', request.url)
     )

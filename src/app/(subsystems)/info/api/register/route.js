@@ -8,6 +8,7 @@ import { isDuplicateEmailError } from '@/lib/authFlow'
 import { describePasswordPolicy, isPasswordValid } from '@/lib/passwordPolicy'
 import { getPasswordPolicy } from '@/lib/appSettingsServer'
 import { publicErrorMessage } from '@/lib/publicError'
+import { hasValidInterestInput, normalizeUserInterests } from '@/lib/userInterests'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -59,12 +60,19 @@ export async function POST(request) {
     }
 
     const { full_name, email, password } = body
+    const interests = body.interests === undefined ? [] : body.interests
     const normalizedEmail = email?.toLowerCase().trim()
     
     // Validate input
     if (!full_name || !normalizedEmail || typeof password !== 'string' || !password) {
       return NextResponse.json(
         { success: false, message: 'Full name, email, and password are required' },
+        { status: 400 }
+      )
+    }
+    if (!hasValidInterestInput(interests)) {
+      return NextResponse.json(
+        { success: false, message: 'Choose interests from the available categories.' },
         { status: 400 }
       )
     }
@@ -175,22 +183,11 @@ export async function POST(request) {
 
       if (upsertError) {
         console.error('🔴 Upsert fallback error:', upsertError)
-        
-        // Return success anyway since auth user is created
-        return NextResponse.json({ 
-          success: true,
-          message: 'Registration successful but profile creation had issues. Please contact support if you cannot login.',
-          user: {
-            id: authData.user.id,
-            email: normalizedEmail,
-            full_name: full_name || '',
-            user_type: 'tourist',
-          },
-          warning: 'Profile creation had issues'
-        })
-      } else {
+        return NextResponse.json({
+          success: false,
+          message: 'Your authentication account was created, but we could not save your profile. Please contact support before trying to register again.',
+        }, { status: 500 })
       }
-    } else {
     }
 
     const { error: publicProfileError } = await adminSupabase
@@ -203,6 +200,23 @@ export async function POST(request) {
 
     if (publicProfileError) {
       console.error('Public profile creation error:', publicProfileError)
+    }
+
+    const { error: interestsError } = await adminSupabase
+      .from('user_feed_preferences')
+      .upsert({
+        user_id: authData.user.id,
+        preferred_categories: normalizeUserInterests(interests),
+        enabled: true,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id' })
+
+    if (interestsError) {
+      console.error('Registration interests save failed:', interestsError)
+      return NextResponse.json({
+        success: false,
+        message: 'Your account was created, but we could not save your interests. Please sign in and update them from your profile.',
+      }, { status: 500 })
     }
 
     // Return success

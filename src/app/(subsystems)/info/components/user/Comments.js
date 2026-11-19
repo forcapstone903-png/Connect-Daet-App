@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, ClipboardCopy, CornerDownRight, EyeOff, Flag, LoaderCircle, MessageSquare, MoreHorizontal, Pin, Search, SendHorizontal, SortDesc, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -77,6 +78,7 @@ export default function Comments({
   onHeaderPointerUp,
   closeButtonRef,
 }) {
+  const pathname = usePathname()
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -361,6 +363,11 @@ export default function Comments({
   }
 
   const handleSubmit = async () => {
+    if (!userId) {
+      alert('Please sign in to post a comment.')
+      return
+    }
+
     if ((!body.trim() && !selectedGif && !selectedSticker)) return
 
     const commentBody = body.trim() || (selectedGif ? 'GIF' : selectedSticker ? 'Sticker' : '')
@@ -808,21 +815,36 @@ export default function Comments({
             {!compact && !eventStyle && <p className="mt-1 text-xs text-slate-500">{totalCommentCount} comments · {totalLikeCount} likes · {totalReplyCount} replies</p>}
           </div>
 
-          {!compact && (!eventStyle || totalCommentCount >= 3) && (
+          {!compact && (
             <div className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap pb-0.5 sm:w-auto sm:justify-end">
-              <SortDesc className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-              {(eventStyle ? ['relevant', 'newest', 'oldest'] : ['relevant', 'newest', 'oldest', 'most_liked']).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setSortMode(mode)}
-                  className={`shrink-0 rounded-full px-2.5 py-2 text-[10px] font-semibold capitalize transition sm:py-1 ${
-                    sortMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
+              {eventStyle ? (
+                <select
+                  aria-label="Sort comments"
+                  value={sortMode}
+                  onChange={(event) => setSortMode(event.target.value)}
+                  className="event-comment-sort-select"
                 >
-                  {eventStyle ? EVENT_COMMENT_SORT_LABELS[mode] : mode.replace('_', ' ')}
-                </button>
-              ))}
+                  <option value="relevant">Most Relevant</option>
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                </select>
+              ) : (
+                <>
+                  <SortDesc className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  {['relevant', 'newest', 'oldest', 'most_liked'].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setSortMode(mode)}
+                      className={`shrink-0 rounded-full px-2.5 py-2 text-[10px] font-semibold capitalize transition sm:py-1 ${
+                        sortMode === mode ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {mode.replace('_', ' ')}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
           )}
         </div>
@@ -860,20 +882,22 @@ export default function Comments({
         </div>
       )}
 
-      {!replyOnly && (!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer order-1' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
-        {articleStyle && !eventStyle && <p className="mb-2 text-sm font-bold text-slate-900">Share Your Thoughts</p>}
-        {sheetMode && eventStyle && replyTo && (
-          <div className="event-comment-replying-to">
-            <span>Replying to <strong>{replyingToName}</strong></span>
-            <button
-              type="button"
-              onClick={() => { setReplyTo(null); setBody(''); setMentionRefs([]) }}
-              aria-label="Cancel reply"
-            >
-              <X className="h-4 w-4" aria-hidden="true" />
-            </button>
-          </div>
-        )}
+      {!replyOnly && (!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? `event-comment-composer order-1 ${sheetMode ? 'rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm' : ''}` : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
+        {userId ? (
+          <>
+            {articleStyle && !eventStyle && <p className="mb-2 text-sm font-bold text-slate-900">Share Your Thoughts</p>}
+            {sheetMode && eventStyle && replyTo && (
+              <div className="event-comment-replying-to">
+                <span>Replying to <strong>{replyingToName}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => { setReplyTo(null); setBody(''); setMentionRefs([]) }}
+                  aria-label="Cancel reply"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
+            )}
         <div className={`event-comment-composer-main flex items-start gap-3 ${eventStyle ? 'gap-2' : ''}`}>
           <UserProfileLink user={currentUser ? { id: userId, full_name: currentUser.full_name || 'You', profile_image_url: currentUser.profile_image_url || null } : null} className={`event-comment-composer-avatar flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-white bg-linear-to-br from-sky-500 to-violet-600 text-[10px] font-bold text-white shadow-sm active:scale-[0.98] ${eventStyle ? 'h-9 w-9' : 'h-10 w-10'}`}>
             {currentUser?.profile_image_url ? (
@@ -998,7 +1022,19 @@ export default function Comments({
               </div>
             )}
           </div>
-        </div>
+          </div>
+          </>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-medium text-slate-600">Sign in to comment and join the conversation.</p>
+            <Link
+              href={`/info/login?redirect=${encodeURIComponent(pathname || '/info/visitor')}`}
+              className="shrink-0 rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-700"
+            >
+              Sign in
+            </Link>
+          </div>
+        )}
       </div>}
 
       {reactionDetails && (

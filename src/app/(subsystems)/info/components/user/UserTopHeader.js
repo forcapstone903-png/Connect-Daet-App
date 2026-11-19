@@ -124,6 +124,7 @@ export default function UserTopHeader({
   mobileOnly = false,
   edgeToEdgeMobile = false,
   showDesktopNavigationToggle = true,
+  showDesktopMessages = false,
   mobileHeaderAction = null,
 }) {
   const { settings, resolvedTheme, t, updateSettings } = useUserSettings()
@@ -611,6 +612,21 @@ export default function UserTopHeader({
           )}
         </Form>
         <div className="ml-auto flex shrink-0 items-center gap-5">
+          {showDesktopMessages && (
+            <Link
+              href="/info/user/messaging"
+              aria-label={unreadMessages > 0 ? `${t('common.messages')}, ${unreadMessages} unread` : t('common.messages')}
+              title={t('common.messages')}
+              className="usr-notification-trigger usr-press relative flex h-10 w-10 items-center justify-center rounded-full text-slate-300 transition hover:bg-white/10 hover:text-white"
+            >
+              <MessageCircle className={`h-5 w-5 ${unreadMessages > 0 ? 'text-sky-300' : ''}`} aria-hidden="true" />
+              {unreadMessages > 0 && (
+                <span className="usr-badge absolute right-0 top-0 z-10 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white">
+                  {unreadMessages > 99 ? '99+' : unreadMessages}
+                </span>
+              )}
+            </Link>
+          )}
           <div className="relative" ref={desktopNotificationsRef}>
             <button
               type="button"
@@ -956,6 +972,7 @@ export default function UserTopHeader({
         confirmText={loggingOut ? t('common.loggingOut') : t('common.logOut')}
         cancelText={t('common.cancel')}
         isDangerous
+        hideNavigation
         onConfirm={handleLogout}
         onCancel={() => setShowLogoutConfirm(false)}
       />

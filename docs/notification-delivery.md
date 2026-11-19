@@ -10,7 +10,30 @@ browser permission grant by itself does not enable push delivery.
 
 Follow, reaction, and comment handlers retain their real database-backed implementations. Removing the automated harness does not remove these features or replace their data sources.
 
-Delivery is best-effort, not a durable retry queue. The shared follower helper logs delivery failures; a saved publication must not be reported as failed merely because its notification delivery failed. Other notification producers retain their own error-handling implementations.
+Follower and general activity delivery is best-effort, not a durable retry queue. The shared follower helper logs delivery failures; a saved publication must not be reported as failed merely because its notification delivery failed. Other notification producers retain their own error-handling implementations.
+
+Account moderation email decisions use the service-role-only
+`moderation_email_outbox`. Database decisions enqueue a deduplicated event;
+the `/info/api/cron/moderation-lifecycle` job processes expired suspensions
+and claims email events every five minutes. Failed deliveries retry with
+backoff and stop after eight attempts; inspect failed outbox rows and email
+provider configuration during operations. The job requires `CRON_SECRET`,
+`SUPABASE_SERVICE_ROLE_KEY`, and the existing SendGrid configuration. Configure
+`NEXT_PUBLIC_SITE_URL` (or `SITE_URL`) to the canonical HTTPS origin so appeal
+emails can construct links; Vercel deployments may use `VERCEL_URL`.
+
+Banned users request a short-lived, single-use appeal link using their case
+reference and registered email address. Only a token hash is stored; the
+submission endpoint revalidates the token and current restriction in a
+service-role database function. The public response does not disclose whether
+the case and email matched.
+
+Appeal details and review history are private, user/staff-scoped data and are
+fetched with `no-store`; no shared or browser cache is introduced. Cache key:
+none. TTL/invalidation: not applicable. Stale/offline behavior: refetch from
+Supabase and show an explicit error if unavailable. Security classification:
+confidential moderation and account data. Manual clear strategy: no cache to
+clear; signing out clears the existing user-scoped inbox cache.
 
 ## Deployment review
 
