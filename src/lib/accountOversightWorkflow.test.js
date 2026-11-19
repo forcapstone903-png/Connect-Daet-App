@@ -103,6 +103,8 @@ test('direct status changes use one audited transaction and unique user notifica
   assert.match(migration, /INSERT INTO public\.moderation_decisions/)
   assert.match(migration, /INSERT INTO public\.info_audit_log/)
   assert.match(migration, /process_expired_admin_suspensions/)
+  assert.match(migration, /'actorId', p_admin_id/)
+  assert.match(migration, /'actorRole', v_actor_role/)
   assert.match(migration, /'ACCOUNT_REVIEW_PENDING'/)
   assert.match(migration, /'account_review_pending'/)
   assert.match(migration, /'SUSPENSION_EXPIRED'/)

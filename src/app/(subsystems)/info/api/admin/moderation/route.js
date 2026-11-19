@@ -1233,7 +1233,7 @@ export async function PATCH(request) {
     if (action === 'approve-suspension') {
       return respond({
         success: false,
-        message: 'Direct suspension approval is disabled. Review the submitted moderator investigation in Suspension Review.',
+        message: 'Use the audited account status workflow to apply a suspension or permanent ban.',
       }, 403)
     }
 

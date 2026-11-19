@@ -385,9 +385,19 @@ BEGIN
       'Your account has been temporarily suspended due to a violation of our community guidelines.%sReason: %s%sDuration: %s%sSuspension Ends: %s%sYou will regain access to your account once the suspension period has ended.',
       E'\n\n', v_reason, E'\n',
       CASE
-        WHEN p_duration_days >= 30 AND p_duration_days % 30 = 0 THEN format('%s month(s)', p_duration_days / 30)
-        WHEN p_duration_days >= 30 THEN format('%s month(s) and %s day(s)', p_duration_days / 30, p_duration_days % 30)
-        ELSE format('%s day(s)', p_duration_days)
+        WHEN p_duration_days >= 30 AND p_duration_days % 30 = 0 THEN format(
+          '%s month%s',
+          p_duration_days / 30,
+          CASE WHEN p_duration_days / 30 = 1 THEN '' ELSE 's' END
+        )
+        WHEN p_duration_days >= 30 THEN format(
+          '%s month%s and %s day%s',
+          p_duration_days / 30,
+          CASE WHEN p_duration_days / 30 = 1 THEN '' ELSE 's' END,
+          p_duration_days % 30,
+          CASE WHEN p_duration_days % 30 = 1 THEN '' ELSE 's' END
+        )
+        ELSE format('%s day%s', p_duration_days, CASE WHEN p_duration_days = 1 THEN '' ELSE 's' END)
       END,
       E'\n',
       to_char(v_expiration AT TIME ZONE 'Asia/Manila', 'FMMonth DD, YYYY HH12:MI AM'),
@@ -424,7 +434,8 @@ BEGIN
     COALESCE(v_restriction_id, p_user_id),
     jsonb_build_object(
       'affectedUserId', p_user_id,
-      'administratorId', p_admin_id,
+      'actorId', p_admin_id,
+      'actorRole', v_actor_role,
       'previousStatus', v_previous_status,
       'newStatus', p_new_status,
       'action', v_decision_type,
