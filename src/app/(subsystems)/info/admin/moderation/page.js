@@ -1243,7 +1243,7 @@ export default function AdminModerationPage() {
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-800">Profanity filter</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Enter one word per line. Matching content stays published under post-moderation and is added to the review queue.
+                Enter a word or phrase per line. Unicode letters are accepted; spaces separate phrase words and punctuation is normalized away. Matching content stays published under post-moderation and is added to the review queue.
               </p>
               <textarea
                 value={profanityTermsText}
@@ -1251,12 +1251,12 @@ export default function AdminModerationPage() {
                 rows={5}
                 maxLength={10000}
                 aria-label="Profanity filter terms"
-                placeholder="Add one word per line"
+                placeholder="Add a word or phrase per line"
                 className="mt-3 w-full rounded-xl border border-gray-200 p-3 text-sm text-gray-800 outline-none focus:border-blue-400"
               />
               <div className="mt-3 flex items-center justify-between gap-3">
                 <p className="text-xs text-gray-500">
-                  {profanityTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean).length} terms entered; max 250.
+                  {profanityTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean).length} terms entered; max 250 and 10,000 characters total.
                 </p>
                 <button
                   type="button"

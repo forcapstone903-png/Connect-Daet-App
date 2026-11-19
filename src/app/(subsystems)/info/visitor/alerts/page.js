@@ -9,6 +9,7 @@ import { CheckCircle2, ChevronLeft, RefreshCw } from 'lucide-react'
 import { useAlertFeed } from '@/lib/useAlertFeed'
 import AlertCard from './_components/AlertCard'
 import DeviceAlertsCard from './_components/DeviceAlertsCard'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 
 export default function PublicAlertsPage() {
   const { current, past, categories, loading, error, refresh, connectionStatus } = useAlertFeed({ channelName: 'visitor-alerts-page', limit: 100 })
@@ -24,9 +25,7 @@ export default function PublicAlertsPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-5xl px-4 pb-12 pt-4 sm:px-6">
-        <Link href="/info/visitor" className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-slate-600 hover:text-slate-900">
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />Home
-        </Link>
+        <VisitorBackButton />
 
         <header className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -87,7 +86,7 @@ export default function PublicAlertsPage() {
           </div>
 
           <aside className="space-y-4">
-            <DeviceAlertsCard categories={categories} />
+            <DeviceAlertsCard />
           </aside>
         </div>
       </div>

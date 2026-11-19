@@ -1,0 +1,24 @@
+/* Tourist Spots page animations */
+.spotCard {
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 500ms cubic-bezier(.2, .75, .25, 1) var(--reveal-delay, 0ms),
+    transform 500ms cubic-bezier(.2, .75, .25, 1) var(--reveal-delay, 0ms),
+    box-shadow 280ms ease,
+    border-color 280ms ease;
+}
+
+.spotCard[data-revealed='true'] {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spotCard {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+    transition: box-shadow 280ms ease, border-color 280ms ease !important;
+  }
+}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { loginUrlFor } from '@/lib/loginPrompt'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 import {
   Bookmark,
   Bell,
@@ -25,7 +26,7 @@ import {
 } from 'lucide-react'
 import { getListingTypeLabel } from '@/lib/listings.mjs'
 import { supabase } from '@/lib/supabase'
-import { getAuthCookieFromDocument } from '@/lib/authCookies'
+import { getStoredSessionObject } from '@/lib/authCookies'
 import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
@@ -103,6 +104,15 @@ export default function TouristSpotDetailPage() {
   })
   const { setRefreshCallback } = realtime
 
+  const verifyViewerSession = async () => {
+    const appSession = getStoredSessionObject()
+    const appUserId = appSession?.logged_in ? appSession.user_id : ''
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError) throw sessionError
+    const authUserId = sessionData?.session?.user?.id || ''
+    return appUserId && appUserId === authUserId && appUserId === userId ? appUserId : ''
+  }
+
   const loadEngagement = useCallback(async (id, currentUserId) => {
     const [reactions, comments] = await Promise.all([
       supabase.from('content_reactions')
@@ -139,12 +149,11 @@ export default function TouristSpotDetailPage() {
         setLoading(false)
       }
       try {
-        const [sessionResult, cookie] = await Promise.all([
-          supabase.auth.getSession(),
-          Promise.resolve(getAuthCookieFromDocument()),
-        ])
-        const currentUserId = sessionResult.data?.session?.user?.id
-          || (cookie?.logged_in ? cookie.user_id : '')
+        const sessionResult = await supabase.auth.getSession()
+        const appSession = getStoredSessionObject()
+        const appUserId = appSession?.logged_in ? appSession.user_id : ''
+        const authUserId = sessionResult.data?.session?.user?.id || ''
+        const currentUserId = appUserId && appUserId === authUserId ? appUserId : ''
         if (active) setUserId(currentUserId || '')
         if (currentUserId) {
           try {
@@ -316,17 +325,24 @@ export default function TouristSpotDetailPage() {
     setBusy(true)
     setActionError('')
     try {
+      const verifiedUserId = await verifyViewerSession()
+      if (!verifiedUserId) {
+        setUserId('')
+        setIsSaved(false)
+        setReaction('')
+        return
+      }
       const result = isSaved
         ? await supabase.from('user_favorites').delete()
-          .eq('user_id', userId).eq('item_type', 'spot').eq('item_id', spotId)
+          .eq('user_id', verifiedUserId).eq('item_type', 'spot').eq('item_id', spotId)
         : await supabase.from('user_favorites').upsert({
-          user_id: userId, item_type: 'spot', item_id: spotId,
+          user_id: verifiedUserId, item_type: 'spot', item_id: spotId,
         }, { onConflict: 'user_id,item_type,item_id' })
       if (result.error) throw result.error
       setIsSaved(!isSaved)
       if (!isSaved) {
         void trackUserActivity({
-          userId, activityType: 'save_content', entityType: 'tourist_spot', entityId: spotId,
+          userId: verifiedUserId, activityType: 'save_content', entityType: 'tourist_spot', entityId: spotId,
           description: `Saved ${spot.name}`, metadata: { contentTitle: spot.name },
         })
       }
@@ -347,6 +363,13 @@ export default function TouristSpotDetailPage() {
     setBusy(true)
     setActionError('')
     try {
+      const verifiedUserId = await verifyViewerSession()
+      if (!verifiedUserId) {
+        setUserId('')
+        setIsSaved(false)
+        setReaction('')
+        return
+      }
       const response = await fetch('/info/api/reactions', {
         method: next ? 'POST' : 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -416,7 +439,7 @@ export default function TouristSpotDetailPage() {
     return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-loading"><LoaderCircle className="animate-spin" />Loading destination…</div></main></>
   }
   if (error || !spot) {
-    return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><Link href="/info/visitor/tourist-spots" className="tourist-detail-error-back">Back to destinations</Link></div></main></>
+    return <><UserTopHeader detailMode /><main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><VisitorBackButton fallbackHref="/info/visitor/tourist-spots" /></div></main></>
   }
 
   const heroImage = images[0]
@@ -448,10 +471,7 @@ export default function TouristSpotDetailPage() {
 
         <div className="tourist-detail-content">
           <section className="tourist-detail-intro">
-            <Link href="/info/visitor" className="tourist-home-back">
-              <ChevronLeft size={17} aria-hidden="true" />
-              <span>Back to home</span>
-            </Link>
+            <VisitorBackButton className="tourist-home-back" />
             <div className="tourist-detail-kickers">
               <span>{getListingTypeLabel(spot.listing_type)}</span>
               {spot.category && <span>{spot.category}</span>}
@@ -468,22 +488,24 @@ export default function TouristSpotDetailPage() {
             </Link>}
           </section>
 
-          <nav className="event-detail-engagement tourist-engagement" aria-label="Destination interactions">
-            <div className="event-detail-engagement-group">
-              <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'} aria-label={reaction === 'like' ? 'Unlike destination' : 'Like destination'}>
-                <Heart size={17} className={reaction === 'like' ? 'fill-rose-500 text-rose-500' : ''} /><span>{likeCount}</span><span className="tourist-action-label">Like</span>
-              </button>
-              <button type="button" onClick={scrollToComments}><MessageCircle size={17} /><span>{commentCount}</span><span className="tourist-action-label">Comment</span></button>
-              <button type="button" onClick={openShareComposer}><Share2 size={17} /><span className="tourist-action-label">Share</span></button>
-            </div>
-            <div className="event-detail-engagement-group event-detail-engagement-end">
-              <button type="button" onClick={toggleFavorite} disabled={busy} aria-pressed={isSaved} aria-label={isSaved ? 'Remove bookmark' : 'Bookmark destination'}><Bookmark size={17} className={isSaved ? 'fill-current' : ''} /></button>
-              <div className="relative" ref={menuRef}>
-                <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="More options" aria-expanded={moreOpen}><MoreHorizontal size={19} /></button>
-                {moreOpen && <div className="tourist-more-menu"><button type="button" onClick={copyLink}><Copy size={15} />Copy destination link</button></div>}
+          {userId && (
+            <nav className="event-detail-engagement tourist-engagement" aria-label="Destination interactions">
+              <div className="event-detail-engagement-group">
+                <button type="button" onClick={() => toggleReaction('like')} disabled={busy} aria-pressed={reaction === 'like'} aria-label={reaction === 'like' ? 'Unlike destination' : 'Like destination'}>
+                  <Heart size={17} className={reaction === 'like' ? 'fill-rose-500 text-rose-500' : ''} /><span>{likeCount}</span><span className="tourist-action-label">Like</span>
+                </button>
+                <button type="button" onClick={scrollToComments}><MessageCircle size={17} /><span>{commentCount}</span><span className="tourist-action-label">Comment</span></button>
+                <button type="button" onClick={openShareComposer}><Share2 size={17} /><span className="tourist-action-label">Share</span></button>
               </div>
-            </div>
-          </nav>
+              <div className="event-detail-engagement-group event-detail-engagement-end">
+                <button type="button" onClick={toggleFavorite} disabled={busy} aria-pressed={isSaved} aria-label={isSaved ? 'Remove bookmark' : 'Bookmark destination'}><Bookmark size={17} className={isSaved ? 'fill-current' : ''} /></button>
+                <div className="relative" ref={menuRef}>
+                  <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-label="More options" aria-expanded={moreOpen}><MoreHorizontal size={19} /></button>
+                  {moreOpen && <div className="tourist-more-menu"><button type="button" onClick={copyLink}><Copy size={15} />Copy destination link</button></div>}
+                </div>
+              </div>
+            </nav>
+          )}
 
           <section className="tourist-hero" aria-label={`${spot.name} destination`}>
             {heroImage

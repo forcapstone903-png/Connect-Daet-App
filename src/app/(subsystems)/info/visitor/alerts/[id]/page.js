@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import { ALERT_PHASE_LABELS, PUBLIC_ALERT_COLUMNS, getAlertPhase, getSeverity } from '@/lib/alerts.mjs'
 import { SEVERITY_CARD, formatAlertTime } from '../_components/AlertCard'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 
 const UUID = /^[0-9a-f-]{36}$/i
 
@@ -21,6 +22,29 @@ export default function AlertDetailPage() {
   const [categoryName, setCategoryName] = useState('')
   const [status, setStatus] = useState(alertId ? 'loading' : 'missing')
   const [copied, setCopied] = useState(false)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const syncSession = async () => {
+      const { data, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Alert authentication lookup failed:', error)
+        return
+      }
+      if (active) setIsAuthenticated(Boolean(data.session?.user?.id))
+    }
+
+    void syncSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setIsAuthenticated(Boolean(session?.user?.id))
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
+  }, [])
 
   const load = useCallback(async () => {
     if (!alertId) return false
@@ -80,7 +104,7 @@ export default function AlertDetailPage() {
       <main className="min-h-screen bg-[#f3f5f9] px-4 py-10">
         <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 text-center">
           <p className="text-sm text-slate-600">{status === 'error' ? 'This alert could not be loaded. Check your connection and try again.' : 'This alert does not exist or has not been published.'}</p>
-          <Link href="/info/visitor/alerts" className="mt-3 inline-flex min-h-10 items-center text-sm font-semibold text-blue-700 hover:underline">See all alerts</Link>
+          <div className="mt-3"><VisitorBackButton /></div>
         </div>
       </main>
     )
@@ -94,9 +118,7 @@ export default function AlertDetailPage() {
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-2xl px-4 pb-12 pt-4 sm:px-6">
-        <Link href="/info/visitor/alerts" className="inline-flex min-h-10 items-center gap-1 text-sm font-semibold text-slate-600 hover:text-slate-900">
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />All alerts
-        </Link>
+        <VisitorBackButton />
 
         <article className={`mt-2 rounded-2xl border p-5 sm:p-6 ${isCurrent ? style.box : 'border-slate-200 bg-white'}`}>
           <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase tracking-wide">
@@ -140,9 +162,11 @@ export default function AlertDetailPage() {
           </dl>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            <button type="button" onClick={share} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <Share2 className="h-4 w-4" aria-hidden="true" />{copied ? 'Link copied' : 'Share'}
-            </button>
+            {isAuthenticated && (
+              <button type="button" onClick={share} className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <Share2 className="h-4 w-4" aria-hidden="true" />{copied ? 'Link copied' : 'Share'}
+              </button>
+            )}
           </div>
         </article>
 

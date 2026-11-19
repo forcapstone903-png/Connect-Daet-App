@@ -95,11 +95,12 @@ test('only known browser push services are accepted', () => {
   assert.equal(validatePushSubscription(null), null)
 })
 
-test('authenticated and guest subscriptions share the push provider allowlist', () => {
+test('only signed-in users can manage push subscriptions', () => {
   const signedInRoute = readFileSync(new URL('../app/(subsystems)/info/api/push-subscriptions/route.js', import.meta.url), 'utf8')
   const guestRoute = readFileSync(new URL('../app/(subsystems)/info/api/alerts/guest-subscription/route.js', import.meta.url), 'utf8')
   assert.match(signedInRoute, /validatePushSubscription\(body\?\.subscription\)/)
-  assert.match(guestRoute, /validateSubscription\(body\?\.subscription\)/)
+  assert.match(guestRoute, /export async function POST\(\)\s*\{\s*return fail\(401,/)
+  assert.match(guestRoute, /export async function DELETE\(\)\s*\{\s*return fail\(401,/)
 })
 
 test('alerts are for tourism officers and admins only', () => {

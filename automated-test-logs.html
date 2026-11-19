@@ -1,0 +1,236 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Automated Test Results</title>
+  <style>
+    body { font-family: Arial, sans-serif; color: #172033; margin: 2rem auto; max-width: 1200px; padding: 0 1rem; }
+    h1 { margin-bottom: .35rem; }
+    .summary { color: #475569; margin: 0 0 1.25rem; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #cbd5e1; padding: .55rem .7rem; text-align: left; vertical-align: top; }
+    th { background: #eaf0f8; position: sticky; top: 0; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    td:first-child, td:last-child { white-space: nowrap; }
+    .passed td:nth-child(2) { color: #087443; font-weight: 700; }
+    .failed td:nth-child(2) { color: #b42318; font-weight: 700; }
+    .notice { margin-top: 1rem; color: #64748b; font-size: .9rem; }
+    @media print { body { margin: 0; max-width: none; } th { position: static; } }
+  </style>
+</head>
+<body>
+  <h1>Automated Test Results</h1>
+  <p class="summary">Command: <code>npm test</code> · Total: 201 · Passed: 201 · Failed: 0</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>No.</th><th>Result</th><th>Test case</th><th>Duration</th></tr></thead>
+      <tbody>
+<tr class="passed"><td>1</td><td>Passed</td><td>analytics reporting periods are limited to retained ranges</td><td>10.5996 ms</td></tr>
+<tr class="passed"><td>2</td><td>Passed</td><td>exports include each analytics series and keep staff details admin-only</td><td>3.74 ms</td></tr>
+<tr class="passed"><td>3</td><td>Passed</td><td>authorization policy distinguishes anonymous, regular, and administrator sessions</td><td>13.667 ms</td></tr>
+<tr class="passed"><td>4</td><td>Passed</td><td>every administrator API handler authorizes before parsing input or accessing data</td><td>105.9056 ms</td></tr>
+<tr class="passed"><td>5</td><td>Passed</td><td>scheduled backup cron authenticates before creating a service-role client</td><td>7.2751 ms</td></tr>
+<tr class="passed"><td>6</td><td>Passed</td><td>backup administration endpoints use server-side administrator authorization</td><td>3.1864 ms</td></tr>
+<tr class="passed"><td>7</td><td>Passed</td><td>scheduled backup storage is private and backup records are service-role only</td><td>0.6639 ms</td></tr>
+<tr class="passed"><td>8</td><td>Passed</td><td>all-day ranges retain the inclusive database end on round trip</td><td>49.363 ms</td></tr>
+<tr class="passed"><td>9</td><td>Passed</td><td>timed events span their actual hours, not an additional all-day date</td><td>1.042 ms</td></tr>
+<tr class="passed"><td>10</td><td>Passed</td><td>overnight events carry their end into the next date, including year boundaries</td><td>0.9397 ms</td></tr>
+<tr class="passed"><td>11</td><td>Passed</td><td>multi-day timed events retain their specified final date</td><td>0.6861 ms</td></tr>
+<tr class="passed"><td>12</td><td>Passed</td><td>missing end times leave duration to FullCalendar rather than inventing a saved end</td><td>0.7575 ms</td></tr>
+<tr class="passed"><td>13</td><td>Passed</td><td>weekly selections and drag/resize preserve wall-clock times and midnight endpoints</td><td>3.6185 ms</td></tr>
+<tr class="passed"><td>14</td><td>Passed</td><td>empty and single-day selections remain valid form defaults</td><td>0.9141 ms</td></tr>
+<tr class="passed"><td>15</td><td>Passed</td><td>scheduled and downloaded snapshots share the supported application table scope</td><td>33.4563 ms</td></tr>
+<tr class="passed"><td>16</td><td>Passed</td><td>snapshots explicitly record excluded media when media copying is disabled</td><td>1.9957 ms</td></tr>
+<tr class="passed"><td>17</td><td>Passed</td><td>validates supported, complete admin data snapshots</td><td>3.092 ms</td></tr>
+<tr class="passed"><td>18</td><td>Passed</td><td>rejects unsupported, incomplete, or unknown backup formats</td><td>1.8807 ms</td></tr>
+<tr class="passed"><td>19</td><td>Passed</td><td>rejects malformed rows and duplicate record identifiers</td><td>4.2299 ms</td></tr>
+<tr class="passed"><td>20</td><td>Passed</td><td>notifyAdministrators sends an in-app notification to each active admin</td><td>12.9058 ms</td></tr>
+<tr class="passed"><td>21</td><td>Passed</td><td>notifyTourismOfficers sends an in-app notification to each active tourism officer</td><td>19.5093 ms</td></tr>
+<tr class="passed"><td>22</td><td>Passed</td><td>notifyAdministrators skips insertion when no active admins are found</td><td>0.754 ms</td></tr>
+<tr class="passed"><td>23</td><td>Passed</td><td>administrator profile saves the uploaded image to account and public profile records</td><td>5.3252 ms</td></tr>
+<tr class="passed"><td>24</td><td>Passed</td><td>profile media uploads are restricted to the signed-in user folders</td><td>0.6007 ms</td></tr>
+<tr class="passed"><td>25</td><td>Passed</td><td>admin sidebar renders the saved profile picture when available</td><td>0.6071 ms</td></tr>
+<tr class="passed"><td>26</td><td>Passed</td><td>tourism officers can only access general app settings</td><td>7.9034 ms</td></tr>
+<tr class="passed"><td>27</td><td>Passed</td><td>administrators retain access to every app setting</td><td>0.9237 ms</td></tr>
+<tr class="passed"><td>28</td><td>Passed</td><td>roles without tourism or system permissions cannot access app settings</td><td>4.4749 ms</td></tr>
+<tr class="passed"><td>29</td><td>Passed</td><td>send now, schedule and draft map to the right status</td><td>23.3742 ms</td></tr>
+<tr class="passed"><td>30</td><td>Passed</td><td>rejects bad alerts with clear messages</td><td>2.08 ms</td></tr>
+<tr class="passed"><td>31</td><td>Passed</td><td>barangays are limited to the official list and audience defaults to category</td><td>21.4525 ms</td></tr>
+<tr class="passed"><td>32</td><td>Passed</td><td>alert life cycle phases</td><td>2.1883 ms</td></tr>
+<tr class="passed"><td>33</td><td>Passed</td><td>most urgent alerts sort first</td><td>2.0267 ms</td></tr>
+<tr class="passed"><td>34</td><td>Passed</td><td>sent alerts can only correct wording and area</td><td>3.1414 ms</td></tr>
+<tr class="passed"><td>35</td><td>Passed</td><td>templates need a name and valid alert fields</td><td>3.8029 ms</td></tr>
+<tr class="passed"><td>36</td><td>Passed</td><td>reach summary</td><td>0.9856 ms</td></tr>
+<tr class="passed"><td>37</td><td>Passed</td><td>only known browser push services are accepted</td><td>4.9661 ms</td></tr>
+<tr class="passed"><td>38</td><td>Passed</td><td>authenticated and guest subscriptions share the push provider allowlist</td><td>4.7987 ms</td></tr>
+<tr class="passed"><td>39</td><td>Passed</td><td>alerts are for tourism officers and admins only</td><td>7.6931 ms</td></tr>
+<tr class="passed"><td>40</td><td>Passed</td><td>migration 098: delivery, privacy and secured push</td><td>11.4854 ms</td></tr>
+<tr class="passed"><td>41</td><td>Passed</td><td>push function refuses calls without the shared secret</td><td>3.3486 ms</td></tr>
+<tr class="passed"><td>42</td><td>Passed</td><td>administrator sessions do not require an MFA claim</td><td>18.0775 ms</td></tr>
+<tr class="passed"><td>43</td><td>Passed</td><td>login lockout keys are deterministic and normalized</td><td>4.3204 ms</td></tr>
+<tr class="passed"><td>44</td><td>Passed</td><td>staff can request blog changes after approval and unpublish until resubmission</td><td>3.7412 ms</td></tr>
+<tr class="passed"><td>45</td><td>Passed</td><td>own newest comment is prioritized at the top of the thread</td><td>22.3871 ms</td></tr>
+<tr class="passed"><td>46</td><td>Passed</td><td>new user comment is reordered to the top immediately on optimistic insert</td><td>1.6576 ms</td></tr>
+<tr class="passed"><td>47</td><td>Passed</td><td>notifies blog authors of unpublishing and includes an optional reason</td><td>32.1424 ms</td></tr>
+<tr class="passed"><td>48</td><td>Passed</td><td>blog unpublish notification works without a reason</td><td>1.8148 ms</td></tr>
+<tr class="passed"><td>49</td><td>Passed</td><td>notifies the content owner after staff deletion</td><td>4.5342 ms</td></tr>
+<tr class="passed"><td>50</td><td>Passed</td><td>does not send a deletion notification to the deleting author</td><td>1.2615 ms</td></tr>
+<tr class="passed"><td>51</td><td>Passed</td><td>reports notification failures without obscuring the completed deletion</td><td>1.3877 ms</td></tr>
+<tr class="passed"><td>52</td><td>Passed</td><td>event registration identity comes only from the signed-in server session</td><td>22.3393 ms</td></tr>
+<tr class="passed"><td>53</td><td>Passed</td><td>scheduled message delivery requires a strong cron secret before database access</td><td>3.7284 ms</td></tr>
+<tr class="passed"><td>54</td><td>Passed</td><td>event reminder attempts are persisted and partial delivery is reported</td><td>3.3088 ms</td></tr>
+<tr class="passed"><td>55</td><td>Passed</td><td>registration avoids a full auth-user scan and local auth email uses SendGrid SMTP</td><td>4.1929 ms</td></tr>
+<tr class="passed"><td>56</td><td>Passed</td><td>public blog feeds exclude pending and future-scheduled submissions</td><td>8.2974 ms</td></tr>
+<tr class="passed"><td>57</td><td>Passed</td><td>moderation appeals are bound to the signed-in user and forum replies use server enforcement</td><td>18.4137 ms</td></tr>
+<tr class="passed"><td>58</td><td>Passed</td><td>comment mutes are enforced by the API and database for blogs and forums</td><td>85.1411 ms</td></tr>
+<tr class="passed"><td>59</td><td>Passed</td><td>moderator dashboard summarizes actionable queues and links to their tabs</td><td>6.0339 ms</td></tr>
+<tr class="passed"><td>60</td><td>Passed</td><td>users can report accounts, posts, forum discussions, reviews, comments, and reposts</td><td>17.0729 ms</td></tr>
+<tr class="passed"><td>61</td><td>Passed</td><td>approving account reports applies severity-based suspensions atomically</td><td>4.7583 ms</td></tr>
+<tr class="passed"><td>62</td><td>Passed</td><td>moderator blog unpublishing accepts an optional note and notifies the author</td><td>5.4063 ms</td></tr>
+<tr class="passed"><td>63</td><td>Passed</td><td>staff deletion workflows notify authors for user content across dashboards</td><td>37.5736 ms</td></tr>
+<tr class="passed"><td>64</td><td>Passed</td><td>community submissions use pre-moderation and moderator review stays server-authorized</td><td>6.1093 ms</td></tr>
+<tr class="passed"><td>65</td><td>Passed</td><td>community guidelines are public-read and moderator-write only</td><td>3.5661 ms</td></tr>
+<tr class="passed"><td>66</td><td>Passed</td><td>new community submissions notify moderators and appear in their staff inbox</td><td>10.5622 ms</td></tr>
+<tr class="passed"><td>67</td><td>Passed</td><td>maintenance enforcement is represented in the applied migration and request proxy</td><td>16.3235 ms</td></tr>
+<tr class="passed"><td>68</td><td>Passed</td><td>admin account deletion is scheduled, authorized, and never directly deletes the profile</td><td>22.0278 ms</td></tr>
+<tr class="passed"><td>69</td><td>Passed</td><td>popular destinations are calculated from consented detail-page views instead of fixed chart data</td><td>19.5422 ms</td></tr>
+<tr class="passed"><td>70</td><td>Passed</td><td>tourist spot view counts are deduplicated by signed-in account</td><td>18.6951 ms</td></tr>
+<tr class="passed"><td>71</td><td>Passed</td><td>weather status does not require an unused OpenWeather API key</td><td>2.5072 ms</td></tr>
+<tr class="passed"><td>72</td><td>Passed</td><td>blocked users cannot message each other and restricted conversations stay hidden</td><td>3.4812 ms</td></tr>
+<tr class="passed"><td>73</td><td>Passed</td><td>pinned message responses omit content deleted for the current viewer</td><td>2.4254 ms</td></tr>
+<tr class="passed"><td>74</td><td>Passed</td><td>blocked relationships prevent new follows and follow-request approval</td><td>8.0681 ms</td></tr>
+<tr class="passed"><td>75</td><td>Passed</td><td>dashboard retrieves saved items through every private API page</td><td>7.497 ms</td></tr>
+<tr class="passed"><td>76</td><td>Passed</td><td>private profiles do not return relationship lists or identifying details to unauthorized viewers</td><td>12.5211 ms</td></tr>
+<tr class="passed"><td>77</td><td>Passed</td><td>notification preference filters mentions as well as comments and replies</td><td>3.033 ms</td></tr>
+<tr class="passed"><td>78</td><td>Passed</td><td>rejected events can only be resubmitted by their owner and return to pending review</td><td>6.2227 ms</td></tr>
+<tr class="passed"><td>79</td><td>Passed</td><td>auth sidebar translucent cards are not forced to opaque white</td><td>2.0761 ms</td></tr>
+<tr class="passed"><td>80</td><td>Passed</td><td>settings no longer advertises privacy controls that are not implemented</td><td>7.6202 ms</td></tr>
+<tr class="passed"><td>81</td><td>Passed</td><td>forum replies enforce posting restrictions and keep other users out of draft threads</td><td>2.785 ms</td></tr>
+<tr class="passed"><td>82</td><td>Passed</td><td>public blog surfaces and reposts exclude unapproved and future-scheduled submissions</td><td>9.7959 ms</td></tr>
+<tr class="passed"><td>83</td><td>Passed</td><td>engagement content links resolve supported content types</td><td>10.14 ms</td></tr>
+<tr class="passed"><td>84</td><td>Passed</td><td>engagement content links safely handle aliases, ids, and unsupported records</td><td>34.1146 ms</td></tr>
+<tr class="passed"><td>85</td><td>Passed</td><td>matches every inclusive day in an event date range</td><td>4.6047 ms</td></tr>
+<tr class="passed"><td>86</td><td>Passed</td><td>treats a missing end date as a single day and rejects invalid ranges</td><td>18.6536 ms</td></tr>
+<tr class="passed"><td>87</td><td>Passed</td><td>FAQ validation trims text and accepts published or draft entries</td><td>14.6885 ms</td></tr>
+<tr class="passed"><td>88</td><td>Passed</td><td>FAQ validation rejects empty, overlong, and invalid-order content</td><td>0.9007 ms</td></tr>
+<tr class="passed"><td>89</td><td>Passed</td><td>FAQ migration seeds public content and denies direct client-table access</td><td>5.1083 ms</td></tr>
+<tr class="passed"><td>90</td><td>Passed</td><td>saved items are moved to the front of the feed</td><td>4.7232 ms</td></tr>
+<tr class="passed"><td>91</td><td>Passed</td><td>new reposts stay pinned at the top until the user clears them</td><td>4.362 ms</td></tr>
+<tr class="passed"><td>92</td><td>Passed</td><td>the newest admin announcement is pinned for one day</td><td>52.4499 ms</td></tr>
+<tr class="passed"><td>93</td><td>Passed</td><td>expired, future, and non-admin announcements are not pinned</td><td>0.7726 ms</td></tr>
+<tr class="passed"><td>94</td><td>Passed</td><td>owner posts are newest-first and stay ahead of pinned announcements</td><td>3.6465 ms</td></tr>
+<tr class="passed"><td>95</td><td>Passed</td><td>the newest community post stays at the top after feed ranking</td><td>1.3813 ms</td></tr>
+<tr class="passed"><td>96</td><td>Passed</td><td>reposts are not treated as original owner posts</td><td>0.9147 ms</td></tr>
+<tr class="passed"><td>97</td><td>Passed</td><td>owner posts are not hidden by the ownerΓ&#199;&#214;s local feed preferences</td><td>1.056 ms</td></tr>
+<tr class="passed"><td>98</td><td>Passed</td><td>user with beach interest ranks beach content above other categories</td><td>37.8219 ms</td></tr>
+<tr class="passed"><td>99</td><td>Passed</td><td>reposts keep independent feed item identity and are not merged together</td><td>1.6548 ms</td></tr>
+<tr class="passed"><td>100</td><td>Passed</td><td>diversity reduces repeated categories in a row</td><td>1.5957 ms</td></tr>
+<tr class="passed"><td>101</td><td>Passed</td><td>cold-start profile still produces a usable score distribution</td><td>3.0134 ms</td></tr>
+<tr class="passed"><td>102</td><td>Passed</td><td>four listing types with suggested categories</td><td>10.0612 ms</td></tr>
+<tr class="passed"><td>103</td><td>Passed</td><td>normalizes a valid listing</td><td>3.7651 ms</td></tr>
+<tr class="passed"><td>104</td><td>Passed</td><td>website and Facebook page are optional</td><td>0.9859 ms</td></tr>
+<tr class="passed"><td>105</td><td>Passed</td><td>never accepts rating or review counts from the form</td><td>0.8189 ms</td></tr>
+<tr class="passed"><td>106</td><td>Passed</td><td>rejects invalid input with a clear message</td><td>1.9206 ms</td></tr>
+<tr class="passed"><td>107</td><td>Passed</td><td>unknown type, status and price range fall back safely</td><td>21.2051 ms</td></tr>
+<tr class="passed"><td>108</td><td>Passed</td><td>gallery keeps only http(s) URLs</td><td>1.2547 ms</td></tr>
+<tr class="passed"><td>109</td><td>Passed</td><td>bulk actions only touch featured/status</td><td>1.2594 ms</td></tr>
+<tr class="passed"><td>110</td><td>Passed</td><td>formatListingRow fills legacy aliases</td><td>1.008 ms</td></tr>
+<tr class="passed"><td>111</td><td>Passed</td><td>tourism officers manage listings; moderators cannot</td><td>25.9306 ms</td></tr>
+<tr class="passed"><td>112</td><td>Passed</td><td>migration 097 adds listing types and locks down public writes</td><td>24.4533 ms</td></tr>
+<tr class="passed"><td>113</td><td>Passed</td><td>admin listings page no longer writes listings from the browser</td><td>6.674 ms</td></tr>
+<tr class="passed"><td>114</td><td>Passed</td><td>public place bookmarks use the database-supported spot favorite type</td><td>9.8248 ms</td></tr>
+<tr class="passed"><td>115</td><td>Passed</td><td>uses viewer-aware naming for pin activity</td><td>8.8205 ms</td></tr>
+<tr class="passed"><td>116</td><td>Passed</td><td>post previews summarize attachment URLs without exposing the long URLs</td><td>15.6061 ms</td></tr>
+<tr class="passed"><td>117</td><td>Passed</td><td>post detail parsing preserves full text and attachment destinations</td><td>15.8501 ms</td></tr>
+<tr class="passed"><td>118</td><td>Passed</td><td>post previews truncate long written content</td><td>1.2283 ms</td></tr>
+<tr class="passed"><td>119</td><td>Passed</td><td>attachment previews only treat image file paths as images</td><td>2.089 ms</td></tr>
+<tr class="passed"><td>120</td><td>Passed</td><td>formats recent posts relatively until they reach one day old</td><td>58.5998 ms</td></tr>
+<tr class="passed"><td>121</td><td>Passed</td><td>shows the calendar date and age starting one day after posting</td><td>380.4939 ms</td></tr>
+<tr class="passed"><td>122</td><td>Passed</td><td>schedules a label refresh at the next relative-time boundary</td><td>1.5847 ms</td></tr>
+<tr class="passed"><td>123</td><td>Passed</td><td>profanity terms are normalized, deduplicated and bounded</td><td>12.1241 ms</td></tr>
+<tr class="passed"><td>124</td><td>Passed</td><td>matching is case-insensitive and uses whole tokens</td><td>1.2866 ms</td></tr>
+<tr class="passed"><td>125</td><td>Passed</td><td>repost action identity stays on the repost instance instead of the original post</td><td>13.9882 ms</td></tr>
+<tr class="passed"><td>126</td><td>Passed</td><td>non-repost content keeps the original content identity</td><td>65.0436 ms</td></tr>
+<tr class="passed"><td>127</td><td>Passed</td><td>a new repost is attributed to the reposter, not the original post author</td><td>2.4164 ms</td></tr>
+<tr class="passed"><td>128</td><td>Passed</td><td>the original author stays available for the &quot;Originally shared by&quot; line</td><td>1.6992 ms</td></tr>
+<tr class="passed"><td>129</td><td>Passed</td><td>repost feed item carries the repost identity used by actions</td><td>0.9184 ms</td></tr>
+<tr class="passed"><td>130</td><td>Passed</td><td>a new repost keeps its own timestamp instead of the original post date</td><td>0.7312 ms</td></tr>
+<tr class="passed"><td>131</td><td>Passed</td><td>blog reposts link to the blog route</td><td>20.9104 ms</td></tr>
+<tr class="passed"><td>132</td><td>Passed</td><td>event reposts link to the event route and retain event type</td><td>2.6249 ms</td></tr>
+<tr class="passed"><td>133</td><td>Passed</td><td>tourist spot reposts link to the visitor destination route and retain type</td><td>5.5741 ms</td></tr>
+<tr class="passed"><td>134</td><td>Passed</td><td>reposter falls back to the acting user when the API omits their profile</td><td>9.37 ms</td></tr>
+<tr class="passed"><td>135</td><td>Passed</td><td>an incomplete repost payload builds no feed item</td><td>4.6131 ms</td></tr>
+<tr class="passed"><td>136</td><td>Passed</td><td>repost target points at the original content, not the repost row</td><td>0.855 ms</td></tr>
+<tr class="passed"><td>137</td><td>Passed</td><td>repost target falls back to the embedded original post id</td><td>0.6389 ms</td></tr>
+<tr class="passed"><td>138</td><td>Passed</td><td>repost target never leaks a repost row id when the original is unknown</td><td>0.5854 ms</td></tr>
+<tr class="passed"><td>139</td><td>Passed</td><td>a fresh repost exposes the original content identity for engagement actions</td><td>1.463 ms</td></tr>
+<tr class="passed"><td>140</td><td>Passed</td><td>repost target resolves through original_post_id when original_content_id is missing</td><td>0.8292 ms</td></tr>
+<tr class="passed"><td>141</td><td>Passed</td><td>repost target never falls back to the repost row id</td><td>0.6512 ms</td></tr>
+<tr class="passed"><td>142</td><td>Passed</td><td>reward settings accept supported actions and a valid catalog</td><td>17.885 ms</td></tr>
+<tr class="passed"><td>143</td><td>Passed</td><td>reward settings reject unknown or malformed rewards</td><td>1.3524 ms</td></tr>
+<tr class="passed"><td>144</td><td>Passed</td><td>reward settings reject invalid action point amounts</td><td>0.953 ms</td></tr>
+<tr class="passed"><td>145</td><td>Passed</td><td>reward settings validate unique achievement milestones and thresholds</td><td>1.9877 ms</td></tr>
+<tr class="passed"><td>146</td><td>Passed</td><td>achievement badges follow administrator-configured thresholds</td><td>4.3692 ms</td></tr>
+<tr class="passed"><td>147</td><td>Passed</td><td>database and provider errors never reach users; app messages do</td><td>12.1841 ms</td></tr>
+<tr class="passed"><td>148</td><td>Passed</td><td>uploads must match their declared type by content</td><td>4.4983 ms</td></tr>
+<tr class="passed"><td>149</td><td>Passed</td><td>stored object names cannot traverse folders or keep a fake extension</td><td>2.3547 ms</td></tr>
+<tr class="passed"><td>150</td><td>Passed</td><td>notification links from the browser are restricted to this site</td><td>2.9199 ms</td></tr>
+<tr class="passed"><td>151</td><td>Passed</td><td>password re-checks share the sign-in lockout</td><td>16.5534 ms</td></tr>
+<tr class="passed"><td>152</td><td>Passed</td><td>blog HTML is sanitized where it is rendered</td><td>14.2683 ms</td></tr>
+<tr class="passed"><td>153</td><td>Passed</td><td>migration 104 hides private account columns from the public key</td><td>2.0735 ms</td></tr>
+<tr class="passed"><td>154</td><td>Passed</td><td>migration 103 lets only active moderators moderate content</td><td>4.5639 ms</td></tr>
+<tr class="passed"><td>155</td><td>Passed</td><td>migration 105 lets guests read active places and events without exposing staff status</td><td>2.0397 ms</td></tr>
+<tr class="passed"><td>156</td><td>Passed</td><td>security settings clamp to safe ranges and never weaken the password floor</td><td>4.924 ms</td></tr>
+<tr class="passed"><td>157</td><td>Passed</td><td>general settings validate contact details and only allow https links</td><td>2.2822 ms</td></tr>
+<tr class="passed"><td>158</td><td>Passed</td><td>unknown settings ids are rejected and stored rows resolve over defaults</td><td>1.2939 ms</td></tr>
+<tr class="passed"><td>159</td><td>Passed</td><td>public settings expose branding, contact and password rules only</td><td>15.9897 ms</td></tr>
+<tr class="passed"><td>160</td><td>Passed</td><td>password policy follows the configured rules</td><td>4.4154 ms</td></tr>
+<tr class="passed"><td>161</td><td>Passed</td><td>permission overrides grant and revoke without ever creating an admin</td><td>6.9373 ms</td></tr>
+<tr class="passed"><td>162</td><td>Passed</td><td>new admin routes are gated to the intended roles</td><td>1.3335 ms</td></tr>
+<tr class="passed"><td>163</td><td>Passed</td><td>traffic can be grouped by day, week or month and exports label the bucket</td><td>4.9359 ms</td></tr>
+<tr class="passed"><td>164</td><td>Passed</td><td>idle sessions expire and carry per-person permissions</td><td>14.7611 ms</td></tr>
+<tr class="passed"><td>165</td><td>Passed</td><td>migration 102 protects office replies and keeps restore and lockout server-only</td><td>7.6375 ms</td></tr>
+<tr class="passed"><td>166</td><td>Passed</td><td>each admin_app_settings id check keeps every id allowed by earlier migrations</td><td>211.652 ms</td></tr>
+<tr class="passed"><td>167</td><td>Passed</td><td>tracks approved public tourism routes and removes query strings</td><td>12.8256 ms</td></tr>
+<tr class="passed"><td>168</td><td>Passed</td><td>does not track private routes, API routes, or malformed paths</td><td>0.9594 ms</td></tr>
+<tr class="passed"><td>169</td><td>Passed</td><td>accepts UUID visitor identifiers only</td><td>1.3625 ms</td></tr>
+<tr class="passed"><td>170</td><td>Passed</td><td>device analytics use coarse categories and retain administrator-only reporting access</td><td>7.5625 ms</td></tr>
+<tr class="passed"><td>171</td><td>Passed</td><td>staff notification scope excludes alert deliveries and all-clear notices</td><td>7.5029 ms</td></tr>
+<tr class="passed"><td>172</td><td>Passed</td><td>default notification scope leaves user notifications unchanged</td><td>1.6233 ms</td></tr>
+<tr class="passed"><td>173</td><td>Passed</td><td>staff realtime refresh ignores alert broadcasts and accepts inquiry notifications</td><td>0.9634 ms</td></tr>
+<tr class="passed"><td>174</td><td>Passed</td><td>normalizes roles and recognises staff</td><td>20.1167 ms</td></tr>
+<tr class="passed"><td>175</td><td>Passed</td><td>authenticated roles trust the database profile and never staff metadata</td><td>1.2982 ms</td></tr>
+<tr class="passed"><td>176</td><td>Passed</td><td>staff roles have separate dashboard routes with role-specific access</td><td>3.4902 ms</td></tr>
+<tr class="passed"><td>177</td><td>Passed</td><td>admin holds every permission</td><td>2.112 ms</td></tr>
+<tr class="passed"><td>178</td><td>Passed</td><td>tourism officer reaches tourism pages only</td><td>41.9972 ms</td></tr>
+<tr class="passed"><td>179</td><td>Passed</td><td>moderator reaches community pages only</td><td>34.5411 ms</td></tr>
+<tr class="passed"><td>180</td><td>Passed</td><td>moderator discussion controls require moderation permission</td><td>10.8192 ms</td></tr>
+<tr class="passed"><td>181</td><td>Passed</td><td>public FAQ management is available to tourism officers and admins, not moderators</td><td>1.1212 ms</td></tr>
+<tr class="passed"><td>182</td><td>Passed</td><td>staff notification inbox is limited to signed-in console users</td><td>0.6348 ms</td></tr>
+<tr class="passed"><td>183</td><td>Passed</td><td>staff chat is available to all staff roles and unavailable to regular users</td><td>1.1045 ms</td></tr>
+<tr class="passed"><td>184</td><td>Passed</td><td>unknown admin pages and APIs default to admin-only</td><td>1.2662 ms</td></tr>
+<tr class="passed"><td>185</td><td>Passed</td><td>a prefix rule does not leak to a longer sibling path</td><td>0.4101 ms</td></tr>
+<tr class="passed"><td>186</td><td>Passed</td><td>API rules are method aware</td><td>1.1244 ms</td></tr>
+<tr class="passed"><td>187</td><td>Passed</td><td>authorization status maps to 401/403/null</td><td>0.9604 ms</td></tr>
+<tr class="passed"><td>188</td><td>Passed</td><td>every sidebar link is reachable by at least the admin and gated consistently</td><td>4.2049 ms</td></tr>
+<tr class="passed"><td>189</td><td>Passed</td><td>super-admin sidebar is focused on system administration</td><td>2.0409 ms</td></tr>
+<tr class="passed"><td>190</td><td>Passed</td><td>moderator and tourism officer sidebars show only administration settings</td><td>5.7384 ms</td></tr>
+<tr class="passed"><td>191</td><td>Passed</td><td>migration 096 guards role changes and widens reviewer checks</td><td>7.8765 ms</td></tr>
+<tr class="passed"><td>192</td><td>Passed</td><td>login never grants a staff role from user-editable metadata</td><td>10.7498 ms</td></tr>
+<tr class="passed"><td>193</td><td>Passed</td><td>toast severity is inferred from common action outcomes</td><td>6.5388 ms</td></tr>
+<tr class="passed"><td>194</td><td>Passed</td><td>notifyToast dispatches typed messages and rejects empty messages</td><td>19.5274 ms</td></tr>
+<tr class="passed"><td>195</td><td>Passed</td><td>geocoding migration can be retried after its cache table was created</td><td>21.0292 ms</td></tr>
+<tr class="passed"><td>196</td><td>Passed</td><td>geocoding query is constrained to the Daet tourism area</td><td>2.1528 ms</td></tr>
+<tr class="passed"><td>197</td><td>Passed</td><td>address cache key ignores case and repeated whitespace</td><td>7.4764 ms</td></tr>
+<tr class="passed"><td>198</td><td>Passed</td><td>only valid latitude and longitude pairs are accepted</td><td>20.6811 ms</td></tr>
+<tr class="passed"><td>199</td><td>Passed</td><td>notification delivery deduplicates recipients and tolerates already-created notices</td><td>29.7367 ms</td></tr>
+<tr class="passed"><td>200</td><td>Passed</td><td>admin authors with generic labels use the tourism admin display name</td><td>22.9977 ms</td></tr>
+<tr class="passed"><td>201</td><td>Passed</td><td>admin authors retain their current custom account name</td><td>0.6346 ms</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="notice">The original run emitted 9 Node.js module-type warning(s); these are warnings, not failed tests.</p>
+</body>
+</html>

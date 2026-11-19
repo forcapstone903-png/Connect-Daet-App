@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
+import LegalBackButton from '@/app/(subsystems)/info/legal/_components/LegalBackButton'
 
 export default function CommunityGuidelinesPage() {
   const [content, setContent] = useState('')
@@ -55,7 +55,7 @@ export default function CommunityGuidelinesPage() {
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-800 sm:px-6 lg:px-8">
       <article className="mx-auto max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <Link href="/info" className="text-sm font-semibold text-sky-700 hover:underline">Back to DAET Connect</Link>
+        <LegalBackButton />
         <p className="mt-8 text-xs font-bold uppercase tracking-[0.22em] text-sky-700">Community</p>
         <h1 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">Community Guidelines</h1>
         {updatedAt ? <p className="mt-2 text-xs text-slate-500">Updated {new Date(updatedAt).toLocaleDateString()}</p> : null}

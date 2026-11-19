@@ -119,6 +119,19 @@ Community submissions follow pre-moderation: user blogs, forum topics and replie
 community posts, and comments are held as pending until a moderator approves
 them. Moderators and administrators can still publish official announcements.
 
+The profanity filter is a separate post-moderation check. It accepts words or
+phrases (up to 250 entries and 10,000 characters total); spaces separate phrase
+words, while punctuation in configured terms is normalized away. It supports
+Unicode letters and normalizes case, common number substitutions, repeated
+letters, and symbol-masked content before matching whole words or phrases.
+A match creates a pending item in the moderation queue; the filter itself does
+not change content visibility. Moderators can warn the author, hide the
+content, or remove it.
+Filter terms are read directly from the moderation settings when content is
+written (not cached). Apply migration
+[`118_normalize_profanity_filter.sql`](../supabase/migrations/118_normalize_profanity_filter.sql)
+to enable normalized database-side matching.
+
 Users can report content, comments, reposts, visitor reviews, and accounts.
 Approving an account report resolves the report and applies an account suspension
 in one database transaction. Moderators classify severity as minor (7 days),

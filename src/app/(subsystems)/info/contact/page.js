@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Clock, Globe, Mail, MapPin, Phone, Share2, Siren } from 'lucide-react'
 import { usePublicSettings } from '@/lib/usePublicSettings'
+import LegalBackButton from '@/app/(subsystems)/info/legal/_components/LegalBackButton'
 
 const telHref = (value) => `tel:${String(value).replace(/[^0-9+]/g, '')}`
 
@@ -57,7 +58,7 @@ export default function ContactPage() {
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-800 sm:px-6 lg:px-8">
       <article className="mx-auto max-w-3xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <Link href="/info" className="text-sm font-semibold text-sky-700 hover:underline">Back to {settings.siteName}</Link>
+        <LegalBackButton />
         <p className="mt-8 text-xs font-bold uppercase tracking-[0.22em] text-sky-700">Contact</p>
         <h1 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">{settings.tourismOfficeName}</h1>
         <p className="mt-2 text-sm text-slate-600">{settings.municipality.name}, {settings.municipality.province}</p>

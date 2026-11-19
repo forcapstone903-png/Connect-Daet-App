@@ -9,6 +9,7 @@ import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { useUserSearchSuggestions } from '@/lib/useUserSearchSuggestions'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 import { Suspense } from 'react'
 import styles from './SearchPage.module.css'
 
@@ -47,6 +48,7 @@ function SearchContentView({ initialQuery, initialType }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [followingIds, setFollowingIds] = useState(new Set())
   const [authorProfiles, setAuthorProfiles] = useState({})
   const [followBusyId, setFollowBusyId] = useState(null)
@@ -71,6 +73,28 @@ function SearchContentView({ initialQuery, initialType }) {
 
     window.addEventListener('popstate', syncQueryFromHistory)
     return () => window.removeEventListener('popstate', syncQueryFromHistory)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const syncSession = async () => {
+      const { data, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error('Search authentication lookup failed:', sessionError)
+        return
+      }
+      if (active) setIsAuthenticated(Boolean(data.session?.user?.id))
+    }
+
+    void syncSession()
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setIsAuthenticated(Boolean(session?.user?.id))
+    })
+
+    return () => {
+      active = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
@@ -275,7 +299,7 @@ function SearchContentView({ initialQuery, initialType }) {
   const toggleFollow = async (event, userId) => {
     event.preventDefault()
     event.stopPropagation()
-    if (!userId || followBusyId === userId) return
+    if (!isAuthenticated || !userId || followBusyId === userId) return
 
     const isFollowing = followingIds.has(userId)
     setFollowBusyId(userId)
@@ -362,7 +386,7 @@ function SearchContentView({ initialQuery, initialType }) {
   const getAuthor = (authorId) => authorProfiles[authorId] || null
 
   const renderFollowButton = (authorId) => {
-    if (!authorId || !authorProfiles[authorId]) return null
+    if (!isAuthenticated || !authorId || !authorProfiles[authorId]) return null
     const isFollowing = followingIds.has(authorId)
     return (
       <button type="button" onClick={(event) => toggleFollow(event, authorId)} disabled={followBusyId === authorId} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${isFollowing ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
@@ -374,11 +398,14 @@ function SearchContentView({ initialQuery, initialType }) {
 
   return (
     <main className={`tourism-shell usr-section-page usr-search min-h-screen text-slate-900 ${styles.searchPage}`}>
-      <UserTopHeader />
+      {pathname.startsWith('/info/user/') && <UserTopHeader />}
       <div className="usr-section-container mx-auto max-w-5xl px-3 pb-12 pt-2 sm:px-4 lg:px-6">
         {/* Header */}
         <header className="usr-card usr-glass usr-search-toolbar mb-4 px-3 py-3 md:px-5">
           <div className="flex items-center justify-between gap-3">
+            {!pathname.startsWith('/info/user/') && (
+              <VisitorBackButton className="shrink-0" />
+            )}
             <div className="relative hidden flex-1 items-center justify-center lg:flex">
             <div className="flex w-full max-w-xl items-center gap-2">
             <form onSubmit={handleSubmit} autoComplete="off" className="min-w-0 flex-1">
@@ -648,10 +675,10 @@ function SearchContentView({ initialQuery, initialType }) {
                         {user.mutual_friends?.length > 0 && <span className="mt-2 inline-flex items-center rounded-full bg-teal-50 px-2 py-1 text-[10px] font-bold text-teal-700">{user.mutual_friends.length} mutual {user.mutual_friends.length === 1 ? 'friend' : 'friends'}</span>}
                       </div>
                       </UserProfileLink>
-                      <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
+                      {isAuthenticated && <button type="button" onClick={(event) => toggleFollow(event, user.id)} disabled={followBusyId === user.id} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${followingIds.has(user.id) ? 'bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
                         {followingIds.has(user.id) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
                         {followingIds.has(user.id) ? 'Following' : 'Follow'}
-                      </button>
+                      </button>}
                     </div>
                   ))}
                 </div>
@@ -672,10 +699,10 @@ function SearchContentView({ initialQuery, initialType }) {
                           <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-700">{item.contentKind === 'post' ? 'Public post' : item.contentKind}</span>
                           <p className="mt-1 text-sm font-bold text-slate-900">{item.title || item.content || item.description}</p>
                         </Link>
-                        <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
+                        {isAuthenticated && <button type="button" onClick={(event) => toggleFollow(event, item.authorId)} disabled={followBusyId === item.authorId} className={`${styles.followButton} usr-press inline-flex shrink-0 items-center gap-1 rounded-full font-bold transition ${followingIds.has(item.authorId) ? 'bg-white text-slate-600 hover:bg-red-50 hover:text-red-600' : 'bg-teal-700 text-white hover:bg-teal-800'}`}>
                           {followingIds.has(item.authorId) ? <UserCheck className="h-2.5 w-2.5" /> : <UserPlus className="h-2.5 w-2.5" />}
                           {followingIds.has(item.authorId) ? 'Following' : 'Follow'}
-                        </button>
+                        </button>}
                       </div>
                       <p className="mt-1 text-[11px] text-slate-500">By {userNames.get(item.authorId) || 'Community member'}</p>
                       {item.excerpt && <p className="mt-1 line-clamp-2 text-xs text-slate-600">{item.excerpt}</p>}

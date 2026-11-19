@@ -268,7 +268,7 @@ export default function Comments({
 
   const handleEditComment = async (commentId) => {
     const trimmed = editedCommentText.trim()
-    if (!trimmed || !commentId) return
+    if (!userId || !trimmed || !commentId) return
 
     try {
       const { error } = await supabase
@@ -356,11 +356,13 @@ export default function Comments({
   }
 
   const handleHideComment = (commentId) => {
+    if (!userId) return
     setHiddenCommentIds((previous) => new Set(previous).add(commentId))
     setOpenMenuId(null)
   }
 
   const handleSubmit = async () => {
+    if (!userId) return
     if ((!body.trim() && !selectedGif && !selectedSticker)) return
 
     const commentBody = body.trim() || (selectedGif ? 'GIF' : selectedSticker ? 'Sticker' : '')
@@ -437,6 +439,8 @@ export default function Comments({
   }
 
   const handlePin = async (commentId, shouldPin) => {
+    if (!userId || !contentOwnerId || userId !== contentOwnerId) return
+
     const { error } = await supabase
       .from('content_comments')
       .update({ is_pinned: shouldPin })
@@ -539,7 +543,7 @@ export default function Comments({
                     </button>
                   )}
 
-                  <div className="relative">
+                  {userId && <div className="relative">
                       <button
                         type="button"
                         onClick={() => setOpenMenuId(isMenuOpen ? null : comment.id)}
@@ -608,7 +612,7 @@ export default function Comments({
                           )}
                         </div>
                       )}
-                  </div>
+                  </div>}
                 </div>
               </div>
 
@@ -670,34 +674,39 @@ export default function Comments({
                     </div>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (replyCount > 0 && !eventStyle && !replyOnly) {
-                        setExpandedReplyIds((prev) => ({
-                          ...prev,
-                          [comment.id]: !prev[comment.id],
-                        }))
-                        return
-                      }
+                  {(userId || (!eventStyle && !replyOnly && replyCount > 0)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (replyCount > 0 && !eventStyle && !replyOnly) {
+                          setExpandedReplyIds((prev) => ({
+                            ...prev,
+                            [comment.id]: !prev[comment.id],
+                          }))
+                          return
+                        }
 
-                      if (replyTo === comment.id) {
-                        setReplyTo(null)
-                        setBody('')
-                        setMentionRefs([])
-                        return
-                      }
+                        if (!userId) return
+                        if (replyTo === comment.id) {
+                          setReplyTo(null)
+                          setBody('')
+                          setMentionRefs([])
+                          return
+                        }
 
-                      const name = authorName || 'there'
-                      setReplyTo(comment.id)
-                      setBody(`${name} `)
-                      setMentionRefs([{ id: comment.user_id, displayName: name }])
-                    }}
-                    className={`event-comment-reply-button inline-flex items-center gap-1 font-semibold text-slate-600 transition ${eventStyle ? '' : 'rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] hover:bg-slate-200 active:scale-[0.98]'}`}
-                  >
-                    {!eventStyle && <CornerDownRight className="h-3.5 w-3.5" />}
-                    {eventStyle || replyOnly ? 'Reply' : replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'}
-                  </button>
+                        const name = authorName || 'there'
+                        setReplyTo(comment.id)
+                        setBody(`${name} `)
+                        setMentionRefs([{ id: comment.user_id, displayName: name }])
+                      }}
+                      className={`event-comment-reply-button inline-flex items-center gap-1 font-semibold text-slate-600 transition ${eventStyle ? '' : 'rounded-full bg-slate-100 px-2.5 py-1.5 text-[10px] hover:bg-slate-200 active:scale-[0.98]'}`}
+                    >
+                      {!eventStyle && <CornerDownRight className="h-3.5 w-3.5" />}
+                      {userId
+                        ? eventStyle || replyOnly ? 'Reply' : replyCount > 0 ? (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`) : 'Reply'
+                        : (isReplyExpanded ? 'Hide replies' : `${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`)}
+                    </button>
+                  )}
                   {(eventStyle || replyOnly) && replyCount > 0 && (
                     <button
                       type="button"
@@ -713,7 +722,7 @@ export default function Comments({
           </div>
         </div>
 
-        {replyTo === comment.id && !sheetMode && (
+        {userId && replyTo === comment.id && !sheetMode && (
           <div className={`event-comment-inline-reply mt-2 ${eventStyle ? '' : 'ml-4 sm:ml-8'}`}>
             <div className={eventStyle ? '' : 'rounded-2xl border border-slate-200 bg-white p-2.5 shadow-sm'}>
               <div className="flex items-start gap-3">
@@ -860,7 +869,7 @@ export default function Comments({
         </div>
       )}
 
-      {!replyOnly && (!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer order-1' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
+      {userId && !replyOnly && (!eventStyle || sheetMode || !replyTo) && <div className={`${eventStyle ? 'event-comment-composer order-1' : articleStyle ? 'order-1 rounded-none border-b border-slate-200 bg-white pb-3 shadow-none' : sheetMode ? 'shrink-0 border-t border-slate-200 bg-white p-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:p-3' : compact ? 'mb-3 rounded-xl border border-slate-200 bg-slate-50 p-2' : 'mt-4 rounded-[18px] border border-slate-200 bg-slate-50 p-3 shadow-sm'}`}>
         {articleStyle && !eventStyle && <p className="mb-2 text-sm font-bold text-slate-900">Share Your Thoughts</p>}
         {sheetMode && eventStyle && replyTo && (
           <div className="event-comment-replying-to">

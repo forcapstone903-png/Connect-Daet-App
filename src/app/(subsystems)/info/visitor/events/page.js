@@ -2,10 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, CalendarDays, Loader, MapPin, Search } from 'lucide-react'
+import { ArrowRight, CalendarDays, MapPin, Search, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import { useScrollReveal, staggerDelay } from '@/lib/useScrollReveal'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
+import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
 
 function formatDateRange(startDate, endDate) {
   if (!startDate) return 'TBA'
@@ -27,14 +30,14 @@ function formatDateRange(startDate, endDate) {
 
 function getCategoryColor(category) {
   const colors = {
-    festival: 'bg-purple-100 text-purple-700',
-    concert: 'bg-red-100 text-red-700',
-    exhibition: 'bg-yellow-100 text-yellow-700',
-    workshop: 'bg-blue-100 text-blue-700',
-    sports: 'bg-cyan-100 text-cyan-700',
-    cultural: 'bg-pink-100 text-pink-700',
+    festival: 'bg-purple-100 text-purple-700 border-purple-200',
+    concert: 'bg-red-100 text-red-700 border-red-200',
+    exhibition: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    workshop: 'bg-blue-100 text-blue-700 border-blue-200',
+    sports: 'bg-cyan-100 text-cyan-700 border-cyan-200',
+    cultural: 'bg-pink-100 text-pink-700 border-pink-200',
   }
-  return colors[category] || 'bg-slate-100 text-slate-700'
+  return colors[category] || 'bg-slate-100 text-slate-700 border-slate-200'
 }
 
 export default function EventsIndexPage() {
@@ -44,6 +47,7 @@ export default function EventsIndexPage() {
   const [search, setSearch] = useState('')
   const [category, setCategory] = useState('all')
   const [location, setLocation] = useState('all')
+  const [showFilters, setShowFilters] = useState(false)
   const [retryKey, setRetryKey] = useState(0)
   const refreshEventsRef = useRef(null)
   const realtime = useRealtimeRefresh({
@@ -51,6 +55,7 @@ export default function EventsIndexPage() {
     tables: ['info_events'],
   })
   const { setRefreshCallback } = realtime
+  const { observe } = useScrollReveal()
 
   useEffect(() => {
     let ignore = false
@@ -126,79 +131,178 @@ export default function EventsIndexPage() {
     })
   }, [events, search, category, location])
 
+  const hasActiveFilters = search.trim() || category !== 'all' || location !== 'all'
+  const clearFilters = () => {
+    setSearch('')
+    setCategory('all')
+    setLocation('all')
+  }
+
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[1200px] px-3 pb-12 pt-3 sm:px-4 lg:px-6">
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/info/visitor"
-            className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-sky-700"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back to Home
-          </Link>
-        </div>
 
-        {/* Hero */}
-        <div className="rounded-[24px] bg-gradient-to-br from-sky-600 via-sky-700 to-emerald-700 p-6 text-white shadow-lg sm:p-10">
-          <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-200">Daet Events</p>
-          <h1 className="mt-2 text-2xl font-black tracking-[-0.02em] sm:text-4xl">Upcoming events in Daet</h1>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-sky-100">
-            Festivals, concerts, workshops, and community gatherings happening across Camarines Norte.
-          </p>
-        </div>
-
-        {/* Filters */}
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative max-w-md flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+        {/* Mobile header */}
+        <header className="visitor-local-header sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5 lg:hidden">
+          <div className="flex items-center justify-between gap-3">
+            <Link href="/info/visitor" className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900/5 p-1 shadow-sm ring-1 ring-slate-200">
+                <img src="/logo.png" alt="Daet tourism logo" className="h-full w-full rounded-lg object-cover" />
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Daet</p>
+                <p className="text-base font-bold text-slate-800">Connect</p>
+              </div>
+            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFilters((value) => !value)}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${showFilters ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500'}`}
+                aria-label="Toggle event filters"
+                aria-expanded={showFilters}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </button>
+              <VisitorBackButton className="shrink-0" />
+            </div>
+          </div>
+          <label className="mt-3 flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100">
+            <Search className="h-4 w-4" aria-hidden="true" />
             <input
-              type="search"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Search events..."
               aria-label="Search events"
-              className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"
+              className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
             />
-          </div>
-          <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            Location
-            <select
-              value={location}
-              onChange={(event) => setLocation(event.target.value)}
-              className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700"
-            >
-              <option value="all">All locations</option>
-              {locations.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setCategory('all')}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${category === 'all' ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-            >
-              All
-            </button>
-            {categories.filter((item) => item !== 'all').map((item) => (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setCategory(item)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${category === item ? 'bg-sky-600 text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
-              >
-                {item}
+            {search && (
+              <button type="button" onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                <X className="h-4 w-4" />
               </button>
-            ))}
+            )}
+          </label>
+        </header>
+
+        {/* Desktop top bar */}
+        <div className="mb-6 hidden items-center justify-between gap-4 lg:flex">
+          <VisitorBackButton />
+          <label className="flex w-full max-w-xl items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-500 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100">
+            <Search className="h-4 w-4" aria-hidden="true" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search events..."
+              aria-label="Search events"
+              className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+            />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowFilters((value) => !value)}
+            className={`flex h-11 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition ${showFilters ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200'}`}
+            aria-expanded={showFilters}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+          </button>
+        </div>
+
+        {/* Photo hero */}
+        <div className="mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div
+            className="relative h-56 overflow-hidden bg-cover bg-center sm:h-64"
+            style={{
+              backgroundImage: `linear-gradient(90deg, rgba(6, 26, 75, 0.92) 0%, rgba(9, 41, 107, 0.72) 58%, rgba(6, 26, 75, 0.40) 100%), url("${daetImage.src}")`,
+            }}
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+            <div className="relative flex h-full flex-col justify-between p-5 sm:p-7">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-200">Daet, Camarines Norte</p>
+                <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">Upcoming events in Daet</h1>
+                <p className="mt-2 max-w-xl text-sm text-cyan-50/90 sm:text-base">
+                  Festivals, concerts, workshops, and community gatherings happening across Camarines Norte.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-50 backdrop-blur-sm">
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {filteredEvents.length} {filteredEvents.length === 1 ? 'event' : 'events'}
+                </span>
+                {hasActiveFilters && (
+                  <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-50 backdrop-blur-sm transition hover:bg-white/20">
+                    <X className="h-3 w-3" />
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-{/* States */}
+
+        {/* Category tabs */}
+        <div className="mb-4 -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0" role="tablist" aria-label="Event categories">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={category === 'all'}
+            onClick={() => setCategory('all')}
+            className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-all duration-200 ${category === 'all' ? 'bg-slate-900 text-white shadow-md' : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:text-sky-700'}`}
+          >
+            All events
+            <span className={`text-xs tabular-nums ${category === 'all' ? 'text-white/70' : 'text-slate-400'}`}>{events.length}</span>
+          </button>
+          {categories.filter((item) => item !== 'all').map((item) => (
+            <button
+              key={item}
+              type="button"
+              role="tab"
+              aria-selected={category === item}
+              onClick={() => setCategory(item)}
+              className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-all duration-200 ${category === item ? 'bg-slate-900 text-white shadow-md' : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:text-sky-700'}`}
+            >
+              {item}
+              <span className={`text-xs tabular-nums ${category === item ? 'text-white/70' : 'text-slate-400'}`}>
+                {events.filter((event) => event.category === item).length}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* Collapsible location filter */}
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showFilters ? 'mb-4 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+          <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm min-[480px]:grid-cols-3">
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+              Location
+              <select
+                value={location}
+                onChange={(event) => setLocation(event.target.value)}
+                className="min-h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-normal text-slate-700 transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              >
+                <option value="all">All locations</option>
+                {locations.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+          </div>
+        </div>
+
+        {/* States */}
         {loading && (
-          <div className="mt-10 flex flex-col items-center gap-3">
-            <Loader className="h-8 w-8 animate-spin text-sky-600" />
-            <p className="text-sm text-slate-500">Loading events...</p>
+          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+            {[1, 2, 3, 4, 5, 6].map((item) => (
+              <div key={item} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-3">
+                <div className="aspect-[4/3] rounded-xl bg-slate-200" />
+                <div className="mt-3 h-4 w-2/3 rounded bg-slate-200" />
+                <div className="mt-2 h-3 w-1/2 rounded bg-slate-200" />
+              </div>
+            ))}
           </div>
         )}
 
@@ -219,17 +323,13 @@ export default function EventsIndexPage() {
           <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-8 text-center">
             <CalendarDays className="mx-auto h-10 w-10 text-slate-300" />
             <p className="mt-3 text-sm font-semibold text-slate-700">
-              {search || category !== 'all' || location !== 'all' ? 'No events match your filters.' : 'No upcoming events have been published yet.'}
+              {hasActiveFilters ? 'No events match your filters.' : 'No upcoming events have been published yet.'}
             </p>
             <p className="mt-1 text-sm text-slate-500">Check back soon — new events are added regularly.</p>
-            {(search || category !== 'all' || location !== 'all') && (
+            {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearch('')
-                  setCategory('all')
-                  setLocation('all')
-                }}
+                onClick={clearFilters}
                 className="mt-4 text-sm font-semibold text-sky-600 transition hover:text-sky-800"
               >
                 Clear filters
@@ -240,54 +340,56 @@ export default function EventsIndexPage() {
 
         {/* Event Grid */}
         {!loading && !error && filteredEvents.length > 0 && (
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredEvents.map((event) => (
+          <div className="mt-4 grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3">
+            {filteredEvents.map((event, index) => (
               <Link
                 key={event.id}
                 href={`/info/visitor/events/${event.id}`}
-                className="group overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg"
+                ref={observe}
+                style={staggerDelay(index, 60, 500)}
+                className="group flex h-full flex-col overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm opacity-0 translate-y-5 transition-all duration-500 [&[data-revealed='true']]:opacity-100 [&[data-revealed='true']]:translate-y-0 hover:-translate-y-1 hover:shadow-lg hover:border-sky-200"
               >
-                <div className="relative h-44 w-full">
-                  {event.featured_image ? (
-                    <img
-                      src={event.featured_image}
-                      alt={event.title}
-                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sky-100 to-emerald-100">
-                      <CalendarDays className="h-12 w-12 text-sky-400" />
-                    </div>
-                  )}
-                  <span className={`absolute right-3 top-3 rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider ${getCategoryColor(event.category)}`}>
+                <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
+                  <img
+                    src={event.featured_image || daetImage.src}
+                    alt={event.title}
+                    className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    loading="lazy"
+                  />
+                  <span className={`absolute right-3 top-3 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm ${getCategoryColor(event.category)}`}>
                     {event.category || 'General'}
                   </span>
                   {event.is_free && (
-                    <span className="absolute left-3 top-3 rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
+                    <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white shadow-md">
+                      <Sparkles className="h-3 w-3" />
                       Free
                     </span>
                   )}
+                  {/* Gradient overlay at bottom of image */}
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/30 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
                 </div>
-                <div className="p-4">
-                  <h2 className="line-clamp-2 text-base font-black text-slate-900">{event.title}</h2>
+                <div className="flex flex-1 flex-col p-4">
+                  <h2 className="line-clamp-2 h-12 text-base font-black text-slate-900 transition group-hover:text-sky-700">{event.title}</h2>
                   <div className="mt-3 space-y-1.5 text-xs text-slate-500">
-                    <p className="flex items-center gap-1.5">
+                    <p className="flex min-w-0 items-center gap-1.5">
                       <CalendarDays className="h-3.5 w-3.5 text-sky-600" />
-                      {formatDateRange(event.start_date, event.end_date)}
-                      {event.start_time ? ` · ${event.start_time}` : ''}
+                      <span className="truncate">
+                        {formatDateRange(event.start_date, event.end_date)}
+                        {event.start_time ? ` · ${event.start_time}` : ''}
+                      </span>
                     </p>
-                    {(event.location || event.venue) && (
-                      <p className="flex items-center gap-1.5">
-                        <MapPin className="h-3.5 w-3.5 text-sky-600" />
-                        <span className="truncate">{event.location || event.venue}</span>
-                      </p>
-                    )}
+                    <p className="flex min-h-[18px] items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+                      <span className="truncate">{event.location || event.venue || 'Location to be announced'}</span>
+                    </p>
                   </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
+                  <div className="mt-auto flex items-center justify-between border-t border-slate-100 pt-3">
                     <span className="text-xs font-bold text-sky-700">
                       {event.is_free ? 'Free entry' : event.ticket_price ? `₱${event.ticket_price}` : 'Details inside'}
                     </span>
-                    <span className="text-xs font-semibold text-slate-400 transition group-hover:text-sky-600">View →</span>
+                    <span className="flex items-center gap-1 text-xs font-semibold text-slate-400 transition group-hover:text-sky-600 group-hover:gap-2">
+                      View <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                    </span>
                   </div>
                 </div>
               </Link>

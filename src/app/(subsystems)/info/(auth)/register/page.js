@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowRight, CheckCircle2, Eye, EyeOff, MapPin, ShieldCheck, Sparkles, XCircle } from 'lucide-react'
 import '../auth.css'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -402,9 +403,7 @@ export default function RegisterPage() {
                 </Link>
               </div>
               <div>
-                <Link href="/info/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
-                  ‹ Back to visitor page
-                </Link>
+                <VisitorBackButton className="justify-center" />
               </div>
             </div>
           </div>

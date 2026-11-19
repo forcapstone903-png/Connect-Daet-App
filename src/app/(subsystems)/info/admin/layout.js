@@ -5,6 +5,7 @@
 
 import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
+import StaffNotificationWidget from '@/app/(subsystems)/info/components/StaffNotificationWidget'
 
 const ADMIN_SCROLL_KEY_PREFIX = 'admin-scroll-position:'
 
@@ -48,5 +49,10 @@ export default function AdminLayout({ children }) {
     }
   }, [pathname])
 
-  return <div className="admin-page-shell">{children}</div>
+  return (
+    <div className="admin-page-shell">
+      {children}
+      <StaffNotificationWidget />
+    </div>
+  )
 }

@@ -205,6 +205,44 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
   const visibleReactionTypes = REACTION_TYPES.filter((reaction) => (reactionCounts[reaction.type] || 0) > 0)
   const loveCount = reactionCounts.love || 0
   const displayedHeartCount = eventComment ? totalCount : loveCount
+  if (!userId) {
+    if (voteControls) {
+      return (
+        <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500" aria-label="Reaction counts">
+          <span className="inline-flex items-center gap-1"><ThumbsUp className="h-4 w-4" aria-hidden="true" />{reactionCounts.like || 0}</span>
+          <span className="inline-flex items-center gap-1"><ThumbsDown className="h-4 w-4" aria-hidden="true" />{reactionCounts.dislike || 0}</span>
+        </div>
+      )
+    }
+    if (heartOnly || eventComment) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500" aria-label={`${displayedHeartCount} hearts`}>
+          <Heart className="h-4 w-4" aria-hidden="true" />
+          {displayedHeartCount}
+        </span>
+      )
+    }
+    if (breakdown) {
+      return (
+        <div className="flex items-center gap-1 text-xs text-slate-500" aria-label={`${totalCount} reactions`}>
+          {visibleReactionTypes.slice(0, 4).map((reaction) => (
+            <span key={reaction.type} className="inline-flex items-center gap-0.5">
+              <span aria-hidden="true">{reaction.emoji}</span>
+              {reactionCounts[reaction.type]}
+            </span>
+          ))}
+          {totalCount === 0 && <span>0 reactions</span>}
+        </div>
+      )
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500" aria-label={`${totalCount} reactions`}>
+        <span aria-hidden="true">{primaryReactionMeta?.emoji || '👍'}</span>
+        {totalCount} {label || 'reactions'}
+      </span>
+    )
+  }
+
   if (voteControls) {
     return (
       <div className="flex flex-wrap items-center gap-2">

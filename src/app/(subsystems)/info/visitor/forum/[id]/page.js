@@ -18,6 +18,7 @@ import {
   User,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { isImageAttachment, parsePostContent } from '@/lib/postContent'
@@ -300,9 +301,7 @@ export default function PublicThreadDetailPage() {
       <main className="min-h-screen bg-[#f3f5f9] px-3 py-6 sm:px-4 lg:px-6">
         <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <p className="text-sm text-slate-500">Thread not found.</p>
-          <Link href="/info/visitor" className="mt-3 text-xs font-semibold text-sky-600 hover:underline">
-            Back to Home
-          </Link>
+          <div className="mt-3"><VisitorBackButton /></div>
         </div>
       </main>
     )
@@ -333,47 +332,43 @@ export default function PublicThreadDetailPage() {
       <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
-          <Link
-            href="/info/visitor/forum"
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Back
-          </Link>
+          <VisitorBackButton />
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleSubscribe}
-              className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${
-                isSubscribed
-                  ? 'border-sky-200 bg-sky-50 text-sky-600'
-                  : 'border-slate-200 bg-white hover:bg-slate-50'
-              }`}
-              title={isSubscribed ? 'Unsubscribe' : 'Subscribe'}
-            >
-              <Bell className={`h-5 w-5 ${isSubscribed ? 'fill-current' : ''}`} />
-            </button>
-
-            <div className="relative">
+          {userId && (
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setShowShareMenu(!showShareMenu)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                title="Share"
+                onClick={handleSubscribe}
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${
+                  isSubscribed
+                    ? 'border-sky-200 bg-sky-50 text-sky-600'
+                    : 'border-slate-200 bg-white hover:bg-slate-50'
+                }`}
+                title={isSubscribed ? 'Unsubscribe' : 'Subscribe'}
               >
-                <Share2 className="h-5 w-5" />
+                <Bell className={`h-5 w-5 ${isSubscribed ? 'fill-current' : ''}`} />
               </button>
 
-              {showShareMenu && (
-                <div className="absolute right-0 top-12 z-10 rounded-[16px] border border-slate-200 bg-white shadow-lg">
-                  <button type="button" onClick={() => handleShare('twitter')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-[14px]">Share on Twitter</button>
-                  <button type="button" onClick={() => handleShare('facebook')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on Facebook</button>
-                  <button type="button" onClick={() => handleShare('copy')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 last:rounded-b-[14px]">Copy Link</button>
-                </div>
-              )}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setShowShareMenu(!showShareMenu)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                  title="Share"
+                >
+                  <Share2 className="h-5 w-5" />
+                </button>
+
+                {showShareMenu && (
+                  <div className="absolute right-0 top-12 z-10 rounded-[16px] border border-slate-200 bg-white shadow-lg">
+                    <button type="button" onClick={() => handleShare('twitter')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-[14px]">Share on Twitter</button>
+                    <button type="button" onClick={() => handleShare('facebook')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on Facebook</button>
+                    <button type="button" onClick={() => handleShare('copy')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 last:rounded-b-[14px]">Copy Link</button>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Thread */}
@@ -504,26 +499,35 @@ export default function PublicThreadDetailPage() {
 
                 {/* Actions */}
                 <div className="mt-4 flex items-center gap-3 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => toggleLike(reply.id)}
-                    className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
-                      userLikes.has(reply.id)
-                        ? 'bg-red-50 text-red-600'
-                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Heart className={`h-3.5 w-3.5 ${userLikes.has(reply.id) ? 'fill-current' : ''}`} />
-                    <span className="font-semibold">{(reply.likes || 0) + (userLikes.has(reply.id) ? 1 : 0)}</span>
-                  </button>
+                  {userId ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleLike(reply.id)}
+                      className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
+                        userLikes.has(reply.id)
+                          ? 'bg-red-50 text-red-600'
+                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Heart className={`h-3.5 w-3.5 ${userLikes.has(reply.id) ? 'fill-current' : ''}`} />
+                      <span className="font-semibold">{(reply.likes || 0) + (userLikes.has(reply.id) ? 1 : 0)}</span>
+                    </button>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-500" aria-label={`${reply.likes || 0} likes`}>
+                      <Heart className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span className="font-semibold">{reply.likes || 0}</span>
+                    </span>
+                  )}
 
                   <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">▲ {reply.upvotes ?? reply.likes ?? 0}</span>
                   <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 font-semibold text-slate-500">▼ {reply.downvotes ?? 0}</span>
 
-                  <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
-                    <Flag className="h-3.5 w-3.5" />
-                    Report
-                  </button>
+                  {userId && (
+                    <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
+                      <Flag className="h-3.5 w-3.5" />
+                      Report
+                    </button>
+                  )}
                 </div>
               </div>
             ))

@@ -182,6 +182,30 @@ Security notes: Queries select only public names and titles and enforce active/p
 Manual clear method: None; changing the query or refocusing the search fetches current suggestions
 ```
 
+## Visitor Home Popular Content
+
+The visitor homepage ranks public upcoming events by confirmed registrations and
+published stories by views, with likes and comments as tie-breakers. It fetches
+the lists directly from Supabase and refreshes when the subscribed content
+tables change.
+
+```text
+Feature: Visitor home popular events and news
+Data fetched: Public approved upcoming events and published approved stories with engagement counts
+Change frequency: Staff publishing/editing and visitor registrations or story engagement
+Visibility: Public content only
+Freshness: Fetch on page load; refetch on relevant Supabase Realtime changes
+Stale behavior: Keep the current in-memory results during a refresh; replace them with a visible load error if the refresh fails
+Missing-cache behavior: No cache; fetch directly from Supabase
+Invalidation trigger: Relevant content Realtime changes trigger a fresh query
+Cache layer: None
+Cache key: None
+TTL: None
+Offline behavior: No persisted results; show the current in-memory results during refresh, otherwise show an explicit error or empty state
+Security notes: Queries return only public, approved content and aggregate counts; no user-specific data is queried or stored
+Manual clear method: None; reload the page to fetch current rankings
+```
+
 ## Admin Tourist Spot Management
 
 The management page fetches the complete spot list from the private admin API
@@ -235,24 +259,26 @@ Manual clear method: Use Refresh coordinates to bypass the cached result; cleari
 The staff inbox and dashboard bell read the signed-in staff member's notifications
 from the existing user-scoped endpoint. Administrator workflow alerts (such as
 reports, appeals, pending submissions, and feedback) use the same private inbox.
-The inbox and badge poll while open and display errors instead of stale
-notification data.
+The floating staff notification bell is mounted by the shared `/info/admin`
+layout, so it remains visible across administrator, moderator, and tourism-officer
+pages. It refreshes on staff-notification Realtime changes and reconciles every
+30 seconds while the page is visible; it never reloads the page.
 
 ```text
-Feature: Staff notification inbox and dashboard alerts
+Feature: Staff notification inbox and floating staff notification bell
 Data fetched: Private notification titles, messages, links, read status, and timestamps
 Change frequency: New user submissions may arrive at any time
 Visibility: Private; the API restricts records and read updates to the signed-in staff user
-Freshness: Fetch on page load and every 30 seconds while the staff inbox, sidebar, or dashboard notification icon is open
-Stale behavior: Keep the current rendered list during refresh; show an error and retry action if refresh fails
+Freshness: Fetch on page load, staff notification Realtime events, reconnect/visibility, and every 30 seconds while visible
+Stale behavior: Keep the last unread count and queued preview during refresh failures; log the error and retry on the next Realtime/reconciliation refresh
 Missing-cache behavior: No cache; fetch directly from the authenticated notification API
-Invalidation trigger: No cache; marking a notification read updates the displayed state after the API confirms success
+Invalidation trigger: No cache; Realtime events and successful read mutations trigger a fresh API read
 Cache layer: None
 Cache key: None
 TTL: None; API responses use no-store
-Offline behavior: Preserve the rendered list and show refresh errors; do not report read actions as successful offline
-Security notes: Notification content is user-specific and is never placed in shared or persistent storage
-Manual clear method: Mark individual notifications or the full inbox as read
+Offline behavior: Preserve the last unread count and queued preview; refresh after reconnect
+Security notes: Notification content is user-specific, fetched through the signed staff session, scoped to that user in Realtime, and never placed in shared or persistent storage
+Manual clear method: No cache to clear; mark individual notifications or the full inbox as read
 ```
 
 ## Visitor Review Preview
@@ -887,6 +913,25 @@ Cache key: None
 TTL: 0
 Offline behavior: Log lookup failures and fail open
 Security notes: Service-role read stays in server proxy; message is public and React-escaped on the maintenance page
+Manual clear method: None; there is no cache
+```
+
+## Moderator account suspension reviews
+
+```text
+Feature: Moderator account suspension review queue and decision history
+Data fetched: Private account profile data, suspension records, appeals, reported content, prior warnings, and review history
+Change frequency: Cases, appeals, and decisions can change at any time
+Visibility: Moderator/admin only; contains user-identifying and moderation data
+Freshness: Fetch without cache on page load, manual refresh, and after a successful decision
+Stale behavior: Keep previously rendered cases and show a retryable error; do not treat stale information as current evidence
+Missing-cache behavior: No cache; read the authorized review API
+Invalidation trigger: None; the case list and details are not cached
+Cache layer: None; API and browser requests use private, no-store
+Cache key: None
+TTL: 0
+Offline behavior: No decision can be submitted offline; retain the visible screen and show submission errors
+Security notes: Service-role reads are behind moderation.manage authorization; personal data and review evidence are never persisted in browser or shared caches
 Manual clear method: None; there is no cache
 ```
 

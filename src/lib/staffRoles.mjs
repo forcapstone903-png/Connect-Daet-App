@@ -55,6 +55,7 @@ const PAGE_RULES = [
   ['/info/admin/community-guidelines', 'moderation.manage'],
   ['/info/admin/faqs', 'feedback.manage'],
   ['/info/admin/moderation/notifications', 'moderation.manage'],
+  ['/info/admin/suspension-reviews', 'moderation.manage'],
   ['/info/admin/notifications/inbox', 'console.access'],
   ['/info/admin/staff-chat', 'console.access'],
 
@@ -119,6 +120,7 @@ const API_RULES = [
   ['/info/api/admin/media', 'media.use', ['GET', 'POST']],
 
   ['/info/api/admin/blogs', 'moderation.manage'],
+  ['/info/api/admin/suspension-reviews', 'moderation.manage'],
   ['/info/api/admin/moderation', 'moderation.manage'],
   ['/info/api/admin/community-guidelines', 'moderation.manage'],
   ['/info/api/admin/forum', 'forum.manage'],

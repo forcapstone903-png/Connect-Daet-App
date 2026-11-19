@@ -389,5 +389,6 @@ A successful local build or test run validates only the tested code paths. It do
 - [Notification delivery behavior](./docs/notification-delivery.md)
 - [Visitor page data and behavior](./docs/visitor-page.md)
 - [Site visit analytics](./docs/site-visit-analytics.md)
+- [Connect Daet user guide](./docs/user-guide.md)
 - [User settings and caching behavior](./docs/user-settings.md)
 - [Caching standards](./docs/caching.md)

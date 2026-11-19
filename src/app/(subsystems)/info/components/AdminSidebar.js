@@ -166,6 +166,7 @@ const staffNavigationSections = [
     label: 'Moderation',
     modules: [
       { id: 'reported-content', label: 'Reported Content', iconName: 'moderation', href: '/info/admin/moderation', exact: true },
+      { id: 'suspension-reviews', label: 'Account Suspension Reviews', iconName: 'shield-check', href: '/info/admin/suspension-reviews' },
       { id: 'moderation-notifications', label: 'Post Notifications', iconName: 'notifications', badgeKey: 'unreadNotifications', href: '/info/admin/moderation/notifications' },
       { id: 'community-guidelines', label: 'Community Guidelines', iconName: 'content', href: '/info/admin/community-guidelines' },
     ],

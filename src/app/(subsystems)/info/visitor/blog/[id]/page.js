@@ -27,6 +27,7 @@ import {
   UserPlus,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
@@ -682,9 +683,7 @@ export default function PublicBlogDetailPage() {
         <UserTopHeader spacer homeHref="/info/visitor" />
         <div className="mx-auto max-w-3xl rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
           <p className="text-sm text-slate-500">Article not found.</p>
-          <Link href="/info/visitor" className="mt-3 hidden text-xs font-semibold text-sky-600 hover:underline lg:inline">
-            Back to Home
-          </Link>
+          <div className="mt-3 hidden lg:block"><VisitorBackButton /></div>
         </div>
       </main>
     )
@@ -775,31 +774,33 @@ export default function PublicBlogDetailPage() {
             </div>
           </div>
 
-          <div className="medium-article-top-actions print-hidden" aria-label="Article actions">
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={handleLike} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isLiked ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Like article">
-                <Heart className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} />
-              </button>
-              <button type="button" onClick={handleSave} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isSaved ? 'border-sky-200 bg-sky-50 text-sky-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Save article">
-                <Bookmark className={`h-5 w-5 ${isSaved ? 'fill-current' : ''}`} />
-              </button>
-              <div className="relative">
-                <button type="button" onClick={() => setShowShareMenu(!showShareMenu)} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title="Share article">
-                  <Share2 className="h-5 w-5" />
+          {userId && (
+            <div className="medium-article-top-actions print-hidden" aria-label="Article actions">
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={handleLike} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isLiked ? 'border-red-200 bg-red-50 text-red-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Like article">
+                  <Heart className={`h-5 w-5 ${isLiked ? 'fill-current' : ''}`} />
                 </button>
-                {showShareMenu && (
-                  <div className="absolute right-0 top-12 z-10 rounded-[16px] border border-slate-200 bg-white shadow-lg">
-                    <button type="button" onClick={() => handleShare('twitter')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-[14px]">Share on Twitter</button>
-                    <button type="button" onClick={() => handleShare('facebook')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on Facebook</button>
-                    <button type="button" onClick={() => handleShare('linkedin')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on LinkedIn</button>
-                    <button type="button" onClick={() => handleShare('email')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><span className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5" />Email</span></button>
-                    <button type="button" onClick={() => handleShare('copy')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 last:rounded-b-[14px]">Copy Link</button>
-                  </div>
-                )}
+                <button type="button" onClick={handleSave} className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${isSaved ? 'border-sky-200 bg-sky-50 text-sky-600' : 'border-slate-200 bg-white hover:bg-slate-50'}`} title="Save article">
+                  <Bookmark className={`h-5 w-5 ${isSaved ? 'fill-current' : ''}`} />
+                </button>
+                <div className="relative">
+                  <button type="button" onClick={() => setShowShareMenu(!showShareMenu)} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title="Share article">
+                    <Share2 className="h-5 w-5" />
+                  </button>
+                  {showShareMenu && (
+                    <div className="absolute right-0 top-12 z-10 rounded-[16px] border border-slate-200 bg-white shadow-lg">
+                      <button type="button" onClick={() => handleShare('twitter')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-[14px]">Share on Twitter</button>
+                      <button type="button" onClick={() => handleShare('facebook')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on Facebook</button>
+                      <button type="button" onClick={() => handleShare('linkedin')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on LinkedIn</button>
+                      <button type="button" onClick={() => handleShare('email')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"><span className="inline-flex items-center gap-2"><Mail className="h-3.5 w-3.5" />Email</span></button>
+                      <button type="button" onClick={() => handleShare('copy')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 last:rounded-b-[14px]">Copy Link</button>
+                    </div>
+                  )}
+                </div>
+                <button type="button" onClick={() => window.print()} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title="Print or save as PDF"><Printer className="h-5 w-5" /></button>
               </div>
-              <button type="button" onClick={() => window.print()} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50" title="Print or save as PDF"><Printer className="h-5 w-5" /></button>
             </div>
-          </div>
+          )}
 
           <div className="medium-article-gallery">
             <div className="overflow-hidden">
@@ -852,7 +853,7 @@ export default function PublicBlogDetailPage() {
             {authorBio && <p>{authorBio}</p>}
             {followError && <p role="alert" className="medium-article-follow-error">{followError}</p>}
           </div>
-          {userId !== articleAuthorId && articleAuthorId && (
+          {userId && userId !== articleAuthorId && articleAuthorId && (
             <button
               type="button"
               onClick={handleToggleAuthorFollow}

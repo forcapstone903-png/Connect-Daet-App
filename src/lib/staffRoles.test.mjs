@@ -74,10 +74,14 @@ test('tourism officer reaches tourism pages only', () => {
 test('moderator reaches community pages only', () => {
   const role = 'moderator'
   assert.equal(canAccessAdminPage(role, '/info/admin/moderation'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/suspension-reviews'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/blogs?status=all'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/forum'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/users'), true)
   assert.equal(canAccessAdminApi(role, '/info/api/admin/moderation/user-content', 'DELETE'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/suspension-reviews', 'GET'), true)
+  assert.equal(canAccessAdminApi(role, '/info/api/admin/suspension-reviews', 'POST'), true)
+  assert.equal(canAccessAdminApi('tourism_officer', '/info/api/admin/suspension-reviews', 'GET'), false)
   assert.equal(canAccessAdminApi(role, '/info/api/admin/events', 'DELETE'), false)
   assert.equal(canAccessAdminPage(role, '/info/admin/announcement'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/community-guidelines'), true)

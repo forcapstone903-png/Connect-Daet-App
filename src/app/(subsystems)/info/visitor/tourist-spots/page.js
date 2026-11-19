@@ -4,18 +4,27 @@ import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import {
+  ArrowRight,
   ChevronRight,
   Clock,
   Heart,
   MapPin,
   Search,
+  Sparkles,
   Star,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { getStoredSessionObject } from '@/lib/authCookies'
 import { getCacheKey, getPersistentCache, setPersistentCache } from '@/lib/cache'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
+import { useScrollReveal, staggerDelay } from '@/lib/useScrollReveal'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { DAET_BARANGAYS, LISTINGS_CACHE_VERSION, LISTING_TYPES, getListingTypeLabel } from '@/lib/listings.mjs'
+import styles from './TouristSpotsPage.module.css'
+import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 // Public data only (active listings). Invalidated by the admin page after
@@ -73,7 +82,11 @@ function PlacesDirectory() {
   const [barangay, setBarangay] = useState('all')
   const [minRating, setMinRating] = useState(0)
   const [sortBy, setSortBy] = useState('recommended')
+  const [viewerUserId, setViewerUserId] = useState('')
   const [favorites, setFavorites] = useState(new Set())
+  const [showFilters, setShowFilters] = useState(false)
+
+  const { observe } = useScrollReveal()
 
   // The listing type lives in the URL (?type=restaurant) so tabs are shareable.
   const selectListingType = (value) => {
@@ -111,9 +124,13 @@ function PlacesDirectory() {
           supabase.auth.getSession(),
         ])
 
-        const userId = sessionData?.session?.user?.id
-        const { data: favoriteRows } = userId
-          ? await supabase.from('user_favorites').select('item_id').eq('user_id', userId).eq('item_type', 'spot')
+        const appSession = getStoredSessionObject()
+        const appUserId = appSession?.logged_in ? appSession.user_id : ''
+        const authUserId = sessionData?.session?.user?.id || ''
+        const viewerId = appUserId && appUserId === authUserId ? appUserId : ''
+        if (!ignore) setViewerUserId(viewerId)
+        const { data: favoriteRows } = viewerId
+          ? await supabase.from('user_favorites').select('item_id').eq('user_id', viewerId).eq('item_type', 'spot')
           : { data: [] }
 
         if (error) {
@@ -214,14 +231,16 @@ function PlacesDirectory() {
     event.preventDefault()
     event.stopPropagation()
 
+    const appSession = getStoredSessionObject()
+    const appUserId = appSession?.logged_in ? appSession.user_id : ''
     const sessionResult = await supabase.auth.getSession()
-    const userId = sessionResult?.data?.session?.user?.id
-    if (!userId) {
-      // Guests are asked to sign in before saving favourites.
-      const next = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ''}`
-      router.push(`/info/login?message=${encodeURIComponent('Sign in to save places to your favourites.')}&redirect=${encodeURIComponent(next)}`)
+    const authUserId = sessionResult?.data?.session?.user?.id || ''
+    if (!appUserId || appUserId !== authUserId || appUserId !== viewerUserId) {
+      setViewerUserId('')
+      setFavorites(new Set())
       return
     }
+    const userId = appUserId
 
     const isFavorite = favorites.has(spotId)
     const result = isFavorite
@@ -242,7 +261,8 @@ function PlacesDirectory() {
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
       <div className="mx-auto max-w-[1200px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
-        {/* Header */}
+
+        {/* Mobile Header */}
         <header className="visitor-local-header sticky top-3 z-30 mb-6 rounded-[20px] border border-slate-200/80 bg-white/90 px-3 py-3 shadow-sm backdrop-blur md:px-5 lg:hidden">
           <div className="flex items-center justify-between gap-3">
             <Link href="/info/visitor" className="flex items-center gap-3">
@@ -254,31 +274,21 @@ function PlacesDirectory() {
                 <p className="text-base font-bold text-slate-800">Connect</p>
               </div>
             </Link>
-
-            <label className="hidden flex-1 items-center justify-center lg:flex">
-              <div className="w-full max-w-xl rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 shadow-inner">
-                <div className="flex items-center gap-2">
-                  <Search className="h-4 w-4" />
-                  <input
-                    value={search}
-                    onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Search places, tags, barangays..."
-                    className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                  />
-                </div>
-              </div>
-            </label>
-
-            <Link
-              href="/info/visitor"
-              className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-            >
-              ← Back
-            </Link>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFilters((v) => !v)}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl border transition ${showFilters ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-500'}`}
+                aria-label="Toggle filters"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </button>
+              <VisitorBackButton className="shrink-0" />
+            </div>
           </div>
 
-          <div className="mt-3 lg:hidden">
-            <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500">
+          <div className="mt-3">
+            <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-500 transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100">
               <Search className="h-4 w-4" />
               <input
                 value={search}
@@ -286,18 +296,19 @@ function PlacesDirectory() {
                 placeholder="Search places, tags, barangays..."
                 className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
               />
+              {search && (
+                <button type="button" onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </label>
           </div>
         </header>
 
+        {/* Desktop top bar */}
         <div className="mb-6 hidden items-center justify-between gap-4 lg:flex">
-          <Link
-            href="/info/visitor"
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-          >
-            ← Back
-          </Link>
-          <label className="flex w-full max-w-xl items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-500 shadow-sm">
+          <VisitorBackButton />
+          <label className="flex w-full max-w-xl items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-500 shadow-sm transition focus-within:border-sky-300 focus-within:ring-2 focus-within:ring-sky-100">
             <Search className="h-4 w-4" />
             <input
               value={search}
@@ -305,25 +316,50 @@ function PlacesDirectory() {
               placeholder="Search places, tags, barangays..."
               className="w-full border-none bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
             />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} className="text-slate-400 hover:text-slate-600" aria-label="Clear search">
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </label>
+          <button
+            type="button"
+            onClick={() => setShowFilters((v) => !v)}
+            className={`flex h-11 items-center gap-2 rounded-full border px-4 text-xs font-semibold transition ${showFilters ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-slate-200 bg-white text-slate-600 hover:border-sky-200'}`}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Filters
+          </button>
         </div>
 
         {/* Hero */}
-        <div className="mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white">
-          <div className="relative h-40 bg-emerald-600 sm:h-48">
-            <div className="absolute inset-0 bg-slate-950/25" />
-            <div className="relative flex h-full flex-col justify-between p-5 sm:p-6">
+        <div className="mb-6 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div
+            className="relative h-44 overflow-hidden bg-cover bg-center sm:h-52"
+            style={{
+              backgroundImage: `linear-gradient(90deg, rgba(6, 26, 75, 0.88) 0%, rgba(9, 41, 107, 0.68) 58%, rgba(6, 26, 75, 0.38) 100%), url("${daetImage.src}")`,
+            }}
+          >
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+            <div className="relative flex h-full flex-col justify-between p-5 sm:p-7">
               <div>
-                <h1 className="text-2xl font-bold text-white sm:text-4xl">{heroCopy.title}</h1>
-                <p className="mt-2 text-sm text-cyan-50/90 sm:text-base">
+                <p className="text-xs font-bold uppercase tracking-[0.22em] text-sky-200">Daet, Camarines Norte</p>
+                <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-4xl">{heroCopy.title}</h1>
+                <p className="mt-2 max-w-lg text-sm text-cyan-50/90 sm:text-base">
                   {heroCopy.subtitle}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-cyan-50">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-cyan-50 backdrop-blur-sm">
                   <MapPin className="h-3.5 w-3.5" />
                   {filteredSpots.length} {filteredSpots.length === 1 ? 'place' : 'places'}
                 </span>
+                {hasActiveFilters && (
+                  <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-semibold text-cyan-50 backdrop-blur-sm transition hover:bg-white/20">
+                    <X className="h-3 w-3" />
+                    Clear filters
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -341,8 +377,8 @@ function PlacesDirectory() {
                 role="tab"
                 aria-selected={selected}
                 onClick={() => selectListingType(type.value)}
-                className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition ${
-                  selected ? 'bg-slate-900 text-white shadow-sm' : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300'
+                className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-all duration-200 ${
+                  selected ? 'bg-slate-900 text-white shadow-md scale-[1.02]' : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:text-sky-700'
                 }`}
               >
                 {type.publicLabel}
@@ -352,27 +388,29 @@ function PlacesDirectory() {
           })}
         </div>
 
-        {/* Location, rating and sort */}
-        <div className="mb-4 grid grid-cols-1 gap-2 min-[480px]:grid-cols-3">
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
-            Barangay
-            <select value={barangay} onChange={(event) => setBarangay(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700">
-              <option value="all">All of Daet</option>
-              {barangays.map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
-            Rating
-            <select value={minRating} onChange={(event) => setMinRating(Number(event.target.value))} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700">
-              {RATING_FILTERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
-            Sort by
-            <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700">
-              {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
+        {/* Collapsible filters */}
+        <div className={`overflow-hidden transition-all duration-300 ease-in-out ${showFilters ? 'mb-4 max-h-40 opacity-100' : 'max-h-0 opacity-0'}`}>
+          <div className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm min-[480px]:grid-cols-3">
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+              Barangay
+              <select value={barangay} onChange={(event) => setBarangay(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-normal text-slate-700 transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100">
+                <option value="all">All of Daet</option>
+                {barangays.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+              Rating
+              <select value={minRating} onChange={(event) => setMinRating(Number(event.target.value))} className="min-h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-normal text-slate-700 transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100">
+                {RATING_FILTERS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs font-semibold text-slate-500">
+              Sort by
+              <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} className="min-h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-normal text-slate-700 transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100">
+                {SORT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
 
         {/* Category Filters */}
@@ -383,9 +421,9 @@ function PlacesDirectory() {
                 key={cat}
                 type="button"
                 onClick={() => setCategory(cat)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${
                   category === cat
-                    ? 'bg-sky-600 text-white shadow-sm'
+                    ? 'bg-sky-600 text-white shadow-md scale-[1.02]'
                     : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-300 hover:text-sky-700'
                 }`}
               >
@@ -397,54 +435,59 @@ function PlacesDirectory() {
 
         {/* Results Grid */}
         {loading ? (
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 xl:grid-cols-3">
+          <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3 2xl:grid-cols-4">
             {[1, 2, 3, 4, 5, 6].map((item) => (
               <div key={item} className="animate-pulse rounded-[20px] border border-slate-200 bg-slate-100 p-3">
-                <div className="h-44 rounded-xl bg-slate-200" />
+                <div className="aspect-[4/3] rounded-xl bg-slate-200" />
                 <div className="mt-3 h-4 w-2/3 rounded bg-slate-200" />
                 <div className="mt-2 h-3 w-1/2 rounded bg-slate-200" />
               </div>
             ))}
           </div>
         ) : filteredSpots.length > 0 ? (
-          <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 xl:grid-cols-3">
-            {filteredSpots.map((spot) => (
+          <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3 2xl:grid-cols-4">
+            {filteredSpots.map((spot, index) => (
               <Link
                 key={spot.id}
                 href={`/info/visitor/tourist-spots/${spot.id}`}
-                className="group rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm transition hover:shadow-md hover:border-sky-200"
+                ref={observe}
+                style={staggerDelay(index, 50, 400)}
+                className={`${styles.spotCard || ''} group flex h-full flex-col rounded-[20px] border border-slate-200 bg-white p-3 shadow-sm transition-all duration-300 hover:shadow-lg hover:border-sky-200 hover:-translate-y-1`}
               >
                 {/* Image */}
-                <div className="relative overflow-hidden rounded-xl">
+                <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-slate-100">
                   <img
                     src={getImageUrl(spot.featured_image || spot.images, defaultSpotImage)}
                     alt={spot.name}
-                    className="aspect-[16/10] h-auto w-full object-cover transition group-hover:scale-105 sm:aspect-auto sm:h-44"
+                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
                     loading="lazy"
                   />
-                  <button
-                    type="button"
-                    onClick={(event) => toggleFavorite(event, spot.id)}
-                    className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white sm:h-8 sm:w-8"
-                    aria-label={favorites.has(spot.id) ? `Remove ${spot.name} from favourites` : `Save ${spot.name} to favourites`}
-                    aria-pressed={favorites.has(spot.id)}
-                  >
-                    <Heart className={`h-4 w-4 ${favorites.has(spot.id) ? 'fill-current' : ''}`} />
-                  </button>
+                  {viewerUserId && (
+                    <button
+                      type="button"
+                      onClick={(event) => toggleFavorite(event, spot.id)}
+                      className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-red-500 shadow-sm transition hover:bg-white hover:scale-110"
+                      aria-label={favorites.has(spot.id) ? `Remove ${spot.name} from favourites` : `Save ${spot.name} to favourites`}
+                      aria-pressed={favorites.has(spot.id)}
+                    >
+                      <Heart className={`h-4 w-4 transition-transform ${favorites.has(spot.id) ? 'fill-current scale-110' : ''}`} />
+                    </button>
+                  )}
                   <div className="absolute left-2 top-2 rounded-lg bg-slate-900/70 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
                     {listingType === 'all' ? getListingTypeLabel(spot.listing_type) : (spot.category || 'Destination')}
                   </div>
                   {spot.featured && (
-                    <div className="absolute right-2 bottom-2 rounded-lg bg-amber-500/90 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
+                    <div className="absolute right-2 bottom-2 flex items-center gap-1 rounded-lg bg-amber-500/90 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white backdrop-blur-sm">
+                      <Sparkles className="h-3 w-3" />
                       Featured
                     </div>
                   )}
                 </div>
 
                 {/* Info */}
-                <div className="mt-3">
+                <div className="mt-3 flex flex-1 flex-col">
                   <div className="flex items-start justify-between gap-2">
-                    <h3 className="line-clamp-2 text-sm font-bold text-slate-800">{spot.name}</h3>
+                    <h3 className="line-clamp-2 text-sm font-bold text-slate-800 transition group-hover:text-sky-700">{spot.name}</h3>
                     {Number(spot.review_count) > 0 ? (
                       <div className="flex shrink-0 items-center gap-1 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700" aria-label={`Rated ${Number(spot.rating).toFixed(1)} out of 5 from ${spot.review_count} reviews`}>
                         <Star className="h-3 w-3 fill-current" />
@@ -452,7 +495,7 @@ function PlacesDirectory() {
                         <span className="font-normal text-amber-600/80">({spot.review_count})</span>
                       </div>
                     ) : (
-                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">New</span>
+                      <span className="shrink-0 rounded-full bg-sky-50 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600">New</span>
                     )}
                   </div>
 
@@ -473,8 +516,8 @@ function PlacesDirectory() {
                     </div>
                   )}
 
-                  <div className="mt-3 flex items-center gap-1 text-xs font-semibold text-sky-600">
-                    View Details <ChevronRight className="h-3 w-3" />
+                  <div className="mt-auto flex items-center gap-1 pt-3 text-xs font-semibold text-sky-600 transition group-hover:gap-2">
+                    View Details <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </div>
               </Link>

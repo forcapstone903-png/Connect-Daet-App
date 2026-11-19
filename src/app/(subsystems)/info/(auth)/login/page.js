@@ -8,6 +8,7 @@ import { setAuthCookie } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
 import { getStaffHomePath, isStaffRole } from '@/lib/staffRoles.mjs'
 import '../auth.css'
+import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 
 function LoginContent() {
   const router = useRouter()
@@ -376,9 +377,7 @@ function LoginContent() {
                   </Link>
                 </div>
                 <div>
-                  <Link href="/info/visitor" className="font-semibold text-slate-700 transition hover:text-slate-900">
-                    ‹ Back to visitor page
-                  </Link>
+                  <VisitorBackButton className="justify-center" />
                 </div>
               </div>
             </div>

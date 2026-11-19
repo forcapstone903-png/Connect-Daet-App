@@ -1,8 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
-import { Bell } from 'lucide-react'
 import AdminShell from '@/app/(subsystems)/info/components/admin/AdminShell'
 import AdminPanel from '@/app/(subsystems)/info/components/admin/AdminPanel'
 import AdminStatCard, { AdminStatGrid } from '@/app/(subsystems)/info/components/admin/AdminStatCard'
@@ -36,46 +34,6 @@ function formatDate(value) {
 function getAuditActor(activity) {
   const profile = Array.isArray(activity.info_users) ? activity.info_users[0] : activity.info_users
   return profile?.full_name || profile?.email || 'System'
-}
-
-function AdminNotificationShortcut() {
-  const [unreadCount, setUnreadCount] = useState(0)
-
-  useEffect(() => {
-    let active = true
-    const loadUnreadCount = () => {
-      readJson('/info/api/notifications?count_only=true&scope=staff')
-        .then((result) => {
-          if (active) setUnreadCount(Number(result.unread_count) || 0)
-        })
-        .catch((error) => {
-          console.error('Admin notification count load failed:', error)
-        })
-    }
-
-    loadUnreadCount()
-    const intervalId = window.setInterval(loadUnreadCount, 30_000)
-    return () => {
-      active = false
-      window.clearInterval(intervalId)
-    }
-  }, [])
-
-  return (
-    <Link
-      href="/info/admin/notifications/inbox"
-      className="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50"
-      aria-label={`System notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
-      title="System notifications"
-    >
-      <Bell className="h-5 w-5" aria-hidden="true" />
-      {unreadCount > 0 ? (
-        <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-          {unreadCount > 99 ? '99+' : unreadCount}
-        </span>
-      ) : null}
-    </Link>
-  )
 }
 
 function formatGrowthDate(value) {
@@ -321,7 +279,6 @@ export default function AdminDashboard() {
       headerClassName="mx-4 sm:mx-6 lg:mx-8"
       actions={(
         <div className="flex items-center gap-2">
-          <AdminNotificationShortcut />
           <AdminButton icon="refresh" onClick={() => void loadDashboard()} disabled={refreshing}>
             {refreshing ? 'Refreshing…' : 'Refresh'}
           </AdminButton>

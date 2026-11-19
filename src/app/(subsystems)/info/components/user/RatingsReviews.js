@@ -22,23 +22,30 @@ const EMPTY_SUMMARY = {
 }
 
 function StarRating({ value, onChange, readOnly = false, compact = false }) {
+  const hearts = [1, 2, 3, 4, 5]
+  if (readOnly) {
+    return (
+      <div className="flex items-center gap-0.5" role="img" aria-label={`${value} out of 5 hearts`}>
+        {hearts.map((star) => (
+          <Heart
+            key={star}
+            className={`${compact ? 'h-4 w-4' : 'h-6 w-6'} ${star <= value ? 'fill-rose-500 text-rose-500' : 'text-slate-300'}`}
+          />
+        ))}
+      </div>
+    )
+  }
+
   return (
-    <div
-      className="flex items-center gap-0.5"
-      role={readOnly ? 'img' : 'group'}
-      aria-label={readOnly ? `${value} out of 5 hearts` : 'Rate this place'}
-    >
-      {[1, 2, 3, 4, 5].map((star) => (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Rate this place">
+      {hearts.map((star) => (
         <button
           key={star}
           type="button"
-          disabled={readOnly}
           onClick={() => onChange(star)}
           aria-label={`${star} heart${star === 1 ? '' : 's'}`}
-          aria-pressed={!readOnly && value === star}
-          className={`flex items-center justify-center transition ${
-            readOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
-          } ${compact ? 'h-5 w-5' : 'h-9 w-9'}`}
+          aria-pressed={value === star}
+          className={`flex items-center justify-center transition cursor-pointer hover:scale-110 ${compact ? 'h-5 w-5' : 'h-9 w-9'}`}
         >
           <Heart className={`${compact ? 'h-4 w-4' : 'h-6 w-6'} ${
             star <= value ? 'fill-rose-500 text-rose-500' : 'text-slate-300'
@@ -595,19 +602,26 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
                         <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{review.office_reply}</p>
                       </div>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={() => handleHelpful(review.id)}
-                      disabled={!userId || review.user_id === userId}
-                      aria-pressed={helpfulVotes[review.id] === true}
-                      title={!userId ? 'Sign in to mark this review helpful' : review.user_id === userId ? 'You cannot vote on your own review' : undefined}
-                      className={`mt-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                        helpfulVotes[review.id] === true ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
-                      }`}
-                    >
-                      <ThumbsUp className="h-3.5 w-3.5" />
-                      Helpful{helpfulCounts[review.id] ? ` · ${helpfulCounts[review.id]}` : ''}
-                    </button>
+                    {userId ? (
+                      <button
+                        type="button"
+                        onClick={() => handleHelpful(review.id)}
+                        disabled={review.user_id === userId}
+                        aria-pressed={helpfulVotes[review.id] === true}
+                        title={review.user_id === userId ? 'You cannot vote on your own review' : undefined}
+                        className={`mt-2 inline-flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                          helpfulVotes[review.id] === true ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                        Helpful{helpfulCounts[review.id] ? ` · ${helpfulCounts[review.id]}` : ''}
+                      </button>
+                    ) : (
+                      <span className="mt-2 inline-flex min-h-8 items-center gap-1 px-2 text-xs font-medium text-slate-500" aria-label={`${helpfulCounts[review.id] || 0} helpful votes`}>
+                        <ThumbsUp className="h-3.5 w-3.5" aria-hidden="true" />
+                        Helpful{helpfulCounts[review.id] ? ` · ${helpfulCounts[review.id]}` : ''}
+                      </span>
+                    )}
                   </div>
                 </div>
               </article>

@@ -5938,12 +5938,20 @@ html.dark .usr-badge[class~='ring-white'] { --tw-ring-color: var(--paper) !impor
 }
 
 .event-detail-back {
-  padding: 0 8px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--paper);
+  padding: 0 12px;
 }
 
 .event-detail-back:hover,
 .event-detail-icon-button:hover {
   color: var(--foreground);
+}
+
+.event-detail-back:hover {
+  border-color: var(--brand);
+  background: var(--paper-muted);
 }
 
 .event-detail-icon-button {
@@ -7345,26 +7353,7 @@ html.dark .tourist-mobile-shell .content-detail-mobile-header {
 }
 
 .tourist-home-back {
-  display: inline-flex;
-  min-height: 36px;
-  align-items: center;
-  gap: 7px;
   margin-bottom: 14px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
-  padding: 0 11px;
-  color: var(--foreground);
-  font-size: 12px;
-  font-weight: 650;
-  text-decoration: none;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
-}
-
-.tourist-home-back:hover {
-  border-color: var(--brand);
-  background: var(--paper-muted);
-  color: var(--brand-active);
 }
 
 @media (max-width: 1023px) {
