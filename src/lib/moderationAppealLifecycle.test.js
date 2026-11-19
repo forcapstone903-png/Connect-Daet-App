@@ -11,7 +11,7 @@ test('suspension expiration is cron-driven, idempotent, and preserves other acco
   const cron = read('src', 'app', '(subsystems)', 'info', 'api', 'cron', 'moderation-lifecycle', 'route.js')
   const vercel = read('vercel.json')
 
-  assert.match(vercel, /"path": "\/info\/api\/cron\/moderation-lifecycle"[\s\S]*?"schedule": "\*\/5 \* \* \* \*"/)
+  assert.match(vercel, /"path": "\/info\/api\/cron\/moderation-lifecycle"[\s\S]*?"schedule": "0 2 \* \* \*"/)
   assert.match(cron, /timingSafeEqual/)
   assert.match(cron, /process_expired_account_suspensions/)
   assert.match(cron, /claim_moderation_email_outbox/)

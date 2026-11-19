@@ -14,7 +14,7 @@
     },
     {
       "path": "/info/api/cron/moderation-lifecycle",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 2 * * *"
     }
   ]
 }

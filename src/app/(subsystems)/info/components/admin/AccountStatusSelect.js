@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
 export const ACCOUNT_STATUS_LABELS = {
@@ -33,10 +34,37 @@ export default function AccountStatusSelect({
   continueHref,
   continueLabel = 'Manage through Account Oversight',
 }) {
+  const router = useRouter()
   const currentStatus = account.status || 'active'
   const [selectedStatus, setSelectedStatus] = useState(currentStatus)
   const [message, setMessage] = useState('')
   const hasUnsupportedCurrentStatus = !ACCOUNT_STATUS_OPTIONS.includes(currentStatus)
+
+  const handleStatusChange = (nextStatus) => {
+    setMessage('')
+    if (nextStatus === currentStatus) {
+      setSelectedStatus(currentStatus)
+      return
+    }
+
+    if (onContinue) {
+      const nextMessage = onContinue(account, nextStatus)
+      setMessage(nextMessage || '')
+      setSelectedStatus(currentStatus)
+      return
+    }
+
+    if (continueHref) {
+      const href = typeof continueHref === 'function'
+        ? continueHref(account, nextStatus)
+        : continueHref
+      router.push(href)
+      setSelectedStatus(currentStatus)
+      return
+    }
+
+    setSelectedStatus(nextStatus)
+  }
 
   return (
     <div className="min-w-[190px]">
@@ -51,10 +79,7 @@ export default function AccountStatusSelect({
         <select
           id={`account-status-${account.id}`}
           value={selectedStatus}
-          onChange={(event) => {
-            setSelectedStatus(event.target.value)
-            setMessage('')
-          }}
+          onChange={(event) => handleStatusChange(event.target.value)}
           className="w-full rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-sky-600 focus:ring-2 focus:ring-sky-200"
         >
           {hasUnsupportedCurrentStatus ? (
