@@ -301,10 +301,16 @@ export default function MobileNav({ mobileOnly = false }) {
           fetch('/info/api/notifications', { credentials: 'same-origin', cache: 'no-store' }),
           fetch('/info/api/messages', { credentials: 'same-origin', cache: 'no-store' }),
         ])
-        if (!notificationsResponse.ok) {
-          throw new Error(`Notification refresh failed with status ${notificationsResponse.status}.`)
-        }
         const notificationsResult = await notificationsResponse.json()
+        if (!notificationsResponse.ok) {
+          const errorCode = typeof notificationsResult?.code === 'string'
+            ? ` [${notificationsResult.code}]`
+            : ''
+          const errorMessage = typeof notificationsResult?.message === 'string'
+            ? ` ${notificationsResult.message}`
+            : ''
+          throw new Error(`Notification refresh failed with status ${notificationsResponse.status}${errorCode}.${errorMessage}`)
+        }
         if (!notificationsResult?.success) {
           throw new Error(notificationsResult?.message || 'Notification refresh failed.')
         }

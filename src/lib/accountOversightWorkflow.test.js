@@ -8,18 +8,29 @@ import { formatSuspensionDuration, getTotalSuspensionDays } from './suspensionDu
 const root = process.cwd()
 const read = (...parts) => readFileSync(path.join(root, ...parts), 'utf8')
 
-test('Account Oversight page and API are administrator-only', () => {
-  for (const role of ['moderator', 'tourism_officer', 'tourist']) {
-    assert.equal(canAccessAdminPage(role, '/info/admin/account-oversight'), false)
-    assert.equal(canAccessAdminApi(role, '/info/api/admin/account-oversight', 'PATCH'), false)
+test('Account Oversight is available to staff roles with role-specific action limits', () => {
+  for (const role of ['moderator', 'tourism_officer']) {
+    assert.equal(canAccessAdminPage(role, '/info/admin/account-oversight'), true)
+    assert.equal(canAccessAdminApi(role, '/info/api/admin/account-oversight', 'GET'), true)
+    assert.equal(canAccessAdminApi(role, '/info/api/admin/account-oversight', 'PATCH'), true)
   }
+  assert.equal(canAccessAdminPage('tourist', '/info/admin/account-oversight'), false)
+  assert.equal(canAccessAdminApi('tourist', '/info/api/admin/account-oversight', 'GET'), false)
+  assert.equal(canAccessAdminApi('tourist', '/info/api/admin/account-oversight', 'PATCH'), false)
   assert.equal(canAccessAdminPage('admin', '/info/admin/account-oversight'), true)
   assert.equal(canAccessAdminApi('admin', '/info/api/admin/account-oversight', 'PATCH'), true)
 
   const route = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'account-oversight', 'route.js')
+  const page = read('src', 'app', '(subsystems)', 'info', 'admin', 'account-oversight', 'page.js')
   assert.match(route, /authorizeAdminApi\(request\)/)
-  assert.match(route, /normalizeStaffRole\(authorization\.session\.role\) !== 'admin'/)
+  assert.match(route, /role === 'tourism_officer'/)
+  assert.match(route, /role === 'moderator' && action !== 'set_status'/)
+  assert.match(route, /role === 'moderator' && !\['suspended', 'banned'\]\.includes\(requestedStatus\)/)
+  assert.match(route, /role !== 'admin'/)
+  assert.match(route, /Only System Administrators can access escalated case details/)
   assert.match(route, /admin_account_oversight_action/)
+  assert.match(page, /statusOptions=\{role === 'moderator' \? \['suspended', 'banned'\]/)
+  assert.match(page, /Review suspension case/)
 })
 
 test('Permanent bans, exceptional suspensions, lifting, and reversal are audited admin transactions', () => {

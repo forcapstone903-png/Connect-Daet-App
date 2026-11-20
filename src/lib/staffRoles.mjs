@@ -51,7 +51,7 @@ export const PERMISSIONS = Object.freeze({
 // Page rules: first match wins, so more specific prefixes come first.
 const PAGE_RULES = [
   ['/info/admin/tourism-dashboard', 'tourism.manage'],
-  ['/info/admin/account-oversight', 'system.manage'],
+  ['/info/admin/account-oversight', 'moderation.manage'],
   ['/info/admin/suspension-cases', 'moderation.suspension_review'],
   ['/info/admin/moderator-dashboard', 'moderation.manage'],
   ['/info/admin/dashboard', 'console.access'],
@@ -100,7 +100,7 @@ const PAGE_RULES = [
 const API_RULES = [
   ['/info/api/admin/me', 'console.access', ['GET']],
   ['/info/api/admin/moderation/suspension-review', 'moderation.suspension_review'],
-  ['/info/api/admin/account-oversight', 'system.manage'],
+  ['/info/api/admin/account-oversight', 'moderation.manage'],
   ['/info/api/admin/staff-chat', 'console.access'],
   ['/info/api/admin/users', 'users.view', ['GET']],
   ['/info/api/admin/users', 'users.manage'],

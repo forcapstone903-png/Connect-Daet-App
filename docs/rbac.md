@@ -52,7 +52,7 @@ the role clears them.
 | `announcements.manage` | ✓ | | ✓ | Official announcements |
 | `feedback.manage` | ✓ | ✓ | | Feedback / inquiries |
 | `analytics.view` | ✓ | ✓ | | Analytics, engagement |
-| `moderation.manage` | ✓ | | ✓ | Reported content, blog moderation, community guidelines |
+| `moderation.manage` | ✓ | ✓ | ✓ | Reported content, blog moderation, account oversight (read); Moderators may suspend or ban community accounts |
 | `forum.manage` | ✓ | | ✓ | Forum topics and categories |
 | `users.view` | ✓ | | ✓ | Users list (read) |
 | `users.manage` | ✓ | | | Create accounts, change roles, reset passwords, delete |
@@ -112,6 +112,11 @@ erDiagram
   `status` or `points`. Service-role API routes are unaffected.
 - Reviewer checks widened in place: blog moderation RPCs accept `moderator`;
   `moderate_info_event` accepts `tourism_officer`.
+- Account Oversight is visible to active administrators, moderators, and
+  Tourism Officers. Moderators can apply reasoned suspensions or permanent
+  bans; Tourism Officers use the separate Suspension Cases workflow. Final-ban
+  authorization, restriction reversals, escalated case details, and appeal
+  decisions remain administrator-only.
 
 ## Security notes
 

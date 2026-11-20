@@ -268,8 +268,9 @@ async function loadCaseDetail(client, investigationId) {
 export async function GET(request) {
   const authorization = authorizeAdminApi(request)
   if (authorization.response) return authorization.response
-  if (normalizeStaffRole(authorization.session.role) !== 'admin') {
-    return respond({ success: false, message: 'Only System Administrators can access Account Oversight.' }, 403)
+  const role = normalizeStaffRole(authorization.session.role)
+  if (!['admin', 'moderator', 'tourism_officer'].includes(role)) {
+    return respond({ success: false, message: 'Your role cannot access Account Oversight.' }, 403)
   }
 
   const client = getAdminClient()
@@ -279,6 +280,9 @@ export async function GET(request) {
     const params = new URL(request.url).searchParams
     const investigationId = params.get('case')
     if (investigationId) {
+      if (role !== 'admin') {
+        return respond({ success: false, message: 'Only System Administrators can access escalated case details.' }, 403)
+      }
       if (!isValidUuid(investigationId)) return respond({ success: false, message: 'A valid case id is required.' }, 400)
       const result = await loadCaseDetail(client, investigationId)
       if (result.error) return result.error
@@ -290,7 +294,7 @@ export async function GET(request) {
       loadAccountRows(client, params),
     ])
     if (rows.error) return rows.error
-    return respond({ success: true, stats, ...rows })
+    return respond({ success: true, role, stats, ...rows })
   } catch (error) {
     console.error('Account Oversight data load failed:', { code: error.code || null })
     return respond({ success: false, message: 'Unable to load Account Oversight data.' }, 500)
@@ -300,8 +304,12 @@ export async function GET(request) {
 export async function PATCH(request) {
   const authorization = authorizeAdminApi(request)
   if (authorization.response) return authorization.response
-  if (normalizeStaffRole(authorization.session.role) !== 'admin') {
-    return respond({ success: false, message: 'Only System Administrators can manage account status.' }, 403)
+  const role = normalizeStaffRole(authorization.session.role)
+  if (role === 'tourism_officer') {
+    return respond({ success: false, message: 'Tourism Officers review account restrictions through Suspension Cases.' }, 403)
+  }
+  if (!['admin', 'moderator'].includes(role)) {
+    return respond({ success: false, message: 'Your role cannot manage account status.' }, 403)
   }
 
   let body
@@ -328,6 +336,9 @@ export async function PATCH(request) {
   ])
 
   if (!validActions.has(action)) return respond({ success: false, message: 'Choose a supported administrator action.' }, 400)
+  if (role === 'moderator' && action !== 'set_status') {
+    return respond({ success: false, message: 'Moderators can only apply account suspensions or permanent bans here.' }, 403)
+  }
   if (reason.length > 5000) return respond({ success: false, message: 'The detailed reason is too long.' }, 400)
   if (userId && !isValidUuid(userId)) return respond({ success: false, message: 'A valid user id is required.' }, 400)
   if (investigationId && !isValidUuid(investigationId)) return respond({ success: false, message: 'A valid investigation id is required.' }, 400)
@@ -336,6 +347,9 @@ export async function PATCH(request) {
   if (action === 'set_status') {
     if (!userId) return respond({ success: false, message: 'A user account is required.' }, 400)
     if (!ACCOUNT_STATUSES.includes(requestedStatus)) return respond({ success: false, message: 'Choose a supported account status.' }, 400)
+    if (role === 'moderator' && !['suspended', 'banned'].includes(requestedStatus)) {
+      return respond({ success: false, message: 'Moderators can only suspend or permanently ban an account.' }, 403)
+    }
     if (requestedStatus === 'pending' && !reason && !reportId) {
       return respond({ success: false, message: 'Provide a moderation reason or select a related open report.' }, 400)
     }

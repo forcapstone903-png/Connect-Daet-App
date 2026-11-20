@@ -17,7 +17,6 @@ import {
   LoaderCircle,
   Mail,
   MapPin,
-  MessageCircle,
   MoreHorizontal,
   Phone,
   Share2,
@@ -29,7 +28,6 @@ import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { getCache, getCacheKey, setCache } from '@/lib/cache'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
-import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import RatingsReviews from '@/app/(subsystems)/info/components/user/RatingsReviews'
 import { trackUserActivity } from '@/lib/trackActivity'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
@@ -83,7 +81,6 @@ export default function TouristSpotDetailPage() {
   const [isSaved, setIsSaved] = useState(false)
   const [reaction, setReaction] = useState('')
   const [likeCount, setLikeCount] = useState(0)
-  const [commentCount, setCommentCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -129,23 +126,14 @@ export default function TouristSpotDetailPage() {
   }
 
   const loadEngagement = useCallback(async (id, currentUserId) => {
-    const [reactions, comments] = await Promise.all([
-      supabase.from('content_reactions')
-        .select('user_id, reaction_type')
-        .eq('content_type', 'tourist_spot')
-        .eq('content_id', id),
-      supabase.from('content_comments')
-        .select('id', { count: 'exact', head: true })
-        .eq('content_type', 'tourist_spot')
-        .eq('content_id', id)
-        .eq('status', 'active'),
-    ])
+    const reactions = await supabase.from('content_reactions')
+      .select('user_id, reaction_type')
+      .eq('content_type', 'tourist_spot')
+      .eq('content_id', id)
     if (reactions.error) throw reactions.error
-    if (comments.error) throw comments.error
     const rows = reactions.data || []
     setLikeCount(rows.filter((item) => item.reaction_type !== 'dislike').length)
     setReaction(rows.find((item) => item.user_id === currentUserId)?.reaction_type || '')
-    setCommentCount(comments.count || 0)
   }, [])
 
   useEffect(() => {
@@ -280,10 +268,6 @@ export default function TouristSpotDetailPage() {
     if (!spotId) return undefined
     const refresh = () => { void loadEngagement(spotId, userId).catch((refreshError) => console.error('Tourist spot engagement refresh failed:', refreshError)) }
     const channel = supabase.channel(`tourist-spot-engagement-${spotId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_comments', filter: `content_type=eq.tourist_spot` }, (event) => {
-        const row = event.new || event.old
-        if (row?.content_id === spotId) refresh()
-      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'content_reactions', filter: `content_type=eq.tourist_spot` }, (event) => {
         const row = event.new || event.old
         if (row?.content_id === spotId) refresh()
@@ -414,7 +398,6 @@ export default function TouristSpotDetailPage() {
     }
   }
 
-  const scrollToComments = () => document.getElementById('tourist-comments')?.scrollIntoView({ behavior: 'smooth' })
   const scrollToRatings = () => document.getElementById('ratings-reviews')?.scrollIntoView({ behavior: 'smooth' })
   const openReviewPhoto = (url, alt) => setSingleLightbox({ url, alt })
   const moveLightbox = useCallback((direction) => {
@@ -590,10 +573,6 @@ export default function TouristSpotDetailPage() {
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" id="tourist-comments">
-                <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-bold text-slate-900">Comments</h2><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{commentCount}</span></div>
-                <Comments contentType="tourist_spot" contentId={spot.id} userId={userId} contentOwnerId={spot.created_by} contentTitle={spot.name} eventStyle />
-              </section>
             </div>
 
             <aside className="min-w-0 space-y-5 lg:sticky lg:top-24 lg:col-span-5 lg:self-start">
