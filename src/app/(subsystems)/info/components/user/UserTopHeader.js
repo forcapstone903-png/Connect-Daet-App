@@ -892,7 +892,7 @@ export default function UserTopHeader({
                 href="/info/user/notifications"
                 aria-label={unreadAlerts > 0 ? `${t('common.notifications')}, ${unreadAlerts} unread` : t('common.notifications')}
                 title={t('common.notifications')}
-                className="usr-press relative flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700 dark:hover:bg-slate-700 dark:hover:text-blue-300"
+                className="usr-press relative flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700 dark:hover:bg-slate-700 dark:hover:text-blue-300"
               >
                 <Bell className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
                 {unreadAlerts > 0 && (
@@ -923,7 +923,7 @@ export default function UserTopHeader({
                 else router.push(mobileBackHref)
               }}
               aria-label={`Back from ${mobileNavigationTitle}`}
-              className="usr-mobile-back-button usr-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition hover:bg-slate-100 dark:hover:bg-white/10"
+              className="usr-mobile-back-button usr-press flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition hover:bg-slate-100 dark:hover:bg-white/10"
             >
               <ChevronLeft className="h-6 w-6" aria-hidden="true" />
             </button>

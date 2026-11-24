@@ -60,6 +60,7 @@ export default function MobileNav({ mobileOnly = false }) {
   const [unreadMessages, setUnreadMessages] = useState(0)
   const [commentsSheetOpen, setCommentsSheetOpen] = useState(false)
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false)
+  const [desktopNavigationCollapsed, setDesktopNavigationCollapsed] = useState(false)
   const [followingUsers, setFollowingUsers] = useState([])
   const [followingLoading, setFollowingLoading] = useState(false)
   const [followingError, setFollowingError] = useState('')
@@ -106,7 +107,10 @@ export default function MobileNav({ mobileOnly = false }) {
   }, [])
 
   useEffect(() => {
-    const toggleDesktopNavigation = () => setMobileDrawerOpen((open) => !open)
+    const toggleDesktopNavigation = () => {
+      setDesktopNavigationCollapsed((collapsed) => !collapsed)
+      setMobileDrawerOpen((open) => !open)
+    }
     window.addEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
     return () => {
       window.removeEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
@@ -115,20 +119,7 @@ export default function MobileNav({ mobileOnly = false }) {
 
   useEffect(() => {
     if (mobileOnly) return undefined
-
-    const desktopViewport = window.matchMedia('(min-width: 1024px)')
-    const syncDesktopNavigation = () => setMobileDrawerOpen(desktopViewport.matches)
-
-    syncDesktopNavigation()
-    desktopViewport.addEventListener('change', syncDesktopNavigation)
-    return () => desktopViewport.removeEventListener('change', syncDesktopNavigation)
-  }, [mobileOnly])
-
-  useEffect(() => {
-    if (mobileOnly) return undefined
-
-    const desktopViewport = window.matchMedia('(min-width: 1024px)')
-    if (desktopViewport.matches && !mobileDrawerOpen) {
+    if (desktopNavigationCollapsed) {
       document.documentElement.dataset.userNavigationCollapsed = 'true'
     } else {
       delete document.documentElement.dataset.userNavigationCollapsed
@@ -137,7 +128,7 @@ export default function MobileNav({ mobileOnly = false }) {
     return () => {
       delete document.documentElement.dataset.userNavigationCollapsed
     }
-  }, [mobileDrawerOpen, mobileOnly])
+  }, [desktopNavigationCollapsed, mobileOnly])
 
   useEffect(() => {
     if (!mobileDrawerOpen) return undefined
@@ -202,10 +193,7 @@ export default function MobileNav({ mobileOnly = false }) {
 
   useEffect(() => {
     if (!mobileDrawerOpen || !mobileDrawerRef.current) return undefined
-    if (
-      window.matchMedia('(min-width: 1024px)').matches
-      || window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    ) return undefined
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined
 
     const animation = mobileDrawerRef.current.animate(
       [{ transform: 'translateX(-100%)' }, { transform: 'translateX(0)' }],
@@ -388,9 +376,7 @@ export default function MobileNav({ mobileOnly = false }) {
   const getInitials = (name = '') => getNavInitials(name)
 
   const closeNavigationAfterSelection = () => {
-    if (mobileOnly || !window.matchMedia('(min-width: 1024px)').matches) {
-      setMobileDrawerOpen(false)
-    }
+    setMobileDrawerOpen(false)
   }
 
   const isVisitor = pathname === '/info/visitor' || pathname.startsWith('/info/visitor/')
@@ -448,7 +434,7 @@ export default function MobileNav({ mobileOnly = false }) {
           })}
         </nav>
       )}
-      {!mobileOnly && <aside aria-label="Primary navigation" className="usr-desktop-sidebar fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-[6px_0_24px_rgba(15,23,42,0.12)]">
+      {!mobileOnly && <aside aria-label="Primary navigation" className={`usr-desktop-sidebar fixed left-0 z-40 hidden w-[302px] flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-[6px_0_24px_rgba(15,23,42,0.12)] lg:flex lg:top-16 lg:bottom-0${desktopNavigationCollapsed ? ' lg:hidden' : ''}`}>
         <Link href="/info/user/dashboard" className="flex min-h-20 items-center gap-3 border-b border-slate-700 px-5">
           <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain" />
           <span className="min-w-0">
@@ -531,7 +517,7 @@ export default function MobileNav({ mobileOnly = false }) {
         onCancel={() => setShowLogoutConfirm(false)}
       />
       {!commentsSheetOpen && mobileDrawerOpen && (
-        <div className="usr-navigation-drawer-overlay fixed inset-0 z-[60]">
+        <div className="usr-navigation-drawer-overlay fixed inset-0 z-[60] lg:hidden">
           <button type="button" aria-label="Close navigation" onClick={() => setMobileDrawerOpen(false)} className="usr-navigation-drawer-backdrop absolute inset-0 h-full w-full bg-black/55" />
           <aside ref={mobileDrawerRef} aria-label="Primary navigation" className="usr-navigation-drawer absolute inset-y-0 left-0 flex w-[min(82vw,280px)] flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-2xl">
             <div className="usr-navigation-drawer-header flex min-h-16 items-center justify-between border-b border-white/10 px-4">
@@ -542,7 +528,7 @@ export default function MobileNav({ mobileOnly = false }) {
                   <span className="mt-0.5 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
                 </span>
               </Link>
-              <button type="button" onClick={() => setMobileDrawerOpen(false)} aria-label="Close navigation" className="usr-press ml-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white">
+              <button type="button" onClick={() => setMobileDrawerOpen(false)} aria-label="Close navigation" className="usr-press ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white">
                 <X className="h-5 w-5" />
               </button>
             </div>

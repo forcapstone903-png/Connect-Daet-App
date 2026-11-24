@@ -6837,3 +6837,9 @@ html.dark .conversation-page .usr-message-bubble:not(.usr-message-own) {
     border-top-color: rgb(255 255 255 / 12%);
   }
 }
+
+@media (min-width: 1024px) {
+  html[data-user-navigation-collapsed='true'] .user-page-shell {
+    padding-left: 0 !important;
+  }
+}
