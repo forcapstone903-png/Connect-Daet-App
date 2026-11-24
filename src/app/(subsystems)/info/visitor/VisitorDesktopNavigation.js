@@ -23,7 +23,7 @@ export default function VisitorDesktopNavigation() {
         </span>
       </Link>
       <nav aria-label="Primary" className="flex-1 space-y-1 overflow-y-auto p-4">
-        {visitorNavigationItems.map(({ href, label, icon: Icon }) => {
+        {visitorNavigationItems.filter((item) => item.mobileShell !== false).map(({ href, label, icon: Icon }) => {
           const isActive = activeHref === href
 
           return (

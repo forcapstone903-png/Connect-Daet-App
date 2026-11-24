@@ -1,40 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import {
   Bell,
-  CalendarDays,
   ChevronRight,
-  Home,
-  Info,
-  Landmark,
   Menu,
-  Newspaper,
   User,
-  Users,
   X,
 } from 'lucide-react'
 import { usePublicSettings } from '@/lib/usePublicSettings'
 import connectDaetLogo from '@/app/(subsystems)/info/assets/images/logo.png'
-
-const NAV_ITEMS = [
-  { href: '/info/visitor', label: 'Home', icon: Home, exact: true },
-  { href: '/info/visitor/tourist-spots', label: 'Attractions', icon: Landmark },
-  { href: '/info/visitor/events', label: 'Events', icon: CalendarDays },
-  { href: '/info/visitor/search?type=blogs', label: 'Blogs', icon: Newspaper, matchPrefix: '/info/visitor/search' },
-  { href: '/info/visitor/forum', label: 'Forums', icon: Users },
-  { href: '/info/about', label: 'About', icon: Info },
-]
+import { visitorNavigationItems } from '@/app/(subsystems)/info/visitor/navigation'
 
 export default function VisitorNavbar({ alertsCount = 0, transparent = false }) {
   const pathname = usePathname()
   const { settings } = usePublicSettings()
+  const logoSource = settings.logoUrl || connectDaetLogo
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuOpenPathname, setMenuOpenPathname] = useState(pathname)
   const [scrolled, setScrolled] = useState(false)
+  const menuButtonRef = useRef(null)
   const isMenuOpen = menuOpen && menuOpenPathname === pathname
 
   useEffect(() => {
@@ -45,6 +33,19 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
     handleScroll()
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined
+
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape') return
+      setMenuOpen(false)
+      menuButtonRef.current?.focus()
+    }
+
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [isMenuOpen])
 
   const isNavActive = (item) => {
     if (item.exact) return pathname === item.href
@@ -68,11 +69,11 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 p-1.5 ring-1 ring-sky-400/30 transition-transform duration-300 group-hover:rotate-6">
             <Image
-              src={settings.logoUrl || connectDaetLogo}
+              src={logoSource}
               alt=""
               width={36}
               height={36}
-              unoptimized
+              unoptimized={Boolean(settings.logoUrl)}
               className="h-full w-full object-contain filter drop-shadow(0 2px 4px rgba(0,0,0,0.2))"
             />
           </span>
@@ -88,13 +89,14 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
           aria-label="Main navigation"
           className="hidden items-center gap-1 rounded-full border border-white/15 bg-white/10 p-1 backdrop-blur-md shadow-inner lg:flex"
         >
-          {NAV_ITEMS.map((item) => {
+          {visitorNavigationItems.map((item) => {
             const Icon = item.icon
             const active = isNavActive(item)
             return (
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? 'page' : undefined}
                 className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-bold transition-all duration-200 ${
                   active
                     ? 'bg-[#1d68ed] text-white shadow-md shadow-blue-500/25 scale-[1.02]'
@@ -113,7 +115,8 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
           <Link
             href="/info/visitor/alerts"
             aria-label="View alerts and notifications"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-200 transition-all hover:bg-white/10 hover:text-white"
+            aria-current={pathname === '/info/visitor/alerts' ? 'page' : undefined}
+            className="relative flex h-11 w-11 items-center justify-center rounded-full text-slate-200 transition-all hover:bg-white/10 hover:text-white"
           >
             <Bell className="h-5 w-5" aria-hidden="true" />
             {alertsCount > 0 && (
@@ -133,6 +136,7 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
 
           {/* Mobile hamburger */}
           <button
+            ref={menuButtonRef}
             type="button"
             onClick={() => {
               const nextOpen = !isMenuOpen
@@ -142,7 +146,7 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
             aria-expanded={isMenuOpen}
             aria-controls="visitor-nav-menu"
             aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white backdrop-blur transition hover:bg-white/20 lg:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-white backdrop-blur transition hover:bg-white/20 lg:hidden"
           >
             {isMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
@@ -157,7 +161,7 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
           className="border-t border-white/10 bg-[#081c49]/98 px-5 pb-6 pt-3 text-white backdrop-blur-xl lg:hidden animate-in slide-in-from-top-3 duration-250"
         >
           <div className="space-y-1">
-            {NAV_ITEMS.map((item) => {
+            {visitorNavigationItems.map((item) => {
               const Icon = item.icon
               const active = isNavActive(item)
               return (
@@ -165,15 +169,16 @@ export default function VisitorNavbar({ alertsCount = 0, transparent = false }) 
                   key={item.href}
                   href={item.href}
                   onClick={() => setMenuOpen(false)}
+                  aria-current={active ? 'page' : undefined}
                   className={`flex items-center justify-between rounded-xl px-4 py-3 text-sm font-semibold transition ${
                     active ? 'bg-[#1d68ed] text-white shadow-sm' : 'text-slate-200 hover:bg-white/10'
                   }`}
                 >
                   <span className="flex items-center gap-3">
-                    {Icon ? <Icon className="h-4 w-4" /> : null}
+                    {Icon ? <Icon className="h-4 w-4" aria-hidden="true" /> : null}
                     {item.label}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-white/50" />
+                  <ChevronRight className="h-4 w-4 text-white/50" aria-hidden="true" />
                 </Link>
               )
             })}

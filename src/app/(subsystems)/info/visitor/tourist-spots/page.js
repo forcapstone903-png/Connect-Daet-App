@@ -120,7 +120,7 @@ function PlacesDirectory() {
         const [{ data, error }, { data: sessionData }] = await Promise.all([
           supabase
           .from('info_tourist_spots')
-          .select('*')
+          .select('id, name, description, category, location, barangay, rating, review_count, featured_image, images, featured, listing_type, price_range, opening_hours, tags')
           .eq('status', 'active')
           .order('rating', { ascending: false }),
           supabase.auth.getSession(),
@@ -398,7 +398,7 @@ function PlacesDirectory() {
                 role="tab"
                 aria-selected={selected}
                 onClick={() => selectListingType(type.value)}
-                className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-all duration-200 ${
+                className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition-all duration-200 ${
                   selected ? 'bg-slate-900 text-white shadow-md scale-[1.02]' : 'border border-slate-200 bg-white text-slate-700 hover:border-sky-200 hover:text-sky-700'
                 }`}
               >
