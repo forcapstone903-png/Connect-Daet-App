@@ -18,7 +18,7 @@ export default function UserLayout({ children }) {
         homeHref="/info/user/dashboard"
         showDesktopNavigationToggle={!isConversationPage}
       />
-      <div className={`user-page-shell min-h-screen ${isAnnouncementDetailPage ? 'pb-0 pt-0' : 'pb-[calc(76px+env(safe-area-inset-bottom))] pt-0'} lg:pb-0 lg:pt-16 ${isConversationPage ? '' : 'lg:pl-[302px]'}`}>{children}</div>
+      <div className={`user-page-shell min-h-dvh ${isAnnouncementDetailPage ? 'pb-0 pt-0' : 'pb-[calc(76px+env(safe-area-inset-bottom))] pt-0'} lg:pb-0 lg:pt-16 ${isConversationPage ? '' : 'lg:pl-[302px]'}`}>{children}</div>
     </>
   )
 }
