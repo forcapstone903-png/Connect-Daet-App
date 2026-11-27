@@ -8,8 +8,11 @@ import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import { useScrollReveal, staggerDelay } from '@/lib/useScrollReveal'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
+import VisitorPagination, { useVisitorPage } from '@/app/(subsystems)/info/components/visitor/VisitorPagination'
 import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
 import { getInterestMatchScore, normalizeUserInterests } from '@/lib/userInterests'
+
+const EVENTS_PAGE_SIZE = 9
 
 function formatDateRange(startDate, endDate) {
   if (!startDate) return 'TBA'
@@ -58,6 +61,8 @@ export default function EventsIndexPage() {
   })
   const { setRefreshCallback } = realtime
   const { observe } = useScrollReveal()
+  const paginationKey = JSON.stringify([search, category, location, preferredCategories])
+  const [page, setPage] = useVisitorPage(paginationKey)
 
   useEffect(() => {
     let ignore = false
@@ -165,6 +170,9 @@ export default function EventsIndexPage() {
   }, [events, search, category, location, preferredCategories])
 
   const hasActiveFilters = search.trim() || category !== 'all' || location !== 'all'
+  const pageCount = Math.max(1, Math.ceil(filteredEvents.length / EVENTS_PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const visibleEvents = filteredEvents.slice((currentPage - 1) * EVENTS_PAGE_SIZE, currentPage * EVENTS_PAGE_SIZE)
   const clearFilters = () => {
     setSearch('')
     setCategory('all')
@@ -374,7 +382,7 @@ export default function EventsIndexPage() {
         {/* Event Grid */}
         {!loading && !error && filteredEvents.length > 0 && (
           <div className="mt-4 grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-            {filteredEvents.map((event, index) => (
+            {visibleEvents.map((event, index) => (
               <Link
                 key={event.id}
                 href={`/info/visitor/events/${event.id}`}
@@ -428,6 +436,15 @@ export default function EventsIndexPage() {
               </Link>
             ))}
           </div>
+        )}
+        {!loading && !error && (
+          <VisitorPagination
+            page={currentPage}
+            totalItems={filteredEvents.length}
+            pageSize={EVENTS_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="events"
+          />
         )}
       </div>
     </main>

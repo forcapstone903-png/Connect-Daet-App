@@ -9,6 +9,7 @@ The shared implementation is in `src/lib/cache.js`:
 - Authenticated profile and notification data use a user-scoped in-memory TTL cache. The Home feed is fetched without a client cache because its contents depend on current follow and privacy permissions.
 - Public tourist spot data uses a versioned `localStorage` cache with a one-day TTL and background revalidation.
 - Public visitor review previews use the shared in-memory cache with a five-minute TTL and stale-while-revalidate behavior.
+- Visitor blog, tourist spot, event, and forum pagination slices already-loaded records after each page's existing filtering and sorting. Changing pages performs no additional reads and creates no page-specific cache; existing fetch, cache, realtime-refresh, and invalidation behavior is unchanged.
 - Logout clears user-scoped memory entries.
 - Profile, follow, reaction, save, notification writes, and user-settings saves invalidate related memory entries.
 - Persistent cache corruption, quota errors, and private browsing storage failures fall back to the network.

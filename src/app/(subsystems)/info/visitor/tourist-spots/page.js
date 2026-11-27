@@ -26,12 +26,14 @@ import { DAET_BARANGAYS, LISTINGS_CACHE_VERSION, LISTING_TYPES, getListingTypeLa
 import styles from './TouristSpotsPage.module.css'
 import daetImage from '@/app/(subsystems)/info/assets/images/daet.jpg'
 import { getInterestMatchScore, normalizeUserInterests } from '@/lib/userInterests'
+import VisitorPagination, { useVisitorPage } from '@/app/(subsystems)/info/components/visitor/VisitorPagination'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 // Public data only (active listings). Invalidated by the admin page after
 // every successful write; realtime refresh keeps open tabs current.
 const SPOTS_CACHE_KEY = getCacheKey('places', 'public', 'all', LISTINGS_CACHE_VERSION)
 const SPOTS_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+const SPOTS_PAGE_SIZE = 12
 
 const RATING_FILTERS = [
   { value: 0, label: 'Any rating' },
@@ -89,6 +91,8 @@ function PlacesDirectory() {
 
   const { observe } = useScrollReveal()
   const [preferredCategories, setPreferredCategories] = useState([])
+  const paginationKey = JSON.stringify([listingType, category, barangay, minRating, search, sortBy])
+  const [page, setPage] = useVisitorPage(paginationKey)
 
   // The listing type lives in the URL (?type=restaurant) so tabs are shareable.
   const selectListingType = (value) => {
@@ -240,6 +244,9 @@ function PlacesDirectory() {
   }, [spotsOfType, category, barangay, minRating, search, sortBy, preferredCategories])
 
   const hasActiveFilters = category !== 'all' || barangay !== 'all' || minRating > 0 || search.trim()
+  const pageCount = Math.max(1, Math.ceil(filteredSpots.length / SPOTS_PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const visibleSpots = filteredSpots.slice((currentPage - 1) * SPOTS_PAGE_SIZE, currentPage * SPOTS_PAGE_SIZE)
   const clearFilters = () => {
     setSearch('')
     setCategory('all')
@@ -466,8 +473,9 @@ function PlacesDirectory() {
             ))}
           </div>
         ) : filteredSpots.length > 0 ? (
-          <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3 2xl:grid-cols-4">
-            {filteredSpots.map((spot, index) => (
+          <>
+            <div className="grid auto-rows-fr grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:gap-4 lg:grid-cols-3 2xl:grid-cols-4">
+              {visibleSpots.map((spot, index) => (
               <Link
                 key={spot.id}
                 href={`/info/visitor/tourist-spots/${spot.id}`}
@@ -542,8 +550,16 @@ function PlacesDirectory() {
                   </div>
                 </div>
               </Link>
-            ))}
-          </div>
+              ))}
+            </div>
+            <VisitorPagination
+              page={currentPage}
+              totalItems={filteredSpots.length}
+              pageSize={SPOTS_PAGE_SIZE}
+              onPageChange={setPage}
+              itemLabel="places"
+            />
+          </>
         ) : (
           <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-10 text-center">
             <MapPin className="mx-auto mb-3 h-10 w-10 text-slate-400" />

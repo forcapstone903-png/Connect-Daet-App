@@ -18,6 +18,9 @@ import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
 import { useScrollReveal, staggerDelay } from '@/lib/useScrollReveal'
 import RealtimeStatus from '@/app/(subsystems)/info/components/user/RealtimeStatus'
 import { getPostPreview } from '@/lib/postContent'
+import VisitorPagination, { useVisitorPage } from '@/app/(subsystems)/info/components/visitor/VisitorPagination'
+
+const THREADS_PAGE_SIZE = 10
 
 function formatDate(value) {
   if (!value) return 'Recently'
@@ -47,6 +50,8 @@ export default function PublicForumPage() {
     tables: ['forum_threads', 'forum_replies'],
   })
   const { setRefreshCallback } = realtime
+  const paginationKey = JSON.stringify([search, category, sortBy])
+  const [page, setPage] = useVisitorPage(paginationKey)
 
   useEffect(() => {
     let ignore = false
@@ -115,6 +120,9 @@ export default function PublicForumPage() {
   }, [threads, search, category, sortBy])
 
   const hasActiveFilters = search.trim() || category !== 'all'
+  const pageCount = Math.max(1, Math.ceil(filteredThreads.length / THREADS_PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const visibleThreads = filteredThreads.slice((currentPage - 1) * THREADS_PAGE_SIZE, currentPage * THREADS_PAGE_SIZE)
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900 pb-16">
@@ -305,7 +313,7 @@ export default function PublicForumPage() {
             </div>
 
             <div className="divide-y divide-slate-100">
-              {filteredThreads.map((thread, index) => (
+              {visibleThreads.map((thread, index) => (
                 <Link
                   key={thread.id}
                   href={`/info/visitor/forum/${thread.id}`}
@@ -384,6 +392,15 @@ export default function PublicForumPage() {
               ))}
             </div>
           </div>
+        )}
+        {!loading && !error && (
+          <VisitorPagination
+            page={currentPage}
+            totalItems={filteredThreads.length}
+            pageSize={THREADS_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="discussions"
+          />
         )}
 
         {/* Empty State */}

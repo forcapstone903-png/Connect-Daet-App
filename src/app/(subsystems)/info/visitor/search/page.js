@@ -7,6 +7,7 @@ import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Newspaper, X
 import { supabase } from '@/lib/supabase'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
+import VisitorPagination, { useVisitorPage } from '@/app/(subsystems)/info/components/visitor/VisitorPagination'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { useUserSearchSuggestions } from '@/lib/useUserSearchSuggestions'
 import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
@@ -15,6 +16,7 @@ import styles from './SearchPage.module.css'
 
 const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=900&q=80'
 const popularSearches = ['Bagasbas Beach', 'Calaguas', 'Daet events', 'local food', 'travel stories']
+const BLOGS_PAGE_SIZE = 9
 
 function SearchContent() {
   return <SearchContentView />
@@ -74,6 +76,21 @@ function SearchContentView() {
     forumComments: [],
     mentions: [],
   })
+
+  const blogPaginationKey = JSON.stringify([
+    query,
+    activeTab,
+    initialType,
+    refreshKey,
+    smartCategories,
+    smartLocation,
+    smartSort,
+    smartDate,
+    smartFree,
+    smartFollowing,
+    smartSaved,
+  ])
+  const [blogPage, setBlogPage] = useVisitorPage(blogPaginationKey)
 
   useEffect(() => {
     const syncQueryFromHistory = () => {
@@ -447,6 +464,14 @@ function SearchContentView() {
   const totalCount = results.spots.length + results.events.length + results.blogs.length + results.threads.length + communityCount
   const isBrowsingBlogs = initialType === 'blogs' && !query.trim()
   const isVisitorBlogDirectory = pathname.startsWith('/info/visitor/') && isBrowsingBlogs
+  const shouldPaginateBlogs = searchPath === '/info/visitor/search' && activeTab === 'blogs'
+  const blogPageCount = Math.max(1, Math.ceil(results.blogs.length / BLOGS_PAGE_SIZE))
+  const currentBlogPage = Math.min(blogPage, blogPageCount)
+  const visibleBlogs = activeTab === 'all'
+    ? results.blogs.slice(0, 4)
+    : shouldPaginateBlogs
+      ? results.blogs.slice((currentBlogPage - 1) * BLOGS_PAGE_SIZE, currentBlogPage * BLOGS_PAGE_SIZE)
+      : results.blogs
 
   const tabs = [
     { id: 'all', label: 'All', count: totalCount },
@@ -1089,7 +1114,7 @@ function SearchContentView() {
                   {isVisitorBlogDirectory ? 'Stories' : 'Blogs'} ({results.blogs.length})
                 </h2>
                 <div className={isVisitorBlogDirectory ? `${styles.blogCardGrid} ${styles.blogResultsGrid}` : 'usr-card space-y-1.5 p-1.5'}>
-                  {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog, index) => {
+                  {visibleBlogs.map((blog, index) => {
                     const blogImage = getBlogImage(blog)
                     const author = getAuthor(blog.created_by)
                     return (
@@ -1151,6 +1176,15 @@ function SearchContentView() {
                     )
                   })}
                 </div>
+                {shouldPaginateBlogs && (
+                  <VisitorPagination
+                    page={currentBlogPage}
+                    totalItems={results.blogs.length}
+                    pageSize={BLOGS_PAGE_SIZE}
+                    onPageChange={setBlogPage}
+                    itemLabel="blogs"
+                  />
+                )}
               </section>
             )}
 

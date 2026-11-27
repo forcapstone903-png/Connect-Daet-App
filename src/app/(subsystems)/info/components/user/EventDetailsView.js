@@ -791,10 +791,12 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
       </div>
       <header className="event-detail-header">
         <div className="event-detail-header-inner">
-          <button type="button" onClick={goBack} className="event-detail-back" aria-label="Go back">
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-            <span className="event-detail-back-label">Back</span>
-          </button>
+          {eventRouteBase === '/info/user/events' && (
+            <button type="button" onClick={goBack} className="event-detail-back" aria-label="Go back">
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              <span className="event-detail-back-label">Back</span>
+            </button>
+          )}
           <Link href={backHref} className="event-detail-brand">
             <img src="/logo.png" alt="" />
             <span>Connect Daet</span>
@@ -892,21 +894,19 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
                 </button>
               )}
 
-              {!commentsSheetOpen && (
-                <section className="event-detail-engagement event-detail-engagement-secondary" aria-label="Event interactions">
-                  {userId ? renderEventEngagementActions(menuRef, true) : (
-                    <div className="event-detail-engagement-group">
-                      <button type="button" onClick={openCommentsSheet} aria-label={`View ${commentCount} comments`} title="Comments">
-                        <MessageCircle aria-hidden="true" /><span>{commentCount}</span>
-                      </button>
-                    </div>
-                  )}
-                </section>
-              )}
+              <section className="event-detail-engagement event-detail-engagement-secondary" aria-label="Event interactions">
+                {userId ? renderEventEngagementActions(menuRef, true) : (
+                  <div className="event-detail-engagement-group">
+                    <button type="button" onClick={scrollToComments} aria-label={`View ${commentCount} comments`} title="Comments">
+                      <MessageCircle aria-hidden="true" /><span>{commentCount}</span>
+                    </button>
+                  </div>
+                )}
+              </section>
             </header>
           </div>
 
-          {userId && !commentsSheetOpen && (
+          {userId && (
             <section className="event-detail-engagement" aria-label="Event interactions">
               {renderEventEngagementActions(menuRef)}
             </section>
