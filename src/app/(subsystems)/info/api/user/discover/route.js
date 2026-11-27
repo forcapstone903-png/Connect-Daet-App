@@ -65,7 +65,7 @@ export async function GET(request) {
         ? db.from('user_blocks').select('blocker_id,blocked_id').or(`blocker_id.eq.${userId},blocked_id.eq.${userId}`)
         : { data: [], error: null },
       userId
-        ? db.from('info_users').select('id,city,country,address').eq('id', userId).maybeSingle()
+        ? db.from('info_users').select('city').eq('id', userId).maybeSingle()
         : { data: null, error: null },
     ])
 

@@ -132,7 +132,11 @@ export default function AdminSettingsOverview() {
                     <p className="mt-1 text-xs text-slate-600">{check.detail}</p>
                   </div>
                 ))}
-                {!health && healthLoading && <p className="text-sm text-slate-500">Running connectivity checks…</p>}
+                {!health && healthLoading && (
+                  <div className="space-y-2" aria-label="Loading connectivity checks">
+                    {[0, 1, 2].map((item) => <div key={item} className="h-4 animate-pulse rounded-full bg-slate-100" />)}
+                  </div>
+                )}
               </div>
               {health?.checkedAt && <p className="mt-3 text-xs text-slate-500">Checked {new Date(health.checkedAt).toLocaleString()}</p>}
             </section>

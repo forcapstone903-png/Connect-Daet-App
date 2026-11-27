@@ -2,12 +2,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import sanitizeHtml from 'sanitize-html'
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminBadge, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { AdminBadge, AdminPageHeader, AdminPageSkeleton, AdminPanelSkeleton } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -33,6 +33,7 @@ const isUrgentInquiry = (inquiry) => {
 
 export default function AdminModerationPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   
@@ -45,7 +46,12 @@ export default function AdminModerationPage() {
   const [answeredInquiries, setAnsweredInquiries] = useState([]);
   
   // UI State
-  const [activeTab, setActiveTab] = useState('posts');
+  const activeTab = pathname === '/info/admin/post-moderation'
+    ? 'posts'
+    : pathname === '/info/admin/inquiry-forum'
+      ? 'inquiries'
+      : 'reports';
+  const [reportsSubtab, setReportsSubtab] = useState('reports');
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedInquiry, setSelectedInquiry] = useState(null);
   const [showPostModal, setShowPostModal] = useState(false);
@@ -74,7 +80,6 @@ export default function AdminModerationPage() {
   const [moderationLog, setModerationLog] = useState([]);
   const [reportQueue, setReportQueue] = useState([]);
   const [previewedReport, setPreviewedReport] = useState(null);
-  const [pendingSubmissions, setPendingSubmissions] = useState([]);
   const [editingReport, setEditingReport] = useState(null);
   const [reportEditValues, setReportEditValues] = useState({});
   const [reportEditReason, setReportEditReason] = useState('');
@@ -112,11 +117,17 @@ export default function AdminModerationPage() {
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get('tab')
-    if (!['posts', 'inquiries', 'reports'].includes(tab)) return
+    const destinations = {
+      posts: '/info/admin/post-moderation',
+      inquiries: '/info/admin/inquiry-forum',
+    }
+    if (!destinations[tab]) return
 
-    const timeoutId = window.setTimeout(() => setActiveTab(tab), 0)
-    return () => window.clearTimeout(timeoutId)
-  }, [])
+    const searchParams = new URLSearchParams(window.location.search)
+    searchParams.delete('tab')
+    const query = searchParams.toString()
+    router.replace(`${destinations[tab]}${query ? `?${query}` : ''}`)
+  }, [router])
 
   const showToast = useCallback((message, isError = false) => {
     setToastMessage(null);
@@ -133,7 +144,6 @@ export default function AdminModerationPage() {
     setBlockedUsers(result.blockedUsers || []);
     setModerationLog(result.logs || []);
     setReportQueue(result.reports || []);
-    setPendingSubmissions(result.pendingSubmissions || []);
     setAppeals(result.appeals || []);
     setProfanityTerms(result.profanityTerms || []);
     setProfanityTermsText((result.profanityTerms || []).join('\n'));
@@ -1074,15 +1084,19 @@ export default function AdminModerationPage() {
     return '';
   };
 
+  const openAppealsCount = appeals.filter((appeal) => (
+    ['pending', 'under_review', 'more_information_required'].includes(appeal.status)
+  )).length;
+  const reportsSections = [
+    { id: 'reports', label: 'Open reports', count: reportQueue.length },
+    { id: 'accounts', label: 'Restricted accounts', count: blockedUsers.length },
+    { id: 'appeals', label: 'Appeals', count: openAppealsCount },
+    { id: 'policies', label: 'Safety policies' },
+    { id: 'history', label: 'History', count: moderationLog.length },
+  ];
+
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading moderation panel...</p>
-        </div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="dashboard" />;
   }
 
   return (
@@ -1093,69 +1107,41 @@ export default function AdminModerationPage() {
       <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         <AdminPageHeader
           eyebrow="Trust & safety"
-          title="Content moderation center"
-          description="Review user posts, manage forum inquiries, and keep community content quality high."
+          title={activeTab === 'posts'
+            ? 'Post moderation'
+            : activeTab === 'inquiries'
+              ? 'Inquiry forum'
+              : 'Reports & restrictions'}
+          description={activeTab === 'posts'
+            ? 'Review pending and flagged community posts.'
+            : activeTab === 'inquiries'
+              ? 'Respond to open and in-progress community inquiries.'
+              : 'Review reports, account restrictions, appeals, and moderation history.'}
           icon="moderation"
           meta={
             <>
-              <AdminBadge tone="warning">Pending posts {stats.pendingCount}</AdminBadge>
-              <AdminBadge tone="danger">Flagged posts {stats.flaggedCount}</AdminBadge>
-              <AdminBadge tone="info">Open inquiries {stats.openInquiries}</AdminBadge>
-              <AdminBadge tone="success">Avg response {stats.avgResponseTime || 'N/A'}</AdminBadge>
+              {activeTab === 'posts' && (
+                <>
+                  <AdminBadge tone="warning">Pending posts {stats.pendingCount}</AdminBadge>
+                  <AdminBadge tone="danger">Flagged posts {stats.flaggedCount}</AdminBadge>
+                </>
+              )}
+              {activeTab === 'inquiries' && (
+                <>
+                  <AdminBadge tone="info">Open inquiries {stats.openInquiries}</AdminBadge>
+                  <AdminBadge tone="success">Avg response {stats.avgResponseTime || 'N/A'}</AdminBadge>
+                </>
+              )}
+              {activeTab === 'reports' && (
+                <>
+                  <AdminBadge tone="warning">Open reports {reportQueue.length}</AdminBadge>
+                  <AdminBadge tone="danger">Restricted accounts {blockedUsers.length}</AdminBadge>
+                  <AdminBadge tone="success">Open appeals {openAppealsCount}</AdminBadge>
+                </>
+              )}
             </>
           }
         />
-
-        {/* Tab Navigation */}
-        <div className="admin-panel mb-6">
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('posts')}
-              className={`px-6 py-3 font-medium text-sm transition-colors ${
-                activeTab === 'posts'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Post Moderation
-              {stats.pendingCount > 0 && (
-                <span className="ml-2 bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">
-                  {stats.pendingCount}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('inquiries')}
-              className={`px-6 py-3 font-medium text-sm transition-colors ${
-                activeTab === 'inquiries'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Inquiry Forum
-              {stats.openInquiries > 0 && (
-                <span className="ml-2 bg-red-100 text-red-700 text-xs px-2 py-0.5 rounded-full">
-                  {stats.openInquiries}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setActiveTab('reports')}
-              className={`px-6 py-3 font-medium text-sm transition-colors ${
-                activeTab === 'reports'
-                  ? 'text-blue-600 border-b-2 border-blue-600'
-                  : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Reports & restrictions
-              {reportQueue.length > 0 && (
-                <span className="ml-2 bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">
-                  {reportQueue.length}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
 
         {/* POST MODERATION SECTION */}
         {activeTab === 'posts' && (
@@ -1424,6 +1410,47 @@ export default function AdminModerationPage() {
 
         {activeTab === 'reports' && (
           <div className="space-y-6">
+            <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+              <div className="flex min-w-max border-b border-gray-200" role="tablist" aria-label="Reports and restrictions sections">
+                {reportsSections.map((section) => {
+                  const selected = reportsSubtab === section.id;
+                  return (
+                    <button
+                      key={section.id}
+                      id={`reports-tab-${section.id}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      aria-controls="reports-section-panel"
+                      onClick={() => setReportsSubtab(section.id)}
+                      className={`inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-sm font-medium transition-colors ${
+                        selected
+                          ? 'border-blue-600 text-blue-700'
+                          : 'border-transparent text-gray-500 hover:text-gray-800'
+                      }`}
+                    >
+                      {section.label}
+                      {section.count > 0 && (
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${
+                          selected ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {section.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div
+              id="reports-section-panel"
+              role="tabpanel"
+              aria-labelledby={`reports-tab-${reportsSubtab}`}
+              className="space-y-6"
+            >
+            {reportsSubtab === 'policies' && (
+              <>
             <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-800">Low-risk auto-publishing</h2>
               <p className="mt-1 text-sm text-gray-500">
@@ -1502,7 +1529,10 @@ export default function AdminModerationPage() {
                 </button>
               </div>
             </section>
+              </>
+            )}
 
+            {reportsSubtab === 'reports' && (
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-lg font-semibold text-gray-800">Open user reports</h2>
               {reportQueue.length ? (
@@ -1639,45 +1669,9 @@ export default function AdminModerationPage() {
                 </div>
               ) : <p className="text-sm text-gray-500">No open reports.</p>}
             </section>
+            )}
 
-            <section className="rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
-              <h2 className="mb-4 text-lg font-semibold text-gray-800">Pending community submissions</h2>
-              {pendingSubmissions.filter((item) => item.table !== 'info_user_posts').length ? (
-                <div className="space-y-3">
-                  {pendingSubmissions.filter((item) => item.table !== 'info_user_posts').map((submission) => (
-                    <article key={`${submission.table}-${submission.id}`} className="rounded-xl border border-gray-200 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-gray-800">{submission.label}</p>
-                          <p className="mt-1 text-xs text-gray-500">
-                            {submission.author?.full_name || submission.author?.email || 'Community member'} · {new Date(submission.created_at).toLocaleString()}
-                          </p>
-                          <p className="mt-2 whitespace-pre-wrap break-words text-sm text-gray-700">{submission.title}</p>
-                          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-gray-600">{submission.content}</p>
-                        </div>
-                        <div className="flex shrink-0 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => void reviewSubmission(submission, 'approve')}
-                            className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void reviewSubmission(submission, 'reject')}
-                            className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : <p className="text-sm text-gray-500">No pending forum topics.</p>}
-            </section>
-
+            {reportsSubtab === 'accounts' && (
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-lg font-semibold text-gray-800">Restricted users</h2>
               {blockedUsers.length ? (
@@ -1708,7 +1702,9 @@ export default function AdminModerationPage() {
                 </div>
               ) : <p className="text-sm text-gray-500">No users are currently restricted.</p>}
             </section>
+            )}
 
+            {reportsSubtab === 'appeals' && (
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-lg font-semibold text-gray-800">Account and posting restriction appeals</h2>
               {appeals.length ? (
@@ -1774,7 +1770,9 @@ export default function AdminModerationPage() {
                 </div>
               ) : <p className="text-sm text-gray-500">No appeals on record.</p>}
             </section>
+            )}
 
+            {reportsSubtab === 'history' && (
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h2 className="mb-4 text-lg font-semibold text-gray-800">Moderation history</h2>
               {moderationLog.length ? (
@@ -1797,6 +1795,8 @@ export default function AdminModerationPage() {
                 </div>
               ) : <p className="text-sm text-gray-500">No moderation actions recorded yet.</p>}
             </section>
+            )}
+            </div>
           </div>
         )}
 
@@ -2211,7 +2211,10 @@ export default function AdminModerationPage() {
             </div>
 
             {loadingAccountReview ? (
-              <p className="py-16 text-center text-sm text-slate-500">Loading account review...</p>
+              <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]" aria-label="Loading account review">
+                <div className="space-y-5"><AdminPanelSkeleton rows={5} /><AdminPanelSkeleton rows={4} /></div>
+                <AdminPanelSkeleton rows={4} />
+              </div>
             ) : accountReview ? (
               <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="min-w-0 space-y-5">
@@ -2544,7 +2547,9 @@ export default function AdminModerationPage() {
               </div>
             )}
             {loadingPostingHistory ? (
-              <p className="py-8 text-center text-sm text-gray-500">Loading history...</p>
+              <div className="space-y-3 py-4" aria-label="Loading posting history">
+                {[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100" />)}
+              </div>
             ) : postingHistory.length ? (
               <div className="divide-y divide-gray-100">
                 {postingHistory.map((item) => (

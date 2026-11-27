@@ -75,7 +75,24 @@ export default function PublicAlertsPage() {
                   </select>
                 </label>
               </div>
-              {loading ? null : filteredPast.length ? (
+              {loading ? (
+                <div role="status" className="mt-3 space-y-2">
+                  <span className="sr-only">Loading past alerts</span>
+                  {[1, 2, 3].map((item) => (
+                    <div key={item} aria-hidden="true" className="flex animate-pulse gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="mt-0.5 h-5 w-5 shrink-0 rounded-full bg-slate-200" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex gap-2">
+                          <div className="h-4 w-16 rounded-full bg-slate-200" />
+                          <div className="h-4 w-24 rounded-full bg-slate-200" />
+                        </div>
+                        <div className="h-4 w-3/4 rounded-full bg-slate-200" />
+                        <div className="h-3 w-1/2 rounded-full bg-slate-200" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : filteredPast.length ? (
                 <ul className="mt-3 space-y-2">
                   {filteredPast.map((alert) => <li key={alert.id}><AlertCard alert={alert} categoryName={categoryName} now={now} compact /></li>)}
                 </ul>

@@ -169,9 +169,11 @@ const staffNavigationSections = [
     id: 'moderation',
     label: 'Moderation',
     modules: [
-      { id: 'reported-content', label: 'Reported Content', iconName: 'moderation', href: '/info/admin/moderation', exact: true },
+      { id: 'reported-content', label: 'Post Moderation', iconName: 'moderation', href: '/info/admin/post-moderation', exact: true },
+      { id: 'inquiry-forum', label: 'Inquiry Forum', iconName: 'forum', href: '/info/admin/inquiry-forum', exact: true },
+      { id: 'forum-submissions', label: 'Forum Submissions', iconName: 'content', href: '/info/admin/forum-submissions', exact: true },
       { id: 'suspension-reviews', label: 'Account Suspension Reviews', iconName: 'shield-check', href: '/info/admin/suspension-reviews' },
-      { id: 'account-review', label: 'Account Review', iconName: 'users', href: '/info/admin/moderation?tab=reports', ignoreQuery: true },
+      { id: 'account-review', label: 'Reports & Restrictions', iconName: 'users', href: '/info/admin/moderation', exact: true },
       { id: 'suspension-review', label: 'Suspension Review', iconName: 'moderation', href: '/info/admin/suspension-cases', visibleFor: ['tourism_officer'] },
       { id: 'moderation-notifications', label: 'Post Notifications', iconName: 'notifications', badgeKey: 'unreadNotifications', href: '/info/admin/moderation/notifications' },
       { id: 'community-guidelines', label: 'Community Guidelines', iconName: 'content', href: '/info/admin/community-guidelines' },
@@ -237,7 +239,25 @@ const staffNavigationSections = [
 
 export default function AdminSidebar(props) {
   return (
-    <Suspense fallback={<div className="admin-sidebar-drawer fixed inset-y-0 left-0 z-30 w-72 bg-slate-950" aria-hidden="true" />}>
+    <Suspense fallback={(
+      <div className="admin-sidebar-drawer fixed inset-y-0 left-0 z-30 hidden w-[var(--admin-sidebar-width)] border-r border-slate-200 bg-white p-5 lg:block" aria-hidden="true">
+        <div className="flex items-center gap-3 border-b border-slate-100 pb-5">
+          <div className="h-10 w-10 animate-pulse rounded-xl bg-slate-200" />
+          <div className="space-y-2">
+            <div className="h-3 w-28 animate-pulse rounded-full bg-slate-200" />
+            <div className="h-2 w-20 animate-pulse rounded-full bg-slate-100" />
+          </div>
+        </div>
+        <div className="mt-6 space-y-3">
+          {[0, 1, 2, 3, 4, 5, 6, 7].map((item) => (
+            <div key={item} className="flex items-center gap-3 rounded-xl px-3 py-3">
+              <div className="h-5 w-5 animate-pulse rounded-md bg-slate-200" />
+              <div className="h-3 animate-pulse rounded-full bg-slate-100" style={{ width: `${80 + (item % 3) * 18}px` }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    )}>
       <AdminSidebarContent {...props} />
     </Suspense>
   )
@@ -383,11 +403,16 @@ function AdminSidebarContent({ user, roleLabel: pageRoleLabel = 'System Administ
       }
     }
 
+    const handleStaffNotificationCount = (event) => {
+      const count = Number(event?.detail?.unreadCount)
+      if (active && Number.isFinite(count)) setUnreadNotifications(count)
+    }
+
+    window.addEventListener('daet-staff-notifications-updated', handleStaffNotificationCount)
     void loadUnreadNotifications()
-    const intervalId = window.setInterval(loadUnreadNotifications, 30_000)
     return () => {
       active = false
-      window.clearInterval(intervalId)
+      window.removeEventListener('daet-staff-notifications-updated', handleStaffNotificationCount)
     }
   }, [userRole])
 

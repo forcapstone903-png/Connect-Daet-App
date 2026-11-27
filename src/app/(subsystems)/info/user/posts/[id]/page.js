@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
-import { ArrowLeft, CalendarDays, Clock3, FileText, Loader, MessageCircle, UserRound } from 'lucide-react'
+import { ArrowLeft, CalendarDays, Clock3, FileText, MessageCircle, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import Comments from '@/app/(subsystems)/info/components/user/Comments'
 import { isImageAttachment, parsePostContent } from '@/lib/postContent'
@@ -57,10 +57,26 @@ export default function UserPostDetailPage() {
   }, [postId])
 
   if (loading) return (
-    <main className="tourism-shell usr-section-page usr-detail flex min-h-screen items-center justify-center p-6">
-      <div className="usr-card usr-pop-in p-6 text-center">
-        <Loader className="usr-spin mx-auto mb-3 h-6 w-6 text-teal-700" />
-        <p className="text-sm font-semibold text-slate-600">Loading this post...</p>
+    <main className="tourism-shell usr-section-page usr-detail min-h-screen p-4 sm:p-6" role="status" aria-label="Loading post">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-5 h-10 w-32 animate-pulse rounded-full bg-slate-200" aria-hidden="true" />
+        <div className="grid min-w-0 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:gap-7">
+          <article className="usr-card min-w-0 animate-pulse overflow-hidden p-5 sm:p-7" aria-hidden="true">
+            <div className="h-5 w-1/3 rounded bg-slate-200" />
+            <div className="mt-4 h-8 w-4/5 rounded-lg bg-slate-200" />
+            <div className="mt-3 h-4 w-1/2 rounded bg-slate-100" />
+            <div className="mt-7 space-y-3">
+              <div className="h-4 w-full rounded bg-slate-100" />
+              <div className="h-4 w-full rounded bg-slate-100" />
+              <div className="h-4 w-4/5 rounded bg-slate-100" />
+            </div>
+            <div className="mt-6 h-56 rounded-2xl bg-slate-100" />
+          </article>
+          <aside className="space-y-5" aria-hidden="true">
+            <div className="usr-card h-40 animate-pulse" />
+            <div className="usr-card h-56 animate-pulse" />
+          </aside>
+        </div>
       </div>
     </main>
   )

@@ -174,11 +174,27 @@ export default function EditProfilePage() {
   if (loading) return (
     <main className="tourism-shell usr-section-page usr-profile min-h-screen">
       <UserTopHeader />
-      <div className="flex min-h-[calc(100vh-90px)] items-center justify-center p-6">
-      <div className="usr-card usr-pop-in p-6 text-center">
-        <span className="usr-spin mx-auto mb-3 flex h-6 w-6 rounded-full border-2 border-teal-700 border-t-transparent" />
-        <p className="text-sm font-semibold text-slate-600">Loading profile...</p>
-      </div>
+      <div className="usr-section-container mx-auto max-w-4xl px-3 pb-24 pt-2 sm:px-5 lg:px-6" role="status" aria-label="Loading profile">
+        <div className="usr-card mb-6 animate-pulse p-6" aria-hidden="true">
+          <div className="h-3 w-28 rounded-full bg-slate-200" />
+          <div className="mt-3 h-8 w-1/2 rounded-lg bg-slate-200" />
+          <div className="mt-3 h-3 w-3/4 rounded-full bg-slate-100" />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]" aria-hidden="true">
+          <aside className="usr-card animate-pulse p-5">
+            <div className="mx-auto h-32 w-32 rounded-full bg-slate-200" />
+            <div className="mx-auto mt-4 h-5 w-2/3 rounded bg-slate-200" />
+            <div className="mt-5 h-10 rounded-xl bg-slate-100" />
+            <div className="mt-2 h-10 rounded-xl bg-slate-100" />
+          </aside>
+          <section className="usr-card animate-pulse p-4 sm:p-6">
+            <div className="h-6 w-2/3 rounded bg-slate-200" />
+            <div className="mt-3 h-4 w-full rounded bg-slate-100" />
+            <div className="mt-6 space-y-4">
+              {[0, 1, 2, 3].map((item) => <div key={item} className="h-12 rounded-xl bg-slate-100" />)}
+            </div>
+          </section>
+        </div>
       </div>
     </main>
   )
@@ -228,7 +244,9 @@ export default function EditProfilePage() {
                 <p className="mt-2 text-sm leading-6 text-slate-500">Choose what you enjoy to refresh recommendations for stories, people, places, and events.</p>
               </div>
               {interestsLoading ? (
-                <p className="py-4 text-sm text-slate-500" role="status">Loading your saved interests...</p>
+                <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-3" role="status" aria-label="Loading saved interests">
+                  {Array.from({ length: 9 }, (_, item) => <div key={item} className="h-10 animate-pulse rounded-xl bg-slate-100" aria-hidden="true" />)}
+                </div>
               ) : interestsLoadError ? (
                 <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
                   <p>{interestsLoadError}</p>

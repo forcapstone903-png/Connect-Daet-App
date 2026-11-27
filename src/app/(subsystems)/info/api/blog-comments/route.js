@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { normalizeStaffRole } from '@/lib/staffRoles.mjs'
 import { parseMentionCandidates } from '@/lib/mentions'
 import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
 import { publicErrorMessage } from '@/lib/publicError'
@@ -25,11 +26,12 @@ export async function GET(request) {
   if (!blogId) return NextResponse.json({ success: false, message: 'Blog id is required.' }, { status: 400 })
 
   try {
-    const viewerId = getServerSession(request)?.user_id || null
+    const session = getServerSession(request)
+    const viewerId = session?.user_id || null
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
     const { data: blog, error: blogError } = await adminSupabase
       .from('info_blogs')
-      .select('id')
+      .select('id, created_by')
       .eq('id', blogId)
       .eq('status', 'published')
       .eq('approval_status', 'approved')
@@ -44,8 +46,13 @@ export async function GET(request) {
       .eq('blog_id', blogId)
       .order('created_at', { ascending: false })
 
-    if (viewerId) query = query.or(`status.eq.approved,user_id.eq.${viewerId}`)
-    else query = query.eq('status', 'approved')
+    const canSeeAllComments = viewerId && (
+      viewerId === blog.created_by || normalizeStaffRole(session?.role) === 'admin'
+    )
+    if (!canSeeAllComments) {
+      if (viewerId) query = query.or(`status.neq.rejected,user_id.eq.${viewerId}`)
+      else query = query.neq('status', 'rejected')
+    }
 
     const { data, error } = await query
     if (error) throw error
@@ -53,6 +60,93 @@ export async function GET(request) {
   } catch (error) {
     console.error('Blog comments load failed:', error.message || error)
     return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to load comments.') }, { status: 500 })
+  }
+}
+
+export async function DELETE(request) {
+  const session = getServerSession(request)
+  if (!session?.user_id) {
+    return NextResponse.json({ success: false, message: 'Please sign in to delete a comment.' }, { status: 401 })
+  }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (!supabaseUrl || !serviceRoleKey) {
+    return NextResponse.json({ success: false, message: 'Comment service is not configured.' }, { status: 500 })
+  }
+
+  const params = new URL(request.url).searchParams
+  const commentId = params.get('commentId')?.trim()
+  if (!commentId) {
+    return NextResponse.json({ success: false, message: 'Comment id is required.' }, { status: 400 })
+  }
+
+  try {
+    const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
+    const { data: comment, error: commentError } = await adminSupabase
+      .from('info_comments')
+      .select('id, blog_id, user_id')
+      .eq('id', commentId)
+      .maybeSingle()
+    if (commentError) throw commentError
+    if (!comment) return NextResponse.json({ success: false, message: 'Comment not found.' }, { status: 404 })
+
+    const requestedBlogId = params.get('blogId')?.trim()
+    if (requestedBlogId && requestedBlogId !== comment.blog_id) {
+      return NextResponse.json({ success: false, message: 'Comment not found for this blog.' }, { status: 404 })
+    }
+
+    const { data: blog, error: blogError } = await adminSupabase
+      .from('info_blogs')
+      .select('id, created_by, comments_count')
+      .eq('id', comment.blog_id)
+      .maybeSingle()
+    if (blogError) throw blogError
+    if (!blog) return NextResponse.json({ success: false, message: 'Blog not found.' }, { status: 404 })
+
+    const isAdmin = normalizeStaffRole(session.role) === 'admin'
+    if (!isAdmin && blog.created_by !== session.user_id) {
+      return NextResponse.json({ success: false, message: 'Only the blog owner or an admin can delete this comment.' }, { status: 403 })
+    }
+
+    const { data: deleted, error: deleteError } = await adminSupabase
+      .from('info_comments')
+      .delete()
+      .eq('id', commentId)
+      .eq('blog_id', comment.blog_id)
+      .select('id')
+      .maybeSingle()
+    if (deleteError) throw deleteError
+    if (!deleted) return NextResponse.json({ success: false, message: 'Comment was already removed.' }, { status: 404 })
+
+    const warnings = []
+    const { error: countError } = await adminSupabase
+      .from('info_blogs')
+      .update({ comments_count: Math.max(0, (Number(blog.comments_count) || 0) - 1) })
+      .eq('id', blog.id)
+    if (countError) {
+      console.error('Blog comment count update failed:', countError)
+      warnings.push('The comment was removed, but the comment count could not be updated.')
+    }
+
+    if (isAdmin) {
+      const { error: auditError } = await adminSupabase.from('info_audit_log').insert({
+        user_id: session.user_id,
+        action: 'admin_deleted_blog_comment',
+        table_name: 'info_comments',
+        record_id: comment.id,
+        changes: { blogId: comment.blog_id, commentAuthorId: comment.user_id },
+      })
+      if (auditError) {
+        console.error('Blog comment deletion audit failed:', auditError)
+        warnings.push('The comment was removed, but the activity log could not be saved.')
+      }
+    }
+
+    return NextResponse.json({ success: true, commentId, warning: warnings.join(' ') || undefined })
+  } catch (error) {
+    console.error('Blog comment deletion failed:', error.message || error)
+    return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to delete the comment.') }, { status: 500 })
   }
 }
 

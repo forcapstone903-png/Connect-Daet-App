@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 
 export default function AnnouncementsTicker() {
   const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const load = async () => {
@@ -13,18 +14,25 @@ export default function AnnouncementsTicker() {
         setItems(data || [])
       } catch (e) {
         console.error('Error loading announcements', e)
+      } finally {
+        setLoading(false)
       }
     }
     load()
   }, [])
 
-  if (!items.length) return null
+  if (!items.length && !loading) return null
 
   return (
     <div className="rounded-2xl bg-white p-3 shadow-sm border border-gray-200">
       <div className="text-sm text-gray-600 font-semibold mb-2">Latest Announcements</div>
       <div className="space-y-1 text-sm text-gray-700">
-        {items.map(a => (<div key={a.id}>{a.title}</div>))}
+        {loading ? (
+          <div role="status" className="space-y-2">
+            <span className="sr-only">Loading announcements</span>
+            {[1, 2, 3].map((item) => <div key={item} aria-hidden="true" className="h-4 w-4/5 animate-pulse rounded-full bg-gray-200" />)}
+          </div>
+        ) : items.map(a => (<div key={a.id}>{a.title}</div>))}
       </div>
     </div>
   )

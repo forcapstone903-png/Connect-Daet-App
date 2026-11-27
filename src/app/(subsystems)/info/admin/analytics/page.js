@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPageSkeleton, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStaffRoleLabel, normalizeStaffRole } from '@/lib/staffRoles.mjs'
 import { getStoredSession } from '@/lib/authCookies';
@@ -178,14 +178,7 @@ export default function AnalyticsAndReportsPage() {
   }, [loading, router]);
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-emerald-600" />
-          <p className="mt-4 font-medium text-slate-600">Preparing analytics dashboard...</p>
-        </div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="dashboard" />;
   }
 
   return (

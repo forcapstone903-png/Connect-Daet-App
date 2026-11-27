@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import UserSectionHeader from '@/app/(subsystems)/info/components/user/UserSectionHeader'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Bell, Loader, MessageCircle, Zap } from 'lucide-react'
+import { AlertCircle, Bell, MessageCircle, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
@@ -107,10 +107,22 @@ export default function UserAnnouncementsPage() {
 
   if (authChecking) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-[#f3f5f9]">
-        <div className="rounded-[24px] border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <Loader className="mx-auto mb-4 animate-spin text-slate-600" />
-          <p className="text-slate-600">Loading...</p>
+      <main className="tourism-shell usr-section-page usr-announcements min-h-screen text-slate-900" role="status" aria-label="Loading announcements">
+        <div className="usr-section-container mx-auto max-w-[1000px] px-3 pb-10 pt-3 sm:px-4 lg:px-6">
+          <div className="usr-card mb-6 animate-pulse p-5 sm:p-6">
+            <div className="h-3 w-24 rounded-full bg-slate-200" />
+            <div className="mt-3 h-8 w-2/3 rounded-lg bg-slate-200" />
+            <div className="mt-3 h-3 w-full max-w-xl rounded-full bg-slate-100" />
+          </div>
+          <div className="grid gap-4 md:grid-cols-2" aria-hidden="true">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className="animate-pulse rounded-[20px] border border-slate-200 bg-white p-5 sm:p-6">
+                <div className="h-5 w-2/3 rounded bg-slate-200" />
+                <div className="mt-4 h-3 w-full rounded bg-slate-100" />
+                <div className="mt-2 h-3 w-4/5 rounded bg-slate-100" />
+              </div>
+            ))}
+          </div>
         </div>
       </main>
     )

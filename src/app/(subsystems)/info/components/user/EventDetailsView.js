@@ -12,7 +12,6 @@ import {
   Copy,
   ExternalLink,
   Heart,
-  LoaderCircle,
   MapPin,
   MessageCircle,
   MoreHorizontal,
@@ -35,6 +34,39 @@ import ShareRepost from './ShareRepost'
 function mediaUrl(value) {
   if (Array.isArray(value)) return value.find((item) => typeof item === 'string' && item.trim()) || ''
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function EventDetailsSkeleton({ backHref }) {
+  return (
+    <main
+      className="event-detail-page event-details-light-page min-h-dvh"
+      role="status"
+      aria-label="Loading event details"
+      aria-live="polite"
+    >
+      <UserTopHeader detailMode spacer homeHref={backHref} />
+      <div className="event-detail-content mx-auto pt-2" aria-hidden="true">
+        <div className="h-6 w-32 animate-pulse rounded-full bg-slate-200" />
+        <div className="mt-4 h-[clamp(230px,70vw,420px)] animate-pulse rounded-2xl bg-slate-200" />
+        <div className="mt-6 space-y-3">
+          <div className="h-4 w-24 animate-pulse rounded-full bg-slate-200" />
+          <div className="h-9 w-3/4 animate-pulse rounded-lg bg-slate-200" />
+          <div className="h-4 w-40 animate-pulse rounded-full bg-slate-200" />
+        </div>
+        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3" aria-hidden="true">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="h-20 animate-pulse rounded-xl border border-slate-200 bg-slate-100" />
+          ))}
+        </div>
+        <div className="mt-6 space-y-3" aria-hidden="true">
+          <div className="h-5 w-36 animate-pulse rounded-lg bg-slate-200" />
+          <div className="h-3 w-full animate-pulse rounded-full bg-slate-200" />
+          <div className="h-3 w-11/12 animate-pulse rounded-full bg-slate-200" />
+          <div className="h-3 w-4/5 animate-pulse rounded-full bg-slate-200" />
+        </div>
+      </div>
+    </main>
+  )
 }
 
 function formatDate(value, options = { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) {
@@ -721,14 +753,7 @@ export default function EventDetailsView({ eventId, userId: initialUserId = '', 
   )
 
   if (loading) {
-    return (
-      <main className="event-detail-page event-details-light-page min-h-screen">
-        <div className="event-detail-loading" role="status" aria-live="polite">
-          <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
-          <span>Loading event details…</span>
-        </div>
-      </main>
-    )
+    return <EventDetailsSkeleton backHref={backHref} />
   }
 
   if (error || !event) {

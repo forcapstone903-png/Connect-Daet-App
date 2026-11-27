@@ -595,7 +595,19 @@ export default function UserTopHeader({
                       <span className="shrink-0 text-[10px] opacity-60">Person</span>
                     </UserProfileLink>
                   ))}
-                  {suggestedUsersLoading && <p className="px-3 py-2 text-xs opacity-60">Finding people…</p>}
+                  {suggestedUsersLoading && (
+                    <div role="status" aria-label="Finding people" className="space-y-3 px-3 py-2">
+                      {[0, 1, 2].map((item) => (
+                        <div key={item} className="flex items-center gap-3" aria-hidden="true">
+                          <div className="h-9 w-9 shrink-0 animate-pulse rounded-full bg-slate-200" />
+                          <div className="flex-1 space-y-2">
+                            <div className="h-3 w-3/4 animate-pulse rounded-full bg-slate-200" />
+                            <div className="h-2.5 w-1/2 animate-pulse rounded-full bg-slate-100" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {!suggestedUsersLoading && !suggestedUsers.length && <p className="px-3 py-2 text-xs opacity-60">No matching people found.</p>}
                 </div>
               )}
@@ -766,11 +778,11 @@ export default function UserTopHeader({
                                   : (actorName ? getInitials(actorName) : <TypeIcon className="h-4 w-4" aria-hidden="true" />)}
                               </span>
                               <span className="min-w-0 flex-1">
-                                <span className="block text-sm font-semibold leading-5 text-white">
+                                <span className="block text-sm font-semibold leading-5 text-slate-900 dark:text-slate-100">
                                   {title}
                                 </span>
                                 <span className="mt-1 block text-sm leading-5">
-                                  {actorName && <span className="desktop-notification-actor font-semibold text-white">{actorName} </span>}
+                                  {actorName && <span className="desktop-notification-actor font-semibold text-slate-900 dark:text-white">{actorName} </span>}
                                   {messageWithoutActor}
                                 </span>
                                 <span className="mt-1 flex items-center gap-2 text-xs text-slate-400">
@@ -880,37 +892,23 @@ export default function UserTopHeader({
       </header>}
       {!desktopOnly && showMobileHeader && (isMobileHome ? (
         <header className={`usr-fade-in fixed z-50 ${edgeToEdgeMobile ? 'inset-x-0 top-0 usr-mobile-header px-3 py-0' : 'inset-x-1 top-1 usr-mobile-header px-3 py-1'} lg:hidden`}>
-          <div className="mx-auto flex h-[90px] w-full max-w-none items-center gap-1">
+          <div className="usr-mobile-home-header-content mx-auto flex h-[100px] w-full max-w-none items-center gap-10">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('daet-toggle-desktop-navigation'))}
+              aria-label="Toggle navigation"
+              className="usr-press usr-mobile-sidebar-toggle flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-slate-200 transition hover:bg-white/10 hover:text-white"
+            >
+              <Menu className="h-6 w-6" aria-hidden="true" />
+            </button>
             <Link href={homeHref} className="usr-press flex min-w-0 flex-1 items-center gap-2">
-              <img src="/logo.png" alt="Daet tourism logo" className="h-9 w-9 shrink-0 object-contain" />
+              <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain" />
               <div className="min-w-0 flex-1 text-left">
-                <strong className="usr-mobile-header-brand-title truncate text-sm font-black tracking-tight sm:text-base">Connect Daet</strong>
+                <strong className="usr-mobile-header-brand-title truncate text-2xl font-black tracking-tight">
+                  Connect <span className="text-sky-400">Daet</span>
+                </strong>
               </div>
             </Link>
-            <div className="flex shrink-0 items-center gap-1.5">
-              <Link
-                href="/info/user/notifications"
-                aria-label={unreadAlerts > 0 ? `${t('common.notifications')}, ${unreadAlerts} unread` : t('common.notifications')}
-                title={t('common.notifications')}
-                className="usr-press relative flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700 dark:hover:bg-slate-700 dark:hover:text-blue-300"
-              >
-                <Bell className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
-                {unreadAlerts > 0 && (
-                  <span aria-hidden="true" className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-red-600 px-1 text-[10px] font-bold leading-none text-white dark:border-slate-900">
-                    {unreadAlerts > 99 ? '99+' : unreadAlerts}
-                  </span>
-                )}
-              </Link>
-              <Link
-                href="/info/user/rewards"
-                aria-label={`${t('common.rewards')}: ${userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} points`}
-                title={t('common.rewards')}
-                className="usr-mobile-rewards-trigger usr-press flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-blue-700 transition hover:bg-blue-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
-              >
-                <Trophy className="h-4 w-4 shrink-0" aria-hidden="true" />
-                <span className="text-xs font-extrabold tabular-nums">{userPoints.toLocaleString('en-US', { maximumFractionDigits: 2 })} pts</span>
-              </Link>
-            </div>
           </div>
         </header>
       ) : (
@@ -944,7 +942,7 @@ export default function UserTopHeader({
           </div>
         </header>
       ))}
-      {!desktopOnly && showMobileHeader && spacer && <div aria-hidden="true" className={`user-top-header-spacer lg:h-16 ${isMobileHome ? 'h-[90px]' : 'h-16'}`} />}
+      {!desktopOnly && showMobileHeader && spacer && <div aria-hidden="true" className={`user-top-header-spacer lg:h-16 ${isMobileHome ? 'h-[100px]' : 'h-16'}`} />}
       {appearanceOpen && typeof document !== 'undefined' ? createPortal(
         <div className="settings-appearance-overlay">
           <div

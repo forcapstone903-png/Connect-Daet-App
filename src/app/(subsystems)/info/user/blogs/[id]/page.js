@@ -29,6 +29,7 @@ import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { invalidateCachePrefix } from '@/lib/cache'
 import { getStoryRecommendationCategories } from '@/lib/userInterests'
 import { getAuthorDisplayName } from '@/lib/userSocialDisplay'
+import { normalizeStaffRole } from '@/lib/staffRoles.mjs'
 import Reactions from '@/app/(subsystems)/info/components/user/Reactions'
 import MentionText from '@/app/(subsystems)/info/components/user/MentionText'
 import MentionsAutoSuggest from '@/app/(subsystems)/info/components/user/MentionsAutoSuggest'
@@ -146,6 +147,7 @@ export default function BlogDetailPage() {
   const [commentReloadKey, setCommentReloadKey] = useState(0)
   const [loading, setLoading] = useState(true)
   const [userId, setUserId] = useState(null)
+  const [userRole, setUserRole] = useState('')
   const [userName, setUserName] = useState('Guest')
   const [userProfileImage, setUserProfileImage] = useState('')
   const [isSaved, setIsSaved] = useState(false)
@@ -183,6 +185,7 @@ export default function BlogDetailPage() {
   const articleId = blog?.id || ''
   const articleAuthorId = blog?.created_by || blog?.info_users?.id || ''
   const articleCategory = blog?.category || ''
+  const isAdmin = normalizeStaffRole(userRole) === 'admin'
   const blogLoadError = blogLoadIssue.blogId === blogId ? blogLoadIssue.message : ''
 
   useEffect(() => {
@@ -195,13 +198,14 @@ export default function BlogDetailPage() {
         const cookieSession = getAuthCookieFromDocument()
         const currentUserId = session?.user?.id || cookieSession?.user_id || null
         if (currentUserId) {
+          setUserRole(cookieSession?.role || cookieSession?.user_type || session?.user?.user_metadata?.user_type || '')
           const fullName = session?.user?.user_metadata?.full_name || cookieSession?.user_name || session?.user?.email || cookieSession?.user_email || 'Guest'
           setUserName(fullName)
           setUserId(currentUserId)
 
           const { data: currentProfile, error: profileError } = await supabase
             .from('info_users')
-            .select('full_name, profile_image_url')
+            .select('full_name, profile_image_url, user_type')
             .eq('id', currentUserId)
             .maybeSingle()
           if (profileError) {
@@ -209,6 +213,7 @@ export default function BlogDetailPage() {
           } else if (currentProfile && !ignore) {
             setUserName(currentProfile.full_name?.trim() || fullName)
             setUserProfileImage(currentProfile.profile_image_url || '')
+            setUserRole(currentProfile.user_type || cookieSession?.role || '')
           }
 
           const { data: badgeData } = await supabase
@@ -795,23 +800,23 @@ export default function BlogDetailPage() {
           }))
         )
       } else {
-        const { error } = await supabase
-          .from('info_comments')
-          .delete()
-          .eq('id', comment.id)
-          .eq('user_id', userId)
-        if (error) throw error
+        const response = await fetch(
+          `/info/api/blog-comments?commentId=${encodeURIComponent(comment.id)}&blogId=${encodeURIComponent(blogId)}`,
+          { method: 'DELETE', credentials: 'same-origin' }
+        )
+        const result = await response.json().catch(() => ({}))
+        if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete comment.')
         setComments((prev) => prev
           .filter((c) => c.id !== comment.id)
           .map((c) => ({ ...c, replies: (c.replies || []).filter((reply) => reply.id !== comment.id) })))
         const nextCommentCount = Math.max(0, (blog.comments_count || 0) - 1)
-        await supabase.from('info_blogs').update({ comments_count: nextCommentCount }).eq('id', blogId)
         setBlog((prev) => ({ ...prev, comments_count: nextCommentCount }))
+        if (result.warning) alert(result.warning)
       }
       setDeletingCommentId(null)
     } catch (error) {
       console.error('Error deleting comment:', error)
-      alert('Failed to delete comment. Please try again.')
+      alert(error?.message || 'Failed to delete comment. Please try again.')
     } finally {
       setCommentModifying(false)
     }
@@ -870,7 +875,7 @@ export default function BlogDetailPage() {
             <span>{comment.created_at ? new Date(comment.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recently'}</span>
             {comment.status === 'rejected' && (
               <span className="rounded-full bg-amber-50 px-2 py-0.5 font-semibold text-amber-700 border border-amber-200">
-                Removed by moderation
+                Not visible to others
               </span>
             )}
             {comment.local && (
@@ -880,7 +885,7 @@ export default function BlogDetailPage() {
             )}
           </div>
         </div>
-        {userId === comment.user_id && (
+        {(userId === comment.user_id || (!comment.local && (isAdmin || userId === articleAuthorId))) && (
           <div className="relative flex-shrink-0">
             <button
               type="button"
@@ -896,25 +901,29 @@ export default function BlogDetailPage() {
               <>
                 <div className="fixed inset-0 z-10" onClick={() => setMenuCommentId(null)} />
                 <div className="absolute right-0 top-9 z-20 min-w-[140px] overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
-                  <button
-                    type="button"
-                    onClick={() => handleStartEditComment(comment)}
-                    disabled={commentModifying}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 hover:text-sky-700 disabled:opacity-50"
-                  >
-                    <Pencil className="h-3.5 w-3.5" /> Edit
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDeletingCommentId(deletingCommentId === comment.id ? null : comment.id)
-                      setMenuCommentId(null)
-                    }}
-                    disabled={commentModifying}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Delete
-                  </button>
+                  {userId === comment.user_id && (
+                    <button
+                      type="button"
+                      onClick={() => handleStartEditComment(comment)}
+                      disabled={commentModifying}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-sky-50 hover:text-sky-700 disabled:opacity-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                  )}
+                  {(comment.local ? userId === comment.user_id : (isAdmin || userId === articleAuthorId)) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDeletingCommentId(deletingCommentId === comment.id ? null : comment.id)
+                        setMenuCommentId(null)
+                      }}
+                      disabled={commentModifying}
+                      className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                    </button>
+                  )}
                 </div>
               </>
             )}
@@ -1424,7 +1433,25 @@ export default function BlogDetailPage() {
               <button type="button" onClick={() => setEditorialReloadKey((key) => key + 1)}>Try again</button>
             </div>
           ) : editorialLoading ? (
-            <p className="medium-article-editorial-status" role="status">Finding more stories…</p>
+            <div className="space-y-4" role="status" aria-label="Loading more stories">
+              {[0, 1].map((item) => (
+                <div key={item} className="medium-article-recommendation-section animate-pulse" aria-hidden="true">
+                  <div className="h-5 w-1/3 rounded bg-slate-200" />
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    {[0, 1].map((card) => (
+                      <div key={card} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="h-32 bg-slate-100" />
+                        <div className="space-y-2 p-4">
+                          <div className="h-4 w-3/4 rounded bg-slate-200" />
+                          <div className="h-3 w-full rounded bg-slate-100" />
+                          <div className="h-3 w-2/3 rounded bg-slate-100" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <>
               {authorBlogs.length > 0 && (

@@ -757,7 +757,21 @@ export default function RatingsReviews({ attractionId, userId, onRatingSummaryCh
       </div>
 
       {loadingReviews ? (
-        <p className="py-5 text-center text-sm text-slate-500">Loading reviews…</p>
+        <div className="mt-3 space-y-3" role="status" aria-label="Loading reviews">
+          {[0, 1, 2].map((item) => (
+            <div key={item} className="animate-pulse rounded-2xl border border-slate-200/80 bg-slate-50/80 p-3.5 sm:p-4" aria-hidden="true">
+              <div className="flex items-start gap-3">
+                <div className="h-9 w-9 shrink-0 rounded-full bg-slate-200" />
+                <div className="min-w-0 flex-1">
+                  <div className="h-3 w-1/3 rounded-full bg-slate-200" />
+                  <div className="mt-3 h-3 w-1/4 rounded-full bg-slate-100" />
+                  <div className="mt-4 h-3 w-full rounded-full bg-slate-100" />
+                  <div className="mt-2 h-3 w-4/5 rounded-full bg-slate-100" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       ) : reviews.length > 0 ? (
         <div className="mt-3 divide-y divide-slate-100">
           {reviews.map((review) => {

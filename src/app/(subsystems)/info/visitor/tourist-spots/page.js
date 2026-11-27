@@ -537,7 +537,7 @@ function PlacesDirectory() {
                     </div>
                   )}
 
-                  <div className="mt-auto flex items-center gap-1 pt-3 text-xs font-semibold text-sky-600 transition group-hover:gap-2">
+                  <div className="mt-auto ml-auto flex items-center gap-1 pt-3 text-xs font-semibold text-sky-600 transition group-hover:gap-2">
                     View Details <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </div>

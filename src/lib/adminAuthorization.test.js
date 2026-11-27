@@ -13,6 +13,7 @@ const adminApiRoot = path.join(
   'api',
   'admin'
 )
+const adminApiAuthPath = path.join(repoRoot, 'src', 'lib', 'adminApiAuth.js')
 
 let getAdminAuthorizationStatus
 
@@ -26,6 +27,15 @@ test('authorization policy distinguishes anonymous, regular, and administrator s
   assert.equal(getAdminAuthorizationStatus({ user_id: 'user-2', role: 'moderator' }), 403)
   assert.equal(getAdminAuthorizationStatus({ user_id: 'admin-1', role: 'admin' }), null)
   assert.equal(getAdminAuthorizationStatus({ user_id: 'admin-2', role: ' Administrator ' }), null)
+})
+
+test('shared admin API guard preserves its 401 and 403 response contracts', () => {
+  const source = fs.readFileSync(adminApiAuthPath, 'utf8')
+
+  assert.match(source, /status:\s*401/)
+  assert.match(source, /\{\s*success:\s*false,\s*message:\s*'User session is required\.'\s*\}/)
+  assert.match(source, /status:\s*403/)
+  assert.match(source, /\{\s*success:\s*false,\s*message:\s*'Your role does not have access to this action\.'\s*\}/)
 })
 
 test('every administrator API handler authorizes before parsing input or accessing data', () => {

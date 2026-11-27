@@ -17,8 +17,8 @@ async function getCount(client, status, adminId) {
   let query = client.from('info_blogs').select('id', { count: 'exact', head: true })
   if (status) query = query.eq('approval_status', status)
   if (status === 'approved') query = query.eq('status', 'published')
-  if (status === 'draft') query = query.eq('created_by', adminId)
-  if (!status) query = query.or(`approval_status.neq.draft,created_by.eq.${adminId}`)
+  if (status === 'draft') query = query.eq('status', 'draft').eq('created_by', adminId)
+  if (status !== 'draft') query = query.or(`and(status.neq.draft,approval_status.neq.draft),created_by.eq.${adminId}`)
   const { count, error } = await query
   if (error) throw error
   return count || 0
@@ -265,19 +265,19 @@ export async function GET(request) {
       const titleTerm = search.replace(/[\\,*()]/g, '\\$&')
       const adminId = authorization.session.user_id
       const searchFilters = [
-        `and(approval_status.neq.draft,title.ilike.*${titleTerm}*)`,
+        `and(status.neq.draft,approval_status.neq.draft,title.ilike.*${titleTerm}*)`,
         `and(created_by.eq.${adminId},title.ilike.*${titleTerm}*)`,
       ]
       if (authorIds.length) {
         const authorsFilter = `created_by.in.(${authorIds.join(',')})`
         searchFilters.push(
-          `and(approval_status.neq.draft,${authorsFilter})`,
+          `and(status.neq.draft,approval_status.neq.draft,${authorsFilter})`,
           `and(created_by.eq.${adminId},${authorsFilter})`,
         )
       }
       query = query.or(searchFilters.join(','))
     } else {
-      query = query.or(`approval_status.neq.draft,created_by.eq.${authorization.session.user_id}`)
+      query = query.or(`and(status.neq.draft,approval_status.neq.draft),created_by.eq.${authorization.session.user_id}`)
     }
     if (category) query = query.eq('category', category)
     if (submittedFrom) query = query.gte('submitted_at', `${submittedFrom}T00:00:00.000Z`)

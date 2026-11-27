@@ -97,20 +97,29 @@ export default function CommunityGuidelinesEditorPage() {
         ) : null}
         {message ? <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" role="status">{message}</p> : null}
         <AdminPanel title="Public guidelines" description="Changes are immediately visible on the public Community Guidelines page.">
-          <label htmlFor="community-guidelines-content" className="mb-2 block text-sm font-semibold text-slate-700">
-            Guidelines text
-          </label>
-          <textarea
-            id="community-guidelines-content"
-            value={content}
-            onChange={(event) => setContent(event.target.value)}
-            disabled={loading || saving}
-            maxLength={20000}
-            rows={18}
-            className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm leading-6 text-slate-800 disabled:bg-slate-50"
-            aria-describedby="guidelines-character-count"
-          />
-          <p id="guidelines-character-count" className="mt-2 text-xs text-slate-500">{content.length.toLocaleString()} / 20,000 characters</p>
+          {loading ? (
+            <div className="space-y-3" aria-label="Loading community guidelines">
+              <div className="h-4 w-32 animate-pulse rounded-full bg-slate-100" />
+              <div className="h-80 w-full animate-pulse rounded-xl bg-slate-100" />
+            </div>
+          ) : (
+            <>
+              <label htmlFor="community-guidelines-content" className="mb-2 block text-sm font-semibold text-slate-700">
+                Guidelines text
+              </label>
+              <textarea
+                id="community-guidelines-content"
+                value={content}
+                onChange={(event) => setContent(event.target.value)}
+                disabled={saving}
+                maxLength={20000}
+                rows={18}
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm leading-6 text-slate-800 disabled:bg-slate-50"
+                aria-describedby="guidelines-character-count"
+              />
+              <p id="guidelines-character-count" className="mt-2 text-xs text-slate-500">{content.length.toLocaleString()} / 20,000 characters</p>
+            </>
+          )}
         </AdminPanel>
       </div>
     </AdminShell>

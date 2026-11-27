@@ -649,6 +649,7 @@ export default function ConversationPage() {
 
     let channel = null
     const channelName = `conversation-${[currentUserId, otherUserId].sort().join('-')}`
+    const conversationId = [currentUserId, otherUserId].sort().join(':')
     const createConversationChannel = () => {
       if (!active || !supabase?.channel) return
 
@@ -692,18 +693,16 @@ export default function ConversationPage() {
             setMessages((previous) => previous.filter((item) => item.id !== message.id))
           }
         })
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pinned_message_activity' }, (payload) => {
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pinned_message_activity', filter: `conversation_id=eq.${conversationId}` }, (payload) => {
           const activity = payload?.new
-          const conversationId = [currentUserId, otherUserId].sort().join(':')
           if (!active || !activity || activity.conversation_id !== conversationId) return
           const actor = activity.actor_user_id === currentUserId ? currentUserRef.current : otherUserRef.current
           setPinActivities((previous) => previous.some((item) => item.id === activity.id)
             ? previous
             : [...previous, { ...activity, actor }].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)))
         })
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'pinned_messages' }, (payload) => {
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pinned_messages', filter: `conversation_id=eq.${conversationId}` }, (payload) => {
           const pin = payload?.new || payload?.old
-          const conversationId = [currentUserId, otherUserId].sort().join(':')
           if (!active || !pin || pin.conversation_id !== conversationId) return
           const pinned = payload.eventType !== 'DELETE'
           setMessages((previous) => previous.map((item) => item.id === pin.message_id
@@ -1013,13 +1012,23 @@ export default function ConversationPage() {
               </div>
               <p className="mt-2 line-clamp-2 rounded-lg bg-slate-50 p-2 text-xs text-slate-600">{forwardMessage.body || (forwardMessage.media_type === 'gif' ? 'GIF' : forwardMessage.media_type === 'sticker' ? 'Sticker' : 'Attachment')}</p>
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2"><Search className="h-4 w-4 text-slate-400" /><input autoFocus value={forwardQuery} onChange={(event) => setForwardQuery(event.target.value)} placeholder="Search a user" className="min-w-0 flex-1 text-sm outline-none" /></div>
-              <div className="mt-3 max-h-56 overflow-y-auto">{forwardLoading ? <p className="p-4 text-center text-sm text-slate-500">Searching...</p> : forwardUsers.length ? forwardUsers.map((user) => <button key={user.id} type="button" onClick={() => void forwardToUser(user)} disabled={forwardSending} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-slate-50"><ProfileAvatar user={user} size="h-9 w-9" /><span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{user.full_name || user.email || 'Community member'}</span><Forward className="h-4 w-4 shrink-0 text-slate-400" /></button>) : <p className="p-4 text-center text-sm text-slate-500">Search for someone to forward this message to.</p>}</div>
+              <div className="mt-3 max-h-56 overflow-y-auto">{forwardLoading ? <div className="space-y-2 p-3" role="status" aria-label="Searching users">{[0, 1, 2].map((item) => <div key={item} className="flex items-center gap-3 py-2" aria-hidden="true"><div className="h-9 w-9 animate-pulse rounded-full bg-slate-200" /><div className="h-3 w-2/3 animate-pulse rounded-full bg-slate-100" /></div>)}</div> : forwardUsers.length ? forwardUsers.map((user) => <button key={user.id} type="button" onClick={() => void forwardToUser(user)} disabled={forwardSending} className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-slate-50"><ProfileAvatar user={user} size="h-9 w-9" /><span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-800">{user.full_name || user.email || 'Community member'}</span><Forward className="h-4 w-4 shrink-0 text-slate-400" /></button>) : <p className="p-4 text-center text-sm text-slate-500">Search for someone to forward this message to.</p>}</div>
             </div>
           </div>
         )}
 
         {loading ? (
-          <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-sm text-slate-500"><div className="p-6">Loading conversation...</div></div>
+          <div className="messages-container min-h-0 flex-1 space-y-5 overflow-hidden bg-white p-4 sm:p-6" role="status" aria-label="Loading conversation">
+            {[0, 1, 2, 3].map((item) => (
+              <div key={item} className={`flex ${item % 2 ? 'justify-end' : 'justify-start'}`} aria-hidden="true">
+                <div className={`w-3/4 max-w-md animate-pulse space-y-2 rounded-2xl p-4 ${item % 2 ? 'bg-emerald-50' : 'bg-slate-100'}`}>
+                  <div className="h-3 w-2/5 rounded-full bg-slate-200" />
+                  <div className="h-3 w-full rounded-full bg-slate-200/70" />
+                  <div className="h-3 w-3/4 rounded-full bg-slate-200/70" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : error ? (
           <div className="messages-container min-h-0 flex-1 overflow-hidden bg-white text-center text-sm text-red-700">
             <div className="p-8">
@@ -1151,7 +1160,7 @@ export default function ConversationPage() {
                   <>
                     <div className="flex items-center gap-2 border-b border-slate-200 px-3 py-2"><Search className="h-4 w-4 shrink-0 text-slate-400" /><input value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} placeholder="Search GIFs..." className="min-w-0 flex-1 bg-transparent text-sm outline-none" /></div>
                     <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
-                      {gifsLoading ? <div className="flex items-center justify-center py-10 text-sm text-slate-500"><LoaderCircle className="mr-2 h-4 w-4 animate-spin" />Loading GIFs...</div> : gifError ? <div className="flex min-h-45 flex-col items-center justify-center gap-3 py-8 text-center text-sm text-slate-600"><p>Couldn&apos;t load GIFs</p><button type="button" onClick={() => void loadGifs(pickerSearch || 'happy')} className="rounded-full bg-[#147d75] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0f685f]">Try again</button></div> : gifs.length ? <div className="grid grid-cols-2 gap-2">{gifs.map((gif) => <button key={gif.id} type="button" onClick={() => chooseMedia('gif', gif.url)} className="overflow-hidden rounded-xl bg-slate-100 hover:ring-2 hover:ring-[#147d75]"><img src={gif.url} alt={gif.title} className="h-24 w-full object-cover" /></button>)}</div> : <p className="py-10 text-center text-sm text-slate-500">No GIFs found.</p>}
+                      {gifsLoading ? <div className="grid grid-cols-2 gap-2" role="status" aria-label="Loading GIFs">{[0, 1, 2, 3].map((item) => <div key={item} className="h-24 animate-pulse rounded-xl bg-slate-200" aria-hidden="true" />)}</div> : gifError ? <div className="flex min-h-45 flex-col items-center justify-center gap-3 py-8 text-center text-sm text-slate-600"><p>Couldn&apos;t load GIFs</p><button type="button" onClick={() => void loadGifs(pickerSearch || 'happy')} className="rounded-full bg-[#147d75] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#0f685f]">Try again</button></div> : gifs.length ? <div className="grid grid-cols-2 gap-2">{gifs.map((gif) => <button key={gif.id} type="button" onClick={() => chooseMedia('gif', gif.url)} className="overflow-hidden rounded-xl bg-slate-100 hover:ring-2 hover:ring-[#147d75]"><img src={gif.url} alt={gif.title} className="h-24 w-full object-cover" /></button>)}</div> : <p className="py-10 text-center text-sm text-slate-500">No GIFs found.</p>}
                     </div>
                   </>
                 ) : pickerCategory === 'Stickers' ? (

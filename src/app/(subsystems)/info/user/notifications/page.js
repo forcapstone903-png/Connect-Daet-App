@@ -292,8 +292,12 @@ export default function UserNotificationsPage() {
     }
 
     const userIdForRealtime = userId || session?.user_id || session?.id || session?.userId || session?.sub || ''
+    let active = true
+    let realtimeRefreshTimer = null
+    const pendingIncomingNotificationIds = new Set()
 
-    const loadNotifications = async (silent = false, incomingNotificationId = null) => {
+    const loadNotifications = async (silent = false, incomingNotificationIds = []) => {
+      if (!active) return false
       if (!silent) setLoadError('')
       let lastError = null
 
@@ -322,6 +326,7 @@ export default function UserNotificationsPage() {
           if (!response.ok || !result.success) {
             throw new Error(result.message || `Unable to load notifications (${response.status})`)
           }
+          if (!active) return false
 
           const nextNotifications = result.notifications || []
           const serverUnreadCount = Number.isFinite(Number(result.unread_count))
@@ -337,10 +342,11 @@ export default function UserNotificationsPage() {
           setLastSuccessfulRefresh(new Date())
           setRealtimeStatus(realtimeConnectedRef.current ? 'live' : navigator.onLine ? 'reconnecting' : 'offline')
           window.clearTimeout(timeout)
-          return incomingNotificationId
-            ? nextNotifications.some((notification) => notification.id === incomingNotificationId && !notification.is_read)
+          return incomingNotificationIds.length
+            ? nextNotifications.some((notification) => incomingNotificationIds.includes(notification.id) && !notification.is_read)
             : true
         } catch (error) {
+          if (!active) return false
           lastError = error
         } finally {
           window.clearTimeout(timeout)
@@ -354,12 +360,27 @@ export default function UserNotificationsPage() {
       return false
     }
 
+    const queueRealtimeRefresh = (incomingNotificationId = null) => {
+      if (!active || document.visibilityState !== 'visible') return
+      if (incomingNotificationId) pendingIncomingNotificationIds.add(incomingNotificationId)
+      window.clearTimeout(realtimeRefreshTimer)
+      realtimeRefreshTimer = window.setTimeout(async () => {
+        realtimeRefreshTimer = null
+        const incomingIds = [...pendingIncomingNotificationIds]
+        pendingIncomingNotificationIds.clear()
+        const hasUnreadIncoming = await loadNotifications(true, incomingIds)
+        if (incomingIds.length && hasUnreadIncoming) notifyUrgent()
+      }, 150)
+    }
+
     loadNotifications()
     const refreshTimer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void loadNotifications(true)
+      if (document.visibilityState === 'visible' && navigator.onLine && !realtimeConnectedRef.current) {
+        void loadNotifications(true)
+      }
     }, NOTIFICATIONS_REFRESH_INTERVAL_MS)
     const refreshWhenVisible = () => {
-      if (document.visibilityState === 'visible') {
+      if (active && document.visibilityState === 'visible') {
         setRealtimeStatus('reconnecting')
         void loadNotifications(true)
       }
@@ -377,7 +398,6 @@ export default function UserNotificationsPage() {
     document.addEventListener('visibilitychange', refreshWhenVisible)
 
     let realtimeChannel = null
-    let active = true
     let reconnectTimeout = null
     let reconnectAttempt = 0
     if (supabase?.channel && userIdForRealtime) {
@@ -394,9 +414,7 @@ export default function UserNotificationsPage() {
           const incoming = payload?.new || null
           if (!incoming || !incoming.id) return
 
-          void loadNotifications(true, incoming.id).then((isUnread) => {
-            if (isUnread) notifyUrgent()
-          })
+          queueRealtimeRefresh(incoming.id)
         },
       )
       realtimeChannel.on('postgres_changes', {
@@ -407,7 +425,7 @@ export default function UserNotificationsPage() {
       }, (payload) => {
         const updated = payload?.new
         if (!updated?.id) return
-        void loadNotifications(true)
+        queueRealtimeRefresh()
       })
       realtimeChannel.on('postgres_changes', {
         event: 'DELETE',
@@ -416,7 +434,7 @@ export default function UserNotificationsPage() {
         filter: `user_id=eq.${userIdForRealtime}`,
       }, (payload) => {
         if (!payload?.old?.id) return
-        void loadNotifications(true)
+        queueRealtimeRefresh()
       })
       realtimeChannel.subscribe((status) => {
         if (status === 'SUBSCRIBED') {
@@ -440,6 +458,8 @@ export default function UserNotificationsPage() {
     return () => {
       active = false
       realtimeConnectedRef.current = false
+      window.clearTimeout(realtimeRefreshTimer)
+      pendingIncomingNotificationIds.clear()
       if (realtimeChannel) {
         if (reconnectTimeout) window.clearTimeout(reconnectTimeout)
         try {
@@ -451,7 +471,6 @@ export default function UserNotificationsPage() {
       window.clearInterval(refreshTimer)
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('online', handleOnline)
-      window.removeEventListener('online', refreshWhenVisible)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
   }, [notificationsCacheKey, session, syncUnreadBadge, userId, retryKey])
@@ -914,7 +933,14 @@ export default function UserNotificationsPage() {
                 <p className="mt-2 max-w-xl text-[13px] leading-[18px] text-slate-600">Reactions, conversations, and community updates—all in one place.</p>
               </div>
               <div className="flex flex-col items-start gap-1">
-                <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold text-slate-700" role="status">{loading ? 'Loading updates…' : `${unreadCount} unread`}</span>
+                {loading ? (
+                  <span className="inline-flex self-start rounded-full bg-slate-200 px-2.5 py-1" role="status" aria-label="Loading updates">
+                    <span className="sr-only">Loading updates</span>
+                    <span className="h-2.5 w-16 animate-pulse rounded-full bg-slate-300" aria-hidden="true" />
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center self-start rounded-full bg-slate-200 px-2.5 py-1 text-[10px] font-bold text-slate-700" role="status">{unreadCount} unread</span>
+                )}
                 <RealtimeStatus status={realtimeStatus} lastSuccessfulRefresh={lastSuccessfulRefresh} />
               </div>
             </div>

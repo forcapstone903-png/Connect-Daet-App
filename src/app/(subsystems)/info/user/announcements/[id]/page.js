@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useParams } from 'next/navigation'
-import { ArrowLeft, Bookmark, Loader, MessageCircle, ShieldAlert, X, Zap } from 'lucide-react'
+import { ArrowLeft, Bookmark, MessageCircle, ShieldAlert, X, Zap } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getAuthCookieFromDocument } from '@/lib/authCookies'
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh'
@@ -159,10 +159,20 @@ export default function AnnouncementDetailPage() {
 
   if (authChecking || loading) {
     return (
-      <main className="announcement-detail-view flex min-h-[100dvh] items-center justify-center lg:min-h-[calc(100dvh-64px)]">
-        <div className="flex items-center gap-3 text-sm text-slate-300">
-          <Loader className="h-5 w-5 animate-spin" />
-          Loading announcement...
+      <main className="announcement-detail-view min-h-[100dvh] px-4 py-8 lg:min-h-[calc(100dvh-64px)]" role="status" aria-label="Loading announcement">
+        <div className="mx-auto max-w-4xl animate-pulse">
+          <div className="h-4 w-36 rounded-full bg-slate-700/70" />
+          <div className="mt-8 rounded-3xl bg-gradient-to-br from-slate-700 to-slate-900 p-6 sm:p-10">
+            <div className="h-5 w-28 rounded-full bg-white/20" />
+            <div className="mt-5 h-9 w-4/5 rounded-lg bg-white/20 sm:h-12" />
+            <div className="mt-4 h-4 w-2/3 rounded-full bg-white/15" />
+          </div>
+          <div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 sm:p-8" aria-hidden="true">
+            <div className="h-4 w-full rounded-full bg-white/10" />
+            <div className="h-4 w-full rounded-full bg-white/10" />
+            <div className="h-4 w-4/5 rounded-full bg-white/10" />
+            <div className="mt-6 h-32 rounded-2xl bg-white/10" />
+          </div>
         </div>
       </main>
     )

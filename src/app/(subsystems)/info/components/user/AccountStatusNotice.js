@@ -57,7 +57,7 @@ export default function AccountStatusNotice() {
     : 'Your account has been temporarily suspended'
   const message = status === 'pending'
     ? 'Some community features are temporarily unavailable while your account is awaiting verification or approval. You can still browse tourism information and manage your profile. You will receive a notification once your account has been reviewed and approved.'
-    : 'Your access to Connect Daet community features has been restricted due to a violation of our Community Guidelines. You cannot create posts, comment, react, or participate in discussions until your suspension expires or is lifted by the moderation team. If you believe this decision was made in error, you may submit an appeal for review.'
+    : 'Your account has limited access while this suspension is active. You can browse content, comment, and react, but cannot publish content, message other users, or change account settings. If you believe this decision was made in error, you may submit an appeal for review.'
 
   return (
     <section aria-live="polite" className={`mx-auto my-3 max-w-7xl rounded-2xl border px-4 py-4 shadow-sm sm:px-5 ${STATUS_STYLES[status]}`}>

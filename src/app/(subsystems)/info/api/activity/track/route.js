@@ -350,30 +350,11 @@ export async function POST(request) {
 
     const recipientUserIds = new Set()
 
-    if (activityType === 'new_post') {
-      const { data: followers, error: followerLookupError } = await adminSupabase
-        .from('user_follows')
-        .select('follower_id')
-        .eq('following_id', userId)
-
-      if (!followerLookupError && Array.isArray(followers)) {
-        const followerIds = followers.map((follow) => follow.follower_id).filter((id) => id && id !== userId)
-        if (followerIds.length) {
-          const { data: followerUsers } = await adminSupabase
-            .from('info_users')
-            .select('id')
-            .in('id', followerIds)
-
-          ;(followerUsers || []).forEach((follower) => {
-            recipientUserIds.add(follower.id)
-          })
-        }
-      }
-    } else {
+    // Publication workflows notify followers only after auto-publishing or approval.
+    if (activityType !== 'new_post') {
       for (const ownerCandidate of explicitOwnerIds) {
         if (ownerCandidate && ownerCandidate !== userId && !ownerIsAdmin) recipientUserIds.add(ownerCandidate)
       }
-
     }
 
     // Mentions: at most 10 distinct, existing accounts.

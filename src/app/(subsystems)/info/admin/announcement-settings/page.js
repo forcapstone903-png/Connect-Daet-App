@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import SettingsShell from '../settings/_components/SettingsShell';
+import { AdminFormSkeleton } from '@/app/(subsystems)/info/components/admin';
 import { DEFAULT_NOTIFICATION_SETTINGS } from '@/lib/siteSettings.mjs';
 
 const SETTINGS_API = '/info/api/admin/settings';
@@ -44,7 +45,7 @@ export default function NotificationSettingsPage() {
     return () => { active = false; };
   }, []);
 
-  return (
+  return loading ? <AdminFormSkeleton sections={1} fields={3} /> : (
     <SettingsShell title="Notification Settings" subtitle="Site-wide delivery switches for push and in-app notifications.">
       {(showToast) => {
         const save = async () => {

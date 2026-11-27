@@ -39,7 +39,12 @@ import plazaImage from '@/app/(subsystems)/info/assets/images/elevated-town-plaz
 import morgaImage from '@/app/(subsystems)/info/assets/images/morga.jpg'
 
 const FALLBACK_IMAGE = bagasbasImage.src || bagasbasImage
-const REALTIME_TABLES = ['info_tourist_spots', 'info_events', 'info_blogs', 'forum_threads', 'info_announcements']
+const REALTIME_TABLES = ['info_tourist_spots', 'info_events', 'info_blogs', 'forum_threads']
+const HERO_SLIDES = [
+  { src: '/daet-rizal-monument-hero.png', alt: 'Rizal monument at the Daet town plaza' },
+  { src: daetImage, alt: 'Daet beachfront sign overlooking the shore' },
+  { src: plazaImage, alt: 'Welcome to Daet sign at the town center' },
+]
 
 const QUICK_SERVICES = [
   { label: 'Attractions', description: 'Explore top spots', href: '/info/visitor/tourist-spots', icon: Umbrella },
@@ -62,6 +67,18 @@ const formatDay = (value) => {
 }
 
 const formatDate = (value) => (value ? new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '')
+
+function canOptimizeHomepageImage(src) {
+  return typeof src === 'string' && src.startsWith('/') && !src.startsWith('//')
+}
+
+function HomepageImage({ src, alt = '', className, sizes }) {
+  if (!canOptimizeHomepageImage(src)) {
+    return <Image src={src} alt={alt} fill sizes={sizes} unoptimized className={className} />
+  }
+
+  return <Image src={src} alt={alt} fill sizes={sizes} className={className} />
+}
 
 function formatEventTime(timeStr) {
   if (!timeStr) return '8:00 AM – 10:00 PM'
@@ -95,10 +112,22 @@ export default function VisitorHomePage() {
   const [heroSlide, setHeroSlide] = useState(0)
   const [eventSlide, setEventSlide] = useState(0)
   const [data, setData] = useState({
-    alerts: [], announcements: [], places: [], events: [], stories: [],
+    alerts: [], places: [], events: [], stories: [],
   })
 
   const { observe } = useScrollReveal()
+
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      || document.documentElement.dataset.reduceMotion === 'true'
+    if (prefersReducedMotion) return
+
+    const timeoutId = window.setTimeout(() => {
+      setHeroSlide((currentSlide) => (currentSlide + 1) % HERO_SLIDES.length)
+    }, 7000)
+
+    return () => window.clearTimeout(timeoutId)
+  }, [heroSlide])
 
   const realtime = useRealtimeRefresh({ channelName: 'visitor-home', tables: REALTIME_TABLES })
   const { setRefreshCallback } = realtime
@@ -143,11 +172,8 @@ export default function VisitorHomePage() {
       const day = today()
       const now = new Date().toISOString()
 
-      const [alertsRes, noticeRes, placesRes, eventsRes, storiesRes] = await Promise.all([
+      const [alertsRes, placesRes, eventsRes, storiesRes] = await Promise.all([
         fetch('/info/api/alerts', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        supabase.from('info_announcements').select('id, title, content, published_at')
-          .eq('status', 'published').in('audience', ['all', 'tourists'])
-          .or(`expires_at.is.null,expires_at.gt.${now}`).order('published_at', { ascending: false }).limit(3),
         supabase.from('info_tourist_spots').select('id, name, listing_type, category, location, barangay, rating, review_count, image_url, featured_image, gallery_images, featured')
           .eq('status', 'active').order('featured', { ascending: false }).order('rating', { ascending: false }).limit(8),
         supabase.from('info_events').select('id, title, description, location, venue, start_date, end_date, start_time, category, featured_image, is_free, current_attendees')
@@ -173,7 +199,6 @@ export default function VisitorHomePage() {
       if (storiesRes.error) console.error('Visitor homepage news failed to load:', storiesRes.error)
       setData({
         alerts: alertsRes?.current || [],
-        announcements: noticeRes?.data || [],
         places: placesRes?.data || [],
         events: eventsRes?.data || [],
         stories: storiesRes?.data || [],
@@ -270,7 +295,7 @@ export default function VisitorHomePage() {
   const displayNews = data.stories
 
   return (
-    <div className={`${styles.homePage} flex min-h-screen flex-col bg-[#f8fafc] text-slate-900`}>
+    <div className={`${styles.homePage} flex min-h-screen flex-col bg-background text-foreground`}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-white focus:px-4 focus:py-2">
         Skip to content
       </a>
@@ -296,13 +321,14 @@ export default function VisitorHomePage() {
       <main id="main" className="flex-1">
         {/* ════════════════════ HERO SECTION ════════════════════ */}
         <section className="relative isolate overflow-hidden bg-[#081c49] text-white">
-          {/* Hero background photo with drift zoom animation */}
+          {/* Hero photo carousel */}
           <div className="absolute inset-0 -z-20 overflow-hidden">
             <Image
-              src="/daet-rizal-monument-hero.png"
-              alt="Rizal monument at the Daet town plaza"
+              key={heroSlide}
+              src={HERO_SLIDES[heroSlide].src}
+              alt={HERO_SLIDES[heroSlide].alt}
               fill
-              preload
+              preload={heroSlide === 0}
               sizes="100vw"
               className={`${styles.heroImage} h-full w-full object-cover object-center filter brightness-[0.88]`}
             />
@@ -364,7 +390,7 @@ export default function VisitorHomePage() {
                   <form
                     onSubmit={submitSearch}
                     role="search"
-                    className="flex items-center gap-2 rounded-full border border-white/40 bg-white p-1.5 shadow-2xl transition-all duration-200 focus-within:ring-4 focus-within:ring-sky-400/40"
+                    className="flex items-center gap-2 rounded-full border border-white/40 bg-white p-1.5 shadow-2xl transition-all duration-200 focus-within:ring-4 focus-within:ring-sky-400/40 max-[420px]:flex-col max-[420px]:items-stretch max-[420px]:rounded-2xl"
                   >
                     <label htmlFor="hero-search-input" className="sr-only">
                       Search attractions, events, or places
@@ -390,7 +416,7 @@ export default function VisitorHomePage() {
                     </div>
                     <button
                       type="submit"
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[#1d68ed] px-6 py-2.5 text-xs font-bold text-white shadow-md transition-all duration-200 hover:bg-blue-600 hover:shadow-lg active:scale-95"
+                      className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full bg-[#1d68ed] px-6 py-2.5 text-xs font-bold text-white shadow-md transition-all duration-200 hover:bg-blue-600 hover:shadow-lg active:scale-95 max-[420px]:w-full"
                     >
                       <span>Search</span>
                       <ArrowRight className="h-3.5 w-3.5" />
@@ -416,40 +442,21 @@ export default function VisitorHomePage() {
                           <span className="text-[10px] text-slate-400">{suggestion.type}</span>
                         </button>
                       ))}
-                      {searchSuggestionsLoading && <p className="px-3 py-2 text-xs text-slate-400">Searching…</p>}
+                      {searchSuggestionsLoading && (
+                        <div role="status" className="space-y-2 px-3 py-2">
+                          <span className="sr-only">Loading search suggestions</span>
+                          <div aria-hidden="true" className="animate-pulse space-y-2">
+                            <div className="h-3 w-3/4 rounded-full bg-white/20" />
+                            <div className="h-3 w-1/2 rounded-full bg-white/20" />
+                          </div>
+                        </div>
+                      )}
                       {!searchSuggestionsLoading && searchSuggestions.length === 0 && (
                         <p className="px-3 py-2 text-xs text-slate-400">No direct matches. Press Enter to search all.</p>
                       )}
                     </div>
                   )}
 
-                  {/* Carousel indicator dots centered under search */}
-                  <div className="mt-5 flex items-center justify-center gap-2 max-w-xl">
-                    {[0, 1, 2].map((idx) => (
-                      <span
-                        key={idx}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setHeroSlide(idx)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setHeroSlide(idx) }}
-                        aria-label={`Hero slide ${idx + 1}`}
-                        style={{
-                          display: 'inline-block',
-                          height: 6,
-                          width: heroSlide === idx ? 24 : 6,
-                          minWidth: heroSlide === idx ? 24 : 6,
-                          minHeight: 6,
-                          maxHeight: 6,
-                          borderRadius: 9999,
-                          padding: 0,
-                          margin: 0,
-                        }}
-                        className={`cursor-pointer transition-all duration-300 ${
-                          heroSlide === idx ? 'bg-sky-400 shadow-sm' : 'bg-white/40 hover:bg-white/70'
-                        }`}
-                      />
-                    ))}
-                  </div>
                 </div>
               </div>
 
@@ -521,26 +528,39 @@ export default function VisitorHomePage() {
           </div>
 
           {/* Featured cards use live destination and review data. */}
-          {displayDestinations.length > 0 ? (
+          {loading && !displayDestinations.length ? (
+            <div role="status" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <span className="sr-only">Loading featured destinations</span>
+              {[1, 2, 3, 4].map((item) => (
+                <div key={item} aria-hidden="true" className="h-72 animate-pulse rounded-2xl bg-slate-200 sm:h-80">
+                  <div className="flex h-full flex-col justify-end gap-3 p-4">
+                    <div className="h-6 w-2/3 rounded-full bg-slate-300" />
+                    <div className="h-3 w-1/2 rounded-full bg-slate-300" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : displayDestinations.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {displayDestinations.map((item, index) => (
               <Link
                 key={item.id}
                 href={item.href}
+                prefetch={false}
                 ref={observe}
                 style={staggerDelay(index, 80)}
                 className="group relative h-72 sm:h-80 overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-900 shadow-sm transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl hover:border-sky-300"
               >
                 {/* Full-bleed Bright Destination Image */}
-                <img
+                <HomepageImage
                   src={item.image}
                   alt={item.name}
-                  loading="lazy"
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
                   className="h-full w-full object-cover filter brightness-[0.98] transition-transform duration-700 ease-out group-hover:scale-105"
                 />
 
                 {/* Keep the photo visible behind the card details while maintaining contrast. */}
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/75 via-black/25 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 via-black/15 to-transparent" />
 
                 {/* Bottom Card Content */}
                 <div className="absolute inset-x-0 bottom-0 flex items-end justify-between p-4">
@@ -577,7 +597,7 @@ export default function VisitorHomePage() {
             </div>
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-5 py-10 text-center text-sm text-slate-500">
-              {loading ? 'Loading featured destinations…' : 'No featured destinations are available yet.'}
+              No featured destinations are available yet.
             </div>
           )}
         </section>
@@ -610,6 +630,7 @@ export default function VisitorHomePage() {
               {activeEvent ? (
                 <Link
                   href={`/info/visitor/events/${activeEvent.id}`}
+                  prefetch={false}
                   className="group flex flex-col sm:flex-row overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition-all duration-300 hover:shadow-lg hover:border-sky-200"
                 >
                 {/* Big Blue Date Block */}
@@ -639,17 +660,32 @@ export default function VisitorHomePage() {
                 </div>
 
                 {/* Prominent Event Photo on Right */}
-                <div className="mt-3 sm:mt-0 h-36 w-full sm:h-28 sm:w-44 md:h-32 md:w-48 shrink-0 overflow-hidden rounded-xl bg-slate-100 shadow-inner">
-                  <img
+                <div className="relative mt-3 sm:mt-0 h-36 w-full sm:h-28 sm:w-44 md:h-32 md:w-48 shrink-0 overflow-hidden rounded-xl bg-slate-100 shadow-inner">
+                  <HomepageImage
                     src={imageOf(activeEvent) || activeEvent.featured_image || morgaImage.src || morgaImage}
                     alt=""
+                    sizes="(max-width: 640px) 100vw, 192px"
                     className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                   />
                 </div>
                 </Link>
+              ) : loading ? (
+                <div role="status" className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+                  <span className="sr-only">Loading popular upcoming events</span>
+                  <div aria-hidden="true" className="animate-pulse sm:flex sm:items-center sm:gap-4">
+                    <div className="h-24 w-20 rounded-xl bg-slate-200" />
+                    <div className="mt-4 flex-1 space-y-3 sm:mt-0">
+                      <div className="h-4 w-3/4 rounded-full bg-slate-200" />
+                      <div className="h-3 w-1/2 rounded-full bg-slate-200" />
+                      <div className="h-3 w-full rounded-full bg-slate-200" />
+                      <div className="h-3 w-4/5 rounded-full bg-slate-200" />
+                    </div>
+                    <div className="mt-4 h-36 w-full rounded-xl bg-slate-200 sm:mt-0 sm:h-28 sm:w-44 md:h-32 md:w-48" />
+                  </div>
+                </div>
               ) : (
-                <div role="status" className="rounded-2xl border border-slate-200/80 bg-white p-6 text-sm text-slate-500 shadow-sm">
-                  {loading ? 'Loading popular upcoming events…' : eventsError || 'No upcoming events are available yet.'}
+                <div className="rounded-2xl border border-slate-200/80 bg-white p-6 text-sm text-slate-500 shadow-sm">
+                  {eventsError || 'No upcoming events are available yet.'}
                 </div>
               )}
 
@@ -702,12 +738,14 @@ export default function VisitorHomePage() {
                   <Link
                     key={news.id}
                     href={`/info/visitor/blog/${news.id}`}
+                    prefetch={false}
                     className="group flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-sm transition-all duration-200 hover:border-sky-300 hover:shadow-md"
                   >
-                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-100">
-                      <img
+                    <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                      <HomepageImage
                         src={imageOf(news) || news.image || FALLBACK_IMAGE}
                         alt=""
+                        sizes="64px"
                         className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     </div>
@@ -719,9 +757,23 @@ export default function VisitorHomePage() {
                     </div>
                     <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 transition-transform group-hover:translate-x-1 group-hover:text-blue-600" />
                   </Link>
-                )) : (
-                  <div role="status" className="rounded-2xl border border-slate-200/80 bg-white p-5 text-sm text-slate-500 shadow-sm">
-                    {loading ? 'Loading popular news…' : storiesError || 'No published news is available yet.'}
+                )) : loading ? (
+                  <div role="status" className="space-y-2.5">
+                    <span className="sr-only">Loading popular news</span>
+                    {[1, 2, 3].map((item) => (
+                      <div key={item} aria-hidden="true" className="flex animate-pulse items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-2.5 shadow-sm">
+                        <div className="h-16 w-16 shrink-0 rounded-xl bg-slate-200" />
+                        <div className="min-w-0 flex-1 space-y-2">
+                          <div className="h-3 w-full rounded-full bg-slate-200" />
+                          <div className="h-3 w-2/3 rounded-full bg-slate-200" />
+                          <div className="h-2.5 w-1/3 rounded-full bg-slate-200" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-slate-200/80 bg-white p-5 text-sm text-slate-500 shadow-sm">
+                    {storiesError || 'No published news is available yet.'}
                   </div>
                 )}
               </div>
@@ -782,10 +834,11 @@ export default function VisitorHomePage() {
                   </div>
 
                   {/* Guaranteed Working Local Photo of Monument */}
-                  <div className="h-24 w-28 shrink-0 overflow-hidden rounded-xl border-2 border-white shadow-lg bg-slate-200">
-                    <img
+                  <div className="relative h-24 w-28 shrink-0 overflow-hidden rounded-xl border-2 border-white shadow-lg bg-slate-200">
+                    <HomepageImage
                       src={morgaImage.src || morgaImage}
                       alt="First Rizal Monument in Daet"
+                      sizes="112px"
                       className="h-full w-full object-cover"
                     />
                   </div>

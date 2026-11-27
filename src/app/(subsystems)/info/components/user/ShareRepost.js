@@ -241,13 +241,13 @@ export default function ShareRepost({ contentType, contentId, userId, onShared, 
     const channelSuffix = Math.random().toString(36).slice(2)
     const channel = supabase.channel(`content-shares-${contentType}-${contentId}-${channelSuffix}`)
     channel
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'reposts', filter: `original_content_type=eq.${contentType}` }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reposts', filter: `original_content_type=eq.${contentType},original_content_id=eq.${contentId}` }, (payload) => {
         const changed = payload?.new || payload?.old
-        if (changed?.original_content_id === contentId) void loadShareCount()
+        if (changed?.original_content_id === contentId && changed.original_content_type === contentType) void loadShareCount()
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_shares', filter: `content_type=eq.${contentType}` }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_shares', filter: `content_type=eq.${contentType},content_id=eq.${contentId}` }, (payload) => {
         const changed = payload?.new || payload?.old
-        if (changed?.content_id === contentId) void loadShareCount()
+        if (changed?.content_id === contentId && changed.content_type === contentType) void loadShareCount()
       })
       .subscribe()
     return () => {

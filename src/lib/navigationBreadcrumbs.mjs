@@ -173,6 +173,21 @@ const ADMIN_PARENT_RULES = [
     parents: [{ label: 'Notifications', href: '/info/admin/notifications' }],
   },
   {
+    match: (path) => path === '/info/admin/forum-submissions',
+    parents: [{ label: 'Community', href: '/info/admin/forum' }],
+    current: 'Forum Submissions',
+  },
+  {
+    match: (path) => path === '/info/admin/post-moderation',
+    parents: [{ label: 'Moderation', href: '/info/admin/moderation' }],
+    current: 'Post Moderation',
+  },
+  {
+    match: (path) => path === '/info/admin/inquiry-forum',
+    parents: [{ label: 'Moderation', href: '/info/admin/moderation' }],
+    current: 'Inquiry Forum',
+  },
+  {
     match: (path) => path === '/info/admin/moderation/notifications',
     parents: [{ label: 'Moderation', href: '/info/admin/moderation' }],
     current: 'Post Notifications',

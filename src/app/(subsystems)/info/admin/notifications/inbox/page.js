@@ -206,7 +206,18 @@ export default function AdminNotificationInboxPage() {
             </div>
           ) : null}
           {loading && notifications.length === 0 ? (
-            <p className="p-5 text-sm text-slate-500" role="status">Loading notifications…</p>
+            <ul className="grid gap-2 bg-slate-50 p-3 sm:p-4" aria-label="Loading notifications">
+              {[0, 1, 2, 3].map((item) => (
+                <li key={item} className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                  <span className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-slate-100" />
+                  <span className="min-w-0 flex-1 space-y-2">
+                    <span className="block h-4 w-2/5 animate-pulse rounded-full bg-slate-200" />
+                    <span className="block h-3 w-3/4 animate-pulse rounded-full bg-slate-100" />
+                    <span className="block h-3 w-1/3 animate-pulse rounded-full bg-slate-100" />
+                  </span>
+                </li>
+              ))}
+            </ul>
           ) : notifications.length === 0 ? (
             <div className="grid justify-items-center gap-2 px-4 py-12 text-center text-sm text-slate-500">
               <Bell className="h-6 w-6" aria-hidden="true" />

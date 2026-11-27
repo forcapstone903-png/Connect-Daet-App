@@ -14,9 +14,9 @@ import {
   ExternalLink,
   Globe,
   Heart,
-  LoaderCircle,
   Mail,
   MapPin,
+  MessageCircle,
   MoreHorizontal,
   Phone,
   Share2,
@@ -268,9 +268,9 @@ export default function TouristSpotDetailPage() {
     if (!spotId) return undefined
     const refresh = () => { void loadEngagement(spotId, userId).catch((refreshError) => console.error('Tourist spot engagement refresh failed:', refreshError)) }
     const channel = supabase.channel(`tourist-spot-engagement-${spotId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_reactions', filter: `content_type=eq.tourist_spot` }, (event) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'content_reactions', filter: `content_type=eq.tourist_spot,content_id=eq.${spotId}` }, (event) => {
         const row = event.new || event.old
-        if (row?.content_id === spotId) refresh()
+        if (row?.content_id === spotId && row.content_type === 'tourist_spot') refresh()
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
@@ -424,7 +424,47 @@ export default function TouristSpotDetailPage() {
   }, [lightboxIndex, moveLightbox, singleLightbox])
 
   if (loading) {
-    return <main className="event-detail-page tourist-detail-page"><div className="tourist-detail-loading"><LoaderCircle className="animate-spin" />Loading destination…</div></main>
+    return (
+      <main className="event-detail-page tourist-detail-page min-h-screen !bg-[#F8FAFC] pb-10">
+        <div role="status" className="tourist-detail-content py-6">
+          <span className="sr-only">Loading destination</span>
+          <div aria-hidden="true" className="animate-pulse">
+            <div className="mb-4 h-10 w-32 rounded-full bg-slate-200" />
+            <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">
+              <div className="flex gap-2">
+                <div className="h-6 w-24 rounded-full bg-slate-200" />
+                <div className="h-6 w-20 rounded-full bg-slate-200" />
+              </div>
+              <div className="mt-4 h-8 w-3/4 rounded-full bg-slate-200" />
+              <div className="mt-3 h-4 w-full max-w-3xl rounded-full bg-slate-200" />
+              <div className="mt-2 h-4 w-2/3 max-w-2xl rounded-full bg-slate-200" />
+              <div className="mt-5 aspect-[16/7] rounded-xl bg-slate-200" />
+              <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-100">
+                {[1, 2, 3].map((item) => (
+                  <div key={item} className={`space-y-2 p-3 sm:px-5 sm:py-4 ${item > 1 ? 'border-l border-slate-100' : ''}`}>
+                    <div className="h-3 w-16 rounded-full bg-slate-200" />
+                    <div className="h-4 w-4/5 rounded-full bg-slate-200" />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12">
+              <div className="space-y-5 lg:col-span-7">
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6">
+                  <div className="h-6 w-56 rounded-full bg-slate-200" />
+                  <div className="h-4 w-full rounded-full bg-slate-200" />
+                  <div className="h-4 w-11/12 rounded-full bg-slate-200" />
+                  <div className="h-4 w-3/4 rounded-full bg-slate-200" />
+                </div>
+              </div>
+              <div className="hidden space-y-5 lg:col-span-5 lg:block">
+                <div className="h-64 rounded-2xl border border-slate-200 bg-white" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    )
   }
   if (error || !spot) {
     return <main className="event-detail-page tourist-detail-page"><div className="tourist-detail-error"><p>{error || 'Destination not found.'}</p><VisitorBackButton fallbackHref="/info/visitor/tourist-spots" /></div></main>
@@ -551,7 +591,6 @@ export default function TouristSpotDetailPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   {mapDestination && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapDestination)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Open in Maps <ExternalLink size={14} /></a>}
                   {mapDestination && <a href={directionsUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Get directions <ExternalLink size={14} /></a>}
-                  {mapDestination && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapDestination)}`} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">Open in Google Maps <ExternalLink size={14} /></a>}
                 </div>
                 <div className="mt-5 border-t border-slate-100 pt-4">
                   <h3 className="text-base font-bold text-slate-900">Contact</h3>

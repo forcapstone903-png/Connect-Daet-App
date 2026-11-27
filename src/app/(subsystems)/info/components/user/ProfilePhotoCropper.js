@@ -270,7 +270,7 @@ export default function ProfilePhotoCropper({ userId, imageUrl, onUploadComplete
                   }
                 })() : { visibility: 'hidden' }}
               />
-              {!imageSize && <LoaderCircle className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 animate-spin text-slate-500" aria-label="Loading photo" />}
+              {!imageSize && <div className="absolute inset-0 animate-pulse bg-slate-200" role="status" aria-label="Loading photo" />}
             </div>
 
             <div className="mt-5">

@@ -13,7 +13,7 @@ import {
   AdminBadge,
   AdminButton,
   AdminEmptyState,
-  AdminLoadingScreen,
+  AdminPageSkeleton,
   AdminPanel,
   AdminSearch,
   AdminShell,
@@ -538,7 +538,7 @@ export default function AdminAnnouncementPage() {
   };
 
   if (loading) {
-    return <AdminLoadingScreen label="Loading announcements..." />;
+    return <AdminPageSkeleton variant="cards" rows={4} />;
   }
 
   return (

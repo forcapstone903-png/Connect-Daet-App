@@ -85,7 +85,9 @@ export default function InterestsSection({ userId }) {
       description="Choose what you enjoy to personalize stories, people, places, and event recommendations. You can leave this blank and come back anytime."
     >
       {loading ? (
-        <p className="py-4 text-sm text-slate-500" role="status">Loading your saved interests...</p>
+        <div className="grid grid-cols-2 gap-2 py-4 sm:grid-cols-3" role="status" aria-label="Loading saved interests">
+          {Array.from({ length: 9 }, (_, item) => <div key={item} className="h-10 animate-pulse rounded-xl bg-slate-100" aria-hidden="true" />)}
+        </div>
       ) : loadError ? (
         <div className="space-y-3">
           <StatusBanner tone="error">{loadError}</StatusBanner>

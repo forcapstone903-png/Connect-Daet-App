@@ -182,7 +182,18 @@ export default function AdminReviewsPage() {
           </div>
         ) : null}
 
-        {loading ? <p className="text-sm text-slate-500">Loading reviews…</p> : null}
+        {loading ? (
+          <div className="space-y-3" aria-label="Loading reviews">
+            {[0, 1, 2].map((item) => (
+              <article key={item} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="h-3 w-1/4 animate-pulse rounded-full bg-slate-100" />
+                <div className="mt-3 h-4 w-2/3 animate-pulse rounded-full bg-slate-200" />
+                <div className="mt-2 h-3 w-full animate-pulse rounded-full bg-slate-100" />
+                <div className="mt-2 h-3 w-4/5 animate-pulse rounded-full bg-slate-100" />
+              </article>
+            ))}
+          </div>
+        ) : null}
         {!loading && !error && !data.reviews.length ? (
           <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-sm text-slate-500">No reviews match these filters.</p>
         ) : null}

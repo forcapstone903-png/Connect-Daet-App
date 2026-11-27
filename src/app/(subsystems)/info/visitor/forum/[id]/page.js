@@ -1,23 +1,18 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import Link from 'next/link'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import {
   Archive,
-  ChevronLeft,
-  Bell,
   CheckCircle2,
   Clock,
   Eye,
-  Flag,
   Heart,
   Lock,
   MessageSquare,
   Pin,
   Share2,
   Tag,
-  User,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
@@ -48,6 +43,16 @@ function formatDate(value) {
   })
 }
 
+function getInitials(name) {
+  return String(name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'C'
+}
+
 function getStatusColor(status) {
   switch (status) {
     case 'locked':
@@ -63,20 +68,12 @@ function getStatusColor(status) {
 }
 
 export default function PublicThreadDetailPage() {
-  const router = useRouter()
   const params = useParams()
   const threadId = params?.id
   const [thread, setThread] = useState(null)
   const [replies, setReplies] = useState([])
   const [loading, setLoading] = useState(true)
-  const [userName, setUserName] = useState('Guest')
-  const [userId, setUserId] = useState(null)
-  const [isSubscribed, setIsSubscribed] = useState(false)
-  const [replyContent, setReplyContent] = useState('')
-  const [submittingReply, setSubmittingReply] = useState(false)
-  const [userLikes, setUserLikes] = useState(new Set())
   const [showShareMenu, setShowShareMenu] = useState(false)
-  const [showAuthModal, setShowAuthModal] = useState(false)
   const refreshThreadRef = useRef(null)
   const realtime = useRealtimeRefresh({
     channelName: `visitor-forum-thread-${threadId || 'unknown'}`,
@@ -93,14 +90,6 @@ export default function PublicThreadDetailPage() {
 
     const loadData = async () => {
       try {
-        const sessionResult = await supabase.auth.getSession()
-        const session = sessionResult?.data?.session
-        if (session) {
-          const fullName = session.user?.user_metadata?.full_name || session.user?.email || 'Guest'
-          setUserName(fullName.split(' ')[0] || fullName)
-          setUserId(session.user.id)
-        }
-
         if (!threadId) return false
 
         const { data: threadData, error: threadError } = await supabase
@@ -117,7 +106,7 @@ export default function PublicThreadDetailPage() {
           .maybeSingle()
 
         if (threadError) {
-          console.error('Error loading thread:', threadError)
+          console.error('Error loading thread:', threadError.message || threadError)
           return false
         }
         if (!threadData) {
@@ -138,28 +127,20 @@ export default function PublicThreadDetailPage() {
             `
             )
             .eq('thread_id', threadId)
-            .order('is_best_answer', { ascending: false })
-            .order('likes', { ascending: false })
-            .order('created_at', { ascending: true })
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
         if (repliesError) throw repliesError
 
         if (!ignore) setReplies(repliesData || [])
 
-        if (session?.user?.id) {
-          const { data: subData, error: subscriptionError } = await supabase
-            .from('forum_subscriptions')
-            .select('id')
-            .eq('thread_id', threadId)
-            .eq('user_id', session.user.id)
-            .maybeSingle()
-          if (subscriptionError) throw subscriptionError
-
-          if (!ignore) setIsSubscribed(!!subData)
-        }
-
         return true
       } catch (error) {
-        console.error('Thread fetch failed:', error)
+        console.error('Thread fetch failed:', {
+          message: error?.message || String(error),
+          code: error?.code,
+          details: error?.details,
+          hint: error?.hint,
+        })
         return false
       } finally {
         if (!ignore) setLoading(false)
@@ -178,91 +159,6 @@ export default function PublicThreadDetailPage() {
   useEffect(() => {
     setRefreshCallback(() => refreshThreadRef.current?.() ?? false)
   }, [setRefreshCallback])
-
-  const handleSubscribe = async () => {
-    if (!userId) {
-      setShowAuthModal(true)
-      return
-    }
-
-    try {
-      if (isSubscribed) {
-        await supabase
-          .from('forum_subscriptions')
-          .delete()
-          .eq('thread_id', threadId)
-          .eq('user_id', userId)
-      } else {
-        await supabase.from('forum_subscriptions').insert({
-          thread_id: threadId,
-          user_id: userId,
-        })
-      }
-
-      setIsSubscribed(!isSubscribed)
-    } catch (error) {
-      console.error('Error toggling subscription:', error)
-    }
-  }
-
-  const handleReplySubmit = async () => {
-    if (!replyContent.trim()) return
-
-    setSubmittingReply(true)
-    try {
-      if (!userId) {
-        setShowAuthModal(true)
-        return
-      }
-
-      const response = await fetch('/info/api/forum-replies', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ threadId, content: replyContent.trim() }),
-      })
-      const result = await response.json()
-      if (!response.ok || !result?.success) {
-        throw new Error(result?.message || 'Failed to post reply.')
-      }
-
-      setReplyContent('')
-      const { data: newReplies } = await supabase
-        .from('forum_replies')
-        .select(`
-          *,
-          info_users(full_name)
-        `)
-        .eq('thread_id', threadId)
-        .order('is_best_answer', { ascending: false })
-        .order('likes', { ascending: false })
-        .order('created_at', { ascending: true })
-
-      setReplies(newReplies || [])
-    } catch (error) {
-      console.error('Error submitting reply:', error)
-      alert(error.message || 'An error occurred. Please try again.')
-    } finally {
-      setSubmittingReply(false)
-    }
-  }
-
-  const toggleLike = async (replyId) => {
-    if (!userId) {
-      setShowAuthModal(true)
-      return
-    }
-
-    const newLikes = new Set(userLikes)
-
-    if (newLikes.has(replyId)) {
-      newLikes.delete(replyId)
-    } else {
-      newLikes.add(replyId)
-    }
-
-    setUserLikes(newLikes)
-  }
 
   const handleShare = async (platform) => {
     const url = typeof window !== 'undefined' ? window.location.href : ''
@@ -314,105 +210,105 @@ export default function PublicThreadDetailPage() {
     ...(Array.isArray(thread.image_urls) ? thread.image_urls : []),
     ...parsedThreadContent.attachments,
   ])]
+  const threadAuthor = thread.info_users?.full_name || 'Community member'
 
   return (
     <main className="min-h-screen bg-[#f3f5f9] text-slate-900">
-      <div className="mx-auto max-w-3xl px-3 pt-3 sm:px-4 lg:px-6">
-        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} />
+      <div className="mx-auto max-w-4xl px-3 pt-3 sm:px-5 lg:px-6">
+        <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-3" />
       </div>
-      {showAuthModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-2xl">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><MessageSquare className="h-6 w-6" /></div>
-            <h2 className="mt-4 text-xl font-black text-slate-900">Join the travel conversation</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">The full discussion is public. Create a free account to reply and follow helpful local advice.</p>
-            <div className="mt-5 grid gap-2"><Link href="/info/register" className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white">Create free account</Link><Link href="/info/login" className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700">Sign in</Link></div>
-            <button type="button" onClick={() => setShowAuthModal(false)} className="mt-4 text-xs font-semibold text-slate-500 hover:text-slate-800">Continue browsing</button>
-          </div>
-        </div>
-      )}
-      <div className="mx-auto max-w-3xl px-3 py-6 sm:px-4 lg:px-6">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+      <div className="mx-auto max-w-4xl px-3 pb-12 pt-3 sm:px-5 lg:px-6">
+        <div className="mb-5 flex items-center justify-between">
           <VisitorBackButton />
 
-          {userId && (
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSubscribe}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full border text-slate-600 transition ${
-                  isSubscribed
-                    ? 'border-sky-200 bg-sky-50 text-sky-600'
-                    : 'border-slate-200 bg-white hover:bg-slate-50'
-                }`}
-                title={isSubscribed ? 'Unsubscribe' : 'Subscribe'}
-              >
-                <Bell className={`h-5 w-5 ${isSubscribed ? 'fill-current' : ''}`} />
-              </button>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowShareMenu(!showShareMenu)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+              title="Share"
+              aria-label="Share this discussion"
+              aria-expanded={showShareMenu}
+            >
+              <Share2 className="h-5 w-5" />
+            </button>
 
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowShareMenu(!showShareMenu)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                  title="Share"
-                >
-                  <Share2 className="h-5 w-5" />
-                </button>
-
-                {showShareMenu && (
-                  <div className="absolute right-0 top-12 z-10 rounded-[16px] border border-slate-200 bg-white shadow-lg">
-                    <button type="button" onClick={() => handleShare('twitter')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 first:rounded-t-[14px]">Share on Twitter</button>
-                    <button type="button" onClick={() => handleShare('facebook')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50">Share on Facebook</button>
-                    <button type="button" onClick={() => handleShare('copy')} className="block w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 last:rounded-b-[14px]">Copy Link</button>
-                  </div>
-                )}
+            {showShareMenu && (
+              <div className="absolute right-0 top-12 z-10 min-w-44 overflow-hidden rounded-xl border border-slate-200 bg-white p-1 shadow-xl">
+                <button type="button" onClick={() => handleShare('twitter')} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50">Share on Twitter</button>
+                <button type="button" onClick={() => handleShare('facebook')} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50">Share on Facebook</button>
+                <button type="button" onClick={() => handleShare('copy')} className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-slate-50">Copy link</button>
               </div>
-            </div>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+          <span className="uppercase tracking-[0.12em]">Community forum</span>
+          {thread.forum_categories?.name && (
+            <>
+              <span aria-hidden="true">/</span>
+              <span className="text-sky-700">{thread.forum_categories.name}</span>
+            </>
           )}
         </div>
 
-        {/* Thread */}
-        <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-5 sm:p-6">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                {thread.pinned && <Pin className="h-4 w-4 text-amber-600 flex-shrink-0" />}
-                <h1 className="text-2xl font-bold text-slate-900 break-words">{thread.title}</h1>
-              </div>
-
-              <div className="mt-2 text-sm text-slate-600">
-                {thread.forum_categories && (
-                  <span className="inline-block rounded-full bg-sky-50 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-sky-700">
-                    {thread.forum_categories.name}
-                  </span>
-                )}
-              </div>
-
-              {thread.tags && thread.tags.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {thread.tags.map((tag, idx) => (
-                    <span key={idx} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                      <Tag className="h-3 w-3" />
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+        <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <header className="border-b border-slate-200 bg-gradient-to-br from-white via-white to-sky-50/70 px-5 py-6 sm:px-8 sm:py-7">
+            <div className="flex flex-wrap items-center gap-2">
+              {thread.pinned && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">
+                  <Pin className="h-3.5 w-3.5" />
+                  Pinned
+                </span>
               )}
+              {thread.forum_categories?.name && (
+                <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-bold text-sky-800">
+                  {thread.forum_categories.name}
+                </span>
+              )}
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getStatusColor(thread.status)}`}>
+                {thread.status === 'published' || thread.status === 'active'
+                  ? <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  : thread.status === 'locked' || thread.status === 'closed'
+                    ? <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                    : <Archive className="h-3.5 w-3.5" aria-hidden="true" />}
+                {thread.status === 'closed' ? 'Locked' : thread.status === 'active' ? 'Published' : thread.status}
+              </span>
             </div>
 
-            <div className={`flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-semibold flex-shrink-0 ${getStatusColor(thread.status)}`}>
-              {thread.status === 'published' || thread.status === 'active'
-                ? <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
-                : thread.status === 'locked' || thread.status === 'closed'
-                  ? <Lock className="h-3 w-3" aria-hidden="true" />
-                  : <Archive className="h-3 w-3" aria-hidden="true" />}
-              {thread.status === 'closed' ? 'locked' : thread.status === 'active' ? 'published' : thread.status}
-            </div>
-          </div>
+            <h1 className="mt-4 break-words text-2xl font-extrabold leading-tight tracking-tight text-slate-950 sm:text-3xl">
+              {thread.title}
+            </h1>
 
-          <div className="mt-6 whitespace-pre-wrap break-words text-base leading-relaxed text-slate-700">{parsedThreadContent.text}</div>
+            <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-500">
+              <span className="inline-flex h-9 w-9 items-center justify-center overflow-hidden rounded-full bg-sky-100 text-xs font-bold text-sky-800 ring-2 ring-white">
+                {getInitials(threadAuthor)}
+              </span>
+              <span className="font-semibold text-slate-800">{threadAuthor}</span>
+              <span className="hidden text-slate-300 sm:inline" aria-hidden="true">•</span>
+              <time className="inline-flex items-center gap-1.5" dateTime={thread.created_at}>
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                {formatDate(thread.created_at)}
+              </time>
+            </div>
+
+            {thread.tags && thread.tags.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {thread.tags.map((tag, idx) => (
+                  <span key={idx} className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                    <Tag className="h-3 w-3" />
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </header>
+
+          <div className="px-5 py-6 sm:px-8 sm:py-7">
+            <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-slate-700 sm:text-base">
+              {parsedThreadContent.text}
+            </div>
           {threadAttachments.length > 0 && (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {threadAttachments.map((url, index) => (
@@ -424,127 +320,83 @@ export default function PublicThreadDetailPage() {
               ))}
             </div>
           )}
+          </div>
 
-          {/* Thread Meta */}
-          <div className="mt-6 border-t border-slate-200 pt-4">
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500">
-              <span className="inline-flex items-center gap-1">
-                <User className="h-3.5 w-3.5" />
-                {thread.info_users?.full_name || 'Community member'}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                {formatDate(thread.created_at)}
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <Eye className="h-3.5 w-3.5" />
-                {thread.views || 0} views
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <MessageSquare className="h-3.5 w-3.5" />
-                {replies.length} replies
-              </span>
+          <footer className="flex flex-wrap items-center gap-x-6 gap-y-3 border-t border-slate-200 bg-slate-50/70 px-5 py-4 text-sm text-slate-500 sm:px-8">
+            <span className="inline-flex items-center gap-2">
+              <Eye className="h-4 w-4 text-slate-400" aria-hidden="true" />
+              <span><strong className="font-semibold text-slate-700">{thread.views || 0}</strong> views</span>
+            </span>
+            <a href="#forum-replies" className="inline-flex items-center gap-2 transition hover:text-sky-700">
+              <MessageSquare className="h-4 w-4 text-slate-400" aria-hidden="true" />
+              <span><strong className="font-semibold text-slate-700">{replies.length}</strong> {replies.length === 1 ? 'reply' : 'replies'}</span>
+            </a>
+          </footer>
+        </article>
+
+        <section id="forum-replies" className="mt-8 scroll-mt-6">
+          <div className="mb-4 flex flex-wrap items-end justify-between gap-2 border-b border-slate-200 pb-3">
+            <div>
+              <h2 className="flex items-center gap-2 text-lg font-bold text-slate-900">
+                <MessageSquare className="h-5 w-5 text-sky-700" aria-hidden="true" />
+                Replies
+                <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-600">{replies.length}</span>
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">Responses from the community</p>
             </div>
           </div>
-        </div>
 
-        {/* Reply Form */}
-        {thread.status !== 'locked' && thread.status !== 'closed' && thread.status !== 'archived' && (
-          userId ? <div className="mb-6 rounded-[20px] border border-slate-200 bg-white p-5">
-            <h3 className="mb-4 text-sm font-bold text-slate-900">Share Your Reply</h3>
-
-            <textarea
-              value={replyContent}
-              onChange={(e) => setReplyContent(e.target.value)}
-              placeholder="Share your thoughts..."
-              rows={4}
-              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-sky-300 focus:ring-1 focus:ring-sky-200"
-            />
-
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={handleReplySubmit}
-                disabled={submittingReply || !replyContent.trim()}
-                className="flex-1 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50"
-              >
-                {submittingReply ? 'Posting...' : 'Post Reply'}
-              </button>
-            </div>
-          </div> : (
-            <div className="mb-6 flex flex-col gap-3 rounded-[20px] border border-slate-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Join the conversation</h3>
-                <p className="mt-1 text-sm text-slate-600">Sign in or create an account to reply to this discussion.</p>
-              </div>
-              <Link href="/info/register" className="inline-flex min-h-11 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 px-4 text-sm font-bold text-white transition hover:bg-slate-800">
-                Create free account
-              </Link>
-            </div>
-          )
-        )}
-
-        {/* Replies */}
-        <div className="space-y-2">
           {replies.length > 0 ? (
-            replies.map((reply) => (
-              <div key={reply.id} className={`rounded-[20px] border ${reply.is_best_answer ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white'} p-4`}>
-                {reply.is_best_answer && (
-                  <div className="mb-3 inline-block rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                    ✓ Best Answer
-                  </div>
-                )}
+            <div className="space-y-3">
+              {replies.map((reply) => {
+                const replyAuthor = reply.info_users?.full_name || 'Community member'
 
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900"><Link href={reply.user_id ? `/info/user/profile/${reply.user_id}` : '/info/user/profile'} className="hover:text-sky-700">{reply.info_users?.full_name || 'Community member'}</Link><span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700">{reply.is_best_answer ? 'Trusted answer' : 'Traveler'}</span></div>
-                    <div className="text-xs text-slate-500">{formatDate(reply.created_at)}</div>
-                  </div>
-                </div>
-
-                <p className="mt-3 text-sm text-slate-700">{reply.content}</p>
-
-                {/* Actions */}
-                <div className="mt-4 flex items-center gap-3 text-xs">
-                  {userId ? (
-                    <button
-                      type="button"
-                      onClick={() => toggleLike(reply.id)}
-                      className={`inline-flex items-center gap-1 rounded-lg px-2 py-1 transition ${
-                        userLikes.has(reply.id)
-                          ? 'bg-red-50 text-red-600'
-                          : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <Heart className={`h-3.5 w-3.5 ${userLikes.has(reply.id) ? 'fill-current' : ''}`} />
-                      <span className="font-semibold">{(reply.likes || 0) + (userLikes.has(reply.id) ? 1 : 0)}</span>
-                    </button>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-500" aria-label={`${reply.likes || 0} likes`}>
-                      <Heart className="h-3.5 w-3.5" aria-hidden="true" />
-                      <span className="font-semibold">{reply.likes || 0}</span>
-                    </span>
-                  )}
-
-                  <span className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">▲ {reply.upvotes ?? reply.likes ?? 0}</span>
-                  <span className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 font-semibold text-slate-500">▼ {reply.downvotes ?? 0}</span>
-
-                  {userId && (
-                    <button type="button" className="inline-flex items-center gap-1 rounded-lg bg-slate-50 px-2 py-1 text-slate-600 hover:bg-slate-100">
-                      <Flag className="h-3.5 w-3.5" />
-                      Report
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+                return (
+                  <article key={reply.id} className={`rounded-2xl border bg-white p-4 shadow-sm sm:p-5 ${reply.is_best_answer ? 'border-emerald-200 ring-1 ring-emerald-100' : 'border-slate-200'}`}>
+                    <div className="flex items-start gap-3">
+                      <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold ${reply.is_best_answer ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                        {getInitials(replyAuthor)}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-sm font-bold text-slate-900">{replyAuthor}</span>
+                          {reply.is_best_answer && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                              Best answer
+                            </span>
+                          )}
+                        </div>
+                        <time className="mt-0.5 block text-xs text-slate-500" dateTime={reply.created_at}>
+                          {formatDate(reply.created_at)}
+                        </time>
+                        <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">{reply.content}</p>
+                        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1.5">
+                            <Heart className="h-3.5 w-3.5" aria-hidden="true" />
+                            {reply.likes || 0} likes
+                          </span>
+                          {(reply.upvotes != null || reply.downvotes != null) && (
+                            <span>{reply.upvotes ?? reply.likes ?? 0} helpful · {reply.downvotes ?? 0} not helpful</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
           ) : (
-            <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 p-6 text-center">
-              <MessageSquare className="mx-auto mb-3 h-8 w-8 text-slate-400" />
-              <p className="text-sm text-slate-500">No replies yet. Be the first to reply!</p>
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-10 text-center shadow-sm">
+              <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                <MessageSquare className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <h3 className="mt-3 text-sm font-bold text-slate-800">No replies yet</h3>
+              <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-slate-500">
+                There are no responses in this discussion yet. Any community replies will appear here.
+              </p>
             </div>
           )}
-        </div>
+        </section>
       </div>
     </main>
   )

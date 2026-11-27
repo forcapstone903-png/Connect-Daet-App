@@ -383,8 +383,18 @@ export default function UserFeedbackPage() {
 
               <div className="space-y-3">
                 {loading ? (
-                  <div className="usr-inline-note usr-inline-note-info">
-                    Loading submissions...
+                  <div className="space-y-3" role="status" aria-label="Loading submissions">
+                    {[0, 1].map((item) => (
+                      <div key={item} className="animate-pulse rounded-2xl border border-slate-200 bg-slate-50 p-3.5" aria-hidden="true">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="h-4 w-2/5 rounded bg-slate-200" />
+                          <div className="h-5 w-16 rounded-full bg-slate-200" />
+                        </div>
+                        <div className="mt-3 h-3 w-4/5 rounded-full bg-slate-100" />
+                        <div className="mt-2 h-3 w-full rounded-full bg-slate-100" />
+                        <div className="mt-4 h-3 w-1/3 rounded-full bg-slate-100" />
+                      </div>
+                    ))}
                   </div>
                 ) : submissions.length ? (
                   submissions.map((item) => (

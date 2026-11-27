@@ -120,7 +120,14 @@ export default function PrivacySection({ settings, t, onPrivacyChange }) {
         </div>
         {requestError ? <StatusBanner tone="error">{requestError}</StatusBanner> : null}
         {requestsLoading ? (
-          <p className="mt-3 text-sm text-slate-500">Loading follow requests…</p>
+          <div className="mt-3 divide-y divide-slate-100" role="status" aria-label="Loading follow requests">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="flex items-center gap-3 py-3" aria-hidden="true">
+                <div className="h-9 w-9 animate-pulse rounded-full bg-slate-200" />
+                <div className="h-3 w-1/3 animate-pulse rounded-full bg-slate-100" />
+              </div>
+            ))}
+          </div>
         ) : requests.length ? (
           <ul className="mt-3 divide-y divide-slate-200">
             {requests.map((item) => (

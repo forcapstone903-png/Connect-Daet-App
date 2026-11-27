@@ -16,8 +16,8 @@ function missingConfig() {
 }
 
 export async function GET(request) {
-  const { response: authError } = authorizeAdminApi(request)
-  if (authError) return authError
+  const authorization = authorizeAdminApi(request)
+  if (authorization.response) return authorization.response
   if (!adminSupabase) return missingConfig()
 
   try {
@@ -33,6 +33,9 @@ export async function GET(request) {
 
     if (status) {
       query = query.eq('status', status)
+      if (status === 'draft') query = query.eq('created_by', authorization.session.user_id)
+    } else {
+      query = query.or(`status.neq.draft,created_by.eq.${authorization.session.user_id}`)
     }
     if (search) {
       query = query.ilike('title', `%${search}%`)

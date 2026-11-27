@@ -57,6 +57,9 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
           : Promise.resolve({ data: null }),
       ])
 
+      if (allResult.error) throw allResult.error
+      if (userResult.error) throw userResult.error
+
       const counts = {}
       ;(allResult.data || []).forEach((row) => {
         counts[row.reaction_type] = (counts[row.reaction_type] || 0) + 1
@@ -90,11 +93,11 @@ export default function Reactions({ contentType, contentId, userId, onReact, onC
             event: '*',
             schema: 'public',
             table: 'content_reactions',
-            filter: `content_type=eq.${contentType}`,
+            filter: `content_type=eq.${contentType},content_id=eq.${contentId}`,
           },
           (payload) => {
             const changed = payload?.new || payload?.old
-            if (!changed || changed.content_id !== contentId) return
+            if (!changed || changed.content_id !== contentId || changed.content_type !== contentType) return
             void loadReactions()
           }
         )

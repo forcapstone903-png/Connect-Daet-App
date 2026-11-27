@@ -16,8 +16,8 @@ function missingConfig() {
 }
 
 export async function GET(request, { params }) {
-  const { response: authError } = authorizeAdminApi(request)
-  if (authError) return authError
+  const authorization = authorizeAdminApi(request)
+  if (authorization.response) return authorization.response
   if (!adminSupabase) return missingConfig()
   const { id: threadId } = await params
 
@@ -31,6 +31,9 @@ export async function GET(request, { params }) {
     if (error) {
       return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     }
+    if (data.status === 'draft' && data.created_by !== authorization.session.user_id) {
+      return NextResponse.json({ success: false, message: 'Forum thread not found.' }, { status: 404 })
+    }
 
     return NextResponse.json({
       success: true,
@@ -43,12 +46,22 @@ export async function GET(request, { params }) {
 }
 
 export async function PUT(request, { params }) {
-  const { response: authError } = authorizeAdminApi(request)
-  if (authError) return authError
+  const authorization = authorizeAdminApi(request)
+  if (authorization.response) return authorization.response
   if (!adminSupabase) return missingConfig()
   const { id: threadId } = await params
 
   try {
+    const { data: currentThread, error: currentThreadError } = await adminSupabase
+      .from('forum_threads')
+      .select('created_by, status')
+      .eq('id', threadId)
+      .maybeSingle()
+    if (currentThreadError) return NextResponse.json({ success: false, message: publicErrorMessage(currentThreadError) }, { status: 500 })
+    if (!currentThread || (currentThread.status === 'draft' && currentThread.created_by !== authorization.session.user_id)) {
+      return NextResponse.json({ success: false, message: 'Forum thread not found.' }, { status: 404 })
+    }
+
     const body = await request.json()
     const update = { updated_at: new Date().toISOString() }
     if (Object.prototype.hasOwnProperty.call(body, 'title')) update.title = String(body.title || '').trim()
@@ -81,12 +94,14 @@ export async function PUT(request, { params }) {
       .from('forum_threads')
       .update(update)
       .eq('id', threadId)
+      .or(`status.neq.draft,created_by.eq.${authorization.session.user_id}`)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
       return NextResponse.json({ success: false, message: publicErrorMessage(error) }, { status: 500 })
     }
+    if (!data) return NextResponse.json({ success: false, message: 'Forum thread not found.' }, { status: 404 })
 
     return NextResponse.json({ success: true, thread: data }, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (error) {
@@ -102,10 +117,23 @@ export async function DELETE(request, { params }) {
   const { id: threadId } = await params
 
   try {
+    const { data: currentThread, error: currentThreadError } = await adminSupabase
+      .from('forum_threads')
+      .select('created_by, status')
+      .eq('id', threadId)
+      .maybeSingle()
+    if (currentThreadError) {
+      return NextResponse.json({ success: false, message: publicErrorMessage(currentThreadError) }, { status: 500 })
+    }
+    if (!currentThread || (currentThread.status === 'draft' && currentThread.created_by !== authorization.session.user_id)) {
+      return NextResponse.json({ success: false, message: 'Forum thread not found.' }, { status: 404 })
+    }
+
     const { data: deleted, error } = await adminSupabase
       .from('forum_threads')
       .delete()
       .eq('id', threadId)
+      .or(`status.neq.draft,created_by.eq.${authorization.session.user_id}`)
       .select('id, created_by, title')
       .maybeSingle()
 

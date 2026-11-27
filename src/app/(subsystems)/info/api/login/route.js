@@ -19,6 +19,19 @@ function lockoutResponse(lockedUntil) {
   )
 }
 
+function pendingDeletionResponse(deletionScheduledFor) {
+  return NextResponse.json(
+    {
+      success: false,
+      code: 'ACCOUNT_PENDING_DELETION',
+      accountStatus: 'pending_deletion',
+      deletionScheduledFor: deletionScheduledFor || null,
+      message: 'Your account is scheduled for deletion.',
+    },
+    { status: 403, headers: { 'Cache-Control': 'private, no-store' } }
+  )
+}
+
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -143,7 +156,7 @@ export async function POST(request) {
 
     const { data: accountState, error: accountStateError } = await sessionAdmin
       .from('info_users')
-      .select('status, deletion_requested_at')
+      .select('status, deletion_requested_at, deletion_scheduled_for')
       .eq('id', authData.user.id)
       .maybeSingle()
     if (accountStateError) {
@@ -153,11 +166,12 @@ export async function POST(request) {
         { status: 503 }
       )
     }
-    if (accountState?.status === 'pending_deletion' || accountState?.deletion_requested_at) {
-      return NextResponse.json(
-        { success: false, message: 'This account is scheduled for deletion. Use Account recovery to cancel the request during the 30-day grace period.' },
-        { status: 403 }
-      )
+    if (
+      accountState?.status === 'pending_deletion'
+      || accountState?.deletion_requested_at
+      || accountState?.deletion_scheduled_for
+    ) {
+      return pendingDeletionResponse(accountState?.deletion_scheduled_for)
     }
 
     const userProfileLookup = await sessionAdmin
@@ -237,11 +251,12 @@ export async function POST(request) {
       } else {
       }
 
-      if (userProfile?.status === 'pending_deletion' || userProfile?.deletion_requested_at) {
-        return NextResponse.json(
-          { success: false, message: 'This account is scheduled for deletion. Use Account recovery to cancel the request during the 30-day grace period.' },
-          { status: 403 }
-        )
+      if (
+        userProfile?.status === 'pending_deletion'
+        || userProfile?.deletion_requested_at
+        || userProfile?.deletion_scheduled_for
+      ) {
+        return pendingDeletionResponse(userProfile?.deletion_scheduled_for)
       }
 
       let permanentBan
@@ -258,9 +273,16 @@ export async function POST(request) {
         return NextResponse.json(
           {
             success: false,
-            message: 'Your account has been permanently banned. If you believe this decision was made incorrectly, contact Connect Daet support to submit an appeal.',
+            code: 'ACCOUNT_BANNED',
+            accountStatus: 'banned',
+            message: 'Your account has been permanently banned.',
+            restriction: {
+              id: permanentBan?.id || null,
+              reason: permanentBan?.reason || null,
+              bannedAt: permanentBan?.banned_at || null,
+            },
           },
-          { status: 403, headers: { 'Cache-Control': 'no-store' } }
+          { status: 403, headers: { 'Cache-Control': 'private, no-store' } }
         )
       }
 

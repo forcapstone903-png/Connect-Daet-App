@@ -3,7 +3,7 @@ BEGIN;
 CREATE TABLE IF NOT EXISTS public.suspension_reviews (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.info_users(id) ON DELETE CASCADE,
-  ban_user_id UUID NOT NULL REFERENCES public.admin_user_bans(user_id) ON DELETE CASCADE,
+  ban_id UUID NOT NULL REFERENCES public.admin_user_bans(id) ON DELETE CASCADE,
   report_id UUID REFERENCES public.info_moderation(id) ON DELETE SET NULL,
   original_suspending_user_id UUID REFERENCES public.info_users(id) ON DELETE SET NULL,
   original_suspending_party TEXT NOT NULL DEFAULT 'system'
@@ -66,7 +66,7 @@ BEGIN
 
   INSERT INTO public.suspension_reviews (
     user_id,
-    ban_user_id,
+    ban_id,
     report_id,
     original_suspending_user_id,
     original_suspending_party,
@@ -77,7 +77,7 @@ BEGIN
   )
   VALUES (
     NEW.user_id,
-    NEW.user_id,
+    NEW.id,
     NULL,
     NEW.banned_by,
     'moderator',
@@ -151,7 +151,7 @@ FOR EACH ROW EXECUTE FUNCTION public.link_resolved_account_report_to_suspension_
 
 INSERT INTO public.suspension_reviews (
   user_id,
-  ban_user_id,
+  ban_id,
   original_suspending_user_id,
   original_suspending_party,
   reason,
@@ -161,7 +161,7 @@ INSERT INTO public.suspension_reviews (
 )
 SELECT
   ban.user_id,
-  ban.user_id,
+  ban.id,
   ban.banned_by,
   'moderator',
   ban.reason,
@@ -177,7 +177,7 @@ WHERE ban.ban_type = 'suspension'
   AND NOT EXISTS (
     SELECT 1
       FROM public.suspension_reviews AS review
-     WHERE review.ban_user_id = ban.user_id
+     WHERE review.ban_id = ban.id
        AND review.suspended_at = ban.banned_at
   );
 
@@ -192,7 +192,7 @@ UPDATE public.suspension_reviews AS review
    AND EXISTS (
      SELECT 1
        FROM public.admin_user_bans AS ban
-      WHERE ban.user_id = review.ban_user_id
+      WHERE ban.id = review.ban_id
         AND ban.ban_type = 'suspension'
         AND ban.lifted_at IS NULL
         AND (ban.expires_at IS NULL OR ban.expires_at > NOW())
@@ -220,7 +220,7 @@ BEGIN
    WHERE review.id = (
      SELECT candidate.id
        FROM public.suspension_reviews AS candidate
-       JOIN public.admin_user_bans AS ban ON ban.user_id = candidate.ban_user_id
+       JOIN public.admin_user_bans AS ban ON ban.id = candidate.ban_id
       WHERE candidate.user_id = NEW.user_id
         AND candidate.status IN ('pending', 'needs_information')
         AND candidate.user_appeal_id IS NULL
@@ -299,7 +299,7 @@ BEGIN
   SELECT *
     INTO ban_row
     FROM public.admin_user_bans
-   WHERE user_id = review_row.ban_user_id
+   WHERE id = review_row.ban_id
    FOR UPDATE;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'The original suspension record no longer exists';
@@ -321,7 +321,7 @@ BEGIN
          SET lifted_by = p_reviewer_id,
              lifted_at = now_at,
              updated_at = now_at
-       WHERE user_id = review_row.ban_user_id;
+       WHERE id = review_row.ban_id;
       resulting_status := 'approved';
       resulting_account_status := 'active';
       appeal_status := 'approved';
@@ -339,7 +339,7 @@ BEGIN
              lifted_by = NULL,
              lifted_at = NULL,
              updated_at = now_at
-       WHERE user_id = review_row.ban_user_id;
+       WHERE id = review_row.ban_id;
       resulting_status := 'modified';
       appeal_status := 'approved';
       notification_title := 'Account suspension modified';

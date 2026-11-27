@@ -368,7 +368,15 @@ export default function SuspensionCasesPage() {
                   <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">No cases match these filters.</td></tr>
                 ) : null}
                 {loading && cases.length === 0 ? (
-                  <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">Loading cases…</td></tr>
+                  Array.from({ length: 5 }, (_, row) => (
+                    <tr key={`loading-${row}`} aria-hidden="true">
+                      {Array.from({ length: 8 }, (_, column) => (
+                        <td key={column} className="px-3 py-4">
+                          <span className={`block h-4 animate-pulse rounded-full bg-slate-100 ${column === 0 ? 'w-4/5' : 'w-2/3'}`} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
                 ) : null}
               </tbody>
             </table>

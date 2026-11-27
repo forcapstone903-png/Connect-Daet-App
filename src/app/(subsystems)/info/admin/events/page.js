@@ -17,7 +17,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import { toCalendarSchedule, fromCalendarSchedule } from '@/lib/eventCalendar';
 import interactionPlugin from '@fullcalendar/interaction';
 import MediaUpload from '@/app/(subsystems)/info/components/MediaUpload';
-import { AdminPagination, AdminStatCard } from '@/app/(subsystems)/info/components/admin';
+import { AdminPageSkeleton, AdminPagination, AdminStatCard } from '@/app/(subsystems)/info/components/admin';
 import { useRealtimeRefresh } from '@/lib/useRealtimeRefresh';
 import { notifyToast } from '@/lib/toast.mjs';
 
@@ -902,14 +902,7 @@ export default function AdminEventsPage() {
   }, [router, fetchEvents, fetchRegistrations]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto"></div>
-          <p className="mt-4 text-slate-600 font-medium">Loading events...</p>
-        </div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="table" rows={6} />;
   }
 
   const isEventDetailsModalOpen = Boolean(selectedEventDetails && !showEventModal);

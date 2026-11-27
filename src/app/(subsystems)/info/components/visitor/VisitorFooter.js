@@ -8,6 +8,7 @@ import connectDaetLogo from '@/app/(subsystems)/info/assets/images/logo.png'
 
 export default function VisitorFooter() {
   const { settings } = usePublicSettings()
+  const logoSource = settings.logoUrl || connectDaetLogo
 
   return (
     <footer className="relative overflow-hidden bg-[#071b43] text-white">
@@ -22,11 +23,11 @@ export default function VisitorFooter() {
             <Link href="/info/visitor" className="inline-flex items-center gap-3 group">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 p-1.5 ring-1 ring-sky-400/30 transition-transform duration-300 group-hover:rotate-6">
                 <Image
-                  src={settings.logoUrl || connectDaetLogo}
+                  src={logoSource}
                   alt=""
                   width={36}
                   height={36}
-                  unoptimized
+                  unoptimized={Boolean(settings.logoUrl)}
                   className="h-full w-full object-contain"
                 />
               </span>

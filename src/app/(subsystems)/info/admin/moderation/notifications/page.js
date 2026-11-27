@@ -207,7 +207,19 @@ export default function ModeratorNotificationsPage() {
             </div>
           ) : null}
           {loading && notifications.length === 0 ? (
-            <p className={styles.emptyState}>Loading notifications…</p>
+            <ul className={styles.notificationList} aria-label="Loading notifications">
+              {[0, 1, 2, 3].map((item) => (
+                <li key={item} className={styles.rowItem} aria-hidden="true">
+                  <div className="flex items-start gap-3 p-4">
+                    <span className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-slate-100" />
+                    <span className="min-w-0 flex-1 space-y-2">
+                      <span className="block h-4 w-2/5 animate-pulse rounded-full bg-slate-200" />
+                      <span className="block h-3 w-3/4 animate-pulse rounded-full bg-slate-100" />
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           ) : notifications.length === 0 ? (
             <div className={styles.emptyState}>
               <Bell className={styles.emptyIcon} aria-hidden="true" />

@@ -310,7 +310,15 @@ export default function AccountOversightPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <tr><td colSpan={8} className="px-3 py-10 text-center text-sm text-slate-500">Loading accounts…</td></tr>
+                  Array.from({ length: 5 }, (_, row) => (
+                    <tr key={`loading-${row}`} aria-hidden="true">
+                      {Array.from({ length: 8 }, (_, column) => (
+                        <td key={column} className="px-3 py-4">
+                          <span className={`block h-4 animate-pulse rounded-full bg-slate-100 ${column === 0 ? 'w-4/5' : 'w-2/3'}`} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
                 ) : accounts.length ? accounts.map((account) => {
                   const pendingAdminReview = account.review_status === 'pending_administrator_review'
                   return (

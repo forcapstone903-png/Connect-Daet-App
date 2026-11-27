@@ -301,24 +301,49 @@ test('administrator escalation notifications deep-link to the pending review', (
   assert.match(moderationPage, /openAccountReview\(report\)/)
 })
 
-test('suspended sign-ins retain account access but are blocked from community actions', () => {
+test('suspended sign-ins are limited to browsing, comments, reactions, and appeals', () => {
   const loginApi = read('src', 'app', '(subsystems)', 'info', 'api', 'login', 'route.js')
   const loginPage = read('src', 'app', '(subsystems)', 'info', '(auth)', 'login', 'page.js')
   const sessionAuth = read('src', 'lib', 'serverAuth.js')
   const proxy = read('src', 'proxy.js')
   const statusNotice = read('src', 'app', '(subsystems)', 'info', 'components', 'user', 'AccountStatusNotice.js')
+  const accessPolicy = read('src', 'lib', 'restrictedAccountAccess.mjs')
+  const accountReadMigration = read('supabase', 'migrations', '147_suspended_account_content_read_access.sql')
 
   assert.match(loginApi, /suspendedLimitedAccess:\s*true/)
-  assert.match(loginPage, /router\.push\(safeRedirect \|\| '\/info\/user\/dashboard'\)/)
+  assert.match(loginPage, /else if \(data\.suspended\)\s*\{\s*router\.push\('\/info\/user\/dashboard'\)/)
   assert.match(sessionAuth, /suspended_limited_access:\s*true/)
   assert.match(statusNotice, /Your account has been temporarily suspended/)
-  assert.match(proxy, /'\/info\/api\/account\/status'/)
-  assert.match(proxy, /'\/info\/api\/notifications'/)
-  assert.match(proxy, /'\/info\/api\/user\/moderation-appeals'/)
-  assert.match(proxy, /'\/info\/api\/users\/following',[\s\S]*?'\/info\/api\/user\/feed'[\s\S]*?\]\.includes\(pathname\)\) \{\s*return method === 'GET'/)
+  assert.match(accessPolicy, /'\/info\/api\/comments', new Set\(\['POST', 'DELETE'\]\)/)
+  assert.match(accessPolicy, /'\/info\/api\/reactions', new Set\(\['POST', 'DELETE'\]\)/)
+  assert.doesNotMatch(accessPolicy, /'\/info\/api\/user\/blogs',/)
+  assert.match(proxy, /isSuspendedAccountApiAllowed\(pathname, method, publicRoutes\.isPublicPathname\)/)
+  assert.match(proxy, /isSuspendedAccountPageAllowed\(pathname, method\)/)
   assert.match(proxy, /'\/info\/user\/dashboard'/)
   assert.match(proxy, /currentAccountStatus === 'banned'/)
   assert.match(proxy, /code: 'ACCOUNT_RESTRICTED'/)
+  assert.match(accountReadMigration, /content_comments/)
+  assert.match(accountReadMigration, /content_reactions/)
+})
+
+test('login exposes deletion dates and ban reasons only after valid credentials', () => {
+  const loginApi = read('src', 'app', '(subsystems)', 'info', 'api', 'login', 'route.js')
+  const loginPage = read('src', 'app', '(subsystems)', 'info', '(auth)', 'login', 'page.js')
+  const appealPage = read('src', 'app', '(subsystems)', 'info', 'account-appeal', 'page.js')
+
+  assert.match(loginApi, /code: 'ACCOUNT_PENDING_DELETION'/)
+  assert.match(loginApi, /deletionScheduledFor: deletionScheduledFor \|\| null/)
+  assert.match(loginApi, /code: 'ACCOUNT_BANNED'/)
+  assert.match(loginApi, /reason: permanentBan\?\.reason \|\| null/)
+  assert.match(loginPage, /Your account is scheduled for deletion/)
+  assert.match(loginPage, /<strong>Reason:<\/strong>/)
+  assert.match(loginPage, /caseReference=\$\{encodeURIComponent\(accountNotice\.restriction\.id\)\}/)
+  assert.match(appealPage, /currentUrl\.searchParams\.get\('caseReference'\)/)
+  assert.doesNotMatch(loginPage, /Restore your account|Appeal a suspended or banned account/)
+  assert.match(loginPage, /<form method="post" action="\/info\/login" onSubmit=\{handleLogin\}/)
+  assert.match(loginPage, /currentUrl\.searchParams\.delete\('email'\)/)
+  assert.match(loginPage, /currentUrl\.searchParams\.delete\('password'\)/)
+  assert.match(loginPage, /window\.history\.replaceState/)
 })
 
 test('account suspension appeals reuse the appeal table with private evidence and audited decisions', () => {
@@ -370,6 +395,33 @@ test('lifting restrictions preserves history and atomically restores permissions
   assert.match(emailHelper, /sendRestrictionLiftedEmail/)
 })
 
+test('recommendations tolerate an unapplied dismissal migration without exposing dismissal data', () => {
+  const route = read('src', 'app', '(subsystems)', 'info', 'api', 'user', 'recommendations', 'route.js')
+  const migration = read('supabase', 'migrations', '148_user_content_dismissals.sql')
+
+  assert.match(route, /db\.from\('user_content_dismissals'\)/)
+  assert.match(route, /queryDismissals\(dismissalsResult\)/)
+  assert.match(route, /'42P01', 'PGRST205'/)
+  assert.match(route, /without dismissal filtering/)
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS public\.user_content_dismissals/)
+  assert.match(migration, /UNIQUE \(user_id, content_type, content_id\)/)
+  assert.match(migration, /ENABLE ROW LEVEL SECURITY/)
+  assert.match(migration, /REVOKE ALL ON TABLE public\.user_content_dismissals FROM PUBLIC, anon, authenticated/)
+})
+
+test('follower post notifications are sent only by publication workflows', () => {
+  const activityRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'activity', 'track', 'route.js')
+  const createBlogRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'user', 'blogs', 'route.js')
+  const updateBlogRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'user', 'blogs', '[id]', 'route.js')
+  const approveBlogRoute = read('src', 'app', '(subsystems)', 'info', 'api', 'admin', 'blogs', '[id]', 'route.js')
+
+  assert.match(activityRoute, /if \(activityType !== 'new_post'\)/)
+  assert.doesNotMatch(activityRoute, /if \(activityType === 'new_post'\) \{\s*const \{ data: followers/)
+  assert.match(createBlogRoute, /if \(moderation\.auto_published && moderation\.created_by\)[\s\S]*?notifyFollowers/)
+  assert.match(updateBlogRoute, /if \(moderation\.auto_published && moderation\.created_by\)[\s\S]*?notifyFollowers/)
+  assert.match(approveBlogRoute, /if \(action === 'approve' && data\?\.created_by\)[\s\S]*?notifyFollowers/)
+})
+
 test('moderation RLS helpers authorize only active staff and retain deduplication indexes', () => {
   const migration = read('supabase', 'migrations', '134_active_staff_moderation_rls.sql')
   const proxy = read('src', 'proxy.js')
@@ -388,6 +440,7 @@ test('moderation RLS helpers authorize only active staff and retain deduplicatio
   assert.match(proxy, /isStaffRole\(serverSession\.role\)[\s\S]*?isStaffSessionCurrent\(serverSession\)/)
   assert.match(proxy, /rpc\/is_staff_session_current/)
   assert.match(proxy, /response\.status === 404[\s\S]*?isSessionVersionCurrent\(session\)[\s\S]*?isStaffAccountCurrent\(session\)/)
+  assert.match(proxy, /response\.status >= 500[\s\S]*?verifyStaffSessionFallback\(session\)/)
   assert.match(proxy, /account\?\.status === 'active'/)
 
   const deduplicationMigration = read('supabase', 'migrations', '129_moderator_review_notification_dedup.sql')

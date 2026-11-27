@@ -243,9 +243,10 @@ export default function DataManagementPage() {
           <AdminStatCard label="Restore mode" value="All-or-nothing merge" icon="check" tone="success" meta="One transaction · never deletes rows" />
           <AdminStatCard
             label="Automated backups"
-            value={backupSchedule.loading ? 'Loading…' : backupSchedule.error || !backupSchedule.storageReady ? 'Unavailable' : backupSchedule.settings?.enabled ? 'Weekly' : 'Paused'}
+            value={backupSchedule.loading ? null : backupSchedule.error || !backupSchedule.storageReady ? 'Unavailable' : backupSchedule.settings?.enabled ? 'Weekly' : 'Paused'}
             icon="calendar"
             tone={backupSchedule.settings?.enabled ? 'success' : 'warning'}
+            loading={backupSchedule.loading}
             meta={backupSchedule.error || !backupSchedule.storageReady ? 'Check backup settings' : 'Private Supabase Storage'}
           />
         </AdminStatGrid>

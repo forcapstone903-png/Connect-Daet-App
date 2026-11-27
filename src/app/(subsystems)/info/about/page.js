@@ -112,7 +112,16 @@ export default function AboutPage() {
 
               <div className="space-y-4 text-sm leading-relaxed text-slate-600 sm:text-base">
                 {!loaded ? (
-                  <p className="text-slate-400">Loading information...</p>
+                  <div role="status" className="space-y-4">
+                    <span className="sr-only">Loading municipality information</span>
+                    <div aria-hidden="true" className="animate-pulse space-y-3">
+                      <div className="h-4 w-full rounded-full bg-slate-200" />
+                      <div className="h-4 w-11/12 rounded-full bg-slate-200" />
+                      <div className="h-4 w-4/5 rounded-full bg-slate-200" />
+                      <div className="h-4 w-full rounded-full bg-slate-200" />
+                      <div className="h-4 w-2/3 rounded-full bg-slate-200" />
+                    </div>
+                  </div>
                 ) : municipality.description ? (
                   municipality.description.split(/\n\s*\n/).map((paragraph, index) => (
                     <p key={index}>{paragraph.trim()}</p>

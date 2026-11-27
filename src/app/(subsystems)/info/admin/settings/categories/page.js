@@ -79,7 +79,11 @@ function AlertCategories({ showToast }) {
         <button type="submit" disabled={busy} className="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">Add</button>
       </form>
 
-      {state.loading ? <p className="mt-4 text-sm text-slate-500">Loading…</p> : (
+      {state.loading ? (
+        <div className="mt-4 space-y-3" aria-label="Loading alert categories">
+          {[0, 1, 2].map((item) => <div key={item} className="space-y-2 border-b border-slate-100 py-3"><div className="h-4 w-2/5 animate-pulse rounded-full bg-slate-200" /><div className="h-3 w-3/4 animate-pulse rounded-full bg-slate-100" /></div>)}
+        </div>
+      ) : (
         <ul className="mt-4 divide-y divide-slate-100">
           {state.categories.map((category) => (
             <li key={category.slug} className="py-3">
@@ -178,7 +182,11 @@ function ListingCategories({ showToast }) {
         <input value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="New category" className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm" required />
         <button type="submit" disabled={busy} className="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50">Add</button>
       </form>
-      {state.loading ? <p className="mt-4 text-sm text-slate-500">Loading…</p> : (
+      {state.loading ? (
+        <div className="mt-4 space-y-3" aria-label="Loading place categories">
+          {[0, 1, 2].map((item) => <div key={item} className="flex items-center justify-between gap-3 border-b border-slate-100 py-3"><div className="h-4 w-2/5 animate-pulse rounded-full bg-slate-200" /><div className="h-6 w-24 animate-pulse rounded-full bg-slate-100" /></div>)}
+        </div>
+      ) : (
         <ul className="mt-3 divide-y divide-slate-100">
           {state.categories.filter((category) => category.listing_type === type).map((category) => (
             <li key={category.id} className="flex items-center justify-between gap-2 py-2 text-sm">

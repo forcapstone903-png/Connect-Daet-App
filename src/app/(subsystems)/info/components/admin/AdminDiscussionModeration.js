@@ -164,7 +164,15 @@ export default function AdminDiscussionModeration({ contentType, contentId }) {
           </div>
         ) : null}
         {group.loading && !group.items.length ? (
-          <p className="mt-3 text-sm text-slate-500">Loading {title.toLowerCase()}…</p>
+          <div className="mt-3 space-y-3" aria-label={`Loading ${title.toLowerCase()}`}>
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="rounded-xl border border-slate-200 p-3">
+                <div className="h-4 w-2/5 animate-pulse rounded-full bg-slate-200" />
+                <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-slate-100" />
+                <div className="mt-2 h-3 w-3/4 animate-pulse rounded-full bg-slate-100" />
+              </div>
+            ))}
+          </div>
         ) : !group.items.length && !group.error ? (
           <p className="mt-3 text-sm text-slate-500">No {title.toLowerCase()} yet.</p>
         ) : (

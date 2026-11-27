@@ -171,8 +171,17 @@ export default function BackupSchedulingPanel({ showToast }) {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Schedule</p>
-          <p className="mt-1 font-semibold text-slate-800">{loading ? 'Loading…' : schedule || 'Unavailable'}</p>
-          <p className="mt-1 text-xs text-slate-500">Next run: {formatDate(nextRunAt)}</p>
+          {loading ? (
+            <div className="mt-2 space-y-2" aria-label="Loading backup schedule">
+              <div className="h-4 w-2/3 animate-pulse rounded-full bg-slate-200" />
+              <div className="h-3 w-1/2 animate-pulse rounded-full bg-slate-100" />
+            </div>
+          ) : (
+            <>
+              <p className="mt-1 font-semibold text-slate-800">{schedule || 'Unavailable'}</p>
+              <p className="mt-1 text-xs text-slate-500">Next run: {formatDate(nextRunAt)}</p>
+            </>
+          )}
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Destination</p>
@@ -259,7 +268,9 @@ export default function BackupSchedulingPanel({ showToast }) {
       <div className="mt-6">
         <h3 className="mb-3 text-sm font-bold text-slate-800">Recent backup runs</h3>
         {loading ? (
-          <p className="text-sm text-slate-500">Loading backup history…</p>
+          <div className="space-y-3" aria-label="Loading backup history">
+            {[0, 1, 2].map((item) => <div key={item} className="grid gap-3 rounded-xl border border-slate-100 p-4 sm:grid-cols-3"><div className="h-4 animate-pulse rounded-full bg-slate-200" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /></div>)}
+          </div>
         ) : runs.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 p-4 text-sm text-slate-500">No backup runs yet.</p>
         ) : (

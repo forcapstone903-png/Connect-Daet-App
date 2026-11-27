@@ -1,17 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPageSkeleton, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import AdminDiscussionModeration from '@/app/(subsystems)/info/components/admin/AdminDiscussionModeration';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { supabase } from '@/lib/supabase';
 import { notifyToast } from '@/lib/toast.mjs';
 
-export default function AdminForumPage() {
+const CATEGORIES_PER_PAGE = 6;
+
+export default function AdminForumPage({ initialStatus = 'all' } = {}) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeSection, setActiveSection] = useState('threads');
+  const initialStatusRef = useRef(initialStatus);
   const [threads, setThreads] = useState([]);
   const [reports, setReports] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -24,6 +29,7 @@ export default function AdminForumPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [customCategories, setCustomCategories] = useState([]);
+  const [categoryPage, setCategoryPage] = useState(1);
   const [newCategory, setNewCategory] = useState('');
 
   const showToast = (message, isError = false) => {
@@ -31,12 +37,12 @@ export default function AdminForumPage() {
     notifyToast(message, isError ? 'error' : undefined);
   };
 
-  const fetchThreads = async () => {
+  const fetchThreads = async (requestedStatus = statusFilter) => {
     try {
       let query = '/info/api/admin/forum';
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
-      if (statusFilter !== 'all') params.append('status', statusFilter);
+      if (requestedStatus !== 'all') params.append('status', requestedStatus);
       if ([...params].length) query += `?${params.toString()}`;
 
       const res = await fetch(query);
@@ -70,10 +76,64 @@ export default function AdminForumPage() {
         .limit(8);
 
       if (error) throw error;
-      setReports(data || []);
+
+      const reportRows = data || [];
+      const replyIds = [...new Set(reportRows
+        .filter((report) => report.reported_item_table === 'forum_replies')
+        .map((report) => report.reported_item_id)
+        .filter(Boolean))];
+      const commentIds = [...new Set(reportRows
+        .filter((report) => report.reported_item_table === 'content_comments')
+        .map((report) => report.reported_item_id)
+        .filter(Boolean))];
+      const [repliesResult, commentsResult] = await Promise.all([
+        replyIds.length
+          ? supabase.from('forum_replies').select('id, thread_id').in('id', replyIds)
+          : Promise.resolve({ data: [], error: null }),
+        commentIds.length
+          ? supabase.from('content_comments').select('id, content_type, content_id').in('id', commentIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (repliesResult.error) throw repliesResult.error;
+      if (commentsResult.error) throw commentsResult.error;
+
+      const replyThreads = new Map((repliesResult.data || []).map((reply) => [reply.id, reply.thread_id]));
+      const commentsById = new Map((commentsResult.data || []).map((comment) => [comment.id, comment]));
+      const forumReports = reportRows.flatMap((report) => {
+        const contentId = report.reported_item_id;
+        if (!contentId) return [];
+
+        if (report.reported_item_table === 'forum_threads') {
+          return [{
+            ...report,
+            targetHref: `/info/user/forums/${encodeURIComponent(contentId)}`,
+            targetLabel: 'View post',
+          }];
+        }
+
+        if (report.reported_item_table === 'forum_replies') {
+          const threadId = replyThreads.get(contentId);
+          return threadId ? [{
+            ...report,
+            targetHref: `/info/user/forums/${encodeURIComponent(threadId)}#reply-${encodeURIComponent(contentId)}`,
+            targetLabel: 'View reply',
+          }] : [];
+        }
+
+        const comment = report.reported_item_table === 'content_comments'
+          ? commentsById.get(contentId)
+          : null;
+        return comment?.content_type === 'forum_thread' ? [{
+          ...report,
+          targetHref: `/info/user/forums/${encodeURIComponent(comment.content_id)}`,
+          targetLabel: 'View post',
+        }] : [];
+      });
+      setReports(forumReports);
     } catch (err) {
       console.error('Error fetching moderation reports:', err);
       setReports([]);
+      showToast(err.message || 'Unable to load forum reports.', true);
     }
   };
 
@@ -164,6 +224,35 @@ export default function AdminForumPage() {
     }
   };
 
+  const reviewPendingThread = async (thread, decision) => {
+    const reason = window.prompt(
+      decision === 'approve' ? 'Approval note:' : 'Reason for rejecting this submission:'
+    )?.trim();
+    if (!reason) return;
+
+    try {
+      const response = await fetch('/info/api/admin/moderation', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'review-submission',
+          submissionId: thread.id,
+          tableName: 'forum_threads',
+          decision,
+          reason,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to review this submission.');
+      showToast(decision === 'approve' ? 'Forum submission approved.' : 'Forum submission rejected.');
+      await fetchThreads();
+    } catch (error) {
+      console.error('Forum submission review failed:', error);
+      showToast(error.message || 'Unable to review this submission.', true);
+    }
+  };
+
   const toggleLock = async (thread) => {
     try {
       const response = await fetch(`/info/api/admin/forum/${thread.id}`, {
@@ -209,6 +298,7 @@ export default function AdminForumPage() {
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to add category');
       setCustomCategories((previous) => [...previous, result.category]);
       setNewCategory('');
+      setCategoryPage(1);
       showToast('Category added.');
     } catch (error) {
       showToast(error.message || 'Unable to add category.', true);
@@ -273,6 +363,12 @@ export default function AdminForumPage() {
       return matchesSearch && matchesStatus && matchesCategory;
     });
   }, [threads, searchTerm, statusFilter, categoryFilter]);
+  const categoryPageCount = Math.max(1, Math.ceil(customCategories.length / CATEGORIES_PER_PAGE));
+  const currentCategoryPage = Math.min(categoryPage, categoryPageCount);
+  const visibleCategories = customCategories.slice(
+    (currentCategoryPage - 1) * CATEGORIES_PER_PAGE,
+    currentCategoryPage * CATEGORIES_PER_PAGE,
+  );
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -281,7 +377,14 @@ export default function AdminForumPage() {
       const sessionUser = JSON.parse(session);
       if (!hasAdminAccess(sessionUser.role)) return window.location.assign('/info/admin/dashboard');
       setUser(sessionUser);
-      await fetchThreads();
+      const searchParams = new URLSearchParams(window.location.search);
+      const requestedView = searchParams.get('view');
+      if (['threads', 'categories', 'reports'].includes(requestedView)) setActiveSection(requestedView);
+      const requestedStatus = initialStatusRef.current === 'pending' || searchParams.get('status') === 'pending'
+        ? 'pending'
+        : 'all';
+      setStatusFilter(requestedStatus);
+      await fetchThreads(requestedStatus);
       await fetchCategories();
       await fetchReports();
       setLoading(false);
@@ -290,11 +393,7 @@ export default function AdminForumPage() {
   }, []);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="table" rows={6} />;
   }
 
   return (
@@ -303,53 +402,91 @@ export default function AdminForumPage() {
       <div style={{ marginLeft: 'var(--admin-sidebar-width)' }} className="admin-page">
         <AdminPageHeader
           eyebrow="Community"
-          title="Forum moderation"
-          description="Review threads, approve replies, manage categories, and respond to reports."
+          title={initialStatus === 'pending' ? 'Forum submissions' : 'Forum moderation'}
+          description={initialStatus === 'pending'
+            ? 'Review forum topics awaiting approval.'
+            : activeSection === 'threads'
+              ? 'Manage community threads and review submissions.'
+            : activeSection === 'categories'
+              ? 'Organize forum discussions into clear topics.'
+              : 'Review reports submitted about forum discussions.'}
           icon="forum"
-          actions={
+          actions={activeSection === 'threads' ? (
             <AdminButton variant="primary" icon="plus" onClick={openCreateModal}>Create thread</AdminButton>
-          }
+          ) : null}
         />
 
-        <AdminStatGrid columns={5}>
-          <AdminStatCard label="Threads" value={stats.total} icon="forum" tone="brand" />
-          <AdminStatCard label="Active" value={stats.active} icon="check" tone="success" />
-          <AdminStatCard label="Locked" value={stats.locked} icon="moderation" tone="danger" />
-          <AdminStatCard label="Pinned" value={stats.pinned} icon="content" tone="violet" />
-          <AdminStatCard label="Reports" value={stats.reports} icon="feedback" tone="warning" />
-        </AdminStatGrid>
-
-        <div className="bg-white rounded-2xl border border-gray-200 p-4 mb-6 shadow-sm">
-          <div className="grid gap-4 md:grid-cols-4">
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search threads..."
-              className="w-full rounded-2xl border border-gray-200 px-4 py-2"
-            />
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-2xl border border-gray-200 px-4 py-2">
-              <option value="all">All statuses</option>
-              <option value="draft">Draft</option>
-              <option value="pending">Pending review</option>
-              <option value="published">Published</option>
-              <option value="closed">Closed</option>
-              <option value="archived">Archived</option>
-              <option value="rejected">Rejected</option>
-            </select>
-            <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="w-full rounded-2xl border border-gray-200 px-4 py-2">
-              <option value="all">All categories</option>
-              {customCategories.map((category) => (
-                <option key={category.id} value={category.name}>{category.name}</option>
-              ))}
-            </select>
-            <button onClick={fetchThreads} className="rounded-2xl bg-gray-800 px-4 py-2 text-white hover:bg-gray-900">Refresh</button>
-          </div>
+        <div className="mb-6 flex flex-wrap gap-2 rounded-2xl border border-gray-200 bg-white p-2" role="tablist" aria-label="Forum moderation sections">
+          {[
+            { id: 'threads', label: 'Threads' },
+            { id: 'categories', label: 'Categories' },
+            { id: 'reports', label: 'Report queue', count: stats.reports },
+          ].map((section) => (
+            <button
+              key={section.id}
+              id={`forum-${section.id}-tab`}
+              type="button"
+              role="tab"
+              aria-selected={activeSection === section.id}
+              aria-controls={`forum-${section.id}-panel`}
+              onClick={() => setActiveSection(section.id)}
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition ${
+                activeSection === section.id
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {section.label}
+              {section.count > 0 && (
+                <span className={`rounded-full px-2 py-0.5 text-xs ${
+                  activeSection === section.id ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {section.count}
+                </span>
+              )}
+            </button>
+          ))}
         </div>
 
-        <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <div className="grid min-w-0 content-start gap-4">
-            {filteredThreads.length ? filteredThreads.map((thread) => (
+        {activeSection === 'threads' && (
+          <div id="forum-threads-panel" role="tabpanel" aria-labelledby="forum-threads-tab" className="space-y-6">
+            <AdminStatGrid columns={4}>
+              <AdminStatCard label="Threads" value={stats.total} icon="forum" tone="brand" />
+              <AdminStatCard label="Active" value={stats.active} icon="check" tone="success" />
+              <AdminStatCard label="Locked" value={stats.locked} icon="moderation" tone="danger" />
+              <AdminStatCard label="Pinned" value={stats.pinned} icon="content" tone="violet" />
+            </AdminStatGrid>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+              <div className="grid gap-4 md:grid-cols-4">
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Search threads..."
+                  className="w-full rounded-2xl border border-gray-200 px-4 py-2"
+                />
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="w-full rounded-2xl border border-gray-200 px-4 py-2">
+                  <option value="all">All statuses</option>
+                  <option value="draft">Draft</option>
+                  <option value="pending">Pending review</option>
+                  <option value="published">Published</option>
+                  <option value="closed">Closed</option>
+                  <option value="archived">Archived</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="w-full rounded-2xl border border-gray-200 px-4 py-2">
+                  <option value="all">All categories</option>
+                  {customCategories.map((category) => (
+                    <option key={category.id} value={category.name}>{category.name}</option>
+                  ))}
+                </select>
+                <button onClick={fetchThreads} className="rounded-2xl bg-gray-800 px-4 py-2 text-white hover:bg-gray-900">Refresh</button>
+              </div>
+            </div>
+
+            <div className="grid min-w-0 content-start gap-4">
+              {filteredThreads.length ? filteredThreads.map((thread) => (
               <article key={thread.id} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                 <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -368,6 +505,24 @@ export default function AdminForumPage() {
                   <span>Last activity: {thread.last_activity_at ? new Date(thread.last_activity_at).toLocaleString() : '—'}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 border-t border-gray-100 pt-3">
+                  {thread.status === 'pending' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void reviewPendingThread(thread, 'approve')}
+                        className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void reviewPendingThread(thread, 'reject')}
+                        className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100"
+                      >
+                        Reject
+                      </button>
+                    </>
+                  )}
                   <button onClick={() => pinThread(thread)} className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition hover:bg-amber-100">{thread.pinned ? 'Unpin' : 'Pin'}</button>
                   <button onClick={() => void toggleLock(thread)} className="rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 transition hover:bg-violet-100">{thread.status === 'closed' ? 'Unlock' : 'Lock'}</button>
                   <button onClick={() => openViewModal(thread)} className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-700 transition hover:bg-gray-200">View</button>
@@ -382,13 +537,30 @@ export default function AdminForumPage() {
               </div>
             )}
           </div>
+          </div>
+        )}
 
-          <div className="min-w-0 space-y-2">
-            <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-              <h3 className="mb-1 text-lg font-bold text-gray-800">Forum Categories</h3>
-              <p className="mb-4 text-sm text-gray-500">Organize discussions into clear topics.</p>
+        {activeSection === 'categories' && (
+          <section id="forum-categories-panel" role="tabpanel" aria-labelledby="forum-categories-tab" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <h2 className="mb-1 text-lg font-bold text-gray-800">Forum categories</h2>
+            <p className="mb-4 text-sm text-gray-500">Organize discussions into clear topics.</p>
+            <div className="mb-5 flex min-w-0 flex-col gap-2 sm:flex-row">
+              <input
+                type="text"
+                value={newCategory}
+                onChange={(e) => setNewCategory(e.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') void addCategory();
+                }}
+                placeholder="Add category"
+                aria-label="New forum category"
+                className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm"
+              />
+              <button onClick={addCategory} className="shrink-0 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800">Add category</button>
+            </div>
+            {customCategories.length ? (
               <div className="mb-4 space-y-2">
-                {customCategories.map((category) => (
+                {visibleCategories.map((category) => (
                   <div key={category.id} className="flex min-w-0 items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 p-2">
                     <span className="min-w-0 flex-1 truncate px-1 text-sm font-medium text-gray-700" title={category.name}>{category.name}</span>
                     <button
@@ -410,46 +582,73 @@ export default function AdminForumPage() {
                   </div>
                 ))}
               </div>
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
-                <input
-                  type="text"
-                  value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value)}
-                  placeholder="Add category"
-                  className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm"
-                />
-                <button onClick={addCategory} className="shrink-0 rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-gray-800">Add category</button>
+            ) : (
+              <p className="mb-4 rounded-xl bg-gray-50 p-4 text-sm text-gray-500">No forum categories yet.</p>
+            )}
+            {customCategories.length > CATEGORIES_PER_PAGE && (
+              <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-sm text-gray-500">
+                  Showing {(currentCategoryPage - 1) * CATEGORIES_PER_PAGE + 1}–{Math.min(currentCategoryPage * CATEGORIES_PER_PAGE, customCategories.length)} of {customCategories.length} categories
+                </p>
+                <nav className="flex items-center gap-2" aria-label="Forum category pagination">
+                  <button
+                    type="button"
+                    onClick={() => setCategoryPage(Math.max(1, currentCategoryPage - 1))}
+                    disabled={currentCategoryPage === 1}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="min-w-20 text-center text-sm text-gray-600">
+                    Page {currentCategoryPage} of {categoryPageCount}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCategoryPage(Math.min(categoryPageCount, currentCategoryPage + 1))}
+                    disabled={currentCategoryPage === categoryPageCount}
+                    className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </nav>
               </div>
-            </div>
+            )}
+          </section>
+        )}
 
-            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-              <h3 className="text-lg font-bold text-gray-800 mb-3">Report Queue</h3>
-              <div className="space-y-3">
-                {reports.length ? reports.map((report) => (
-                  <div key={report.id} className="rounded-xl border border-gray-200 p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase text-red-600">{report.report_type}</span>
-                      <span className="text-[10px] uppercase text-gray-500">{report.status}</span>
-                    </div>
-                    <p className="mt-2 text-sm font-medium text-gray-800">{report.reason}</p>
-                    <p className="mt-1 text-xs text-gray-500">{report.description || 'No additional details provided.'}</p>
+        {activeSection === 'reports' && (
+          <section id="forum-reports-panel" role="tabpanel" aria-labelledby="forum-reports-tab" className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Forum report queue</h2>
+                <p className="mt-1 text-sm text-gray-500">Recent reports about community discussions.</p>
+              </div>
+              <span className="rounded-full bg-red-50 px-3 py-1 text-sm font-semibold text-red-700">{stats.reports}</span>
+            </div>
+            <div className="space-y-3">
+              {reports.length ? reports.map((report) => (
+                <article key={report.id} className="rounded-xl border border-gray-200 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold uppercase text-red-600">{report.report_type}</span>
+                    <span className="text-[10px] uppercase text-gray-500">{report.status}</span>
                   </div>
-                )) : (
-                  <p className="text-sm text-gray-500">No active reports.</p>
-                )}
-              </div>
+                  <p className="mt-2 text-sm font-medium text-gray-800">{report.reason}</p>
+                  <p className="mt-1 text-xs text-gray-500">{report.description || 'No additional details provided.'}</p>
+                  <Link
+                    href={report.targetHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100"
+                  >
+                    {report.targetLabel}
+                  </Link>
+                </article>
+              )) : (
+                <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">No forum reports to display.</p>
+              )}
             </div>
-
-            <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm">
-              <h3 className="text-lg font-bold text-gray-800 mb-3">FAQ</h3>
-              <div className="space-y-2 text-sm text-gray-600">
-                <div className="rounded-lg bg-gray-50 p-2"><strong>Q:</strong> How do I pin a thread?</div>
-                <div className="rounded-lg bg-gray-50 p-2"><strong>Q:</strong> Where do I review reports?</div>
-                <div className="rounded-lg bg-gray-50 p-2"><strong>Q:</strong> Can I close a thread?</div>
-              </div>
-            </div>
-          </div>
-        </div>
+          </section>
+        )}
       </div>
 
       {showModal && (

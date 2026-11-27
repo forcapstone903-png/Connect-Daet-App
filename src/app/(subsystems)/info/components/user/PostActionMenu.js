@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Archive, Bookmark, Flag, Globe2, Link2, Lock, MoreHorizontal, Pencil, Send, Trash2, Users, X } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { trackUserActivity } from '@/lib/trackActivity'
+import { useUserSession } from '@/lib/useUserSession'
 import ShareToDMDialog from './ShareToDMDialog'
 
 const PRIVACY_OPTIONS = [
@@ -15,6 +16,7 @@ const PRIVACY_OPTIONS = [
 const privacyLabel = (value) => PRIVACY_OPTIONS.find((option) => option.value === value)?.label || 'Public'
 
 export default function PostActionMenu({ isRepost = false, visibility = 'public', contentType, contentId, userId, contentTitle, shareUrl, reportItemTable, reportItemId, onEdit, onRemoveNote, onPrivacyChange, onArchive, onDelete, onRestore, onHide, onNotInterested, onCopyLink, isSaved = false, onToggleSave }) {
+  const { session } = useUserSession()
   const buttonRef = useRef(null)
   const menuRef = useRef(null)
   const [open, setOpen] = useState(false)
@@ -159,6 +161,7 @@ export default function PostActionMenu({ isRepost = false, visibility = 'public'
   }
 
   const PrivacyIcon = PRIVACY_OPTIONS.find((option) => option.value === currentVisibility)?.icon || Globe2
+  if (session?.suspended_limited_access === true) return null
 
   return (
     <div className="relative inline-flex items-center z-30">

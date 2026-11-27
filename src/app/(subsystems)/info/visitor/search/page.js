@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink, UserPlus, UserCheck } from 'lucide-react'
+import { Search as SearchIcon, MapPin, CalendarDays, MessageSquare, Newspaper, X, Sparkles, ArrowRight, SlidersHorizontal, UserRound, AtSign, ExternalLink, UserPlus, UserCheck, Heart, Eye } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
 import UserProfileLink from '@/app/(subsystems)/info/components/user/UserProfileLink'
@@ -17,14 +17,13 @@ const defaultSpotImage = 'https://images.unsplash.com/photo-1500530855697-b586d8
 const popularSearches = ['Bagasbas Beach', 'Calaguas', 'Daet events', 'local food', 'travel stories']
 
 function SearchContent() {
+  return <SearchContentView />
+}
+
+function SearchContentView() {
   const searchParams = useSearchParams()
   const initialQuery = searchParams?.get('q') || ''
   const initialType = searchParams?.get('type') || ''
-
-  return <SearchContentView initialQuery={initialQuery} initialType={initialType} />
-}
-
-function SearchContentView({ initialQuery, initialType }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchPath = pathname.startsWith('/info/user/') || pathname.startsWith('/info/admin/')
@@ -62,6 +61,8 @@ function SearchContentView({ initialQuery, initialType }) {
   const [authorProfiles, setAuthorProfiles] = useState({})
   const [followBusyId, setFollowBusyId] = useState(null)
   const [followNotice, setFollowNotice] = useState('')
+  const [featuredSlide, setFeaturedSlide] = useState(0)
+  const featuredTouchStart = useRef(null)
   const [results, setResults] = useState({
     spots: [],
     events: [],
@@ -445,6 +446,7 @@ function SearchContentView({ initialQuery, initialType }) {
   const communityCount = results.users.length + results.userContent.length + results.userComments.length + results.mentions.length
   const totalCount = results.spots.length + results.events.length + results.blogs.length + results.threads.length + communityCount
   const isBrowsingBlogs = initialType === 'blogs' && !query.trim()
+  const isVisitorBlogDirectory = pathname.startsWith('/info/visitor/') && isBrowsingBlogs
 
   const tabs = [
     { id: 'all', label: 'All', count: totalCount },
@@ -497,8 +499,48 @@ function SearchContentView({ initialQuery, initialType }) {
     )
   }
 
+  const popularityScore = (item) => (
+    Number(item?.views || 0)
+    + Number(item?.likes || item?.save_count || item?.current_attendees || 0) * 3
+    + Number(item?.comments_count || item?.review_count || item?.reply_count || 0) * 2
+  )
+  const topSpot = [...results.spots].sort((a, b) => popularityScore(b) - popularityScore(a))[0]
+  const topEvent = [...results.events].sort((a, b) => popularityScore(b) - popularityScore(a))[0]
+  const topBlog = [...results.blogs].sort((a, b) => popularityScore(b) - popularityScore(a))[0]
+  const featuredSlides = [
+    topSpot && {
+      type: 'Popular Tourist Spot',
+      title: topSpot.name,
+      description: topSpot.location || topSpot.barangay || 'A must-visit destination in Camarines Norte',
+      image: topSpot.featured_image || topSpot.image_url || (Array.isArray(topSpot.images) ? topSpot.images[0] : '') || '/daet-rizal-monument-hero.png',
+      href: `/info/visitor/tourist-spots/${topSpot.id}`,
+    },
+    topEvent && {
+      type: 'Popular Event',
+      title: topEvent.title,
+      description: topEvent.location || topEvent.venue || topEvent.description || 'See what is happening around Daet',
+      image: topEvent.featured_image || topEvent.image_url || '/daet-rizal-monument-hero.png',
+      href: `/info/visitor/events/${topEvent.id}`,
+    },
+    topBlog && {
+      type: 'Popular Blog',
+      title: topBlog.title,
+      description: topBlog.excerpt || 'Discover a local story from the community',
+      image: getBlogImage(topBlog) || '/daet-rizal-monument-hero.png',
+      href: `/info/visitor/blog/${topBlog.id}`,
+    },
+  ].filter(Boolean)
+
+  useEffect(() => {
+    if (!isVisitorBlogDirectory || featuredSlides.length < 2) return undefined
+    const timer = window.setTimeout(() => {
+      setFeaturedSlide((current) => (current + 1) % featuredSlides.length)
+    }, 6500)
+    return () => window.clearTimeout(timer)
+  }, [featuredSlide, isVisitorBlogDirectory, featuredSlides.length])
+
   return (
-    <main className={`tourism-shell usr-section-page usr-search min-h-screen text-slate-900 ${styles.searchPage}`}>
+    <main className={`tourism-shell usr-section-page usr-search min-h-screen text-slate-900 ${styles.searchPage} ${isVisitorBlogDirectory ? styles.blogDirectory : ''}`}>
       {pathname.startsWith('/info/user/') && <UserTopHeader />}
       <div className="usr-section-container mx-auto max-w-5xl px-3 pb-12 pt-2 sm:px-4 lg:px-6">
         {/* Header */}
@@ -525,7 +567,7 @@ function SearchContentView({ initialQuery, initialType }) {
                     value={query}
                     onFocus={() => setSearchFocused(true)}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search destinations, events, blogs, forums..."
+                    placeholder={isVisitorBlogDirectory ? 'Search stories...' : 'Search destinations, events, blogs, forums...'}
                     className="min-w-0 flex-1 border-none bg-transparent p-0 text-sm text-slate-700 outline-none placeholder:text-slate-400"
                   />
                   <button
@@ -564,7 +606,13 @@ function SearchContentView({ initialQuery, initialType }) {
                         <span className="shrink-0 text-[10px] text-slate-400">Person</span>
                       </UserProfileLink>
                     ))}
-                    {suggestedUsersLoading && <p className="px-3 py-2 text-xs text-slate-500">Finding people…</p>}
+                    {suggestedUsersLoading && (
+                      <div role="status" className="flex items-center gap-3 px-3 py-2">
+                        <span className="sr-only">Loading people suggestions</span>
+                        <span aria-hidden="true" className="h-8 w-8 animate-pulse rounded-full bg-slate-200" />
+                        <span aria-hidden="true" className="h-3 w-2/3 animate-pulse rounded-full bg-slate-200" />
+                      </div>
+                    )}
                     {!suggestedUsersLoading && !suggestedUsers.length && <p className="px-3 py-2 text-xs text-slate-500">No matching people found.</p>}
                   </div>
                 )}
@@ -603,7 +651,7 @@ function SearchContentView({ initialQuery, initialType }) {
                 value={query}
                 onFocus={() => setSearchFocused(true)}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search..."
+                placeholder={isVisitorBlogDirectory ? 'Search stories...' : 'Search...'}
                 className="min-w-0 flex-1 border-none bg-transparent p-0 text-base text-slate-700 outline-none placeholder:text-slate-400"
               />
               <button
@@ -641,7 +689,13 @@ function SearchContentView({ initialQuery, initialType }) {
                         <span className="shrink-0 text-[10px] text-slate-400">Person</span>
                       </UserProfileLink>
                     ))}
-                    {suggestedUsersLoading && <p className="px-3 py-2 text-xs text-slate-500">Finding people…</p>}
+                    {suggestedUsersLoading && (
+                      <div role="status" className="flex items-center gap-3 px-3 py-2">
+                        <span className="sr-only">Loading people suggestions</span>
+                        <span aria-hidden="true" className="h-8 w-8 animate-pulse rounded-full bg-slate-200" />
+                        <span aria-hidden="true" className="h-3 w-2/3 animate-pulse rounded-full bg-slate-200" />
+                      </div>
+                    )}
                     {!suggestedUsersLoading && !suggestedUsers.length && <p className="px-3 py-2 text-xs text-slate-500">No matching people found.</p>}
                   </div>
                 )}
@@ -756,45 +810,92 @@ function SearchContentView({ initialQuery, initialType }) {
         {followNotice && <p role="status" aria-live="polite" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">{followNotice}</p>}
 
         {/* Search Results Header */}
-        <div className="usr-card usr-enter usr-search-results mb-6">
-          <p className="usr-section-eyebrow">{isBrowsingBlogs ? 'Blogs' : query.trim() ? 'Search results' : 'Start exploring'}</p>
-          <h2 className="mt-1 text-2xl font-black text-slate-900">
-            {isBrowsingBlogs ? (
-              'Blogs from the community'
-            ) : query.trim() ? (
-              <>
-                Results for <span className="text-teal-700">&quot;{query.trim()}&quot;</span>
-              </>
+        {isVisitorBlogDirectory ? (
+          <div
+            className={`usr-card usr-enter usr-search-results mb-6 ${styles.blogDirectoryHero} ${styles.featuredHero}`}
+            onTouchStart={(event) => { featuredTouchStart.current = event.touches[0]?.clientX ?? null }}
+            onTouchEnd={(event) => {
+              if (featuredTouchStart.current === null || featuredSlides.length < 2) return
+              const endX = event.changedTouches[0]?.clientX ?? featuredTouchStart.current
+              const distance = endX - featuredTouchStart.current
+              if (Math.abs(distance) < 45) return
+              setFeaturedSlide((current) => distance < 0
+                ? (current + 1) % featuredSlides.length
+                : (current - 1 + featuredSlides.length) % featuredSlides.length)
+              featuredTouchStart.current = null
+            }}
+            style={featuredSlides[featuredSlide]
+              ? { backgroundImage: `linear-gradient(90deg, rgb(8 28 58 / 92%), rgb(8 28 58 / 45%) 58%, rgb(8 28 58 / 20%)), url("${featuredSlides[featuredSlide].image}")` }
+              : undefined}
+          >
+            {featuredSlides[featuredSlide] ? (
+              <Link href={featuredSlides[featuredSlide].href} className={styles.featuredHeroLink}>
+                <p className="usr-section-eyebrow">{featuredSlides[featuredSlide].type}</p>
+                <h2>{featuredSlides[featuredSlide].title}</h2>
+                <p className={styles.blogDirectoryDescription}>{featuredSlides[featuredSlide].description}</p>
+                <span className={styles.featuredHeroAction}>Explore <ArrowRight aria-hidden="true" /></span>
+              </Link>
             ) : (
-              'What are you looking for?'
+              <div className={styles.featuredHeroLink}>
+                <p className="usr-section-eyebrow">Blogs</p>
+                <h2>Stories from Daet</h2>
+                <p className={styles.blogDirectoryDescription}>Travel guides, local food, history, and stories from the people of Daet.</p>
+              </div>
             )}
-          </h2>
-          <p className="mt-1 text-sm text-slate-600">
-            {loading
-              ? isBrowsingBlogs ? 'Loading blogs...' : 'Searching...'
-              : isBrowsingBlogs
-                ? `${results.blogs.length} published blog${results.blogs.length === 1 ? '' : 's'}`
-                : `${totalCount} result${totalCount === 1 ? '' : 's'} found`}
-          </p>
-          {!query.trim() && !isBrowsingBlogs && (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {popularSearches.map((suggestion) => (
-                <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:border-teal-200 hover:bg-teal-100">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {suggestion}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+            {featuredSlides.length > 1 && (
+              <div className={styles.featuredHeroControls} aria-label="Featured content">
+                {featuredSlides.map((slide, index) => (
+                  <button
+                    key={`${slide.type}-${slide.href}`}
+                    type="button"
+                    onClick={() => setFeaturedSlide(index)}
+                    className={index === featuredSlide ? styles.featuredHeroDotActive : ''}
+                    aria-label={`Show ${slide.type}: ${slide.title}`}
+                    aria-pressed={index === featuredSlide}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="usr-card usr-enter usr-search-results mb-6">
+            <p className="usr-section-eyebrow">{query.trim() ? 'Search results' : 'Start exploring'}</p>
+            <h2 className="mt-1 text-2xl font-black text-slate-900">
+              {query.trim() ? (
+                <>Results for <span className="text-teal-700">&quot;{query.trim()}&quot;</span></>
+              ) : (
+                'What are you looking for?'
+              )}
+            </h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {loading ? (
+                <span role="status" className="inline-block h-3 w-24 animate-pulse rounded-full bg-slate-200 align-middle">
+                  <span className="sr-only">Loading result count</span>
+                </span>
+              ) : `${totalCount} result${totalCount === 1 ? '' : 's'} found`}
+            </p>
+            {!query.trim() && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {popularSearches.map((suggestion) => (
+                  <button key={suggestion} type="button" onClick={() => { setQuery(suggestion); saveRecentSearch(suggestion); router.push(`${searchPath}?q=${encodeURIComponent(suggestion)}`) }} className="usr-press inline-flex items-center gap-1.5 rounded-full border border-teal-100 bg-teal-50 px-3 py-2 text-xs font-bold text-teal-700 transition hover:border-teal-200 hover:bg-teal-100">
+                    <Sparkles className="h-3.5 w-3.5" />{suggestion}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Loading State */}
         {loading ? (
-          <div className="usr-section-loading">
+          <div className={`usr-section-loading ${isVisitorBlogDirectory ? styles.blogCardGrid : ''}`}>
             {[1, 2, 3].map((i) => (
-              <div key={i} className="usr-card p-4">
-                <div className="usr-section-skeleton h-4 w-1/3 rounded-full" />
-                <div className="usr-section-skeleton mt-3 h-3 w-full rounded-full" />
+              <div key={i} className={`usr-card p-4 ${isVisitorBlogDirectory ? styles.blogCardSkeleton : ''}`}>
+                {isVisitorBlogDirectory && <div className={`usr-section-skeleton ${styles.blogCardSkeletonImage}`} />}
+                <div className={isVisitorBlogDirectory ? styles.blogCardSkeletonCopy : ''}>
+                  <div className="usr-section-skeleton h-4 w-1/3 rounded-full" />
+                  <div className="usr-section-skeleton mt-3 h-3 w-full rounded-full" />
+                </div>
               </div>
             ))}
           </div>
@@ -983,30 +1084,66 @@ function SearchContentView({ initialQuery, initialType }) {
             {/* Blogs */}
             {(activeTab === 'all' || activeTab === 'blogs') && results.blogs.length > 0 && (
               <section>
-                <h2 className="mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700">
+                <h2 className={`mb-3 flex items-center gap-2 text-xs font-black uppercase tracking-[0.16em] text-teal-700 ${isVisitorBlogDirectory ? styles.blogResultsHeading : ''}`}>
                   <Newspaper className="h-4 w-4" />
-                  Blogs ({results.blogs.length})
+                  {isVisitorBlogDirectory ? 'Stories' : 'Blogs'} ({results.blogs.length})
                 </h2>
-                <div className="usr-card space-y-1.5 p-1.5">
-                  {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog) => {
+                <div className={isVisitorBlogDirectory ? `${styles.blogCardGrid} ${styles.blogResultsGrid}` : 'usr-card space-y-1.5 p-1.5'}>
+                  {results.blogs.slice(0, activeTab === 'all' ? 4 : undefined).map((blog, index) => {
                     const blogImage = getBlogImage(blog)
+                    const author = getAuthor(blog.created_by)
                     return (
-                      <div key={blog.id} className="usr-list-row group">
-                        <Link href={`/info/visitor/blog/${blog.id}`} className="flex min-w-0 flex-1 items-center gap-3">
-                          {blogImage && (
-                            <img
-                              src={blogImage}
-                              alt={blog.title}
-                              className="h-20 w-24 flex-shrink-0 rounded-xl object-cover"
-                            />
+                      <div
+                        key={blog.id}
+                        style={isVisitorBlogDirectory ? { animationDelay: `${index * 70}ms` } : undefined}
+                        className={`usr-list-row group ${isVisitorBlogDirectory ? styles.blogCard : ''}`}
+                      >
+                        <Link
+                          href={`/info/visitor/blog/${blog.id}`}
+                          className={`flex min-w-0 flex-1 items-center gap-3 ${isVisitorBlogDirectory ? styles.blogCardLink : ''}`}
+                        >
+                          {(blogImage || isVisitorBlogDirectory) && (
+                            <div className={isVisitorBlogDirectory ? styles.blogCardImageWrap : ''}>
+                              <img
+                                src={blogImage || defaultSpotImage}
+                                alt={blog.title}
+                                className={isVisitorBlogDirectory ? styles.blogCardImage : 'h-20 w-24 flex-shrink-0 rounded-xl object-cover'}
+                              />
+                              {isVisitorBlogDirectory && (
+                                <div className={styles.blogCardImageOverlay} />
+                              )}
+                            </div>
                           )}
-                          <div className="min-w-0">
-                            <h3 className="text-sm font-bold text-slate-900 group-hover:text-teal-700">{blog.title}</h3>
-                            {getAuthor(blog.created_by) && <p className="mt-1 text-[11px] text-slate-500">By {getAuthor(blog.created_by).full_name || 'Community member'}</p>}
-                            {blog.excerpt && <p className="mt-1 text-xs text-slate-600">{blog.excerpt}</p>}
-                            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-teal-700">
+                          <div className={`min-w-0 ${isVisitorBlogDirectory ? styles.blogCardCopy : ''}`}>
+                            <h3 className={`text-sm font-bold text-slate-900 group-hover:text-teal-700 ${isVisitorBlogDirectory ? styles.blogCardTitle : ''}`}>{blog.title}</h3>
+                            {isVisitorBlogDirectory ? (
+                              <div className={styles.blogCardAuthorRow}>
+                                <span className={styles.blogCardAvatar}>
+                                  {author?.profile_image_url
+                                    ? <img src={author.profile_image_url} alt="" />
+                                    : <UserRound aria-hidden="true" />}
+                                </span>
+                                <span className={styles.blogCardAuthor}>
+                                  <strong>{author?.full_name || 'Community member'}</strong>
+                                  {blog.published_at || blog.created_at
+                                    ? <small>{formatDate(blog.published_at || blog.created_at)}</small>
+                                    : null}
+                                </span>
+                              </div>
+                            ) : (
+                              author && <p className="mt-1 text-[11px] text-slate-500">By {author.full_name || 'Community member'}</p>
+                            )}
+                            {blog.excerpt && <p className={`mt-1 text-xs text-slate-600 ${isVisitorBlogDirectory ? styles.blogCardExcerpt : ''}`}>{blog.excerpt}</p>}
+                            <p className={`mt-1 text-[10px] font-semibold uppercase tracking-wide text-teal-700 ${isVisitorBlogDirectory ? styles.blogCardCategory : ''}`}>
                               {blog.category || 'Blog'}
                             </p>
+                            {isVisitorBlogDirectory && (
+                              <div className={styles.blogCardEngagement}>
+                                <span><Heart aria-hidden="true" />{Number(blog.likes || 0).toLocaleString()}</span>
+                                <span><MessageSquare aria-hidden="true" />{Number(blog.comments_count || 0).toLocaleString()}</span>
+                                <span><Eye aria-hidden="true" />{Number(blog.views || 0).toLocaleString()}</span>
+                              </div>
+                            )}
                           </div>
                         </Link>
                         {renderFollowButton(blog.created_by)}

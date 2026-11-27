@@ -98,7 +98,13 @@ export default function ModerationAppealsPage() {
               <p className="mt-1 text-sm leading-6 text-slate-600">Review your current restriction and submit a request for moderator review.</p>
             </div>
           </div>
-          {loading ? <p className="mt-6 text-sm text-slate-500">Loading your appeal information...</p> : accountSuspension ? (
+          {loading ? (
+            <div className="mt-6 animate-pulse space-y-3 rounded-xl border border-slate-200 p-4" role="status" aria-label="Loading appeal information">
+              <div className="h-4 w-2/5 rounded bg-slate-200" aria-hidden="true" />
+              <div className="h-3 w-full rounded bg-slate-100" aria-hidden="true" />
+              <div className="h-3 w-4/5 rounded bg-slate-100" aria-hidden="true" />
+            </div>
+          ) : accountSuspension ? (
             <div className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4">
               <p className="flex items-center gap-2 font-semibold text-red-900"><AlertCircle className="h-4 w-4" aria-hidden="true" /> Your account is suspended</p>
               <p className="mt-2 text-sm text-red-900">{accountSuspension.reason}</p>

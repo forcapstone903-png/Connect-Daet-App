@@ -121,7 +121,7 @@ export default function SuspendedAccountReviewCard({ review, onReview }) {
             <Ban className="h-4 w-4 text-gray-500" aria-hidden="true" /> Suspension details
           </h4>
           <dl className="grid gap-3 sm:grid-cols-2">
-            <Detail label="Ban record user ID">{review?.ban_user_id}</Detail>
+            <Detail label="Suspension record ID">{review?.ban_id}</Detail>
             <Detail label="Suspension reason">{review?.reason}</Detail>
             <Detail label="Original duration">
               {review?.original_duration_days ? `${review.original_duration_days} days` : 'Indefinite'}

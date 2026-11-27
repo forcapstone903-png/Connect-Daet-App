@@ -145,7 +145,17 @@ export default function StaffChatPage() {
             aria-label="Staff chat messages"
           >
             {loading && messages.length === 0 ? (
-              <p className={styles.emptyState}>Loading staff conversation…</p>
+              <ol className={styles.messageList} aria-label="Loading staff conversation">
+                {[0, 1, 2, 3].map((item) => (
+                  <li key={item} className={`${styles.messageRow} ${item % 2 ? styles.ownMessageRow : ''}`} aria-hidden="true">
+                    <div className={`${styles.messageBubble} ${item % 2 ? styles.ownMessageBubble : ''}`}>
+                      <div className="mb-2 h-3 w-24 animate-pulse rounded-full bg-slate-200" />
+                      <div className="h-4 w-56 max-w-full animate-pulse rounded-full bg-slate-100" />
+                      <div className="mt-2 h-4 w-40 max-w-full animate-pulse rounded-full bg-slate-100" />
+                    </div>
+                  </li>
+                ))}
+              </ol>
             ) : messages.length === 0 ? (
               <div className={styles.emptyState}>
                 <MessageCircle aria-hidden="true" />

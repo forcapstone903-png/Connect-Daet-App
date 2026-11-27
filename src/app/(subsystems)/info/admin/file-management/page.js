@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminPageHeader, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminPageHeader, AdminPageSkeleton, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
 import { notifyToast } from '@/lib/toast.mjs';
@@ -166,11 +166,7 @@ export default function FileManagementPage() {
   const totalBytes = files.reduce((total, file) => total + (Number(file.size) || 0), 0);
 
   if (!isHydrated || !user) {
-    return (
-      <div className="min-h-screen bg-slate-50" aria-busy="true">
-        <div className="admin-loading"><span className="admin-loading-ring" aria-hidden="true" /><p className="text-sm">Loading media library…</p></div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="cards" rows={6} />;
   }
 
   return (
@@ -214,7 +210,16 @@ export default function FileManagementPage() {
           </div>
 
           {loading && files.length === 0 ? (
-            <p className="py-12 text-center text-sm text-slate-500">Loading stored media…</p>
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3" aria-label="Loading stored media">
+              {[0, 1, 2, 3, 4, 5].map((item) => (
+                <div key={item} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="h-4 w-3/4 animate-pulse rounded-full bg-slate-200" />
+                  <div className="mt-3 h-3 w-2/3 animate-pulse rounded-full bg-slate-100" />
+                  <div className="mt-2 h-3 w-1/2 animate-pulse rounded-full bg-slate-100" />
+                  <div className="mt-4 h-7 w-24 animate-pulse rounded-full bg-slate-200" />
+                </div>
+              ))}
+            </div>
           ) : filteredFiles.length ? (
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               {filteredFiles.map((file) => (

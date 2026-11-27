@@ -4,11 +4,39 @@ import { createSessionAdminClient, revokeUserSessions } from '@/lib/sessionVersi
 
 export async function POST(request) {
   const session = getServerSession(request)
+  const accessToken = request.headers.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
+  let adminSupabase = null
   let sessionsRevoked = false
+  let supabaseSessionRevoked = false
+
+  if (session?.user_id || accessToken) {
+    try {
+      adminSupabase = createSessionAdminClient()
+    } catch (error) {
+      console.error('Logout Supabase admin client initialization failed:', {
+        code: error.code || null,
+        status: error.status || null,
+      })
+    }
+  }
+
+  if (accessToken) {
+    try {
+      if (!adminSupabase) throw new Error('Supabase admin client is unavailable.')
+      const { error } = await adminSupabase.auth.admin.signOut(accessToken, 'global')
+      if (error) throw error
+      supabaseSessionRevoked = true
+    } catch (error) {
+      console.error('Logout Supabase session revocation failed:', {
+        code: error.code || null,
+        status: error.status || null,
+      })
+    }
+  }
 
   if (session?.user_id) {
     try {
-      await revokeUserSessions(createSessionAdminClient(), session.user_id)
+      await revokeUserSessions(adminSupabase, session.user_id)
       sessionsRevoked = true
     } catch (error) {
       console.error('Logout session revocation failed:', { code: error.code || null })
@@ -18,7 +46,7 @@ export async function POST(request) {
   try {
     // Clear the auth cookie on the client side by setting Set-Cookie header
     const response = NextResponse.json(
-      { success: true, sessionsRevoked, message: 'Logged out successfully' },
+      { success: true, sessionsRevoked, supabaseSessionRevoked, message: 'Logged out successfully' },
       { status: 200 }
     )
 

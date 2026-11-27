@@ -39,6 +39,9 @@ Admin, Tourism Officer, and Moderator each have a separate staff dashboard entry
 
 ## 3. Feature inventory
 
+For a feature-to-page, API, library, migration, test, and documentation index,
+see [Feature and file map](./docs/feature-file-map.md).
+
 ### 3.1 Public tourism information
 
 - **Tourist spots and attractions:** Browse active destination listings, search by destination name, location, category, or description, and narrow results using the categories present in the published data. Listing cards show the destination name, category, location, image, featured status, and displayed rating when available.

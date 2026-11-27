@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Gift, Plus, Sparkles, Trash2 } from 'lucide-react'
 import SettingsShell from '../_components/SettingsShell'
+import { AdminFormSkeleton } from '@/app/(subsystems)/info/components/admin'
 import { DEFAULT_REWARD_SETTINGS } from '@/lib/rewardSettings.mjs'
 
 const REWARDS_API = '/info/api/admin/rewards'
@@ -48,7 +49,7 @@ export default function AdminRewardsSettingsPage() {
     }
   }, [])
 
-  return (
+  return loading ? <AdminFormSkeleton sections={3} fields={3} /> : (
     <SettingsShell
       title="Rewards & Points"
       subtitle="Configure the supported ways users earn points and the rewards they can redeem."

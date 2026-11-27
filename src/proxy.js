@@ -8,6 +8,10 @@ import {
   sessionNeedsActivityRefresh,
 } from './lib/serverAuth'
 import { canAccessAdminPage, getStaffHomePath, isStaffRole, normalizeStaffRole } from './lib/staffRoles.mjs'
+import {
+  isSuspendedAccountApiAllowed,
+  isSuspendedAccountPageAllowed,
+} from './lib/restrictedAccountAccess.mjs'
 
 // Routes that already-authenticated users should never sit on. Sitting on these
 // was the source of the flicker/glitch: pages like /visitor pushed an authed
@@ -151,26 +155,32 @@ async function isStaffSessionCurrent(session) {
       signal: AbortSignal.timeout(5000),
     })
 
-    if (response.status === 404) {
-      const [versionCurrent, accountCurrent] = await Promise.all([
-        isSessionVersionCurrent(session),
-        isStaffAccountCurrent(session),
-      ])
-      if (versionCurrent === false || accountCurrent === false) return false
-      return versionCurrent === null || accountCurrent === null ? null : true
+    if (response.status === 404 || response.status >= 500 || response.status === 429) {
+      return verifyStaffSessionFallback(session)
     }
 
     if (!response.ok) {
       console.error('Staff session verification failed with HTTP status:', response.status)
-      return response.status >= 500 || response.status === 429 ? null : false
+      return false
     }
 
     const current = await response.json()
-    return typeof current === 'boolean' ? current : null
+    if (typeof current === 'boolean') return current
+    console.error('Staff session verification returned an invalid response.')
+    return verifyStaffSessionFallback(session)
   } catch (error) {
     console.error('Staff session verification failed:', error)
     return null
   }
+}
+
+async function verifyStaffSessionFallback(session) {
+  const [versionCurrent, accountCurrent] = await Promise.all([
+    isSessionVersionCurrent(session),
+    isStaffAccountCurrent(session),
+  ])
+  if (versionCurrent === false || accountCurrent === false) return false
+  return versionCurrent === null || accountCurrent === null ? null : true
 }
 
 async function isStaffAccountCurrent(session) {
@@ -293,7 +303,11 @@ async function getCurrentAccountStatus(userId) {
   }
 }
 
-function isRestrictedAccountApiAllowed(pathname, method) {
+function isRestrictedAccountApiAllowed(pathname, method, accountStatus) {
+  if (accountStatus === 'suspended') {
+    return isSuspendedAccountApiAllowed(pathname, method, publicRoutes.isPublicPathname)
+  }
+
   if ([
     '/info/api/users/following',
     '/info/api/user/feed',
@@ -316,7 +330,11 @@ function isRestrictedAccountApiAllowed(pathname, method) {
   return method === 'GET' && publicRoutes.isPublicPathname(pathname)
 }
 
-function isRestrictedAccountPageAllowed(pathname, method) {
+function isRestrictedAccountPageAllowed(pathname, method, accountStatus) {
+  if (accountStatus === 'suspended') {
+    return isSuspendedAccountPageAllowed(pathname, method)
+  }
+
   if (method === 'GET' && (
     publicRoutes.isPublicPathname(pathname)
     || VISITOR_CONTENT_ROUTE_PREFIXES.some((prefix) => (
@@ -576,8 +594,8 @@ async function handleRequest(request) {
 
     if (['pending', 'suspended'].includes(currentAccountStatus)) {
       const allowed = isUserApiRoute
-        ? isRestrictedAccountApiAllowed(normalizedPathname, request.method)
-        : isRestrictedAccountPageAllowed(normalizedPathname, request.method)
+        ? isRestrictedAccountApiAllowed(normalizedPathname, request.method, currentAccountStatus)
+        : isRestrictedAccountPageAllowed(normalizedPathname, request.method, currentAccountStatus)
       if (!allowed) {
         if (isUserApiRoute) {
           return NextResponse.json(

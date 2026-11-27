@@ -4,8 +4,11 @@ import { Bookmark, MessageCircle } from 'lucide-react'
 import Reactions from './Reactions'
 import ShareRepost from './ShareRepost'
 import PostActionMenu from './PostActionMenu'
+import { useUserSession } from '@/lib/useUserSession'
 
 export default function SocialActionBar({ contentType, contentId, userId, commentCount = 0, onToggleComments, isSaved = false, onToggleSave, onRepost, originalPost = null, repostContentType, repostContentId, heartOnly = false, compactFeed = false, postOptions = null, postActionMenuProps = {}, shareUrl, showOverflowMenu = true }) {
+  const { session } = useUserSession()
+  const suspendedLimitedAccess = session?.suspended_limited_access === true
   const reportTableByType = {
     announcement: 'info_announcements',
     blog: 'info_blogs',
@@ -28,6 +31,7 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
     reportItemTable,
     reportItemId: reportItemTable ? reportItemId : undefined,
   }
+  const gridColumns = suspendedLimitedAccess ? 'grid-cols-2' : showOverflowMenu ? 'grid-cols-5' : 'grid-cols-4'
 
   const copyContentLink = async () => {
     try {
@@ -55,7 +59,7 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
   return (
     <div className={compactFeed
       ? 'tourism-action-row medium-home-action-row mt-0 flex min-w-0 items-center gap-4 pt-0'
-      : `tourism-action-row mt-3 grid min-w-0 items-end gap-1.5 pt-3 sm:gap-2 ${showOverflowMenu ? 'grid-cols-5' : 'grid-cols-4'}`}>
+      : `tourism-action-row mt-3 grid min-w-0 items-end gap-1.5 pt-3 sm:gap-2 ${gridColumns}`}>
       <div className={`flex min-w-0 items-center ${compactFeed ? '' : 'order-3 justify-center'}`}>
         <Reactions contentType={contentType} contentId={contentId} userId={userId} compact fullWidth={!compactFeed} breakdown heartOnly={heartOnly} compactFeed={compactFeed} />
       </div>
@@ -71,13 +75,13 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
         <span key={commentCount} className="usr-count-pop font-bold">{commentCount}</span>
       </button>
 
-      <div className={`flex h-9 min-w-0 items-center justify-center ${compactFeed ? 'medium-home-action' : 'order-1 w-full'}`}>
+      {!suspendedLimitedAccess && <div className={`flex h-9 min-w-0 items-center justify-center ${compactFeed ? 'medium-home-action' : 'order-1 w-full'}`}>
         {/* Reactions/comments may key on the repost instance, so the repost
             action takes its own explicit target when one is supplied. */}
         <ShareRepost contentType={repostContentType ?? contentType} contentId={repostContentId ?? contentId} userId={userId} onRepost={onRepost} originalPost={originalPost} fullWidth compactFeed={compactFeed} />
-      </div>
+      </div>}
 
-      {compactFeed ? (
+      {!suspendedLimitedAccess ? (compactFeed ? (
         <>
           <button
             type="button"
@@ -130,7 +134,7 @@ export default function SocialActionBar({ contentType, contentId, userId, commen
             )}
           </div>}
         </>
-      )}
+      )) : null}
     </div>
   )
 }

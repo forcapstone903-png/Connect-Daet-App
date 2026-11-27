@@ -4835,6 +4835,139 @@ html.dark .usr-navigation-drawer-nav > section {
   border-color: var(--border-gray);
 }
 
+@media (max-width: 1023px) {
+  .usr-navigation-drawer {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    background: var(--navbar-background);
+  }
+
+  .usr-navigation-drawer-nav {
+    padding: 48px clamp(24px, 10.8vw, 88px) 32px;
+  }
+
+  .usr-navigation-drawer-nav > .usr-navigation-drawer-link {
+    min-height: 80px;
+    gap: 28px;
+    background: color-mix(in srgb, var(--navbar-background) 94%, var(--text-primary));
+    padding-inline: 20px;
+    color: var(--text-secondary);
+    font-size: 20px;
+    font-weight: 500;
+  }
+
+  .usr-navigation-drawer-nav > .usr-navigation-drawer-link svg {
+    width: 26px;
+    height: 26px;
+  }
+
+  .usr-navigation-drawer-nav > .usr-navigation-drawer-link[aria-current="page"] {
+    border-radius: 18px;
+    background: #1b3355;
+    color: #bfdbfe;
+    font-weight: 700;
+  }
+
+  .usr-navigation-following {
+    margin-top: 24px;
+    border-top: 1px solid var(--border-gray);
+    padding-top: 30px;
+  }
+
+  .usr-navigation-following h2 {
+    margin-bottom: 12px;
+    padding-inline: 2px;
+    color: var(--text-secondary);
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .usr-navigation-following-list {
+    overflow: hidden;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--navbar-background) 94%, var(--text-primary));
+    padding: 8px;
+  }
+
+  .usr-navigation-following-list > a {
+    min-height: 64px;
+    gap: 16px;
+    border-radius: 0;
+    padding-inline: 10px;
+    color: var(--text-secondary);
+    font-size: 18px;
+  }
+
+  .usr-navigation-following-list > a > span:first-child {
+    width: 48px;
+    height: 48px;
+  }
+
+  .usr-navigation-drawer-nav > .usr-navigation-following > a.usr-navigation-show-all {
+    min-height: 62px;
+    margin-top: 12px;
+    border: 1px solid var(--border-gray);
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .usr-navigation-following-list > a:hover,
+  .usr-navigation-drawer-nav > .usr-navigation-following > a.usr-navigation-show-all:hover {
+    background: var(--hover-background);
+    color: var(--text-primary);
+  }
+
+  html.dark main.dashboard-shell.medium-home > .usr-mobile-header {
+    border-color: #22385e;
+    background: #0b1f49;
+  }
+
+  .usr-mobile-sidebar-toggle {
+    background: #14243d;
+  }
+
+}
+
+@media (min-width: 1024px) {
+  .usr-navigation-following-list > a {
+    min-height: 42px;
+    gap: 12px;
+    font-size: 14px;
+  }
+
+  .usr-navigation-following-list > a > span:first-child {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 390px) {
+  main.dashboard-shell.medium-home > .usr-mobile-header {
+    padding-inline: 24px !important;
+  }
+
+  .usr-mobile-sidebar-toggle {
+    width: 56px;
+    height: 56px;
+  }
+
+  .usr-mobile-home-header-content {
+    gap: 14px;
+  }
+
+  .usr-mobile-header-brand-title {
+    font-size: 20px;
+  }
+}
+
 html.dark .usr-notifications .notifications-hub,
 html.dark .usr-inbox .usr-section-heading,
 html.dark .usr-settings .settings-topbar {
@@ -6782,6 +6915,11 @@ html.dark .conversation-page .usr-message-bubble:not(.usr-message-own) {
   html.dark:has(.user-page-shell) .usr-desktop-sidebar {
     top: 64px;
     bottom: 0;
+    border-radius: 0 !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
     max-height: calc(100dvh - 64px);
     border-right-color: rgb(255 255 255 / 12%);
     background: linear-gradient(180deg, #0b2d62 0%, #081c49 100%) !important;
@@ -6842,4 +6980,13 @@ html.dark .conversation-page .usr-message-bubble:not(.usr-message-own) {
   html[data-user-navigation-collapsed='true'] .user-page-shell {
     padding-left: 0 !important;
   }
+}
+
+html body .usr-navigation-drawer,
+html body .usr-desktop-sidebar {
+  border-radius: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
 }

@@ -1139,7 +1139,9 @@ export default function UserProfilePage() {
                       You have {eventsJoined} confirmed event registration{eventsJoined === 1 ? '' : 's'}.
                     </p>
                     {recentRegisteredEventsLoading ? (
-                      <p className="mt-4 text-sm text-slate-500" role="status">Loading recent registrations…</p>
+                      <div className="mt-4 space-y-2" role="status" aria-label="Loading recent registrations">
+                        {[0, 1].map((item) => <div key={item} className="h-12 animate-pulse rounded-xl bg-slate-100" aria-hidden="true" />)}
+                      </div>
                     ) : recentRegisteredEventsError ? (
                       <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                         <p role="alert">{recentRegisteredEventsError}</p>
@@ -1402,8 +1404,10 @@ export default function UserProfilePage() {
         </div>
 
         {loading ? (
-          <div className="usr-surface mt-6 p-5 text-sm text-slate-600">
-            Loading your profile...
+          <div className="usr-surface mt-6 animate-pulse space-y-3 p-5" role="status" aria-label="Loading profile">
+            <div className="h-4 w-1/3 rounded bg-slate-200" aria-hidden="true" />
+            <div className="h-3 w-full rounded bg-slate-100" aria-hidden="true" />
+            <div className="h-3 w-4/5 rounded bg-slate-100" aria-hidden="true" />
           </div>
         ) : null}
         {profileLoadError ? (

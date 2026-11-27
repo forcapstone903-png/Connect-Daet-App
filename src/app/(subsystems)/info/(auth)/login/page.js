@@ -3,28 +3,49 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowRight, Eye, EyeOff, MapPin, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, CalendarClock, Eye, EyeOff, MapPin, ShieldAlert, ShieldCheck, Sparkles } from 'lucide-react'
 import { setAuthCookie } from '@/lib/authCookies'
 import { supabase } from '@/lib/supabase'
 import { getStaffHomePath, isStaffRole } from '@/lib/staffRoles.mjs'
 import '../auth.css'
 import VisitorBackButton from '@/app/(subsystems)/info/components/visitor/VisitorBackButton'
 
+function formatAccountStatusDate(value) {
+  if (!value) return 'Date unavailable'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? 'Date unavailable'
+    : date.toLocaleString('en-PH', { dateStyle: 'long', timeStyle: 'short', timeZone: 'Asia/Manila' })
+}
+
 function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [accountNotice, setAccountNotice] = useState(null)
   const [message, setMessage] = useState('')
   const [verificationSent, setVerificationSent] = useState(false)
   const [resending, setResending] = useState(false)
   const [formData, setFormData] = useState({ email: '', password: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
-  const accountDeletionPending = error.toLowerCase().includes('scheduled for deletion')
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
+      const currentUrl = new URL(window.location.href)
+      const hadCredentialParams = currentUrl.searchParams.has('email')
+        || currentUrl.searchParams.has('password')
+      if (hadCredentialParams) {
+        currentUrl.searchParams.delete('email')
+        currentUrl.searchParams.delete('password')
+        window.history.replaceState(
+          window.history.state,
+          '',
+          `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`
+        )
+      }
+
       const messageFromQuery = searchParams.get('message') || ''
       if (messageFromQuery) {
         setMessage(messageFromQuery)
@@ -66,6 +87,8 @@ function LoginContent() {
       avatar_url: user.profile_image_url || '',
       profile_image_url: user.profile_image_url || '',
       onboarding_completed: !!user.onboarding_completed,
+      account_status: user.account_status || 'active',
+      suspended_limited_access: data.suspended === true,
       logged_in: true,
       login_time: new Date().toISOString(),
     }
@@ -110,6 +133,8 @@ function LoginContent() {
 
     if (isStaffRole(user.user_type)) {
       router.push(getStaffHomePath(user.user_type))
+    } else if (data.suspended) {
+      router.push('/info/user/dashboard')
     } else if (shouldStartOnboarding) {
       router.push('/info/user/onboarding')
     } else {
@@ -125,6 +150,7 @@ function LoginContent() {
 
     setResending(true)
     setError('')
+    setAccountNotice(null)
     setMessage('')
 
     try {
@@ -153,6 +179,7 @@ function LoginContent() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setAccountNotice(null)
     setMessage('')
     setVerificationSent(false)
 
@@ -176,6 +203,22 @@ function LoginContent() {
       const data = await response.json()
 
       if (!response.ok || !data.success) {
+        if (data.code === 'ACCOUNT_PENDING_DELETION') {
+          setAccountNotice({
+            type: 'pending_deletion',
+            deletionScheduledFor: data.deletionScheduledFor || null,
+          })
+          setFormData((current) => ({ ...current, password: '' }))
+          return
+        }
+        if (data.code === 'ACCOUNT_BANNED') {
+          setAccountNotice({
+            type: 'banned',
+            restriction: data.restriction || {},
+          })
+          setFormData((current) => ({ ...current, password: '' }))
+          return
+        }
         throw new Error(data.message || 'Unable to sign in right now')
       }
 
@@ -261,18 +304,54 @@ function LoginContent() {
                 </div>
               )}
 
+              {accountNotice?.type === 'pending_deletion' && (
+                <section role="alert" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-950 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" aria-hidden="true" />
+                    <div>
+                      <h3 className="font-bold">Your account is scheduled for deletion</h3>
+                      <p className="mt-1 leading-6">
+                        Your account is scheduled to be deleted on{' '}
+                        <strong>{formatAccountStatusDate(accountNotice.deletionScheduledFor)}</strong>.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+              )}
+
+              {accountNotice?.type === 'banned' && (
+                <section role="alert" className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-950 shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-700" aria-hidden="true" />
+                    <div className="min-w-0">
+                      <h3 className="font-bold">This account has been permanently banned</h3>
+                      <p className="mt-1 leading-6">
+                        <strong>Reason:</strong> {accountNotice.restriction.reason || 'No reason was provided.'}
+                      </p>
+                      {accountNotice.restriction.bannedAt ? (
+                        <p className="mt-1 text-xs text-red-800">
+                          Decision date: {formatAccountStatusDate(accountNotice.restriction.bannedAt)}
+                        </p>
+                      ) : null}
+                      <Link
+                        href={accountNotice.restriction.id
+                          ? `/info/account-appeal?caseReference=${encodeURIComponent(accountNotice.restriction.id)}`
+                          : '/info/account-appeal'}
+                        className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-red-300 bg-white px-3 font-bold text-red-800 transition hover:bg-red-100"
+                      >
+                        Appeal this decision
+                      </Link>
+                    </div>
+                  </div>
+                </section>
+              )}
+
               {error && (
                 <div role="alert" className="login-error-alert mb-4 rounded-xl border px-4 py-3.5 text-sm">
                   <div className="flex items-start gap-2">
                     <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0" />
                     <span>{error}</span>
                   </div>
-
-                  {accountDeletionPending && (
-                    <Link href="/info/account-recovery" className="login-error-action mt-3 inline-flex min-h-10 items-center rounded-lg border px-3 py-2 font-bold transition">
-                      Restore your account
-                    </Link>
-                  )}
 
                   {error.toLowerCase().includes('confirm') && (
                     <button
@@ -293,14 +372,14 @@ function LoginContent() {
                 </div>
               )}
 
-              {!accountDeletionPending && <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm leading-5 text-blue-900">
+              {!accountNotice && <div className="mb-5 rounded-xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm leading-5 text-blue-900">
                 <div className="flex items-start gap-2">
                   <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-blue-600" />
                   <span>For security, your account must be verified before you can sign in.</span>
                 </div>
               </div>}
 
-              <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
+              <form method="post" action="/info/login" onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
                 <div>
                   <label htmlFor="login-email" className="mb-2 block text-sm font-semibold text-slate-700">Email address</label>
                   <input
@@ -352,13 +431,6 @@ function LoginContent() {
                     Forgot password?
                   </Link>
                 </div>
-                {!accountDeletionPending && <p className="text-center text-xs text-slate-600">
-                  Account deletion scheduled?{' '}
-                  <Link href="/info/account-recovery" className="font-semibold text-[#2563EB] hover:text-blue-700">
-                    Restore your account
-                  </Link>
-                </p>}
-
                 <button
                   type="submit"
                   disabled={loading}
@@ -374,11 +446,6 @@ function LoginContent() {
                   Don&apos;t have an account?{' '}
                   <Link href="/info/register" className="font-semibold text-[#2563EB] transition hover:text-blue-800 hover:underline">
                     Sign up here
-                  </Link>
-                </div>
-                <div>
-                  <Link href="/info/account-appeal" className="font-semibold text-[#2563EB] transition hover:text-blue-800 hover:underline">
-                    Appeal a suspended or banned account
                   </Link>
                 </div>
                 <div>

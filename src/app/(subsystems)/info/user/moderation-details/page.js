@@ -79,7 +79,17 @@ export default function ModerationDetailsPage() {
             </div>
           </div>
 
-          {loading ? <p className="mt-6 text-sm text-slate-500">Loading moderation details…</p> : null}
+          {loading ? (
+            <div className="mt-6 animate-pulse space-y-5" role="status" aria-label="Loading moderation details">
+              <div className="grid gap-4 rounded-xl bg-slate-50 p-4 sm:grid-cols-2" aria-hidden="true">
+                {[0, 1, 2, 3].map((item) => <div key={item} className="h-12 rounded-lg bg-slate-200/70" />)}
+              </div>
+              <div className="space-y-3" aria-hidden="true">
+                <div className="h-4 w-40 rounded bg-slate-200" />
+                <div className="h-24 rounded-xl bg-slate-100" />
+              </div>
+            </div>
+          ) : null}
           {error ? <p role="alert" className="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</p> : null}
           {decision ? (
             <div className="mt-6 space-y-5">

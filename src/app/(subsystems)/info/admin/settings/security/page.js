@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import SettingsShell from '../_components/SettingsShell';
+import { AdminFormSkeleton } from '@/app/(subsystems)/info/components/admin';
 import { DEFAULT_SECURITY_SETTINGS, passwordPolicyFromSecurity } from '@/lib/siteSettings.mjs';
 import { describePasswordPolicy } from '@/lib/passwordPolicy';
 
 const SETTINGS_API = '/info/api/admin/settings';
 
 function NumberField({ label, value, onChange, min, max, suffix, hint }) {
-  return (
+  return loading ? <AdminFormSkeleton sections={3} fields={3} /> : (
     <label className="text-sm font-medium text-slate-700">
       {label}
       <span className="mt-1 flex items-center gap-2">

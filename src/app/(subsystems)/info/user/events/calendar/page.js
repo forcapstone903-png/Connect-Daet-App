@@ -140,9 +140,25 @@ export default function UserEventCalendarPage() {
           )}
 
           {loading && (
-            <div className="flex min-h-48 items-center justify-center gap-3 text-sm font-semibold text-slate-500" role="status" aria-live="polite">
-              <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
-              Loading your registered events…
+            <div className="grid min-h-48 gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.75fr)]" role="status" aria-label="Loading registered events">
+              <div className="animate-pulse rounded-2xl border border-slate-200 p-4" aria-hidden="true">
+                <div className="flex items-center justify-between">
+                  <div className="h-5 w-32 rounded bg-slate-200" />
+                  <div className="h-5 w-20 rounded bg-slate-100" />
+                </div>
+                <div className="mt-5 grid grid-cols-7 gap-2">
+                  {Array.from({ length: 35 }, (_, item) => <div key={item} className="h-8 rounded-lg bg-slate-100" />)}
+                </div>
+              </div>
+              <div className="space-y-3" aria-hidden="true">
+                {[0, 1, 2].map((item) => (
+                  <div key={item} className="animate-pulse rounded-2xl border border-slate-200 p-4">
+                    <div className="h-4 w-2/3 rounded bg-slate-200" />
+                    <div className="mt-3 h-3 w-4/5 rounded bg-slate-100" />
+                    <div className="mt-2 h-3 w-1/2 rounded bg-slate-100" />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 

@@ -29,6 +29,16 @@ function queryData(result) {
   return result?.data || []
 }
 
+function queryDismissals(result) {
+  if (result?.error && ['42P01', 'PGRST205'].includes(result.error.code)) {
+    console.warn('Recommendation dismissal table is unavailable; returning fresh recommendations without dismissal filtering.', {
+      code: result.error.code,
+    })
+    return []
+  }
+  return queryData(result)
+}
+
 function daetDateString(timestamp = Date.now()) {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Manila',
@@ -84,7 +94,7 @@ export async function GET(request) {
     const reactions = queryData(reactionsResult)
     const favorites = queryData(favoritesResult)
     const activities = queryData(activitiesResult)
-    const dismissals = queryData(dismissalsResult)
+    const dismissals = queryDismissals(dismissalsResult)
     const ratings = queryData(ratingsResult)
     const preferredCategories = (interests?.preferred_categories || []).map((value) => String(value).trim()).filter(Boolean)
     const followedIds = new Set((follows || []).filter((row) => row.follower_id === userId).map((row) => row.following_id))

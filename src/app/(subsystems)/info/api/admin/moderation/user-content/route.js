@@ -45,10 +45,24 @@ export async function DELETE(request) {
   try {
     const table = contentType === 'post' ? 'info_user_posts' : 'content_comments'
     const contentColumn = contentType === 'post' ? 'title' : 'body'
-    const { data: deleted, error } = await client.from(table)
+    if (contentType === 'post') {
+      const { data: post, error: postError } = await client.from(table)
+        .select('id, status')
+        .eq('id', contentId)
+        .eq('user_id', userId)
+        .maybeSingle()
+      if (postError) throw postError
+      if (!post || post.status === 'draft') {
+        return respond({ success: false, message: 'The selected content was not found for this user.' }, 404)
+      }
+    }
+
+    let deleteQuery = client.from(table)
       .delete()
       .eq('id', contentId)
       .eq('user_id', userId)
+    if (contentType === 'post') deleteQuery = deleteQuery.neq('status', 'draft')
+    const { data: deleted, error } = await deleteQuery
       .select(`id, user_id, ${contentColumn}`)
       .maybeSingle()
     if (error) throw error

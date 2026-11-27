@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AdminLoadingScreen, AdminShell } from '@/app/(subsystems)/info/components/admin';
+import { AdminPageSkeleton, AdminShell } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles';
 import { getStoredSession } from '@/lib/authCookies';
@@ -54,7 +54,7 @@ export default function SettingsShell({ title, subtitle, children }) {
   }, [router]);
 
   if (loading) {
-    return <AdminLoadingScreen label="Loading settings…" />;
+    return <AdminPageSkeleton variant="form" rows={4} cards={0} />;
   }
 
   return (

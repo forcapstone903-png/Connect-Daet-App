@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, Loader, RefreshCw, Sun } from 'lucide-react'
+import { Cloud, CloudDrizzle, CloudFog, CloudLightning, CloudRain, CloudSnow, RefreshCw, Sun } from 'lucide-react'
 
 const weatherIcons = {
   Clear: Sun,
@@ -88,8 +88,18 @@ export default function DaetWeatherCard() {
       </div>
 
       {loading && !weather ? (
-        <div className="mt-4 flex items-center gap-2 text-sm text-slate-500" role="status">
-          <Loader className="h-4 w-4 animate-spin" aria-hidden="true" />Loading forecast…
+        <div className="mt-4 animate-pulse" role="status" aria-label="Loading forecast">
+          <div className="flex items-center gap-3 rounded-xl bg-sky-50 p-3" aria-hidden="true">
+            <div className="h-9 w-9 shrink-0 rounded-full bg-sky-100" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="h-6 w-20 rounded bg-slate-200" />
+              <div className="h-3 w-2/3 rounded bg-slate-100" />
+            </div>
+            <div className="h-3 w-8 rounded bg-slate-100" />
+          </div>
+          <div className="mt-3 grid grid-cols-5 gap-1" aria-hidden="true">
+            {[0, 1, 2, 3, 4].map((item) => <div key={item} className="h-14 rounded-lg bg-slate-100" />)}
+          </div>
         </div>
       ) : error && !weather ? (
         <div className="mt-3">

@@ -241,10 +241,23 @@ export default function UserRewardsPage() {
 
   if (loading) {
     return (
-      <main className="tourism-shell usr-section-page usr-rewards flex min-h-screen items-center justify-center p-6">
-        <div className="usr-card usr-pop-in p-6 text-center">
-          <span className="usr-spin mx-auto mb-3 flex h-6 w-6 rounded-full border-2 border-teal-700 border-t-transparent" />
-          <p className="text-sm font-semibold text-slate-600">Loading your rewards...</p>
+      <main className="tourism-shell usr-section-page usr-rewards min-h-screen text-slate-900" role="status" aria-label="Loading your rewards">
+        <div className="usr-section-container mx-auto max-w-5xl px-3 pb-10 pt-2 sm:px-4 lg:px-6">
+          <div className="usr-card mb-6 animate-pulse p-6" aria-hidden="true">
+            <div className="h-3 w-24 rounded-full bg-slate-200" />
+            <div className="mt-3 h-8 w-1/2 rounded-lg bg-slate-200" />
+            <div className="mt-3 h-3 w-3/4 rounded-full bg-slate-100" />
+          </div>
+          <div className="h-48 animate-pulse rounded-3xl bg-slate-800 p-6" aria-hidden="true">
+            <div className="h-7 w-1/2 rounded bg-white/20" />
+            <div className="mt-4 h-4 w-2/3 rounded bg-white/10" />
+          </div>
+          <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-hidden="true">
+            {[0, 1, 2, 3].map((item) => <div key={item} className="usr-card h-28 animate-pulse p-4" />)}
+          </div>
+          <div className="mt-5 grid gap-5 lg:grid-cols-2" aria-hidden="true">
+            {[0, 1].map((item) => <div key={item} className="usr-card h-52 animate-pulse p-5" />)}
+          </div>
         </div>
       </main>
     )

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Bell, Bookmark, CalendarDays, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, ShieldAlert, Siren, Trophy, UserRound, X } from 'lucide-react'
+import { Bell, Bookmark, CalendarDays, CircleHelp, Home, LogOut, MessageCircle, Plus, PlusCircle, Search, Settings, Siren, Trophy, UserRound } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { getStoredSessionObject } from '@/lib/authCookies'
 import { performLogout } from '@/lib/clientLogout'
@@ -43,7 +43,7 @@ const navItems = [
   { href: '/info/user/blogs/new', labelKey: 'common.createPost', icon: PlusCircle, exact: true },
   { href: '/info/user/dashboard', labelKey: 'common.home', icon: Home, exact: true },
   { href: '/info/user/profile', labelKey: 'common.profile', icon: UserRound },
-  { href: '/info/user/moderation-appeals', label: 'Posting appeals', icon: ShieldAlert },
+  { href: '/info/user/dashboard#faq-heading', label: 'Frequently asked questions', icon: CircleHelp },
   { href: '/info/user/saved', labelKey: 'common.saved', icon: Bookmark },
   { href: '/info/visitor/alerts', labelKey: 'common.alerts', icon: Siren },
   { href: '/info/user/rewards', labelKey: 'common.rewards', icon: Trophy },
@@ -108,8 +108,11 @@ export default function MobileNav({ mobileOnly = false }) {
 
   useEffect(() => {
     const toggleDesktopNavigation = () => {
-      setDesktopNavigationCollapsed((collapsed) => !collapsed)
-      setMobileDrawerOpen((open) => !open)
+      if (window.matchMedia('(min-width: 1024px)').matches) {
+        setDesktopNavigationCollapsed((collapsed) => !collapsed)
+      } else {
+        setMobileDrawerOpen((open) => !open)
+      }
     }
     window.addEventListener('daet-toggle-desktop-navigation', toggleDesktopNavigation)
     return () => {
@@ -435,15 +438,6 @@ export default function MobileNav({ mobileOnly = false }) {
         </nav>
       )}
       {!mobileOnly && <aside aria-label="Primary navigation" className={`usr-desktop-sidebar fixed left-0 z-40 hidden w-[302px] flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-[6px_0_24px_rgba(15,23,42,0.12)] lg:flex lg:top-16 lg:bottom-0${desktopNavigationCollapsed ? ' lg:hidden' : ''}`}>
-        <Link href="/info/user/dashboard" className="flex min-h-20 items-center gap-3 border-b border-slate-700 px-5">
-          <img src="/logo.png" alt="Daet tourism logo" className="h-10 w-10 shrink-0 object-contain" />
-          <span className="min-w-0">
-            <span className="block truncate text-base font-black tracking-tight text-slate-100">
-              Connect <span className="text-sky-400">Daet</span>
-            </span>
-            <span className="mt-1 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
-          </span>
-        </Link>
         <nav aria-label="Main" className="flex-1 space-y-1 px-3 py-5">
           {navItems.map(({ href, labelKey, label, icon: Icon }) => {
             const isActive = activeSidebarHref === href
@@ -517,22 +511,10 @@ export default function MobileNav({ mobileOnly = false }) {
         onCancel={() => setShowLogoutConfirm(false)}
       />
       {!commentsSheetOpen && mobileDrawerOpen && (
-        <div className="usr-navigation-drawer-overlay fixed inset-0 z-[60] lg:hidden">
-          <button type="button" aria-label="Close navigation" onClick={() => setMobileDrawerOpen(false)} className="usr-navigation-drawer-backdrop absolute inset-0 h-full w-full bg-black/55" />
-          <aside ref={mobileDrawerRef} aria-label="Primary navigation" className="usr-navigation-drawer absolute inset-y-0 left-0 flex w-[min(82vw,280px)] flex-col border-r border-slate-700 bg-[#111d2e] text-white shadow-2xl">
-            <div className="usr-navigation-drawer-header flex min-h-16 items-center justify-between border-b border-white/10 px-4">
-              <Link href="/info/user/dashboard" onClick={() => setMobileDrawerOpen(false)} className="-ml-1 flex min-w-0 items-center gap-2">
-                <img src="/logo.png" alt="" className="h-9 w-8 shrink-0 object-contain" />
-                <span className="min-w-0">
-                  <span className="block truncate text-base font-black tracking-tight">Connect Daet</span>
-                  <span className="mt-0.5 block text-[9px] font-medium leading-tight text-slate-400">Daet community</span>
-                </span>
-              </Link>
-              <button type="button" onClick={() => setMobileDrawerOpen(false)} aria-label="Close navigation" className="usr-press ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-white/10 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <nav aria-label="Main" className="usr-navigation-drawer-nav flex-1 space-y-1 overflow-y-auto px-3 py-4">
+        <div className="usr-navigation-drawer-overlay fixed inset-x-0 bottom-0 top-[100px] z-40 lg:hidden">
+          <button type="button" aria-label="Close navigation" onClick={() => setMobileDrawerOpen(false)} className="usr-navigation-drawer-backdrop absolute inset-0 h-full w-full bg-transparent" />
+          <aside ref={mobileDrawerRef} aria-label="Primary navigation" className="usr-navigation-drawer absolute inset-0 flex w-full flex-col border-0 bg-[#111d2e] text-white shadow-none">
+            <nav aria-label="Main" className="usr-navigation-drawer-nav flex-1 space-y-[7px] overflow-y-auto">
               {navItems.map(({ href, labelKey, label, icon: Icon }) => {
                 const isActive = activeSidebarHref === href
                 return (
@@ -541,8 +523,8 @@ export default function MobileNav({ mobileOnly = false }) {
                     href={href}
                     onClick={closeNavigationAfterSelection}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`usr-press usr-navigation-drawer-link flex min-h-12 items-center gap-3 rounded-xl px-3 text-left transition ${
-                      isActive ? 'bg-white/10 font-semibold text-white' : 'text-slate-300 hover:bg-white/10 hover:text-white'
+                    className={`usr-press usr-navigation-drawer-link flex items-center text-left transition ${
+                      isActive ? 'font-semibold' : ''
                     }`}
                   >
                     <Icon className="h-5 w-5 shrink-0" />
@@ -555,11 +537,23 @@ export default function MobileNav({ mobileOnly = false }) {
                   </Link>
                 )
               })}
-              <section aria-labelledby="mobile-following-heading" className="mt-4 border-t border-white/10 pt-4">
-                <h2 id="mobile-following-heading" className="px-3 pb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-400">
+              <section aria-labelledby="mobile-following-heading" className="usr-navigation-following">
+                <h2 id="mobile-following-heading" className="text-lg font-semibold text-slate-400">
                   {t('common.following')}
                 </h2>
-                {followingLoading && <p className="px-3 py-2 text-sm text-slate-400">{t('navigation.following.loading')}</p>}
+                {followingLoading && (
+                  <div role="status" aria-label={t('navigation.following.loading')} className="usr-navigation-following-list">
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} className="flex items-center gap-4 px-2 py-2">
+                        <div className="h-12 w-12 shrink-0 animate-pulse rounded-full bg-slate-700" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3 w-3/4 animate-pulse rounded-full bg-slate-700" />
+                          <div className="h-2.5 w-1/2 animate-pulse rounded-full bg-slate-700" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {followingError && (
                   <div className="px-3 py-2">
                     <p role="alert" className="text-sm text-red-300">{followingError}</p>
@@ -575,21 +569,25 @@ export default function MobileNav({ mobileOnly = false }) {
                 {!followingLoading && !followingError && followingUsers.length === 0 && (
                   <p className="px-3 py-2 text-sm text-slate-400">{t('navigation.following.empty')}</p>
                 )}
-                {!followingLoading && !followingError && visibleFollowingUsers.map((person) => (
-                  <Link
-                    key={person.id}
-                    href={`/info/user/profile/${encodeURIComponent(person.id)}`}
-                    onClick={closeNavigationAfterSelection}
-                    className="usr-press flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-xs font-bold text-slate-100">
-                      {person.profile_image_url
-                        ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" />
-                        : (person.full_name || 'U').trim().charAt(0).toUpperCase()}
-                    </span>
-                    <span className="truncate">{person.full_name || 'Community member'}</span>
-                  </Link>
-                ))}
+                {!followingLoading && !followingError && visibleFollowingUsers.length > 0 && (
+                  <div className="usr-navigation-following-list">
+                    {visibleFollowingUsers.map((person) => (
+                      <Link
+                        key={person.id}
+                        href={`/info/user/profile/${encodeURIComponent(person.id)}`}
+                        onClick={closeNavigationAfterSelection}
+                        className="usr-press flex items-center gap-3 px-2 text-sm text-slate-300 transition hover:bg-white/10 hover:text-white"
+                      >
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-700 text-xs font-bold text-slate-100">
+                          {person.profile_image_url
+                            ? <img src={person.profile_image_url} alt="" className="h-full w-full object-cover" />
+                            : (person.full_name || 'U').trim().charAt(0).toUpperCase()}
+                        </span>
+                        <span className="truncate">{person.full_name || 'Community member'}</span>
+                      </Link>
+                    ))}
+                  </div>
+                )}
                 {!followingLoading && !followingError && hasMoreFollowingUsers && (
                   <Link
                     href="/info/user/profile/connections?tab=following"

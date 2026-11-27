@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
+import { normalizeStaffRole } from '@/lib/staffRoles.mjs'
 import { normalizeMentionName, parseMentionCandidates } from '@/lib/mentions'
 import { getActiveCommentRestriction } from '@/lib/contentRestrictions'
 import { publicErrorMessage } from '@/lib/publicError'
@@ -69,7 +70,8 @@ async function resolveOwnerId(adminSupabase, contentType, contentId) {
   if (!map) return null
 
   const [table, fk] = map
-  const { data } = await adminSupabase.from(table).select(`id, ${fk}`).eq('id', contentId).maybeSingle()
+  const { data, error } = await adminSupabase.from(table).select(`id, ${fk}`).eq('id', contentId).maybeSingle()
+  if (error) throw error
   return data?.[fk] || null
 }
 
@@ -254,24 +256,51 @@ export async function DELETE(request) {
     const adminSupabase = createClient(supabaseUrl, serviceRoleKey)
     const { data: comment, error: lookupError } = await adminSupabase
       .from('content_comments')
-      .select('id, user_id')
+      .select('id, user_id, content_type, content_id')
       .eq('id', commentId)
       .maybeSingle()
 
     if (lookupError) throw lookupError
     if (!comment) return NextResponse.json({ success: false, message: 'Comment not found.' }, { status: 404 })
-    if (comment.user_id !== session.user_id) {
-      return NextResponse.json({ success: false, message: 'You can only delete your own comments.' }, { status: 403 })
+
+    const isAdmin = normalizeStaffRole(session.role) === 'admin'
+    const contentOwnerId = await resolveOwnerId(adminSupabase, comment.content_type, comment.content_id)
+    if (!isAdmin && contentOwnerId !== session.user_id) {
+      return NextResponse.json({ success: false, message: 'Only the post owner or an admin can delete this comment.' }, { status: 403 })
     }
 
-    const { error: deleteError } = await adminSupabase
+    const { data: deleted, error: deleteError } = await adminSupabase
       .from('content_comments')
       .delete()
       .eq('id', commentId)
-      .eq('user_id', session.user_id)
+      .eq('content_type', comment.content_type)
+      .eq('content_id', comment.content_id)
+      .select('id, user_id')
+      .maybeSingle()
 
     if (deleteError) throw deleteError
-    return NextResponse.json({ success: true, commentId })
+    if (!deleted) return NextResponse.json({ success: false, message: 'Comment was already removed.' }, { status: 404 })
+
+    let warning
+    if (isAdmin) {
+      const { error: auditError } = await adminSupabase.from('info_audit_log').insert({
+        user_id: session.user_id,
+        action: 'admin_deleted_comment',
+        table_name: 'content_comments',
+        record_id: deleted.id,
+        changes: {
+          contentType: comment.content_type,
+          contentId: comment.content_id,
+          commentAuthorId: deleted.user_id,
+        },
+      })
+      if (auditError) {
+        console.error('Comment deletion audit failed:', auditError)
+        warning = 'The comment was removed, but the activity log could not be saved.'
+      }
+    }
+
+    return NextResponse.json({ success: true, commentId, warning })
   } catch (error) {
     console.error('Comment delete route error:', error)
     return NextResponse.json({ success: false, message: publicErrorMessage(error, 'Unable to delete the comment.') }, { status: 500 })

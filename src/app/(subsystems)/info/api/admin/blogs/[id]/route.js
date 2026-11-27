@@ -167,7 +167,7 @@ export async function DELETE(request, { params }) {
   const client = createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
   const { data: blog, error: lookupError } = await client
     .from('info_blogs')
-    .select('created_by, title')
+    .select('created_by, title, status, approval_status')
     .eq('id', blogId)
     .maybeSingle()
   if (lookupError) {
@@ -175,6 +175,12 @@ export async function DELETE(request, { params }) {
     return NextResponse.json({ success: false, message: 'Unable to verify the blog author.' }, { status: 500 })
   }
   if (!blog) return NextResponse.json({ success: false, message: 'Blog post not found.' }, { status: 404 })
+  if (
+    blog.created_by !== authorization.session.user_id
+    && (blog.status === 'draft' || blog.approval_status === 'draft')
+  ) {
+    return NextResponse.json({ success: false, message: 'Blog post not found.' }, { status: 404 })
+  }
 
   const { data, error } = await client.rpc('admin_delete_info_blog', {
     p_blog_id: blogId,

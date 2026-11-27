@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react'
 import { getAuthCookieFromDocument } from './authCookies'
+import { performLogout } from './clientLogout'
 
 const subscribeToCookie = () => () => {}
 const getServerCookieSnapshot = () => null
@@ -20,18 +21,11 @@ export function useUserSession() {
 
   const logout = useCallback(async () => {
     try {
-      // Call logout API
-      await fetch('/info/api/logout', { method: 'POST' })
-      
-      // Clear session storage
-      sessionStorage.removeItem('user_session')
-      
-      // Redirect to login
-      window.location.href = '/info/login'
+      await performLogout()
     } catch (error) {
       console.error('Logout error:', error)
-      window.location.href = '/info/login'
     }
+    window.location.href = '/info/login'
   }, [])
 
   return { session, loading, logout }

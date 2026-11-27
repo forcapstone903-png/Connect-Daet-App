@@ -27,15 +27,10 @@ function formatNumber(value) {
 function getDashboardSummary(blogs, moderation) {
   const stats = moderation.stats || {}
   const count = (value) => Number(value) || 0
-  const pendingCommunity = [
-    stats.pendingPosts,
-    stats.pendingForumTopics,
-  ].reduce((total, value) => total + count(value), 0)
   const openInquiries = count(stats.openInquiries) + count(stats.inProgressInquiries)
 
   return {
     pendingBlogs: count(blogs.stats?.pendingApprovals),
-    pendingCommunity,
     pendingPosts: count(stats.pendingPosts),
     pendingForumTopics: count(stats.pendingForumTopics),
     pendingReports: count(stats.pendingReports),
@@ -52,7 +47,19 @@ function WorkloadChart({ items, loading }) {
   const maxValue = Math.max(1, ...items.map((item) => item.value))
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading moderation workload…</p>
+    return (
+      <ul className="space-y-4" aria-label="Loading moderation workload">
+        {[0, 1, 2, 3, 4].map((item) => (
+          <li key={item} className="space-y-2">
+            <div className="flex justify-between gap-3">
+              <span className="h-4 w-2/5 animate-pulse rounded-full bg-slate-100" />
+              <span className="h-4 w-8 animate-pulse rounded-full bg-slate-100" />
+            </div>
+            <div className="h-2.5 animate-pulse rounded-full bg-slate-100" />
+          </li>
+        ))}
+      </ul>
+    )
   }
 
   return (
@@ -152,7 +159,6 @@ export default function ModeratorDashboard() {
     }
   }, [])
 
-  const communityCount = summary?.pendingCommunity
   const workloadItems = summary ? [
     { label: 'Blog approvals', value: summary.pendingBlogs, color: 'bg-orange-500' },
     { label: 'Community posts', value: summary.pendingPosts, color: 'bg-blue-500' },
@@ -164,11 +170,12 @@ export default function ModeratorDashboard() {
   ] : []
   const actionItems = summary ? [
     { label: 'Blog approvals', description: 'Review submitted blog posts', count: summary.pendingBlogs, href: '/info/admin/blogs?status=pending' },
-    { label: 'Community submissions', description: 'Review posts and topics', count: summary.pendingCommunity, href: '/info/admin/moderation?tab=posts' },
-    { label: 'Open reports', description: 'Review reports submitted by community members', count: summary.pendingReports, href: '/info/admin/moderation?tab=reports' },
-    { label: 'Restriction appeals', description: 'Review appeals from restricted accounts', count: summary.pendingAppeals, href: '/info/admin/moderation?tab=reports' },
-    { label: 'Inquiries needing a reply', description: 'Respond to open and in-progress inquiries', count: summary.openInquiries, href: '/info/admin/moderation?tab=inquiries' },
-    { label: 'Flagged posts', description: 'Inspect posts flagged by moderation rules', count: summary.flaggedPosts, href: '/info/admin/moderation?tab=posts' },
+    { label: 'Community posts', description: 'Review pending community posts', count: summary.pendingPosts, href: '/info/admin/post-moderation' },
+    { label: 'Forum submissions', description: 'Review pending forum topics', count: summary.pendingForumTopics, href: '/info/admin/forum-submissions' },
+    { label: 'Open reports', description: 'Review reports submitted by community members', count: summary.pendingReports, href: '/info/admin/moderation' },
+    { label: 'Restriction appeals', description: 'Review appeals from restricted accounts', count: summary.pendingAppeals, href: '/info/admin/moderation' },
+    { label: 'Inquiries needing a reply', description: 'Respond to open and in-progress inquiries', count: summary.openInquiries, href: '/info/admin/inquiry-forum' },
+    { label: 'Flagged posts', description: 'Inspect posts flagged by moderation rules', count: summary.flaggedPosts, href: '/info/admin/post-moderation' },
   ].filter((item) => item.count > 0) : []
 
   return (
@@ -211,11 +218,12 @@ export default function ModeratorDashboard() {
 
         <AdminStatGrid columns={3}>
           <AdminStatCard label="Pending blog approvals" value={summary ? formatNumber(summary.pendingBlogs) : undefined} icon="blog" tone="warning" loading={loading} href="/info/admin/blogs?status=pending" />
-          <AdminStatCard label="Community submissions" value={summary ? formatNumber(communityCount) : undefined} icon="community" tone="info" loading={loading} href="/info/admin/moderation?tab=posts" />
-          <AdminStatCard label="Open reports" value={summary ? formatNumber(summary.pendingReports) : undefined} icon="moderation" tone="danger" loading={loading} href="/info/admin/moderation?tab=reports" />
-          <AdminStatCard label="Pending appeals" value={summary ? formatNumber(summary.pendingAppeals) : undefined} icon="users" tone="warning" loading={loading} href="/info/admin/moderation?tab=reports" />
-          <AdminStatCard label="Open inquiries" value={summary ? formatNumber(summary.openInquiries) : undefined} icon="feedback" tone="success" loading={loading} href="/info/admin/moderation?tab=inquiries" />
-          <AdminStatCard label="Flagged posts" value={summary ? formatNumber(summary.flaggedPosts) : undefined} icon="moderation" tone="violet" loading={loading} href="/info/admin/moderation?tab=posts" />
+          <AdminStatCard label="Pending community posts" value={summary ? formatNumber(summary.pendingPosts) : undefined} icon="community" tone="info" loading={loading} href="/info/admin/post-moderation" />
+          <AdminStatCard label="Pending forum submissions" value={summary ? formatNumber(summary.pendingForumTopics) : undefined} icon="forum" tone="violet" loading={loading} href="/info/admin/forum-submissions" />
+          <AdminStatCard label="Open reports" value={summary ? formatNumber(summary.pendingReports) : undefined} icon="moderation" tone="danger" loading={loading} href="/info/admin/moderation" />
+          <AdminStatCard label="Pending appeals" value={summary ? formatNumber(summary.pendingAppeals) : undefined} icon="users" tone="warning" loading={loading} href="/info/admin/moderation" />
+          <AdminStatCard label="Open inquiries" value={summary ? formatNumber(summary.openInquiries) : undefined} icon="feedback" tone="success" loading={loading} href="/info/admin/inquiry-forum" />
+          <AdminStatCard label="Flagged posts" value={summary ? formatNumber(summary.flaggedPosts) : undefined} icon="moderation" tone="violet" loading={loading} href="/info/admin/post-moderation" />
         </AdminStatGrid>
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
@@ -233,7 +241,17 @@ export default function ModeratorDashboard() {
             className="min-w-0"
           >
             {loading || !summary ? (
-              <p className="text-sm text-slate-500">Loading action queues…</p>
+              <ul className="space-y-2" aria-label="Loading action queues">
+                {[0, 1, 2, 3].map((item) => (
+                  <li key={item} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3">
+                    <span className="min-w-0 flex-1 space-y-2">
+                      <span className="block h-4 w-2/5 animate-pulse rounded-full bg-slate-100" />
+                      <span className="block h-3 w-3/4 animate-pulse rounded-full bg-slate-100" />
+                    </span>
+                    <span className="h-7 w-10 animate-pulse rounded-full bg-slate-100" />
+                  </li>
+                ))}
+              </ul>
             ) : actionItems.length ? (
               <ul className="space-y-2">
                 {actionItems.map((item) => (

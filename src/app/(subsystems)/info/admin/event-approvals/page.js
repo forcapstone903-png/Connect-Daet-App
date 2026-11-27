@@ -161,7 +161,11 @@ export default function AdminEventApprovalsPage() {
           {error && <p role="alert" className="m-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
 
           {status === 'history' ? (
-            loading ? <p className="p-6 text-sm text-slate-500">Loading event review history…</p> : history.length ? (
+            loading ? (
+              <div className="space-y-3 p-5" aria-label="Loading event review history">
+                {[0, 1, 2, 3].map((item) => <div key={item} className="grid gap-3 rounded-xl border border-slate-100 p-4 sm:grid-cols-3"><div className="h-4 animate-pulse rounded-full bg-slate-200" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /></div>)}
+              </div>
+            ) : history.length ? (
               <AdminTable wrapClassName="border-0 shadow-none">
                 <thead><tr><th scope="col">Event</th><th scope="col">Author</th><th scope="col">Decision</th><th scope="col">Reason</th><th scope="col">Reviewed by</th><th scope="col">Date</th></tr></thead>
                 <tbody>

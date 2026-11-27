@@ -8,7 +8,7 @@ import { supabase } from '@/lib/supabase';
 import AdminAvatar from '@/app/(subsystems)/info/components/admin/AdminAvatar';
 import AccountStatusSelect from '@/app/(subsystems)/info/components/admin/AccountStatusSelect';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPageSkeleton, AdminPagination, AdminStatCard, AdminStatGrid, AdminTableSkeleton } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { getAdminRoleLabel, hasAdminAccess, isSuperAdmin } from '@/lib/adminRoles'
 import { GRANTABLE_PERMISSIONS, REVOCABLE_PERMISSIONS, hasPermission, isStaffRole } from '@/lib/staffRoles.mjs'
@@ -145,7 +145,7 @@ export default function ManageUsersPage() {
       try {
         const [{ data: statusesData }, { data: postsData }] = await Promise.all([
           supabase.from('info_users').select('status'),
-          supabase.from('info_user_posts').select('status')
+          supabase.from('info_user_posts').select('status').neq('status', 'draft')
         ]);
 
         const statuses = (statusesData || []).map(r => r.status).filter(Boolean);
@@ -167,6 +167,7 @@ export default function ManageUsersPage() {
         .from('info_user_posts')
         .select('*')
         .eq('user_id', userId)
+        .neq('status', 'draft')
         .order('created_at', { ascending: false });
       if (error) throw error;
       setUserPosts(data || []);
@@ -597,14 +598,7 @@ export default function ManageUsersPage() {
   const formatDateTime = (d) => d ? new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 font-medium">Loading users...</p>
-        </div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="table" rows={6} />;
   }
 
   return (
@@ -854,10 +848,7 @@ export default function ManageUsersPage() {
 
             <div className="flex-1 overflow-y-auto p-5">
               {loadingActivity ? (
-                <div className="text-center py-12">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
-                  <p className="mt-3 text-gray-500 text-sm">Loading activity...</p>
-                </div>
+                <AdminTableSkeleton rows={3} columns={3} />
               ) : (
                 <>
                   {activityTab === 'posts' && (

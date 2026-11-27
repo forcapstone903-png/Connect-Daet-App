@@ -54,17 +54,23 @@ export default function PinnedMessagesPage() {
   }, [otherUserId])
 
   useEffect(() => {
-    if (!otherUserId || !supabase?.channel) return undefined
+    if (!otherUserId || !currentUserId || !supabase?.channel) return undefined
+    const conversationId = [currentUserId, otherUserId].sort().join(':')
     const channel = supabase
       .channel(`pinned-messages-${otherUserId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pinned_messages' }, () => {
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'pinned_messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      }, () => {
         void loadPinned()
       })
       .subscribe()
     return () => {
       void supabase.removeChannel(channel)
     }
-  }, [otherUserId])
+  }, [currentUserId, otherUserId])
 
   const openPinnedMessage = (item) => {
     if (item.unavailable || !item.message?.id) return
@@ -83,7 +89,22 @@ export default function PinnedMessagesPage() {
           <Pin className="h-5 w-5 text-[#147d75]" />
         </header>
 
-        {loading ? <p className="p-6 text-sm text-slate-500">Loading pinned messages...</p> : error ? <div className="p-6"><p className="text-sm font-semibold text-red-600">{error}</p><button type="button" onClick={() => { setLoading(true); setError(''); void loadPinned() }} className="mt-3 rounded-full bg-[#147d75] px-4 py-2 text-sm font-bold text-white">Try again</button></div> : items.length === 0 ? <div className="p-10 text-center"><Pin className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-bold text-slate-600">No pinned messages yet.</p></div> : (
+        {loading ? (
+          <div className="space-y-3 p-3 sm:p-4" role="status" aria-label="Loading pinned messages">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="animate-pulse rounded-2xl border border-slate-200 p-4" aria-hidden="true">
+                <div className="flex items-start gap-3">
+                  <div className="h-10 w-10 shrink-0 rounded-full bg-slate-200" />
+                  <div className="min-w-0 flex-1">
+                    <div className="h-4 w-2/3 rounded bg-slate-200" />
+                    <div className="mt-3 h-3 w-full rounded bg-slate-100" />
+                    <div className="mt-2 h-3 w-4/5 rounded bg-slate-100" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error ? <div className="p-6"><p className="text-sm font-semibold text-red-600">{error}</p><button type="button" onClick={() => { setLoading(true); setError(''); void loadPinned() }} className="mt-3 rounded-full bg-[#147d75] px-4 py-2 text-sm font-bold text-white">Try again</button></div> : items.length === 0 ? <div className="p-10 text-center"><Pin className="mx-auto h-9 w-9 text-slate-300" /><p className="mt-3 text-sm font-bold text-slate-600">No pinned messages yet.</p></div> : (
           <div className="space-y-3 p-3 sm:p-4">
             {items.map((item) => {
               const kind = messageKind(item.message)

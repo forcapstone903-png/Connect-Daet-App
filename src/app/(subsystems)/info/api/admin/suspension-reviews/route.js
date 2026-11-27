@@ -14,9 +14,15 @@ const REPORTED_CONTENT_TABLES = {
   content_comments: { select: 'id, body, content_type, content_id', label: 'Comment' },
   info_comments: { select: 'id, content, blog_id', label: 'Blog comment' },
   forum_replies: { select: 'id, content, thread_id', label: 'Forum reply' },
-  forum_threads: { select: 'id, title, content', label: 'Forum topic' },
-  info_blogs: { select: 'id, title, excerpt, content', label: 'Blog post' },
-  info_user_posts: { select: 'id, title, content', label: 'Community post' },
+  forum_threads: { select: 'id, title, content, status', label: 'Forum topic' },
+  info_blogs: { select: 'id, title, excerpt, content, status, approval_status', label: 'Blog post' },
+  info_user_posts: { select: 'id, title, content, status', label: 'Community post' },
+}
+
+function isDraftContent(tableName, item) {
+  if (!item) return false
+  if (tableName === 'info_blogs') return item.status === 'draft' || item.approval_status === 'draft'
+  return ['info_user_posts', 'forum_threads'].includes(tableName) && item.status === 'draft'
 }
 
 function respond(body, status = 200) {
@@ -70,6 +76,7 @@ async function loadReportedContent(client, reports) {
       .in('id', [...ids])
     if (error) throw error
     for (const item of data || []) {
+      if (isDraftContent(tableName, item)) continue
       contentByKey.set(`${tableName}:${item.id}`, {
         label: config.label,
         title: item.title || item.name || config.label,
@@ -102,7 +109,7 @@ export async function GET(request) {
     let query = client.from('suspension_reviews').select(`
       id,
       user_id,
-      ban_user_id,
+      ban_id,
       report_id,
       original_suspending_user_id,
       original_suspending_party,

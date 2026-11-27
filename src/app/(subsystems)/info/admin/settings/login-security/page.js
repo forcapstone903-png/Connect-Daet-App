@@ -79,7 +79,11 @@ export default function AdminLoginSecurityPage() {
             <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-bold text-slate-800">Tracked addresses</h2>
               <p className="mt-1 text-xs text-slate-500">Emails are masked. A successful sign-in clears the entry automatically.</p>
-              {state.loading ? <p className="mt-4 text-sm text-slate-500">Loading…</p> : !state.failures.length ? (
+              {state.loading ? (
+                <div className="mt-4 space-y-3" aria-label="Loading failed sign-ins">
+                  {[0, 1, 2, 3].map((item) => <div key={item} className="grid gap-3 border-b border-slate-100 py-3 sm:grid-cols-4"><div className="h-4 animate-pulse rounded-full bg-slate-100" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /><div className="h-4 animate-pulse rounded-full bg-slate-100" /></div>)}
+                </div>
+              ) : !state.failures.length ? (
                 <p className="mt-4 text-sm text-slate-500">No failed sign-ins are being tracked.</p>
               ) : (
                 <div className="mt-4 overflow-x-auto">

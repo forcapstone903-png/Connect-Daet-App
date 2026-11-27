@@ -13,6 +13,30 @@ The shared implementation is in `src/lib/cache.js`:
 - Profile, follow, reaction, save, notification writes, and user-settings saves invalidate related memory entries.
 - Persistent cache corruption, quota errors, and private browsing storage failures fall back to the network.
 
+## Public blog engagement totals
+
+The public blog detail view reads heart, save, view, and approved-comment totals
+plus the author's profile image from the `blog-engagement` endpoint. Data is
+fetched on article load and is not cached so changes appear promptly.
+
+```text
+Feature: Public blog engagement totals
+Data fetched: Aggregate heart, save, view, and approved-comment counts plus the author profile image for one published blog
+Change frequency: Changes when a user reacts, saves, views, or comments on the blog
+Visibility: Public aggregate counts and the blog author's profile image; no user IDs or individual saved items
+Freshness: Fetch current counts when the article opens
+Stale behavior: Keep the article readable and show that counts are unavailable
+Missing-cache behavior: No cache; read the aggregate endpoint
+Invalidation trigger: No cache; refetch when the article is opened
+Cache layer: None
+Cache key: None
+TTL: None; endpoint uses private, no-store
+
+Offline behavior: Article reading remains available if already loaded; counts show unavailable
+Security notes: Service-role queries return only aggregate counts and the author's profile image, after verifying the blog is published and approved
+Manual clear method: None; reopen the article to fetch current totals
+```
+
 ## Authenticated Home Feed
 
 The Home and For You feed is personalized with the viewer's follow relationships
@@ -1042,8 +1066,8 @@ Data fetched: Published stories and events, active tourist destinations, active 
 Change frequency: Catalog, profile interests, social relationships, and user interactions
 Visibility: User-specific recommendations; underlying content remains subject to publication and account-status filters
 Freshness: Fetch current database records on dashboard load and manual refresh
-Stale behavior: Do not return stale recommendations; show the current request error
-Missing-cache behavior: Read from Supabase; surface failures rather than inventing recommendation data
+Stale behavior: Do not return stale recommendations; show the current request error. If the optional dismissal table is missing, return fresh recommendations without dismissal filtering and log the degraded result.
+Missing-cache behavior: Read from Supabase; surface failures rather than inventing recommendation data. An unavailable dismissal table only disables dismissal filtering.
 Invalidation trigger: None; no cache is populated, so interest changes, interactions, and refreshes read current data
 Cache layer: None; response uses private, no-store
 Cache key: None

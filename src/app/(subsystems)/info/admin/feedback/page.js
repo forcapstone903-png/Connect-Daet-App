@@ -16,7 +16,7 @@ async function callFeedbackApi(method = 'GET', body) {
   return result;
 }
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPageSkeleton, AdminPagination, AdminStatCard, AdminStatGrid } from '@/app/(subsystems)/info/components/admin';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
 import { performLogout } from '@/lib/clientLogout';
@@ -189,14 +189,7 @@ export default function FeedbackAndComplaintPage() {
   };
 
   if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50">
-        <div className="text-center">
-          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-b-2 border-violet-600" />
-          <p className="mt-4 font-medium text-slate-600">Loading feedback workspace...</p>
-        </div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="table" rows={5} />;
   }
 
   return (

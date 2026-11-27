@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import SettingsShell from '../_components/SettingsShell';
+import { AdminFormSkeleton } from '@/app/(subsystems)/info/components/admin';
 import { DEFAULT_GENERAL_SETTINGS } from '@/lib/siteSettings.mjs';
 
 const SETTINGS_API = '/info/api/admin/settings';
@@ -18,7 +19,7 @@ async function readJsonResponse(response) {
 }
 
 function Field({ label, hint, children }) {
-  return (
+  return loading ? <AdminFormSkeleton sections={4} fields={4} /> : (
     <label className="text-sm font-medium text-slate-700">
       {label}
       {children}

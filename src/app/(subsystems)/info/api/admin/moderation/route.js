@@ -65,10 +65,10 @@ const REPORTED_CONTENT_TABLES = {
   content_comments: { select: 'id, body, content_type, content_id', label: 'Comment' },
   info_comments: { select: 'id, content, blog_id', label: 'Blog comment' },
   forum_replies: { select: 'id, content, thread_id', label: 'Forum reply' },
-  forum_threads: { select: 'id, title, content', label: 'Forum topic' },
-  info_blogs: { select: 'id, title, excerpt, content, featured_image, images, category, tags, location, created_at, published_at', label: 'Blog post' },
+  forum_threads: { select: 'id, title, content, status', label: 'Forum topic' },
+  info_blogs: { select: 'id, title, excerpt, content, featured_image, images, category, tags, location, created_at, published_at, status, approval_status', label: 'Blog post' },
   info_events: { select: 'id, title, description', label: 'Event' },
-  info_user_posts: { select: 'id, title, content', label: 'Community post' },
+  info_user_posts: { select: 'id, title, content, status', label: 'Community post' },
   info_announcements: { select: 'id, title, content', label: 'Announcement' },
   info_tourist_spots: { select: 'id, name, description', label: 'Tourist spot' },
   attraction_ratings: { select: 'id, user_id, attraction_type, attraction_id, rating, review_text, pros, cons, photo_url', label: 'Visitor review' },
@@ -77,11 +77,17 @@ const REPORTED_CONTENT_TABLES = {
 }
 
 const REPOST_ORIGINAL_TABLES = {
-  blog: { table: 'info_blogs', select: 'id, title, excerpt, content' },
+  blog: { table: 'info_blogs', select: 'id, title, excerpt, content, status, approval_status' },
   event: { table: 'info_events', select: 'id, title, description' },
-  forum_thread: { table: 'forum_threads', select: 'id, title, content' },
+  forum_thread: { table: 'forum_threads', select: 'id, title, content, status' },
   announcement: { table: 'info_announcements', select: 'id, title, content' },
-  user_post: { table: 'info_user_posts', select: 'id, title, content' },
+  user_post: { table: 'info_user_posts', select: 'id, title, content, status' },
+}
+
+function isDraftContent(tableName, item) {
+  if (!item) return false
+  if (tableName === 'info_blogs') return item.status === 'draft' || item.approval_status === 'draft'
+  return ['info_user_posts', 'forum_threads'].includes(tableName) && item.status === 'draft'
 }
 
 const HIDE_UPDATES = {
@@ -242,10 +248,10 @@ export async function GET(request) {
         .order('created_at', { ascending: false })
         .limit(100),
       Promise.all([
-        client.from('info_blogs').select('id, title, status, approval_status, created_at').eq('created_by', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
-        client.from('info_user_posts').select('id, title, content, status, created_at').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
-        client.from('forum_threads').select('id, title, content, status, created_at').eq('created_by', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
-        client.from('forum_replies').select('id, content, status, created_at, thread_id').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
+        client.from('info_blogs').select('id, title, status, approval_status, created_at').eq('created_by', report.reported_user_id).neq('status', 'draft').neq('approval_status', 'draft').order('created_at', { ascending: false }).limit(50),
+        client.from('info_user_posts').select('id, title, content, status, created_at').eq('user_id', report.reported_user_id).neq('status', 'draft').order('created_at', { ascending: false }).limit(50),
+        client.from('forum_threads').select('id, title, content, status, created_at').eq('created_by', report.reported_user_id).neq('status', 'draft').order('created_at', { ascending: false }).limit(50),
+        client.from('forum_replies').select('id, content, status, created_at, thread_id').eq('user_id', report.reported_user_id).neq('status', 'draft').order('created_at', { ascending: false }).limit(50),
         client.from('content_comments').select('id, body, status, created_at, content_type, content_id').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
         client.from('info_comments').select('id, content, status, created_at, blog_id').eq('user_id', report.reported_user_id).order('created_at', { ascending: false }).limit(50),
       ]),
@@ -407,12 +413,10 @@ export async function GET(request) {
   if (historyUserId) {
     if (!isValidUuid(historyUserId)) return respond({ success: false, message: 'A valid user id is required.' }, 400)
     const historyQueries = await Promise.all([
-      client.from('info_blogs').select('id, title, status, approval_status, created_at').eq('created_by', historyUserId).order('created_at', { ascending: false }).limit(50),
-      client.from('info_user_posts').select('id, title, status, created_at').eq('user_id', historyUserId).order('created_at', { ascending: false }).limit(50),
-      client.from('forum_threads').select('id, title, status, created_at').eq('created_by', historyUserId).order('created_at', { ascending: false }).limit(50),
-      client.from('forum_replies').select('id, content, status, created_at').eq('user_id', historyUserId).order('created_at', { ascending: false }).limit(50),
-      client.from('content_comments').select('id, body, status, created_at').eq('user_id', historyUserId).order('created_at', { ascending: false }).limit(50),
-      client.from('info_comments').select('id, content, status, created_at').eq('user_id', historyUserId).order('created_at', { ascending: false }).limit(50),
+      client.from('info_blogs').select('id, title, status, approval_status, created_at').eq('created_by', historyUserId).neq('status', 'draft').neq('approval_status', 'draft').order('created_at', { ascending: false }).limit(50),
+      client.from('info_user_posts').select('id, title, status, created_at').eq('user_id', historyUserId).neq('status', 'draft').order('created_at', { ascending: false }).limit(50),
+      client.from('forum_threads').select('id, title, status, created_at').eq('created_by', historyUserId).neq('status', 'draft').order('created_at', { ascending: false }).limit(50),
+      client.from('forum_replies').select('id, content, status, created_at').eq('user_id', historyUserId).neq('status', 'draft').order('created_at', { ascending: false }).limit(50),
     ])
     const historyError = historyQueries.find((result) => result.error)
     if (historyError) {
@@ -581,7 +585,7 @@ export async function GET(request) {
         .select(REPORTED_CONTENT_TABLES[tableName].select)
         .in('id', [...ids])
       if (error) throw error
-      return [tableName, new Map((data || []).map((item) => [item.id, item]))]
+      return [tableName, new Map((data || []).filter((item) => !isDraftContent(tableName, item)).map((item) => [item.id, item]))]
     }))
   } catch (error) {
     console.error('Reported content preview load failed:', error)
@@ -604,7 +608,7 @@ export async function GET(request) {
       const config = REPOST_ORIGINAL_TABLES[contentType]
       const { data, error } = await client.from(config.table).select(config.select).in('id', [...ids])
       if (error) throw error
-      return [contentType, new Map((data || []).map((item) => [item.id, item]))]
+      return [contentType, new Map((data || []).filter((item) => !isDraftContent(config.table, item)).map((item) => [item.id, item]))]
     }))
     originalContentByType = new Map(originalContentResults)
   } catch (error) {

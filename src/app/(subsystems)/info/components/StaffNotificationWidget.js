@@ -86,7 +86,11 @@ export default function StaffNotificationWidget() {
         }
 
         seenIdsRef.current = new Set(notifications.map((notification) => notification.id))
-        setUnreadCount(Number(result.unread_count) || 0)
+        const unreadCount = Number(result.unread_count) || 0
+        setUnreadCount(unreadCount)
+        window.dispatchEvent(new CustomEvent('daet-staff-notifications-updated', {
+          detail: { unreadCount },
+        }))
         setLoadError(false)
       } catch (error) {
         if (active && requestId >= latestAppliedRequest) {

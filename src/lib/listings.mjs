@@ -20,7 +20,7 @@ export const LISTING_TYPE_VALUES = Object.freeze(LISTING_TYPES.map((type) => typ
 // (getCacheKey('places', 'public', 'all', LISTINGS_CACHE_VERSION)). Bump it
 // whenever the row shape changes so stale cached lists are ignored. The admin
 // page invalidates this key after every successful write.
-export const LISTINGS_CACHE_VERSION = 'daet-directory-v2'
+export const LISTINGS_CACHE_VERSION = 'daet-directory-v3'
 
 // Suggested categories per type. Staff can still type a custom category.
 export const DEFAULT_CATEGORIES = Object.freeze({

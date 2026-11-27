@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import AdminSidebar from '@/app/(subsystems)/info/components/AdminSidebar';
-import { AdminButton, AdminPageHeader } from '@/app/(subsystems)/info/components/admin';
+import { AdminButton, AdminPageHeader, AdminPageSkeleton } from '@/app/(subsystems)/info/components/admin';
 import { Icon } from '@/app/(subsystems)/info/components/Icon';
 import { hasAdminAccess } from '@/lib/adminRoles'
 import { getStoredSession } from '@/lib/authCookies';
@@ -87,7 +87,7 @@ export default function BlogManagement() {
 
       if (error) throw error;
       setBlogs((data || []).filter((blog) => (
-        blog.approval_status !== 'draft' || blog.created_by === adminId
+        blog.created_by === adminId || (blog.status !== 'draft' && blog.approval_status !== 'draft')
       )));
 
       const { data: comments, error: commentsError } = await supabase
@@ -103,19 +103,21 @@ export default function BlogManagement() {
     }
   };
 
-  const updateCommentStatus = async (commentId, status) => {
-    try {
-      const { error } = await supabase
-        .from('info_comments')
-        .update({ status })
-        .eq('id', commentId);
+  const deleteComment = async (commentId) => {
+    if (!commentId || !window.confirm('Permanently delete this comment?')) return
 
-      if (error) throw error;
-      showToast(`Comment ${status}.`);
+    try {
+      const response = await fetch(`/info/api/blog-comments?commentId=${encodeURIComponent(commentId)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete comment.')
       await fetchBlogs();
+      showToast(result.warning || 'Comment deleted.', Boolean(result.warning))
     } catch (err) {
-      console.error('Error updating comment:', err);
-      showToast('Unable to update comment status', true);
+      console.error('Error deleting comment:', err);
+      showToast(err.message || 'Unable to delete comment.', true);
     }
   };
 
@@ -450,11 +452,7 @@ export default function BlogManagement() {
   }, [router]);
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
+    return <AdminPageSkeleton variant="cards" rows={4} />;
   }
 
   return (
@@ -600,7 +598,7 @@ export default function BlogManagement() {
             </div>
 
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-4">
-              <h3 className="text-lg font-bold text-gray-800 mb-3">Comment Moderation</h3>
+              <h3 className="text-lg font-bold text-gray-800 mb-3">Recent comments</h3>
               <div className="space-y-3">
                 {commentQueue.length === 0 ? (
                   <p className="text-sm text-gray-500">No comments yet.</p>
@@ -609,11 +607,14 @@ export default function BlogManagement() {
                     <div key={comment.id} className="rounded-xl border border-gray-200 p-3">
                       <p className="text-sm text-gray-600">{comment.content}</p>
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <span className="text-[11px] text-gray-400">{comment.status}</span>
-                        <div className="flex gap-2">
-                          <button onClick={() => updateCommentStatus(comment.id, 'approved')} className="text-xs text-green-700 bg-green-50 px-2 py-1 rounded">Approve</button>
-                          <button onClick={() => updateCommentStatus(comment.id, 'rejected')} className="text-xs text-red-700 bg-red-50 px-2 py-1 rounded">Reject</button>
-                        </div>
+                        <span className="text-[11px] text-gray-400">{comment.created_at ? new Date(comment.created_at).toLocaleDateString() : ''}</span>
+                        <button
+                          type="button"
+                          onClick={() => void deleteComment(comment.id)}
+                          className="text-xs text-red-700 bg-red-50 px-2 py-1 rounded"
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   ))

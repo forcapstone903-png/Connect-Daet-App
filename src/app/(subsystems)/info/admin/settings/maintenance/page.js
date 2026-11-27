@@ -94,13 +94,13 @@ export default function AdminSettingsMaintenance() {
               )}
               <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-gray-200 bg-slate-50 p-5">
                 <div>
-                  <p className="font-semibold text-slate-800">
-                    {loading
-                      ? 'Checking site status…'
-                      : loadError
-                        ? 'Unable to load site status'
-                        : `Public site is ${settings.enabled ? 'in maintenance' : 'online'}`}
-                  </p>
+                  {loading ? (
+                    <div className="h-5 w-56 animate-pulse rounded-full bg-slate-200" aria-label="Loading site status" />
+                  ) : (
+                    <p className="font-semibold text-slate-800">
+                      {loadError ? 'Unable to load site status' : `Public site is ${settings.enabled ? 'in maintenance' : 'online'}`}
+                    </p>
+                  )}
                   <p className="mt-1 text-sm text-slate-500">
                     Public pages and non-admin APIs are blocked while maintenance is enabled. Signed-in administrators retain access.
                   </p>

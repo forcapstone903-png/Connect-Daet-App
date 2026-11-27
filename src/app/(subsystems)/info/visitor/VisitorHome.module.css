@@ -101,6 +101,10 @@
   transform: rotate(-1deg);
 }
 
+:global(.dark) .hero::after {
+  background: var(--background);
+}
+
 .heroCopy {
   width: 100%;
 }

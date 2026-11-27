@@ -52,7 +52,14 @@ export default function FrequentlyAskedQuestions({ audience = 'visitor' }) {
       </div>
 
       {loading ? (
-        <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-500" role="status">Loading answers...</p>
+        <div role="status" className="grid gap-3 md:grid-cols-2">
+          <span className="sr-only">Loading answers</span>
+          {[1, 2, 3, 4].map((item) => (
+            <div key={item} aria-hidden="true" className="min-h-16 animate-pulse rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="h-4 w-4/5 rounded-full bg-slate-200" />
+            </div>
+          ))}
+        </div>
       ) : error ? (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800" role="alert">
           <p>{error}</p>

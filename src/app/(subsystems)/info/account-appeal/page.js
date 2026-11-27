@@ -22,7 +22,7 @@ export default function AccountAppealPage() {
       const currentUrl = new URL(window.location.href)
       const linkParameters = new URLSearchParams(currentUrl.hash.slice(1))
       const accessToken = linkParameters.get('token') || ''
-      setCaseReference(linkParameters.get('caseReference') || '')
+      setCaseReference(linkParameters.get('caseReference') || currentUrl.searchParams.get('caseReference') || '')
       if (accessToken) {
         window.history.replaceState({}, '', `${currentUrl.pathname}${currentUrl.search}`)
       }

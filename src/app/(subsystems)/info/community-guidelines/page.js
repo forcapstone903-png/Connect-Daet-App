@@ -59,7 +59,21 @@ export default function CommunityGuidelinesPage() {
         <p className="mt-8 text-xs font-bold uppercase tracking-[0.22em] text-sky-700">Community</p>
         <h1 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">Community Guidelines</h1>
         {updatedAt ? <p className="mt-2 text-xs text-slate-500">Updated {new Date(updatedAt).toLocaleDateString()}</p> : null}
-        {loading ? <p className="mt-8 text-sm text-slate-500">Loading guidelines...</p> : null}
+        {loading ? (
+          <div role="status" className="mt-8 space-y-5">
+            <span className="sr-only">Loading community guidelines</span>
+            <div aria-hidden="true" className="animate-pulse space-y-3">
+              <div className="h-4 w-full rounded-full bg-slate-200" />
+              <div className="h-4 w-11/12 rounded-full bg-slate-200" />
+              <div className="h-4 w-4/5 rounded-full bg-slate-200" />
+            </div>
+            <div aria-hidden="true" className="animate-pulse space-y-3">
+              <div className="h-4 w-full rounded-full bg-slate-200" />
+              <div className="h-4 w-10/12 rounded-full bg-slate-200" />
+              <div className="h-4 w-3/4 rounded-full bg-slate-200" />
+            </div>
+          </div>
+        ) : null}
         {error ? (
           <div className="mt-8 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700" role="alert">
             <p>{error}</p>

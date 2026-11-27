@@ -62,6 +62,9 @@ test('tourism officer reaches tourism and moderation pages', () => {
   }
 
   assert.equal(canAccessAdminPage(role, '/info/admin/moderation'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/post-moderation'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/inquiry-forum'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/forum-submissions'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/blogs'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/forum'), true)
   assert.equal(canAccessAdminApi(role, '/info/api/admin/moderation', 'PATCH'), true)
@@ -84,6 +87,9 @@ test('tourism officer reaches tourism and moderation pages', () => {
 test('moderator reaches community pages only', () => {
   const role = 'moderator'
   assert.equal(canAccessAdminPage(role, '/info/admin/moderation'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/post-moderation'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/inquiry-forum'), true)
+  assert.equal(canAccessAdminPage(role, '/info/admin/forum-submissions'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/suspension-reviews'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/blogs?status=all'), true)
   assert.equal(canAccessAdminPage(role, '/info/admin/forum'), true)

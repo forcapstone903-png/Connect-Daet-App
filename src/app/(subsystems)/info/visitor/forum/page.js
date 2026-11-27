@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
-  ArrowRight,
   Clock,
   Eye,
-  Loader,
   MessageSquare,
   Pin,
   Search,
@@ -123,30 +121,23 @@ export default function PublicForumPage() {
       <div className="mx-auto max-w-5xl px-3 pt-6 sm:px-6">
         <RealtimeStatus status={realtime.connectionStatus} lastSuccessfulRefresh={realtime.lastSuccessfulRefresh} className="mb-4" />
 
-        {/* Hero Header */}
-        <div className="mb-8 overflow-hidden rounded-[24px] bg-gradient-to-br from-[#081c49] via-[#0e327a] to-[#041235] p-6 text-white shadow-xl sm:p-10">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
-            <div className="max-w-2xl">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3.5 py-1 text-xs font-bold text-sky-300 backdrop-blur-md">
+        {/* Forum Header */}
+        <div className="mb-6 overflow-hidden rounded-2xl bg-gradient-to-br from-[#081c49] via-[#0e327a] to-[#041235] p-5 text-white shadow-lg sm:p-7">
+          <div className="flex items-start gap-4">
+            <span className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-sky-200 sm:flex">
+              <MessageSquare className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <div>
+              <div className="inline-flex items-center gap-2 text-xs font-semibold text-sky-200">
                 <Users className="h-3.5 w-3.5" />
-                <span>Daet Community Forum</span>
+                Daet Community Forum
               </div>
-              <h1 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
-                Travel Questions &amp; Stories
+              <h1 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-3xl">
+                Forum Discussions
               </h1>
-              <p className="mt-2 text-sm leading-relaxed text-slate-200 sm:text-base">
-                Discover insider travel tips, surf forecasts, food recommendations, and local insights shared by visitors and residents.
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-200">
+                Browse questions, local advice, and stories shared by the Daet community.
               </p>
-            </div>
-
-            <div className="shrink-0">
-              <Link
-                href="/info/login"
-                className="inline-flex items-center gap-2 rounded-full bg-[#1d68ed] px-6 py-3 text-xs font-bold text-white shadow-lg transition hover:bg-blue-600 hover:scale-105 active:scale-95"
-              >
-                <span>Join the Discussion</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
             </div>
           </div>
         </div>
@@ -237,16 +228,23 @@ export default function PublicForumPage() {
           )}
         </div>
 
-        {/* Counter */}
-        <div className="mt-5 flex items-center justify-between text-xs text-slate-500">
-          <span>
-            {loading ? 'Finding discussions...' : `${filteredThreads.length} discussion${filteredThreads.length === 1 ? '' : 's'}`}
-          </span>
+        {/* Discussion list heading */}
+        <div className="mt-7 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-extrabold tracking-tight text-slate-900">Community discussions</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              {loading ? (
+                <span role="status" className="inline-block h-3 w-36 animate-pulse rounded-full bg-slate-200 align-middle">
+                  <span className="sr-only">Loading discussion count</span>
+                </span>
+              ) : `${filteredThreads.length} topic${filteredThreads.length === 1 ? '' : 's'} in the forum`}
+            </p>
+          </div>
           {hasActiveFilters && (
             <button
               type="button"
               onClick={() => { setSearch(''); setCategory('all') }}
-              className="font-bold text-[#1d68ed] hover:underline"
+              className="rounded-full px-3 py-1.5 text-sm font-bold text-[#1d68ed] transition hover:bg-blue-50"
             >
               Reset filters
             </button>
@@ -255,9 +253,30 @@ export default function PublicForumPage() {
 
         {/* Loading */}
         {loading && (
-          <div className="mt-12 flex flex-col items-center justify-center gap-3">
-            <Loader className="h-8 w-8 animate-spin text-[#1d68ed]" />
-            <p className="text-xs text-slate-500">Loading community conversations...</p>
+          <div role="status" className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <span className="sr-only">Loading community conversations</span>
+            <div aria-hidden="true" className="hidden animate-pulse grid-cols-[minmax(0,1fr)_82px_72px_132px] gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3 md:grid">
+              <div className="h-3 w-16 rounded-full bg-slate-200" />
+              <div className="h-3 w-12 rounded-full bg-slate-200" />
+              <div className="h-3 w-10 rounded-full bg-slate-200" />
+              <div className="ml-auto h-3 w-20 rounded-full bg-slate-200" />
+            </div>
+            <div aria-hidden="true" className="divide-y divide-slate-100">
+              {[1, 2, 3, 4].map((item) => (
+                <div key={item} className="animate-pulse px-4 py-4 sm:px-5 sm:py-5">
+                  <div className="flex items-start gap-3">
+                    <div className="h-9 w-9 shrink-0 rounded-full bg-slate-200" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="h-3 w-1/4 rounded-full bg-slate-200" />
+                      <div className="h-4 w-3/4 rounded-full bg-slate-200" />
+                      <div className="h-3 w-full rounded-full bg-slate-200" />
+                      <div className="h-3 w-2/3 rounded-full bg-slate-200" />
+                      <div className="mt-3 h-3 w-1/3 rounded-full bg-slate-200" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -277,71 +296,93 @@ export default function PublicForumPage() {
 
         {/* Threads List */}
         {!loading && !error && filteredThreads.length > 0 && (
-          <div className="mt-4 space-y-3">
-            {filteredThreads.map((thread, index) => (
-              <Link
-                key={thread.id}
-                href={`/info/visitor/forum/${thread.id}`}
-                ref={observe}
-                style={staggerDelay(index, 50, 400)}
-                className="group block rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-1 hover:border-sky-300 hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {thread.pinned && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">
-                          <Pin className="h-3 w-3" />
-                          Pinned
-                        </span>
-                      )}
-                      <h2 className="text-base font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
+          <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="hidden grid-cols-[minmax(0,1fr)_82px_72px_132px] items-center gap-2 border-b border-slate-200 bg-slate-50 px-5 py-3 text-[11px] font-bold uppercase tracking-wide text-slate-500 md:grid">
+              <span>Topic</span>
+              <span className="text-center">Replies</span>
+              <span className="text-center">Views</span>
+              <span className="text-right">Last activity</span>
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {filteredThreads.map((thread, index) => (
+                <Link
+                  key={thread.id}
+                  href={`/info/visitor/forum/${thread.id}`}
+                  ref={observe}
+                  style={staggerDelay(index, 50, 400)}
+                  className="group grid grid-cols-1 items-center gap-3 px-4 py-4 transition-colors hover:bg-sky-50/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500 sm:px-5 md:grid-cols-[minmax(0,1fr)_82px_72px_132px] md:gap-2 md:py-5"
+                >
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className={`mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${thread.pinned ? 'bg-amber-50 text-amber-700' : 'bg-sky-50 text-sky-700'}`}>
+                      {thread.pinned
+                        ? <Pin className="h-4 w-4" aria-hidden="true" />
+                        : <MessageSquare className="h-4 w-4" aria-hidden="true" />}
+                    </span>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                        {thread.pinned && (
+                          <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                            Pinned
+                          </span>
+                        )}
+                        {thread.forum_categories?.name && (
+                          <span className="text-[11px] font-semibold text-sky-700">
+                            {thread.forum_categories.name}
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="break-words text-base font-bold leading-snug text-slate-900 transition-colors group-hover:text-blue-700 sm:text-lg">
                         {thread.title}
-                      </h2>
+                      </h3>
+                      <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-slate-600">
+                        {getPostPreview(thread.content)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-slate-500">
+                        <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-200">
+                          {thread.info_users?.profile_image_url ? (
+                            <img src={thread.info_users.profile_image_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <User className="h-3.5 w-3.5" aria-hidden="true" />
+                          )}
+                        </span>
+                        <span className="font-semibold text-slate-700">{thread.info_users?.full_name || 'Community member'}</span>
+                        <span className="text-slate-300" aria-hidden="true">·</span>
+                        <span>Started {formatDate(thread.created_at)}</span>
+                      </div>
                     </div>
-
-                    <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
-                      {getPostPreview(thread.content)}
-                    </p>
                   </div>
 
-                  {thread.forum_categories?.name && (
-                    <span className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-[11px] font-bold text-blue-700">
-                      {thread.forum_categories.name}
-                    </span>
-                  )}
-                </div>
+                  <span className="hidden text-center md:block">
+                    <strong className="block text-sm font-bold text-slate-800">{thread.reply_count || 0}</strong>
+                    <span className="text-[11px] text-slate-500">replies</span>
+                  </span>
+                  <span className="hidden text-center md:block">
+                    <strong className="block text-sm font-bold text-slate-800">{thread.views || 0}</strong>
+                    <span className="text-[11px] text-slate-500">views</span>
+                  </span>
+                  <span className="hidden text-right text-xs text-slate-600 md:block">
+                    {formatDate(thread.last_activity_at || thread.created_at)}
+                  </span>
 
-                {/* Footer Metadata */}
-                <div className="mt-4 flex flex-wrap items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-400">
-                  <div className="flex items-center gap-2 text-slate-700 font-semibold">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-[10px] text-slate-600">
-                      {thread.info_users?.profile_image_url ? (
-                        <img src={thread.info_users.profile_image_url} alt="" className="h-full w-full rounded-full object-cover" />
-                      ) : (
-                        <User className="h-3.5 w-3.5" />
-                      )}
-                    </div>
-                    <span>{thread.info_users?.full_name || 'Community Member'}</span>
-                  </div>
-
-                  <div className="flex items-center gap-4 text-[11px]">
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {formatDate(thread.last_activity_at || thread.created_at)}
-                    </span>
-                    <span className="flex items-center gap-1 text-blue-600 font-bold">
-                      <MessageSquare className="h-3 w-3" />
+                  <span className="ml-12 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs md:hidden">
+                    <span className="inline-flex items-center gap-1.5 font-semibold text-sky-700">
+                      <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
                       {thread.reply_count || 0} replies
                     </span>
-                    <span className="flex items-center gap-1">
-                      <Eye className="h-3 w-3" />
-                      {thread.views || 0}
+                    <span className="inline-flex items-center gap-1.5 text-slate-500">
+                      <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                      {thread.views || 0} views
                     </span>
-                  </div>
-                </div>
-              </Link>
-            ))}
+                    <span className="inline-flex items-center gap-1.5 text-slate-500">
+                      <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                      {formatDate(thread.last_activity_at || thread.created_at)}
+                    </span>
+                  </span>
+                </Link>
+              ))}
+            </div>
           </div>
         )}
 

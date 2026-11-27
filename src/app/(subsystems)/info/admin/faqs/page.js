@@ -214,7 +214,15 @@ export default function FrequentlyAskedQuestionsAdminPage() {
 
         <AdminPanel title={`All FAQs${items.length ? ` (${items.length})` : ''}`} description="Unpublished answers remain available here but are hidden from the public dashboards.">
           {loading ? (
-            <p className="text-sm text-slate-500" role="status">Loading FAQs...</p>
+            <div className="space-y-3" aria-label="Loading FAQs">
+              {[0, 1, 2].map((item) => (
+                <article key={item} className="rounded-xl border border-slate-200 p-4">
+                  <div className="h-4 w-3/5 animate-pulse rounded-full bg-slate-200" />
+                  <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-slate-100" />
+                  <div className="mt-2 h-3 w-4/5 animate-pulse rounded-full bg-slate-100" />
+                </article>
+              ))}
+            </div>
           ) : items.length ? (
             <div className="space-y-3">
               {items.map((item) => (

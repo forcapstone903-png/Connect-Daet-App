@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Bookmark, CalendarDays, FileText, Loader, MapPin, MessageSquare, MapPinned, Route, Trash2 } from 'lucide-react'
+import { Bookmark, CalendarDays, FileText, MapPin, MessageSquare, MapPinned, Route, Trash2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { notifyToast } from '@/lib/toast.mjs'
 import UserTopHeader from '@/app/(subsystems)/info/components/user/UserTopHeader'
@@ -196,8 +196,19 @@ export default function UserSavedPage() {
         ) : null}
 
         {loading ? (
-          <div className="usr-section-loading">
-            <Loader className="usr-spin mx-auto my-6 text-teal-700" />
+          <div className="usr-section-loading" role="status" aria-label="Loading saved items">
+            {[0, 1, 2].map((item) => (
+              <div key={item} className="usr-list-row animate-pulse flex-col items-stretch" aria-hidden="true">
+                <div className="flex items-center gap-4">
+                  <div className="h-16 w-16 shrink-0 rounded-2xl bg-slate-200" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="h-3 w-24 rounded-full bg-slate-200" />
+                    <div className="h-4 w-2/3 rounded bg-slate-200" />
+                    <div className="h-3 w-1/2 rounded bg-slate-100" />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : visibleItems.length === 0 ? (
           <div className="usr-empty-state usr-pop-in">

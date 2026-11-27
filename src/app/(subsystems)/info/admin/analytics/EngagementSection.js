@@ -184,7 +184,18 @@ export default function EngagementSection() {
 
         {error && <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
         {loading ? (
-          <div className="p-8 text-center text-sm text-slate-500">Loading engagement records...</div>
+          <div className="space-y-3 p-4" aria-label="Loading engagement records">
+            {[0, 1, 2, 3, 4].map((item) => (
+              <div key={item} className="flex items-center gap-4 rounded-xl border border-slate-100 p-4">
+                <div className="h-8 w-20 animate-pulse rounded-full bg-slate-100" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-4 w-2/5 animate-pulse rounded-full bg-slate-200" />
+                  <div className="h-3 w-3/4 animate-pulse rounded-full bg-slate-100" />
+                </div>
+                <div className="hidden h-4 w-24 animate-pulse rounded-full bg-slate-100 sm:block" />
+              </div>
+            ))}
+          </div>
         ) : filteredRows.length ? (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left text-sm">

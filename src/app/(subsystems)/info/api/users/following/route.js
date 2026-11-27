@@ -1,14 +1,12 @@
-import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { getServerSession } from '@/lib/serverAuth'
 import { publicErrorMessage } from '@/lib/publicError'
+import { createSupabaseServiceRoleClient } from '@/lib/supabaseAdmin'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim()
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
-const adminSupabase = supabaseUrl && serviceRoleKey ? createClient(supabaseUrl, serviceRoleKey) : null
+const adminSupabase = createSupabaseServiceRoleClient()
 
 export async function GET(request) {
   if (!adminSupabase) {

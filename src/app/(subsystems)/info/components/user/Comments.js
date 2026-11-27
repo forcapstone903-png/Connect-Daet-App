@@ -12,6 +12,8 @@ import Reactions from './Reactions'
 import UserProfileLink from './UserProfileLink'
 import MentionText from './MentionText'
 import MentionsAutoSuggest from './MentionsAutoSuggest'
+import { useUserSession } from '@/lib/useUserSession'
+import { normalizeStaffRole } from '@/lib/staffRoles.mjs'
 
 const STICKERS = ['😀', '😂', '😍', '😎', '🤔', '😢', '😡', '🥳', '🤝', '❤️']
 
@@ -79,6 +81,8 @@ export default function Comments({
   closeButtonRef,
 }) {
   const pathname = usePathname()
+  const { session } = useUserSession()
+  const suspendedLimitedAccess = session?.suspended_limited_access === true
   const [comments, setComments] = useState([])
   const [currentUser, setCurrentUser] = useState(null)
   const [replyTo, setReplyTo] = useState(null)
@@ -164,10 +168,10 @@ export default function Comments({
         event: '*',
         schema: 'public',
         table: 'content_comments',
-        filter: `content_type=eq.${contentType}`,
+        filter: `content_type=eq.${contentType},content_id=eq.${contentId}`,
       }, (payload) => {
         const changed = payload?.new || payload?.old
-        if (!changed || changed.content_id !== contentId) return
+        if (!changed || changed.content_id !== contentId || changed.content_type !== contentType) return
         void loadComments()
       })
       .subscribe()
@@ -305,9 +309,10 @@ export default function Comments({
       if (!response.ok || !result.success) throw new Error(result.message || 'Unable to delete the comment.')
       setOpenMenuId(null)
       await loadComments()
+      if (result.warning) alert(result.warning)
     } catch (err) {
       console.error('Failed to delete comment:', err)
-      alert('Unable to delete the comment. Please try again.')
+      alert(err?.message || 'Unable to delete the comment. Please try again.')
     }
   }
 
@@ -503,6 +508,8 @@ export default function Comments({
     const authorName = comment.info_users?.full_name || 'Community member'
     const authorProfileUser = { id: comment.user_id, full_name: authorName, profile_image_url: comment.info_users?.profile_image_url || null }
     const isOwner = userId === comment.user_id
+    const isAdmin = normalizeStaffRole(session?.role) === 'admin'
+    const canDelete = Boolean(userId && (isAdmin || userId === contentOwnerId))
     const canPin = userId && contentOwnerId && userId === contentOwnerId
     const replyCount = countNestedReplies(comment)
     const isMenuOpen = openMenuId === comment.id
@@ -537,7 +544,7 @@ export default function Comments({
                 </div>
 
                 <div className="relative flex shrink-0 items-center gap-2">
-                  {canPin && (
+                  {canPin && !suspendedLimitedAccess && (
                     <button
                       type="button"
                       onClick={() => handlePin(comment.id, !comment.is_pinned)}
@@ -570,33 +577,37 @@ export default function Comments({
                             <ClipboardCopy className="h-3.5 w-3.5" />
                             Copy
                           </button>
-                          {isOwner ? (
+                          {isOwner || canDelete ? (
                             <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingCommentId(comment.id)
-                                  setEditedCommentText(comment.body || '')
-                                  setOpenMenuId(null)
-                                }}
-                                className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMenuId(null)
-                                  handleDeleteComment(comment.id)
-                                }}
-                                className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
-                              >
-                                Delete
-                              </button>
+                              {isOwner && !suspendedLimitedAccess && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCommentId(comment.id)
+                                    setEditedCommentText(comment.body || '')
+                                    setOpenMenuId(null)
+                                  }}
+                                  className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-slate-700 transition hover:bg-slate-100"
+                                >
+                                  Edit
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null)
+                                    handleDeleteComment(comment.id)
+                                  }}
+                                  className="w-full rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-red-600 transition hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </>
                           ) : (
                             <>
-                              {userId && (
+                              {userId && !suspendedLimitedAccess && (
                                 <button
                                   type="button"
                                   onClick={() => handleReportComment(comment)}
@@ -989,8 +1000,8 @@ export default function Comments({
                 </div>
 
                 {gifLoading ? (
-                  <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs font-semibold text-slate-500">
-                    <LoaderCircle className="h-4 w-4 animate-spin" /> Loading GIFs...
+                  <div className="grid grid-cols-3 gap-2 p-2" role="status" aria-label="Loading GIFs">
+                    {[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="h-20 animate-pulse rounded-lg bg-slate-100" aria-hidden="true" />)}
                   </div>
                 ) : gifError ? (
                   <div className="px-3 py-4 text-center text-xs font-semibold text-slate-500">
@@ -1071,7 +1082,14 @@ export default function Comments({
 
             <div className="min-h-20 overflow-y-auto p-2">
               {reactionDetailsLoading ? (
-                <div className="px-3 py-6 text-center text-xs font-semibold text-slate-500">Loading reactions...</div>
+                <div className="space-y-2 p-2" role="status" aria-label="Loading reactions">
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="flex items-center gap-3 rounded-xl px-2 py-2" aria-hidden="true">
+                      <div className="h-9 w-9 animate-pulse rounded-full bg-slate-200" />
+                      <div className="h-3 w-2/3 animate-pulse rounded-full bg-slate-100" />
+                    </div>
+                  ))}
+                </div>
               ) : reactionDetails.reactions.length > 0 ? (
                 <div className="space-y-1">
                   {reactionDetails.reactions.map((reaction) => {

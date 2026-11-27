@@ -8,7 +8,13 @@ const MAX_TTL_SECONDS = 90 * 24 * 60 * 60
 const ACTIVITY_REFRESH_SECONDS = 60
 
 function getSigningSecret() {
-  const secret = process.env.SESSION_SECRET?.trim() || process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || ''
+  const dedicatedSecret = process.env.SESSION_SECRET?.trim()
+  const fallbackSecret = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (dedicatedSecret) return Buffer.byteLength(dedicatedSecret, 'utf8') >= 32 ? dedicatedSecret : ''
+  if (fallbackSecret) {
+    console.warn('[serverAuth] SESSION_SECRET is not set; falling back to SUPABASE_SERVICE_ROLE_KEY for session signing.')
+  }
+  const secret = fallbackSecret || ''
   return Buffer.byteLength(secret, 'utf8') >= 32 ? secret : ''
 }
 

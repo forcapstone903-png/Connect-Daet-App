@@ -34,7 +34,7 @@ import {
   AdminBadge,
   AdminButton,
   AdminEmptyState,
-  AdminLoadingScreen,
+  AdminPageSkeleton,
   AdminPagination,
   AdminPanel,
   AdminSearch,
@@ -842,7 +842,7 @@ export default function TouristSpotsManagement() {
   }, [fetchSpots, user]);
 
   if (loading) {
-    return <AdminLoadingScreen label="Loading tourist spots..." />;
+    return <AdminPageSkeleton variant="table" rows={6} />;
   }
 
   return (

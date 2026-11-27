@@ -21,7 +21,6 @@ import {
   FileText,
   Gift,
   ImagePlus,
-  Loader,
   Mail,
   Megaphone,
   MessageSquare,
@@ -171,9 +170,9 @@ export default function UserDashboardPage() {
 
   // Auth & User state
   const [authenticated, setAuthenticated] = useState(false)
+  const [suspendedLimitedAccess, setSuspendedLimitedAccess] = useState(false)
   const [authError, setAuthError] = useState(null)
   const [userId, setUserId] = useState(null)
-  const [unreadAlerts, setUnreadAlerts] = useState(0)
   const [userName, setUserName] = useState('Traveler')
   const [userAvatarUrl, setUserAvatarUrl] = useState('')
 
@@ -262,52 +261,6 @@ export default function UserDashboardPage() {
   useEffect(() => {
     setRefreshCallback(refreshDashboardSilently)
   }, [refreshDashboardSilently, setRefreshCallback])
-
-  useEffect(() => {
-    if (!userId) return undefined
-
-    let active = true
-    const loadUnreadAlerts = async () => {
-      try {
-        const response = await fetch('/info/api/notifications', { credentials: 'same-origin', cache: 'no-store' })
-        const result = response.ok ? await response.json() : null
-        if (active && result?.success) setUnreadAlerts(Number(result.unread_count) || 0)
-      } catch {
-        // The bell remains available if the unread count cannot be loaded.
-      }
-    }
-
-    loadUnreadAlerts()
-    const refreshUnreadAlerts = () => {
-      if (document.visibilityState === 'visible') void loadUnreadAlerts()
-    }
-    const refreshTimer = window.setInterval(refreshUnreadAlerts, 30_000)
-    window.addEventListener('online', refreshUnreadAlerts)
-    document.addEventListener('visibilitychange', refreshUnreadAlerts)
-    const notificationChannel = supabase?.channel?.(`dashboard-notifications-${userId}`)
-    notificationChannel
-      ?.on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'info_notifications',
-        filter: `user_id=eq.${userId}`,
-      }, refreshUnreadAlerts)
-      ?.subscribe()
-    const updateUnreadAlerts = (event) => {
-      const count = Number(event?.detail?.unreadCount)
-      if (Number.isFinite(count)) setUnreadAlerts(count)
-      else void loadUnreadAlerts()
-    }
-    window.addEventListener('daet-notifications-updated', updateUnreadAlerts)
-    return () => {
-      active = false
-      window.clearInterval(refreshTimer)
-      window.removeEventListener('online', refreshUnreadAlerts)
-      document.removeEventListener('visibilitychange', refreshUnreadAlerts)
-      window.removeEventListener('daet-notifications-updated', updateUnreadAlerts)
-      if (notificationChannel) supabase.removeChannel(notificationChannel)
-    }
-  }, [userId])
 
   useEffect(() => {
     if (!userId) return undefined
@@ -596,12 +549,17 @@ export default function UserDashboardPage() {
     const current = reactions[itemKey]
     const nextReactions = { ...reactions }
     const contentType = item.type === 'forum' ? 'forum_thread' : item.type === 'post' ? 'user_post' : item.type
+    let didReact = false
 
     try {
-      const result = current === reactionType
-        ? await supabase.from('content_reactions').delete().eq('user_id', userId).eq('content_type', contentType).eq('content_id', item.id)
-        : await supabase.from('content_reactions').upsert({ user_id: userId, content_type: contentType, content_id: item.id, reaction_type: reactionType }, { onConflict: 'user_id,content_type,content_id' })
-      if (result.error) throw result.error
+      const response = await fetch('/info/api/reactions', {
+        method: current === reactionType ? 'DELETE' : 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contentType, contentId: item.id, reactionType }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || !result.success) throw new Error(result.message || 'Unable to update reaction.')
 
       if (current === reactionType) {
         delete nextReactions[itemKey]
@@ -613,6 +571,7 @@ export default function UserDashboardPage() {
       }
       setReactions(nextReactions)
       invalidateCache(getDashboardCacheKey(userId))
+      didReact = true
     } catch (error) {
       console.error('Reaction update failed:', error)
       setToastMessage('Unable to update reaction')
@@ -622,7 +581,7 @@ export default function UserDashboardPage() {
     setTimeout(() => setToastMessage(''), 2500)
 
     // Award points for engagement - async fire-and-forget
-    if (userId) {
+    if (userId && didReact && !suspendedLimitedAccess) {
       void trackUserActivity({
         userId,
         activityType: 'react_content',
@@ -833,16 +792,20 @@ export default function UserDashboardPage() {
   }, [userId])
 
   useEffect(() => {
-    void loadPersonalizedRecommendations()
+    queueMicrotask(() => {
+      void loadPersonalizedRecommendations()
+    })
   }, [loadPersonalizedRecommendations])
 
   useEffect(() => {
     const handleInterestsUpdated = (event) => {
       const interests = normalizeUserInterests(event.detail?.interests)
-      setUserSignals((current) => ({
-        ...current,
-        preferredCategories: interests,
-      }))
+      window.queueMicrotask(() => {
+        setUserSignals((current) => ({
+          ...current,
+          preferredCategories: interests,
+        }))
+      })
       void loadPersonalizedRecommendations(true)
     }
 
@@ -1133,6 +1096,7 @@ export default function UserDashboardPage() {
     const checkAuth = async () => {
       try {
         const cookieSession = getAuthCookieFromDocument()
+        setSuspendedLimitedAccess(cookieSession?.suspended_limited_access === true)
         const {
           data: { session },
           error: sessionError,
@@ -1946,6 +1910,7 @@ export default function UserDashboardPage() {
   }, [visibleFeed, userId])
 
   const renderPeopleSuggestionCard = () => {
+    if (suspendedLimitedAccess) return null
     if (feedScope !== 'for-you' || feedCategory !== 'all') return null
     if (!suggestions.suggestedPeople.length) return null
 
@@ -2033,17 +1998,82 @@ export default function UserDashboardPage() {
 
   if (!authenticated) {
     return (
-      <main className="dashboard-auth-loading tourism-shell flex min-h-screen items-center justify-center px-4">
-        <div className="usr-enter w-full max-w-sm rounded-[24px] border border-slate-200 bg-white p-8 text-center shadow-sm">
-          <span className="usr-ring-pulse mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-700">
-            <Loader className="h-5 w-5 animate-spin" aria-hidden="true" />
-          </span>
-          <p className="mt-4 text-sm font-bold text-slate-800">Preparing your feed</p>
-          <p className="mt-1 text-xs text-slate-500">Verifying your session…</p>
-          <div className="mt-5 space-y-2">
-            <div className="usr-skeleton h-3 w-full rounded-full" />
-            <div className="usr-skeleton h-3 w-4/5 rounded-full" />
+      <main
+        className="dashboard-auth-loading tourism-shell min-h-screen bg-slate-50"
+        aria-busy="true"
+        aria-label="Loading your feed"
+      >
+        <span className="sr-only">Preparing your feed</span>
+
+        <header className="fixed inset-x-0 top-0 z-20 h-[100px] border-b border-slate-200 bg-white px-6 lg:h-16">
+          <div className="mx-auto flex h-full max-w-[1500px] items-center gap-4">
+            <div className="usr-skeleton h-11 w-11 shrink-0 rounded-full lg:h-10 lg:w-10" />
+            <div className="usr-skeleton h-7 w-36 rounded-full lg:h-6 lg:w-44" />
           </div>
+        </header>
+
+        <aside className="fixed bottom-0 left-0 top-16 hidden w-[302px] flex-col border-r border-slate-200 bg-white px-5 py-6 lg:flex" aria-hidden="true">
+          <div className="flex items-center gap-3 border-b border-slate-200 pb-5">
+            <div className="usr-skeleton h-10 w-10 rounded-full" />
+            <div className="usr-skeleton h-4 w-36 rounded-full" />
+          </div>
+          <div className="mt-5 space-y-3">
+            {[1, 2, 3, 4, 5, 6, 7].map((item) => (
+              <div key={item} className="flex items-center gap-3 rounded-xl px-2 py-2.5">
+                <div className="usr-skeleton h-5 w-5 rounded-md" />
+                <div className="usr-skeleton h-3 rounded-full" style={{ width: `${item % 3 === 0 ? 92 : item % 2 === 0 ? 120 : 106}px` }} />
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        <div className="mx-auto grid min-h-screen grid-cols-1 gap-6 px-3 pb-8 pt-[116px] sm:px-5 lg:ml-[302px] lg:max-w-[1180px] lg:grid-cols-[minmax(0,760px)_280px] lg:px-8 lg:pt-24">
+          <section className="min-w-0 space-y-3" aria-hidden="true">
+            {[1, 2, 3].map((item) => (
+              <article
+                key={item}
+                className="usr-enter usr-card rounded-[22px] border border-slate-200 bg-white p-4"
+                style={{ animationDelay: `${item * 70}ms` }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="usr-skeleton h-11 w-11 rounded-full" />
+                  <div className="min-w-0 flex-1">
+                    <div className="usr-skeleton h-3 w-32 rounded-full" />
+                    <div className="usr-skeleton mt-2 h-2.5 w-20 rounded-full" />
+                  </div>
+                  <div className="usr-skeleton h-5 w-5 rounded-full" />
+                </div>
+                <div className="usr-skeleton mt-5 h-4 w-3/4 rounded-full" />
+                <div className="usr-skeleton mt-3 h-3 w-full rounded-full" />
+                <div className="usr-skeleton mt-2 h-3 w-5/6 rounded-full" />
+                <div className="usr-skeleton mt-5 h-44 w-full rounded-[14px] sm:h-56" />
+                <div className="mt-5 flex items-center justify-between border-t border-slate-100 pt-4">
+                  <div className="usr-skeleton h-7 w-16 rounded-full" />
+                  <div className="usr-skeleton h-7 w-16 rounded-full" />
+                  <div className="usr-skeleton h-7 w-16 rounded-full" />
+                </div>
+              </article>
+            ))}
+          </section>
+
+          <aside className="hidden space-y-4 lg:block" aria-hidden="true">
+            <div className="rounded-[22px] border border-slate-200 bg-white p-4">
+              <div className="usr-skeleton h-4 w-28 rounded-full" />
+              {[1, 2, 3].map((item) => (
+                <div key={item} className="mt-4 flex items-center gap-3">
+                  <div className="usr-skeleton h-9 w-9 rounded-full" />
+                  <div className="flex-1">
+                    <div className="usr-skeleton h-3 w-24 rounded-full" />
+                    <div className="usr-skeleton mt-2 h-2.5 w-16 rounded-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="rounded-[22px] border border-slate-200 bg-white p-4">
+              <div className="usr-skeleton h-4 w-36 rounded-full" />
+              <div className="usr-skeleton mt-4 h-24 w-full rounded-xl" />
+            </div>
+          </aside>
         </div>
       </main>
     )
@@ -2128,7 +2158,7 @@ export default function UserDashboardPage() {
 
         </section>
 
-        <section className="medium-home-composer usr-card mb-3 rounded-[22px] p-3 sm:p-4">
+        {!suspendedLimitedAccess && <section className="medium-home-composer usr-card mb-3 rounded-[22px] p-3 sm:p-4">
           <div className="flex items-center gap-4 px-1">
             <span className="dashboard-profile-avatar flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[#16766f] text-[11px] font-black text-white">
               {userAvatarUrl ? <img src={userAvatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(userName)}
@@ -2148,7 +2178,7 @@ export default function UserDashboardPage() {
               </Link>
             ))}
           </div>
-        </section>
+        </section>}
 
         <div className="medium-home-tabs-wrap sticky top-[90px] z-30 mb-3 bg-[var(--background)] py-1 lg:top-16">
           <div className="usr-rail medium-home-tabs" role="tablist" aria-label="Home feed">

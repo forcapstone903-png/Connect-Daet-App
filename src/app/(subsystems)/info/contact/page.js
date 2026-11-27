@@ -63,7 +63,11 @@ export default function ContactPage() {
         <h1 className="mt-3 text-3xl font-black tracking-[-0.04em] text-slate-900 sm:text-4xl">{settings.tourismOfficeName}</h1>
         <p className="mt-2 text-sm text-slate-600">{settings.municipality.name}, {settings.municipality.province}</p>
 
-        {contact.emergencyHotline ? (
+        {!loaded ? (
+          <div role="status" className="mt-6 h-20 animate-pulse rounded-2xl border border-red-100 bg-red-50 p-4">
+            <span className="sr-only">Loading emergency contact information</span>
+          </div>
+        ) : contact.emergencyHotline ? (
           <a href={telHref(contact.emergencyHotline)} className="mt-6 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
             <Siren className="h-6 w-6" aria-hidden="true" />
             <span><span className="block text-xs font-semibold uppercase tracking-wide">Emergency hotline</span><span className="text-lg font-bold">{contact.emergencyHotline}</span></span>
@@ -71,7 +75,20 @@ export default function ContactPage() {
         ) : null}
 
         <section className="mt-6 divide-y divide-slate-100">
-          {!loaded ? <p className="py-3 text-sm text-slate-500">Loading…</p> : null}
+          {!loaded ? (
+            <div role="status" className="space-y-4 py-3">
+              <span className="sr-only">Loading contact information</span>
+              {[1, 2, 3, 4].map((item) => (
+                <div key={item} aria-hidden="true" className="flex animate-pulse items-start gap-3 py-1">
+                  <div className="mt-1 h-5 w-5 shrink-0 rounded bg-slate-200" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-2.5 w-24 rounded-full bg-slate-200" />
+                    <div className="h-3.5 w-2/3 rounded-full bg-slate-200" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {contact.phone ? <Row icon={Phone} label="Phone"><a href={telHref(contact.phone)} className="font-semibold text-sky-700 hover:underline">{contact.phone}</a></Row> : null}
           {contact.email ? <Row icon={Mail} label="Email"><a href={`mailto:${contact.email}`} className="font-semibold text-sky-700 hover:underline">{contact.email}</a></Row> : null}
           {contact.address ? (
